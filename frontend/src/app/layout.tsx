@@ -25,15 +25,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[radial-gradient(125%_125%_at_50%_10%,#0b1220_40%,#111827_70%,#0b1220_100%)] text-slate-100`}>
-        <header className="fixed inset-x-0 top-0 z-50 backdrop-blur supports-[backdrop-filter]:bg-white/5 border-b border-white/10">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gradient-to-b from-sky-50 via-white to-white text-slate-800`}>
+        <header className="fixed inset-x-0 top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-200 shadow-sm">
           <nav className="mx-auto max-w-7xl px-6 h-14 flex items-center justify-between">
-            <Link href="/" className="font-semibold tracking-tight text-white">
+            <Link href="/" className="font-semibold tracking-tight bg-gradient-to-r from-sky-600 to-blue-600 bg-clip-text text-transparent">
               Stocks AU
             </Link>
-            <div className="flex gap-6 text-sm text-slate-200">
-              <Link href="/order-book" className="hover:text-white">Order Book</Link>
-              <Link href="/ta-scan" className="hover:text-white">TA Scan</Link>
+            <div className="flex gap-6 text-sm text-slate-700">
+              <Link href="/order-book" className="hover:text-slate-900">Order Book</Link>
+              <Link href="/ta-scan" className="hover:text-slate-900">TA Scan</Link>
             </div>
           </nav>
         </header>

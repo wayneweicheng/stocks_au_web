@@ -48,14 +48,56 @@ export default function OrderBookPage() {
       label: s.CompanyName ? `${s.ASXCode} - ${s.CompanyName}` : (s.ASXCode || ""),
     })), [stocks]);
 
+  // Compute dynamic color scale from returned data
+  const { posMax, negMax, columns } = useMemo(() => {
+    if (!txns || txns.length === 0) return { posMax: 0, negMax: 0, columns: [] as string[] };
+    const cols = Object.keys(txns[0]);
+    const transKey = cols.find((c) => c.toLowerCase() === "transvalue") || "TransValue";
+    const indKey = cols.find((c) => c.toLowerCase().includes("actbuysell")) || "ActBuySellInd";
+    let pMax = 0;
+    let nMax = 0;
+    const toNum = (val: any) => {
+      if (val == null) return 0;
+      if (typeof val === "number") return val;
+      const s = String(val).replace(/,/g, "");
+      const num = Number(s);
+      return Number.isFinite(num) ? num : 0;
+    };
+    for (const row of txns) {
+      const v = toNum(row[transKey]);
+      const ind = String(row[indKey] ?? "");
+      if (ind === "B") pMax = Math.max(pMax, Math.abs(v));
+      else if (ind === "S") nMax = Math.max(nMax, Math.abs(v));
+    }
+    return { posMax: pMax, negMax: nMax, columns: cols };
+  }, [txns]);
+
+  const rowStyle = (row: Txn): any => {
+    if (!row || !columns.length) return undefined;
+    const transKey = columns.find((c) => c.toLowerCase() === "transvalue") || "TransValue";
+    const indKey = columns.find((c) => c.toLowerCase().includes("actbuysell")) || "ActBuySellInd";
+    const ind = String(row[indKey] ?? "");
+    const raw = row[transKey];
+    const value = typeof raw === "number" ? raw : Number(String(raw ?? "").replace(/,/g, "")) || 0;
+    if (ind === "B" && posMax > 0) {
+      const alpha = Math.max(0.06, Math.min(0.85, Math.abs(value) / posMax));
+      return { backgroundColor: `rgba(16, 185, 129, ${alpha})` };
+    }
+    if (ind === "S" && negMax > 0) {
+      const alpha = Math.max(0.06, Math.min(0.85, Math.abs(value) / negMax));
+      return { backgroundColor: `rgba(239, 68, 68, ${alpha})` };
+    }
+    return undefined;
+  };
+
   return (
-    <div className="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+    <div className="min-h-screen text-slate-100">
       <div className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-2xl sm:text-3xl font-semibold mb-6">Order Book & Transaction History</h1>
+        <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-cyan-300 to-blue-400 bg-clip-text text-transparent">Order Book & Transaction History</h1>
 
         <div className="grid gap-4 sm:grid-cols-3 mb-6">
           <div>
-            <label className="block text-sm mb-1">Date</label>
+            <label className="block text-sm mb-1 text-slate-300">Date</label>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -66,7 +108,7 @@ export default function OrderBookPage() {
                   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
                   setDateFrom(d.toISOString().slice(0, 10));
                 }}
-                className="rounded-md border border-slate-300 dark:border-slate-700 px-2 py-2 text-sm"
+                className="rounded-md border border-white/20 bg-white/5 px-2 py-2 text-sm hover:bg-white/10"
               >
                 ←
               </button>
@@ -75,7 +117,7 @@ export default function OrderBookPage() {
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
                 readOnly
-                className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                className="w-full rounded-md border border-white/20 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/40 focus:border-cyan-400/40"
               />
               <button
                 type="button"
@@ -86,18 +128,18 @@ export default function OrderBookPage() {
                   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
                   setDateFrom(d.toISOString().slice(0, 10));
                 }}
-                className="rounded-md border border-slate-300 dark:border-slate-700 px-2 py-2 text-sm"
+                className="rounded-md border border-white/20 bg-white/5 px-2 py-2 text-sm hover:bg-white/10"
               >
                 →
               </button>
             </div>
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-sm mb-1">Stock</label>
+            <label className="block text-sm mb-1 text-slate-300">Stock</label>
             <select
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
-              className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+              className="w-full rounded-md border border-white/20 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/40 focus:border-cyan-400/40"
             >
               {stockOptions.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -112,17 +154,17 @@ export default function OrderBookPage() {
           </div>
         )}
 
-        <div className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-x-auto relative">
+        <div className="rounded-lg border border-white/10 bg-white/5 overflow-x-auto relative">
           {loading && (
-            <div className="absolute inset-0 bg-white/70 dark:bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-10">
-              <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-400 border-t-slate-900 dark:border-slate-600 dark:border-t-white" />
+            <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center z-10">
+              <div className="h-10 w-10 animate-spin rounded-full border-2 border-cyan-300/40 border-t-cyan-400" />
             </div>
           )}
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-900">
+            <thead className="sticky top-0 z-10 bg-slate-900/70 backdrop-blur text-slate-300 uppercase text-xs tracking-wide">
               <tr>
                 {(txns?.[0] ? Object.keys(txns[0]) : ["No data"]).map((k) => (
-                  <th key={k} className="px-3 py-2 text-left font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">{k}</th>
+                  <th key={k} className="px-3 py-3 text-left font-medium whitespace-nowrap border-b border-white/10">{k}</th>
                 ))}
               </tr>
             </thead>
@@ -133,9 +175,9 @@ export default function OrderBookPage() {
                 <tr><td className="px-3 py-3" colSpan={99}>No data found.</td></tr>
               ) : (
                 txns.map((row, i) => (
-                  <tr key={i} className={i % 2 ? "bg-slate-50/40 dark:bg-slate-900/40" : ""}>
+                  <tr key={i} className="transition-colors" style={rowStyle(row)}>
                     {Object.keys(txns[0]).map((k) => (
-                      <td key={k} className="px-3 py-2 whitespace-nowrap">{String(row[k] ?? "")}</td>
+                      <td key={k} className="px-3 py-2 whitespace-nowrap border-b border-white/5">{String(row[k] ?? "")}</td>
                     ))}
                   </tr>
                 ))
