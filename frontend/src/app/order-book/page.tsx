@@ -91,13 +91,13 @@ export default function OrderBookPage() {
   };
 
   return (
-    <div className="min-h-screen text-slate-100">
+    <div className="min-h-screen text-slate-800">
       <div className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-cyan-300 to-blue-400 bg-clip-text text-transparent">Order Book & Transaction History</h1>
+        <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-emerald-500 to-green-600 bg-clip-text text-transparent">Order Book & Transaction History</h1>
 
         <div className="grid gap-4 sm:grid-cols-3 mb-6">
           <div>
-            <label className="block text-sm mb-1 text-slate-300">Date</label>
+            <label className="block text-sm mb-1 text-slate-600">Date</label>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -117,7 +117,7 @@ export default function OrderBookPage() {
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
                 readOnly
-                className="w-full rounded-md border border-white/20 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/40 focus:border-cyan-400/40"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
               />
               <button
                 type="button"
@@ -135,11 +135,11 @@ export default function OrderBookPage() {
             </div>
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-sm mb-1 text-slate-300">Stock</label>
+            <label className="block text-sm mb-1 text-slate-600">Stock</label>
             <select
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
-              className="w-full rounded-md border border-white/20 bg-white/5 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-400/40 focus:border-cyan-400/40"
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
             >
               {stockOptions.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -154,17 +154,17 @@ export default function OrderBookPage() {
           </div>
         )}
 
-        <div className="rounded-lg border border-white/10 bg-white/5 overflow-x-auto relative">
+        <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto relative">
           {loading && (
             <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center z-10">
-              <div className="h-10 w-10 animate-spin rounded-full border-2 border-cyan-300/40 border-t-cyan-400" />
+              <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-300/40 border-t-emerald-500" />
             </div>
           )}
           <table className="min-w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-900/70 backdrop-blur text-slate-300 uppercase text-xs tracking-wide">
+            <thead className="sticky top-0 z-10 bg-white text-slate-600 uppercase text-[11px] tracking-wide border-b border-slate-200">
               <tr>
                 {(txns?.[0] ? Object.keys(txns[0]) : ["No data"]).map((k) => (
-                  <th key={k} className="px-3 py-3 text-left font-medium whitespace-nowrap border-b border-white/10">{k}</th>
+                  <th key={k} className="px-3 py-3 text-left font-medium whitespace-nowrap">{k}</th>
                 ))}
               </tr>
             </thead>
@@ -177,7 +177,7 @@ export default function OrderBookPage() {
                 txns.map((row, i) => (
                   <tr key={i} className="transition-colors" style={rowStyle(row)}>
                     {Object.keys(txns[0]).map((k) => (
-                      <td key={k} className="px-3 py-2 whitespace-nowrap border-b border-white/5">{String(row[k] ?? "")}</td>
+                      <td key={k} className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{String(row[k] ?? "")}</td>
                     ))}
                   </tr>
                 ))

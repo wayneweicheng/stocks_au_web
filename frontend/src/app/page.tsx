@@ -22,7 +22,7 @@ export default function Home() {
     <div className="min-h-screen">
       <div className="mx-auto max-w-5xl px-6 py-16">
         <header className="mb-12">
-          <h1 className="text-3xl sm:text-5xl font-semibold tracking-tight bg-gradient-to-r from-sky-600 to-blue-700 bg-clip-text text-transparent">Stocks AU Dashboard</h1>
+          <h1 className="text-3xl sm:text-5xl font-semibold tracking-tight bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent">Stocks AU Dashboard</h1>
           <p className="mt-3 text-slate-600">Next.js frontend (3100) + FastAPI backend (3101)</p>
         </header>
 
@@ -39,12 +39,12 @@ export default function Home() {
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">Order Book & Transactions</h3>
             <p className="text-sm text-slate-600 mb-4">Migrated page.</p>
-            <Link href="/order-book" className="inline-block rounded-md bg-gradient-to-r from-sky-600 to-blue-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+            <Link href="/order-book" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">TA Scan</h3>
             <p className="text-sm text-slate-600 mb-4">Migrated page.</p>
-            <Link href="/ta-scan" className="inline-block rounded-md bg-gradient-to-r from-sky-600 to-blue-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+            <Link href="/ta-scan" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
           <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-6">
             <h3 className="font-medium text-lg mb-1">Authentication</h3>
