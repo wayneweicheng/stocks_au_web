@@ -35,21 +35,31 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mt-10 grid gap-6 sm:grid-cols-2">
+        <section className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">Order Book & Transactions</h3>
-            <p className="text-sm text-slate-600 mb-4">Migrated page.</p>
+            <p className="text-sm text-slate-600 mb-4">View ASX stock transactions and order book data.</p>
             <Link href="/order-book" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">TA Scan</h3>
-            <p className="text-sm text-slate-600 mb-4">Migrated page.</p>
+            <p className="text-sm text-slate-600 mb-4">Technical analysis scanning tools.</p>
             <Link href="/ta-scan" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
-          <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-6">
-            <h3 className="font-medium text-lg mb-1">Authentication</h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">Google sign-in will be added later.</p>
-            <div className="text-xs text-slate-500">No auth required for this page.</div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">Monitor Stocks</h3>
+            <p className="text-sm text-slate-600 mb-4">Track and monitor your watchlist stocks.</p>
+            <Link href="/monitor-stocks" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">Conditional Orders</h3>
+            <p className="text-sm text-slate-600 mb-4">Manage automated conditional trading orders.</p>
+            <Link href="/conditional-orders" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">Pegasus Invest Opportunities</h3>
+            <p className="text-sm text-slate-600 mb-4">Discover investment opportunities and analysis.</p>
+            <Link href="/pegasus-invest-opportunities" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
         </section>
       </div>
