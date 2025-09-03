@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "./contexts/AuthContext";
+import AuthWrapper from "./components/AuthWrapper";
+import NavigationMenu from "./components/NavigationMenu";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,20 +29,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gradient-to-b from-emerald-50 via-white to-white text-slate-800`}>
-        <header className="fixed inset-x-0 top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-200 shadow-sm">
-          <nav className="mx-auto max-w-7xl px-6 h-14 flex items-center justify-between">
-            <Link href="/" className="font-semibold tracking-tight bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
-              Stocks AU
-            </Link>
-            <div className="flex gap-6 text-sm text-slate-700">
-              <Link href="/order-book" className="hover:text-slate-900">Order Book</Link>
-              <Link href="/ta-scan" className="hover:text-slate-900">TA Scan</Link>
-              <Link href="/monitor-stocks" className="hover:text-slate-900">Monitor Stocks</Link>
-              <Link href="/conditional-orders" className="hover:text-slate-900">Conditional Orders</Link>
-            </div>
-          </nav>
-        </header>
-        <main className="pt-16">{children}</main>
+        <AuthProvider>
+          <AuthWrapper>
+            <header className="fixed inset-x-0 top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-200 shadow-sm">
+              <nav className="mx-auto max-w-7xl px-6 h-14 flex items-center justify-between">
+                <Link href="/" className="font-semibold tracking-tight bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
+                  Stocks AU
+                </Link>
+                <NavigationMenu />
+              </nav>
+            </header>
+            <main className="pt-16">{children}</main>
+          </AuthWrapper>
+        </AuthProvider>
       </body>
     </html>
   );

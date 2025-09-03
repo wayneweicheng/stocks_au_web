@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Dict, Any
 from datetime import date
 from app.core.db import get_sql_model
+from app.routers.auth import verify_credentials
 
 
 router = APIRouter(prefix="/api", tags=["ta-scan"])
@@ -16,6 +17,7 @@ def rows_to_dicts(cursor) -> List[Dict[str, Any]]:
 def get_ta_scan(
     observation_date: date = Query(..., alias="date", description="Observation date, e.g. 2025-01-31"),
     sort_by: str = Query("Price Changes", description="Sort choice"),
+    username: str = Depends(verify_credentials)
 ) -> List[Dict[str, Any]]:
     sql = (
         "exec [Report].[usp_GetStockScanResult_By_Date] "
