@@ -1,0 +1,6 @@
+
+Add arguments: -ExecutionPolicy Bypass -File "C:\Repo\stocks_au_web\start-apps.ps1" -NoNewWindows
+
+Start in: C:\Repo\stocks_au_web
+
+Program/Script: powershell.exe
