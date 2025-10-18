@@ -20,6 +20,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Stocks AU Dashboard",
   description: "ASX tools – Next.js + FastAPI",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
