@@ -20,16 +20,17 @@ export default function PLLRSScannerPage() {
   const [limit, setLimit] = useState<number>(200);
 
   // Display only these fields (case-insensitive lookup for safety)
-  const FIELDS: { keys: string[]; label: string; type?: "date" | "number" | "text"; multiline?: boolean }[] = [
+  type FieldFormat = "percent2" | "thousands";
+  const FIELDS: { keys: string[]; label: string; type?: "date" | "number" | "text"; multiline?: boolean; format?: FieldFormat }[] = [
     { keys: ["ObservationDate"], label: "Observation Date", type: "date" },
     { keys: ["ASXCode"], label: "ASX Code" },
     { keys: ["ClosePrice"], label: "Close Price", type: "number" },
-    { keys: ["TodayPriceChange"], label: "Today Price Change", type: "number" },
+    { keys: ["TodayPriceChange"], label: "Today Price Change", type: "number", format: "percent2" },
     { keys: ["SupportPrice"], label: "Support Price", type: "number" },
     { keys: ["ResistancePrice"], label: "Resistance Price", type: "number" },
     { keys: ["AggressorBuyRatio"], label: "Aggressor Buy Ratio", type: "number" },
-    { keys: ["TotalActiveBuyVolume", "totalActiveBuyVolume"], label: "Total Active Buy Volume", type: "number" },
-    { keys: ["TotalActiveSellVolume", "totalActiveSellVolume"], label: "Total Active Sell Volume", type: "number" },
+    { keys: ["TotalActiveBuyVolume", "totalActiveBuyVolume"], label: "Total Active Buy Volume", type: "number", format: "thousands" },
+    { keys: ["TotalActiveSellVolume", "totalActiveSellVolume"], label: "Total Active Sell Volume", type: "number", format: "thousands" },
     { keys: ["EntryPrice"], label: "Entry Price", type: "number" },
     { keys: ["TargetPrice"], label: "Target Price", type: "number" },
     { keys: ["StopPrice"], label: "Stop Price", type: "number" },
@@ -151,7 +152,17 @@ export default function PLLRSScannerPage() {
                           try { content = new Date(String(raw)).toLocaleString(); } catch { content = String(raw); }
                         } else if (f.type === "number") {
                           const num = Number(raw);
-                          content = Number.isFinite(num) ? String(num) : String(raw);
+                          if (Number.isFinite(num)) {
+                            if (f.format === "percent2") {
+                              content = num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
+                            } else if (f.format === "thousands") {
+                              content = Math.round(num).toLocaleString();
+                            } else {
+                              content = String(num);
+                            }
+                          } else {
+                            content = String(raw);
+                          }
                         } else {
                           content = String(raw);
                         }
