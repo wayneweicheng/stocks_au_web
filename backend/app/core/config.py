@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import AliasChoices, Field
+from typing import Optional
 import os
 
 
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
 
     # Web
     allowed_origins: str = Field(default="http://localhost:3100", validation_alias=AliasChoices("allowed_origins"))
+    allowed_origin_regex: Optional[str] = Field(default=None, validation_alias=AliasChoices("allowed_origin_regex"))
 
     # External resources (local directory path for charts)
     chart_base_url: str = Field(default="", validation_alias=AliasChoices("chart_base_url", "CHART_BASE_URL", "CHART_BASE_DIR"))

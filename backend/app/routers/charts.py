@@ -4,7 +4,7 @@ from typing import Optional
 from pathlib import Path
 import os
 from app.core.config import settings
-from app.routers.auth import verify_credentials
+# No auth required for public chart images
 
 
 router = APIRouter(prefix="/charts", tags=["charts"])
@@ -24,7 +24,6 @@ def resolve_chart_path(relative_or_full_path: str) -> Path:
 @router.get("")
 def get_chart(
     path: str = Query(..., description="Relative or absolute chart file path"),
-    username: str = Depends(verify_credentials),
 ):
     try:
         full_path = resolve_chart_path(path)
@@ -46,4 +45,27 @@ def get_chart(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/{path:path}")
+def get_chart_by_path(path: str = ""):
+    """Serve chart by path segment without auth to allow <img> tags.
+    Applies the same base-path and traversal protections as the query variant.
+    """
+    try:
+        full_path = resolve_chart_path(path)
+        base = settings.chart_base_url.strip()
+        if base:
+            base_path = Path(base).resolve()
+            resolved = full_path.resolve()
+            if base_path not in resolved.parents and resolved != base_path:
+                raise HTTPException(status_code=400, detail="Invalid chart path")
+
+        if not full_path.exists() or not full_path.is_file():
+            raise HTTPException(status_code=404, detail="Chart not found")
+
+        return FileResponse(str(full_path))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 

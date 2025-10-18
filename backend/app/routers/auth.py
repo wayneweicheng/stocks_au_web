@@ -27,9 +27,6 @@ def get_credentials():
 def login(request: LoginRequest):
     credentials = get_credentials()
     
-    print(f"Login attempt - Username: {request.username}, Expected: {credentials['username']}")
-    print(f"Password match: {request.password == credentials['password']}")
-    
     if (request.username == credentials["username"] and 
         request.password == credentials["password"]):
         return LoginResponse(success=True, message="Login successful")

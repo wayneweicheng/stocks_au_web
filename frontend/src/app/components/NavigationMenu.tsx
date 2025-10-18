@@ -19,6 +19,7 @@ export default function NavigationMenu() {
           <div className="py-2">
             <Link href="/order-book" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Order Book</Link>
             <Link href="/ta-scan" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">TA Scan</Link>
+            <Link href="/pllrs-scanner" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">PLLRS Scanner</Link>
             <Link href="/pegasus-invest-opportunities" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pegasus Invest Opportunities</Link>
             <Link href="/monitor-stocks" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Monitor Stocks</Link>
             <Link href="/conditional-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Conditional Orders</Link>
