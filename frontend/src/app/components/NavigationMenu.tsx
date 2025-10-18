@@ -22,6 +22,7 @@ export default function NavigationMenu() {
             <Link href="/pegasus-invest-opportunities" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pegasus Invest Opportunities</Link>
             <Link href="/monitor-stocks" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Monitor Stocks</Link>
             <Link href="/conditional-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Conditional Orders</Link>
+            <Link href="/pattern-predictions" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pattern Predictions</Link>
           </div>
         </div>
       </div>

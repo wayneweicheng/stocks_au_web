@@ -28,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="antialiased bg-gradient-to-b from-emerald-50 via-white to-white text-slate-800" suppressHydrationWarning>
         <ClientLayout geistSans={geistSans} geistMono={geistMono}>
           <AuthProvider>

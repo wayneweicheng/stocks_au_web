@@ -5,7 +5,8 @@ Dev server: http://localhost:3101
 Run locally:
 
 ```
-source ../venv/bin/activate
+./venv/scripts/activate
+cd backend
 uvicorn app.main:app --reload --port 3101
 ```
 

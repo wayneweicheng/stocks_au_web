@@ -34,9 +34,11 @@ const ORDER_PRICE_TYPES = ["Price", "SMA"];
 export default function ConditionalOrdersPage() {
   const [orders, setOrders] = useState<ConditionalOrder[]>([]);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>("");
   const [message, setMessage] = useState<string>("");
-  
+  const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
+
   const [formData, setFormData] = useState<ConditionalOrder>({
     order_type: "Sell Open Price Advantage",
     stock_code: "",
@@ -75,10 +77,25 @@ export default function ConditionalOrdersPage() {
   }, [baseUrl]);
 
   useEffect(() => {
+    const isBuyOrder = formData.order_type.startsWith("Buy");
+    const isSellOrder = formData.order_type.startsWith("Sell");
+
     if (formData.order_type === "Sell Close Price Advantage") {
       setFormData(prev => ({
-        ...prev, 
+        ...prev,
         order_volume: 0,
+        order_value: undefined
+      }));
+    } else if (isBuyOrder) {
+      // For buy orders, clear order_volume
+      setFormData(prev => ({
+        ...prev,
+        order_volume: undefined
+      }));
+    } else if (isSellOrder) {
+      // For sell orders, clear order_value
+      setFormData(prev => ({
+        ...prev,
         order_value: undefined
       }));
     }
@@ -102,24 +119,40 @@ export default function ConditionalOrdersPage() {
     e.preventDefault();
     setError("");
     setMessage("");
-    
+    setSubmitting(true);
+
     try {
-      const response = await fetch(`${baseUrl}/api/conditional-orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-      
+      let response;
+
+      if (editingOrderId) {
+        // Update existing order - call PUT endpoint
+        response = await fetch(`${baseUrl}/api/conditional-orders/${editingOrderId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+      } else {
+        // Create new order - call POST endpoint
+        response = await fetch(`${baseUrl}/api/conditional-orders`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+      }
+
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
+
       const result = await response.json();
       setMessage(result.message);
+
+      // Reset form and editing state
       const getDefaultValidUntil = () => {
         const date = new Date();
         date.setDate(date.getDate() + 60);
         return date.toISOString().slice(0, 10);
       };
-      
+
+      setEditingOrderId(null);
       setFormData({
         order_type: "Sell Open Price Advantage",
         stock_code: "",
@@ -132,19 +165,58 @@ export default function ConditionalOrdersPage() {
       loadOrders();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const handleEdit = (order: ConditionalOrder) => {
+    setEditingOrderId(order.id || null);
+    setFormData({
+      id: order.id,
+      order_type: order.order_type,
+      stock_code: order.stock_code,
+      trade_account_name: order.trade_account_name,
+      order_price_type: order.order_price_type,
+      order_price: order.order_price,
+      price_buffer_ticks: order.price_buffer_ticks,
+      volume_gt: order.volume_gt,
+      order_volume: order.order_volume,
+      order_value: order.order_value,
+      valid_until: order.valid_until,
+      additional_settings: order.additional_settings,
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingOrderId(null);
+    const getDefaultValidUntil = () => {
+      const date = new Date();
+      date.setDate(date.getDate() + 60);
+      return date.toISOString().slice(0, 10);
+    };
+    setFormData({
+      order_type: "Sell Open Price Advantage",
+      stock_code: "",
+      trade_account_name: "huanw2114",
+      order_price_type: "Price",
+      price_buffer_ticks: 0,
+      volume_gt: 0,
+      valid_until: getDefaultValidUntil(),
+    });
   };
 
   const handleDelete = async (orderId: number) => {
     if (!confirm("Are you sure you want to delete this conditional order?")) return;
-    
+
     try {
       const response = await fetch(`${baseUrl}/api/conditional-orders/${orderId}`, {
         method: "DELETE",
       });
-      
+
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
+
       const result = await response.json();
       setMessage(result.message);
       loadOrders();
@@ -173,8 +245,10 @@ export default function ConditionalOrdersPage() {
         )}
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">Create New Conditional Order</h2>
-          
+          <h2 className="text-xl font-semibold mb-4">
+            {editingOrderId ? "Edit Conditional Order" : "Create New Conditional Order"}
+          </h2>
+
           <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <label className="block text-sm mb-1 text-slate-600">Choose Order Type</label>
@@ -233,8 +307,8 @@ export default function ConditionalOrdersPage() {
               <input
                 type="number"
                 step="0.01"
-                value={formData.order_price || ""}
-                onChange={(e) => setFormData({...formData, order_price: e.target.value ? parseFloat(e.target.value) : undefined})}
+                value={formData.order_price ?? ""}
+                onChange={(e) => setFormData({...formData, order_price: e.target.value === "" ? undefined : parseFloat(e.target.value)})}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
             </div>
@@ -265,7 +339,12 @@ export default function ConditionalOrdersPage() {
                 type="number"
                 value={formData.order_volume ?? ""}
                 onChange={(e) => setFormData({...formData, order_volume: e.target.value ? parseInt(e.target.value) : undefined})}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                disabled={formData.order_type.startsWith("Buy")}
+                className={`w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
+                  formData.order_type.startsWith("Buy")
+                    ? "bg-slate-100 text-slate-500 cursor-not-allowed"
+                    : "bg-white"
+                }`}
               />
               {formData.order_type === "Sell Close Price Advantage" && (
                 <p className="text-xs text-slate-500 mt-1">0 = Sell all volume held for this stock</p>
@@ -277,12 +356,12 @@ export default function ConditionalOrdersPage() {
               <input
                 type="number"
                 step="0.01"
-                value={formData.order_value || ""}
-                onChange={(e) => setFormData({...formData, order_value: e.target.value ? parseFloat(e.target.value) : undefined})}
-                disabled={formData.order_type === "Sell Close Price Advantage"}
+                value={formData.order_value ?? ""}
+                onChange={(e) => setFormData({...formData, order_value: e.target.value === "" ? undefined : parseFloat(e.target.value)})}
+                disabled={formData.order_type.startsWith("Sell")}
                 className={`w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
-                  formData.order_type === "Sell Close Price Advantage" 
-                    ? "bg-slate-100 text-slate-500 cursor-not-allowed" 
+                  formData.order_type.startsWith("Sell")
+                    ? "bg-slate-100 text-slate-500 cursor-not-allowed"
                     : "bg-white"
                 }`}
               />
@@ -308,13 +387,30 @@ export default function ConditionalOrdersPage() {
               />
             </div>
 
-            <div className="sm:col-span-2 lg:col-span-3">
+            <div className="sm:col-span-2 lg:col-span-3 flex gap-2">
               <button
                 type="submit"
-                className="rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+                disabled={submitting}
+                className="rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                Save Conditional Order
+                {submitting && (
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                )}
+                {submitting
+                  ? (editingOrderId ? "Updating..." : "Creating...")
+                  : (editingOrderId ? "Update Order" : "Create Order")
+                }
               </button>
+              {editingOrderId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  disabled={submitting}
+                  className="rounded-md bg-gray-500 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -366,12 +462,26 @@ export default function ConditionalOrdersPage() {
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
                       {order.id && (
-                        <button
-                          onClick={() => handleDelete(order.id!)}
-                          className="text-red-600 hover:text-red-800 text-sm"
-                        >
-                          Delete
-                        </button>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleEdit(order)}
+                            title="Edit order"
+                            className="p-1.5 rounded hover:bg-blue-50 text-blue-600 hover:text-blue-700 transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleDelete(order.id!)}
+                            title="Delete order"
+                            className="p-1.5 rounded hover:bg-red-50 text-red-600 hover:text-red-700 transition-colors"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                            </svg>
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

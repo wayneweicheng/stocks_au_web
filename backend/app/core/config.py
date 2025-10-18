@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Web
     allowed_origins: str = Field(default="http://localhost:3100", validation_alias=AliasChoices("allowed_origins"))
 
+    # External resources (local directory path for charts)
+    chart_base_url: str = Field(default="", validation_alias=AliasChoices("chart_base_url", "CHART_BASE_URL", "CHART_BASE_DIR"))
+
 
 settings = Settings()
 

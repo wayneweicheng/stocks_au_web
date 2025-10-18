@@ -8,6 +8,8 @@ from app.routers.monitor_stocks import router as monitor_stocks_router
 from app.routers.conditional_orders import router as conditional_orders_router
 from app.routers.pegasus_invest_opportunities import router as pegasus_invest_opportunities_router
 from app.routers.auth import router as auth_router
+from app.routers.pattern_predictions import router as pattern_predictions_router
+from app.routers.charts import router as charts_router
 
 
 app = FastAPI(title="Stocks AU Backend")
@@ -32,5 +34,7 @@ app.include_router(monitor_stocks_router)
 app.include_router(conditional_orders_router)
 app.include_router(pegasus_invest_opportunities_router)
 app.include_router(auth_router)
+app.include_router(pattern_predictions_router)
+app.include_router(charts_router)
 
 
