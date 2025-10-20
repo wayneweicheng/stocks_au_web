@@ -11,6 +11,7 @@ from app.routers.auth import router as auth_router
 from app.routers.pattern_predictions import router as pattern_predictions_router
 from app.routers.charts import router as charts_router
 from app.routers.pllrs_scanner import router as pllrs_scanner_router
+from app.routers.ib_gateway import router as ib_gateway_router
 import logging
 import time
 from fastapi.responses import JSONResponse
@@ -26,6 +27,7 @@ if not logger.handlers:
 app = FastAPI(title="Stocks AU Backend")
 
 origins = [origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()]
+logger.info("CORS: allow_origins=%s allow_origin_regex=%s", origins, settings.allowed_origin_regex)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -74,5 +76,6 @@ app.include_router(auth_router)
 app.include_router(pattern_predictions_router)
 app.include_router(charts_router)
 app.include_router(pllrs_scanner_router)
+app.include_router(ib_gateway_router)
 
 

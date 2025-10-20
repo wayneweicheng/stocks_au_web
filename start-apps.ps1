@@ -49,6 +49,143 @@ function Write-Log {
     }
 }
 
+# Windows Job Object to ensure children die when supervisor exits
+function Initialize-JobObject {
+    if ($global:JobInitialized) { return }
+    $csharp = @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class JobHelper {
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetInformationJobObject(IntPtr hJob, int JobObjectInfoClass, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    // Structures for extended limit info
+    [StructLayout(LayoutKind.Sequential)]
+    public struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public long Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IO_COUNTERS {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+        public IO_COUNTERS IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    public const int JobObjectExtendedLimitInformation = 9;
+    public const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+    public const uint PROCESS_ALL_ACCESS = 0x001F0FFF;
+
+    public static IntPtr CreateKillOnCloseJob() {
+        IntPtr hJob = CreateJobObject(IntPtr.Zero, null);
+        if (hJob == IntPtr.Zero) return IntPtr.Zero;
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        int length = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+        IntPtr ptr = Marshal.AllocHGlobal(length);
+        try {
+            Marshal.StructureToPtr(info, ptr, false);
+            if (!SetInformationJobObject(hJob, JobObjectExtendedLimitInformation, ptr, (uint)length)) {
+                CloseHandle(hJob);
+                return IntPtr.Zero;
+            }
+        } finally {
+            Marshal.FreeHGlobal(ptr);
+        }
+        return hJob;
+    }
+
+    public static bool AddProcessToJob(IntPtr hJob, int pid) {
+        IntPtr hProc = OpenProcess(PROCESS_ALL_ACCESS, false, pid);
+        if (hProc == IntPtr.Zero) return false;
+        try {
+            return AssignProcessToJobObject(hJob, hProc);
+        } finally {
+            CloseHandle(hProc);
+        }
+    }
+}
+"@
+    try {
+        Add-Type -TypeDefinition $csharp -ErrorAction SilentlyContinue | Out-Null
+        $global:JobHandle = [JobHelper]::CreateKillOnCloseJob()
+        if ($global:JobHandle -ne [IntPtr]::Zero) {
+            Write-Log "Job object initialized (KillOnJobClose)"
+        } else {
+            Write-Log "WARNING: Failed to initialize job object"
+        }
+    } catch {
+        Write-Log "WARNING: Could not load JobHelper type: $($_.Exception.Message)"
+    }
+    $global:JobInitialized = $true
+}
+
+function Add-ProcessToJobObject {
+    param([int]$Pid)
+    if (-not $global:JobHandle) { return }
+    try {
+        $null = [JobHelper]::AddProcessToJob($global:JobHandle, $Pid)
+    } catch { }
+}
+
+function Add-ProcessTreeToJobObject {
+    param([int]$RootPid)
+    try {
+        $root = Get-Process -Id $RootPid -ErrorAction SilentlyContinue
+        if (-not $root) { return }
+        Add-ProcessToJobObject -Pid $RootPid
+        $queue = New-Object System.Collections.Generic.Queue[System.Diagnostics.Process]
+        $queue.Enqueue($root)
+        while ($queue.Count -gt 0) {
+            $p = $queue.Dequeue()
+            $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)"
+            foreach ($child in $children) {
+                try {
+                    $cp = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
+                    if ($cp) {
+                        Add-ProcessToJobObject -Pid $cp.Id
+                        $queue.Enqueue($cp)
+                    }
+                } catch {}
+            }
+        }
+    } catch { }
+}
+
 function Get-PortOwnerPid {
     param(
         [int]$Port,
@@ -65,6 +202,20 @@ function Get-PortOwnerPid {
         } catch { }
         Start-Sleep -Milliseconds $DelayMs
     }
+    # Fallback using netstat parsing (covers cases where Get-NetTCPConnection is unreliable)
+    try {
+        $lines = netstat -ano -p tcp | Select-String ":$Port" | ForEach-Object { $_.ToString() }
+        foreach ($line in $lines) {
+            if ($line -match "LISTENING") {
+                # netstat columns end with PID
+                $parts = $line -split "\s+" | Where-Object { $_ -ne "" }
+                $pidStr = $parts[-1]
+                if ([int]::TryParse($pidStr, [ref]([int]$null))) {
+                    return [int]$pidStr
+                }
+            }
+        }
+    } catch { }
     return 0
 }
 
@@ -122,19 +273,11 @@ function Start-ServiceWithMonitoring {
         Set-Location $WorkingDirectory
 
         if ($LogFile) {
-            # Use PowerShell redirection for better compatibility
             $errorLogFile = $LogFile -replace '\.log$', '-error.log'
-            $argumentString = if ($Arguments -is [Array]) { $Arguments -join ' ' } else { $Arguments }
-
-            # Create a PowerShell script to handle the redirection
-            $psScript = "& '$Command' $argumentString *> '$LogFile'"
-            $redirectCmd = "powershell.exe"
-            $redirectArgs = @("-Command", $psScript)
-
             if ($NoNewWindows) {
-                $process = Start-Process -FilePath $redirectCmd -ArgumentList $redirectArgs -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru
+                $process = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -PassThru -NoNewWindow -RedirectStandardOutput $LogFile -RedirectStandardError $errorLogFile
             } else {
-                $process = Start-Process -FilePath $redirectCmd -ArgumentList $redirectArgs -WorkingDirectory $WorkingDirectory -PassThru
+                $process = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -PassThru -RedirectStandardOutput $LogFile -RedirectStandardError $errorLogFile
             }
         } else {
             # No logging, start directly
@@ -147,6 +290,10 @@ function Start-ServiceWithMonitoring {
 
         if ($process) {
             Write-Log "$ServiceName started successfully (PID: $($process.Id))"
+            Add-ProcessToJobObject -Pid $process.Id
+            # Also assign immediate children that may spawn quickly
+            Start-Sleep -Milliseconds 200
+            Add-ProcessTreeToJobObject -RootPid $process.Id
             # Store process info for monitoring
             $global:ServiceProcesses[$ServiceName] = @{
                 Process = $process
@@ -232,7 +379,29 @@ function Stop-ProcessOnPort {
                 }
             }
         } else {
-            Write-Log "Port $Port is free for $ServiceName"
+            # Fallback to netstat parsing if Get-NetTCPConnection returned nothing
+            $killedAny = $false
+            try {
+                $lines = netstat -ano -p tcp | Select-String ":$Port" | ForEach-Object { $_.ToString() }
+                foreach ($line in $lines) {
+                    if ($line -match "LISTENING") {
+                        $parts = $line -split "\s+" | Where-Object { $_ -ne "" }
+                        $pidStr = $parts[-1]
+                        if ([int]::TryParse($pidStr, [ref]([int]$null))) {
+                            Write-Log "Killing PID $pidStr on port $Port (fallback)"
+                            Start-Process -FilePath "taskkill.exe" -ArgumentList "/F","/T","/PID","$pidStr" -WindowStyle Hidden -ErrorAction SilentlyContinue | Out-Null
+                            $killedAny = $true
+                        }
+                    }
+                }
+                if ($killedAny) {
+                    Start-Sleep -Seconds 3
+                } else {
+                    Write-Log "Port $Port is free for $ServiceName"
+                }
+            } catch {
+                Write-Log "Fallback netstat check failed for port $Port"
+            }
         }
     }
     catch {
@@ -298,32 +467,49 @@ function Monitor-Services {
     while ($true) {
         Start-Sleep -Seconds 30
 
-        foreach ($serviceName in $global:ServiceProcesses.Keys) {
-            $serviceInfo = $global:ServiceProcesses[$serviceName]
-            $proc = $serviceInfo.Process
+        $shouldShutdown = $false
+        $serviceNames = @($global:ServiceProcesses.Keys)
+        foreach ($serviceName in $serviceNames) {
+            try {
+                $serviceInfo = $global:ServiceProcesses[$serviceName]
+                $proc = $serviceInfo.Process
 
-            # Check if process has exited
-            if ($proc.HasExited) {
-                $exitCode = $proc.ExitCode
-                $runTime = (Get-Date) - $serviceInfo.StartTime
-                Write-Log "WARNING: $serviceName has exited unexpectedly (Exit Code: $exitCode, Runtime: $($runTime.ToString('hh\:mm\:ss')))"
+                # Check if process has exited
+                if ($proc.HasExited) {
+                    $exitCode = $proc.ExitCode
+                    $runTime = (Get-Date) - $serviceInfo.StartTime
+                    Write-Log "WARNING: $serviceName has exited unexpectedly (Exit Code: $exitCode, Runtime: $($runTime.ToString('hh\:mm\:ss')))"
 
-                # Attempt restart
-                $restartResult = Restart-Service -ServiceName $serviceName
-                if ($restartResult) {
-                    # Update start time for the new process
-                    $global:ServiceProcesses[$serviceName].StartTime = Get-Date
+                    # Attempt restart
+                    $restartResult = Restart-Service -ServiceName $serviceName
+                    if ($restartResult) {
+                        # Update start time for the new process
+                        $global:ServiceProcesses[$serviceName].StartTime = Get-Date
+                    } else {
+                        # If we've hit max restarts, mark for shutdown so scheduler can re-launch
+                        if ($global:ServiceProcesses[$serviceName].RestartCount -ge $MaxRestarts) {
+                            Write-Log "ERROR: $serviceName cannot be restarted (max restarts reached). Supervisor will exit."
+                            $shouldShutdown = $true
+                        }
+                    }
                 }
-            }
-            # Additional health check for services with ports
-            elseif ($serviceInfo.Port -gt 0) {
-                $isHealthy = Test-ServiceHealth -ServiceName $serviceName -Port $serviceInfo.Port
-                if (-not $isHealthy) {
-                    Write-Log "WARNING: $serviceName is running but not responding on port $($serviceInfo.Port)"
-                    # Optionally restart unresponsive services
-                    # Restart-Service -ServiceName $serviceName
+                # Additional health check for services with ports
+                elseif ($serviceInfo.Port -gt 0) {
+                    $isHealthy = Test-ServiceHealth -ServiceName $serviceName -Port $serviceInfo.Port
+                    if (-not $isHealthy) {
+                        Write-Log "WARNING: $serviceName is running but not responding on port $($serviceInfo.Port)"
+                        # Optional: could restart here if persistent
+                    }
                 }
+            } catch {
+                Write-Log "ERROR: Monitoring error for $serviceName - $($_.Exception.Message)"
+                # Never let monitoring errors terminate the supervisor
             }
+        }
+
+        if ($shouldShutdown) {
+            Write-Log "One or more services failed permanently. Exiting supervisor so Task Scheduler can restart it."
+            break
         }
     }
 }
@@ -399,6 +585,19 @@ Write-Log "Frontend will run on port $FrontendPort"
 Write-Log "Max restarts per service: $MaxRestarts"
 Write-Log "Restart cooldown: $RestartCooldown seconds"
 
+# Ensure only one supervisor instance runs
+try {
+    $global:SupervisorMutex = New-Object System.Threading.Mutex($true, "Global/StocksAUWebSupervisor", [ref]$createdNew)
+    if (-not $createdNew) {
+        Write-Log "Another supervisor instance is already running. Exiting."
+        exit 0
+    } else {
+        Write-Log "Singleton mutex acquired."
+    }
+} catch {
+    Write-Log "WARNING: Could not create/acquire singleton mutex: $($_.Exception.Message)"
+}
+
 # Log elevation state for diagnostics in scheduled task context
 try {
     $isElevated = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -435,6 +634,9 @@ if (!(Get-Command $npm -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+# Initialize job object early so children are tracked
+Initialize-JobObject
+
 # Start Backend Service (FastAPI with Python virtual environment)
 Write-Log "--- Starting Backend Service ---"
 Stop-ProcessOnPort -Port $BackendPort -ServiceName "Backend"
@@ -468,7 +670,6 @@ if ($backendSuccess) {
     Write-PidFile
 }
 
-# Start Frontend Service (Next.js)
 Write-Log "--- Starting Frontend Service ---"
 Stop-ProcessOnPort -Port $FrontendPort -ServiceName "Frontend"
 
@@ -541,6 +742,8 @@ try {
     Monitor-Services
 }
 catch {
-    Write-Log "Startup script terminated"
+    Write-Log "Startup script terminated with error: $($_.Exception.Message)"
+}
+finally {
     Cleanup-Processes
 }

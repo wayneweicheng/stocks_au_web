@@ -5,3 +5,5 @@ pyodbc==5.2.0
 pydantic-settings==2.10.1
 pandas==2.3.2
 arkofdata-common @ git+https://github.com/wayneweicheng/utilities_arkofdata-common.git@v0.1.0
+psutil==6.0.0
+pywinauto==0.6.8

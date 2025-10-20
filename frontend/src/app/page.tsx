@@ -66,6 +66,11 @@ export default function Home() {
             <p className="text-sm text-slate-600 mb-4">Filter predictions by date, codes, and confidence. Open charts.</p>
             <Link href="/pattern-predictions" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">PLLRS Scanner</h3>
+            <p className="text-sm text-slate-600 mb-4">View PLLRS results with filters and formatted metrics.</p>
+            <Link href="/pllrs-scanner" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+          </div>
         </section>
       </div>
     </div>
