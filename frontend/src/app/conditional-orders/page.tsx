@@ -124,19 +124,24 @@ export default function ConditionalOrdersPage() {
     try {
       let response;
 
+      // Normalize stock code: ensure .AX suffix if missing
+      const normalized = (formData.stock_code || "").trim().toUpperCase();
+      const stockCode = normalized.endsWith(".AX") ? normalized : `${normalized}.AX`;
+      const payload = { ...formData, stock_code: stockCode } as any;
+
       if (editingOrderId) {
         // Update existing order - call PUT endpoint
         response = await fetch(`${baseUrl}/api/conditional-orders/${editingOrderId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
       } else {
         // Create new order - call POST endpoint
         response = await fetch(`${baseUrl}/api/conditional-orders`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
       }
 

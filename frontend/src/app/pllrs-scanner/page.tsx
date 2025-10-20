@@ -26,6 +26,7 @@ export default function PLLRSScannerPage() {
     { keys: ["ASXCode"], label: "ASX Code" },
     { keys: ["ClosePrice"], label: "Close Price", type: "number" },
     { keys: ["TodayPriceChange"], label: "Today Price Change", type: "number", format: "percent2" },
+    { keys: ["TradeValue"], label: "Trade Value", type: "number", format: "thousands" },
     { keys: ["SupportPrice"], label: "Support Price", type: "number" },
     { keys: ["ResistancePrice"], label: "Resistance Price", type: "number" },
     { keys: ["AggressorBuyRatio"], label: "Aggressor Buy Ratio", type: "number" },
@@ -80,7 +81,7 @@ export default function PLLRSScannerPage() {
     <div className="min-h-screen text-slate-800">
       <div className="mx-auto max-w-7xl px-6 py-10">
         <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">
-          PLLRS Scanner Results
+          Daily Price-Level Liquidity Reload
         </h1>
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">

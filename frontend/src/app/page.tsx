@@ -37,6 +37,11 @@ export default function Home() {
 
         <section className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">IB Gateway</h3>
+            <p className="text-sm text-slate-600 mb-4">Start, stop and view IB Gateway status and heartbeat.</p>
+            <Link href="/ib-gateway" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">Order Book & Transactions</h3>
             <p className="text-sm text-slate-600 mb-4">View ASX stock transactions and order book data.</p>
             <Link href="/order-book" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>

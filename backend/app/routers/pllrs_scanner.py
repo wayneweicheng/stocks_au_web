@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api", tags=["pllrs-scanner"])
 logger = logging.getLogger("app.pllrs")
 
 TABLE_SCHEMA = "Analysis"
-TABLE_NAME = "PLLRSScannerResults"
+TABLE_NAME = "v_PLLRSScannerResults"
 
 
 def execute_query(sql: str, params: tuple) -> List[Dict[str, Any]]:
@@ -59,8 +59,14 @@ def get_pllrs_scanner_results(
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
 
+    # Explicit column list to ensure position for TradeValue
+    columns = (
+        "ObservationDate, ASXCode, ClosePrice, TodayPriceChange, "
+        "TradeValue, SupportPrice, ResistancePrice, AggressorBuyRatio, "
+        "TotalActiveBuyVolume, TotalActiveSellVolume, EntryPrice, TargetPrice, StopPrice"
+    )
     sql = (
-        f"SELECT TOP (?) * FROM [{TABLE_SCHEMA}].[{TABLE_NAME}]" +
+        f"SELECT TOP (?) {columns} FROM [{TABLE_SCHEMA}].[{TABLE_NAME}]" +
         where_sql +
         " ORDER BY [ObservationDate] DESC, [ASXCode] ASC"
     )
