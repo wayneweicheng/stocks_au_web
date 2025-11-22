@@ -48,6 +48,7 @@ def get_conditional_orders() -> List[Dict[str, Any]]:
                     'trade_account_name': record.get('TradeAccountName'),
                     'order_price_type': record.get('OrderPriceType'),
                     'order_price': record.get('OrderPrice'),
+                    'difference_to_current_price': record.get('DifferenceToCurrentPrice'),
                     'price_buffer_ticks': record.get('PriceBufferNumberOfTick'),
                     'volume_gt': record.get('CustomIntegerValue'),
                     'order_volume': record.get('OrderVolume'),
@@ -60,6 +61,37 @@ def get_conditional_orders() -> List[Dict[str, Any]]:
         return []
     except Exception as e:
         # If stored procedure doesn't exist, return empty list
+        return []
+
+
+@router.get("/conditional-orders/order-types")
+def get_conditional_order_types() -> List[Dict[str, Any]]:
+    """Return available conditional order types via stored procedure.
+
+    Expected columns from SP: OrderTypeID, OrderType, DisplayOrder (optional)
+    """
+    try:
+        obj_sql_server_model = SQLServerModel(database='StockDB')
+        rows = obj_sql_server_model.execute_read_usp(
+            "exec [Order].[usp_GetOrderType]",
+            ()
+        ) or []
+
+        # Normalize/guard against varying shapes
+        normalized: List[Dict[str, Any]] = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            normalized.append({
+                "id": r.get("OrderTypeID"),
+                "name": r.get("OrderType"),
+                "display_order": r.get("DisplayOrder")
+            })
+
+        # Sort by display order if provided; otherwise leave as-is
+        normalized.sort(key=lambda x: (999999 if x.get("display_order") is None else x.get("display_order")))
+        return normalized
+    except Exception:
         return []
 
 
@@ -108,18 +140,33 @@ def create_conditional_order(order: ConditionalOrder) -> Dict[str, Any]:
             date_part = order.valid_until.split('T')[0]
             valid_until_formatted = date_part.replace('-', '')
 
-        # Map order_type to OrderTypeID (must match database reference table)
-        order_type_map = {
-            "Sell Open Price Advantage": 9,
-            "Sell Close Price Advantage": 13,
-            "Sell at bid above": 1,
-            "Sell at bid under": 6,
-            "Buy Open Price Advantage": 12,
-            "Buy Close Price Advantage": 8,
-            "Buy at ask above": 7,
-            "Buy at bid under": 10
-        }
-        order_type_id = order_type_map.get(order.order_type, 9)
+        # Resolve OrderTypeID from DB (no more hardcoded mapping)
+        order_type_id: Optional[int] = None
+        try:
+            type_rows = obj_sql_server_model.execute_read_usp(
+                "exec [Order].[usp_GetOrderType]",
+                ()
+            ) or []
+            # Exact match on name; fall back to case-insensitive comparison
+            for r in type_rows:
+                name = r.get("OrderType") if isinstance(r, dict) else None
+                oid = r.get("OrderTypeID") if isinstance(r, dict) else None
+                if name == order.order_type:
+                    order_type_id = int(oid) if oid is not None else None
+                    break
+            if order_type_id is None:
+                for r in type_rows:
+                    name_ci = (r.get("OrderType") or "").strip().lower() if isinstance(r, dict) else ""
+                    if name_ci == (order.order_type or "").strip().lower():
+                        oid = r.get("OrderTypeID")
+                        order_type_id = int(oid) if oid is not None else None
+                        break
+        except Exception:
+            order_type_id = None
+
+        # Default to a sensible type if not found (prefer a sell open price advantage if available)
+        if order_type_id is None:
+            order_type_id = 9
 
         # Prepare parameters tuple
         params = (order.stock_code, 1, order.trade_account_name, order_type_id, order.order_price_type,

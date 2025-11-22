@@ -35,6 +35,26 @@ def _list_ibg_processes() -> list[psutil.Process]:
     return procs
 
 
+def _list_tws_processes() -> list[psutil.Process]:
+    procs = []
+    try:
+        for p in psutil.process_iter(["pid", "name", "exe", "cmdline"]):
+            name = (p.info.get("name") or "").lower()
+            exe = (p.info.get("exe") or "").lower()
+            cmdline = " ".join(p.info.get("cmdline") or []).lower()
+            # Match common signals for Trader Workstation
+            if (
+                name == "tws.exe"
+                or exe.endswith("\\tws.exe")
+                or exe.endswith("/tws.exe")
+                or "tws.exe" in cmdline
+            ):
+                procs.append(p)
+    except Exception:
+        pass
+    return procs
+
+
 def _is_port_open(host: str, port: int, timeout: float = 2.0) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
@@ -208,8 +228,84 @@ def _kill_ibg() -> None:
             pass
 
 
+def _kill_tws() -> None:
+    logger.info("IBG: Killing existing Trader Workstation (tws.exe) if any")
+    procs = _list_tws_processes()
+    for p in procs:
+        try:
+            parent = psutil.Process(p.pid)
+            children = parent.children(recursive=True)
+            for c in children:
+                try:
+                    c.kill()
+                except Exception:
+                    pass
+            parent.kill()
+        except Exception:
+            pass
+
+
+def _start_ibg_via_ibc() -> None:
+    """Start IB Gateway using IBC script (recommended for unattended operation)."""
+    cfg = _current_settings()
+    ibc_script = cfg.ibg_ibc_script_path
+    if not ibc_script:
+        logger.error("IBG: IBC script path not configured")
+        raise HTTPException(status_code=500, detail="IBC script path (ibg_ibc_script_path) is not configured")
+    if not os.path.exists(ibc_script):
+        logger.error("IBG: IBC script not found at %s", ibc_script)
+        raise HTTPException(status_code=500, detail=f"IBC script not found: {ibc_script}")
+
+    logger.info("IBG: Launching via IBC script: %s", ibc_script)
+    try:
+        # Launch IBC with /INLINE argument for proper operation with Task Scheduler
+        # This runs IBC in the current console instead of opening a new window
+        ps_cmd = [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            f"Start-Process -FilePath '{ibc_script}' -ArgumentList '/INLINE' -WindowStyle Hidden -PassThru | Select-Object -ExpandProperty Id"
+        ]
+        result = subprocess.run(ps_cmd, capture_output=True, text=True, check=True)
+        out = (result.stdout or "").strip()
+        started_pid = None
+        if out:
+            try:
+                started_pid = int(out.splitlines()[-1].strip())
+                logger.info("IBG: IBC script launched with PID=%s", started_pid)
+            except Exception:
+                pass
+
+        # Wait for IBG process to appear (IBC starts the actual gateway)
+        for i in range(30):
+            procs = _list_ibg_processes()
+            if procs:
+                logger.info("IBG: IB Gateway process detected: %s", [p.pid for p in procs])
+                break
+            time.sleep(1)
+        else:
+            logger.warning("IBG: No IB Gateway process detected after 30 seconds, but IBC may still be starting it")
+
+        logger.info("IBG: IBC will handle login automatically (credentials from IBC config)")
+
+    except subprocess.CalledProcessError as e:
+        logger.exception("IBG: Failed to launch IBC script: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to launch IBC script: {e}")
+    except Exception as e:
+        logger.exception("IBG: Unexpected error launching IBC: %s", e)
+        raise HTTPException(status_code=500, detail=f"Unexpected error launching IBC: {e}")
+
+
 def _start_ibg_and_type_credentials() -> None:
     cfg = _current_settings()
+
+    # Check if IBC integration is enabled
+    if cfg.ibg_use_ibc_script:
+        _start_ibg_via_ibc()
+        return
+
+    # Original direct launch method
     exe = cfg.ibg_exe_path
     if not exe:
         logger.error("IBG: Missing ibg_exe_path config")
@@ -292,17 +388,178 @@ def _start_ibg_and_type_credentials() -> None:
                 # occasional longer pause
                 if i > 0 and (i % _r.randint(4, 7) == 0):
                     time.sleep(_r.uniform(0.18, 0.35))
-        # Connect by PID if available, else by title
-        app = None
-        if started_pid:
+        # Helper connect with selected backend
+        def _connect_dialog(backend_name: str):
+            app_local = None
+            if started_pid:
+                try:
+                    app_local = Application(backend=backend_name).connect(process=started_pid, timeout=10)
+                except Exception:
+                    app_local = None
+            if app_local is None:
+                app_local = Application(backend=backend_name).connect(title_re=".*IBKR Gateway.*|.*IB Gateway.*|.*IBGateway.*|.*Interactive Brokers.*", timeout=10)
+            dlg_local = app_local.top_window()
+            return app_local, dlg_local
+
+        # Attempt with UIA first, then win32 as fallback
+        backends_order = ["uia", "win32"]
+        last_error: Exception | None = None
+        for backend_name in backends_order:
             try:
-                app = Application(backend="uia").connect(process=started_pid)
-            except Exception:
-                app = None
-        if app is None:
-            app = Application(backend="uia").connect(title_re=".*IBKR Gateway.*|.*IB Gateway.*|.*IBGateway.*|.*Interactive Brokers.*", timeout=10)
-        dlg = app.top_window()
-        logger.info("IBG: pywinauto connected to window: %s", dlg.window_text())
+                app, dlg = _connect_dialog(backend_name)
+                title_txt = ""
+                try:
+                    title_txt = dlg.window_text()
+                except Exception:
+                    title_txt = ""
+                try:
+                    rect0 = dlg.rectangle()
+                    logger.info("IBG: connected (%s). title='%s' rect=(%s,%s,%s,%s)", backend_name, title_txt, rect0.left, rect0.top, rect0.right, rect0.bottom)
+                except Exception:
+                    logger.info("IBG: connected (%s). title='%s'", backend_name, title_txt)
+
+                # Try to prepare focus a few times with bounded delay
+                for _ in range(3):
+                    try:
+                        try:
+                            dlg.set_window_visual_state("normal")
+                        except Exception:
+                            pass
+                        try:
+                            dlg.set_focus()
+                        except Exception:
+                            pass
+                        try:
+                            rect = dlg.rectangle()
+                            x = min(max(10, rect.left + 10), rect.right - 10)
+                            y = min(max(10, rect.top + 10), rect.bottom - 10)
+                            dlg.click_input(coords=(x, y))
+                        except Exception:
+                            pass
+                        time.sleep(0.3)
+                    except Exception:
+                        pass
+
+                # Ensure correct trading mode (Live/Paper) before typing (reuse existing logic)
+                try:
+                    desired = (cfg.ibg_trading_mode or "Live").strip().lower()
+                    if desired.startswith("live") and cfg.ibg_live_tab_x_pct is not None and cfg.ibg_live_tab_y_pct is not None:
+                        rect = dlg.rectangle(); w = rect.width(); h = rect.height()
+                        lx = int(max(0, min(w - 1, w * float(cfg.ibg_live_tab_x_pct))))
+                        ly = int(max(0, min(h - 1, h * float(cfg.ibg_live_tab_y_pct))))
+                        dlg.click_input(coords=(lx, ly)); logger.info("IBG: (%s) clicked Live tab at (%.3f,%.3f)", backend_name, float(cfg.ibg_live_tab_x_pct), float(cfg.ibg_live_tab_y_pct)); time.sleep(0.5)
+                    elif desired.startswith("paper") and cfg.ibg_paper_tab_x_pct is not None and cfg.ibg_paper_tab_y_pct is not None:
+                        rect = dlg.rectangle(); w = rect.width(); h = rect.height()
+                        px2 = int(max(0, min(w - 1, w * float(cfg.ibg_paper_tab_x_pct))))
+                        py2 = int(max(0, min(h - 1, h * float(cfg.ibg_paper_tab_y_pct))))
+                        dlg.click_input(coords=(px2, py2)); logger.info("IBG: (%s) clicked Paper tab at (%.3f,%.3f)", backend_name, float(cfg.ibg_paper_tab_x_pct), float(cfg.ibg_paper_tab_y_pct)); time.sleep(0.5)
+                except Exception:
+                    pass
+
+                # Try calibrated typing first if available
+                if (
+                    cfg.ibg_username_x_pct is not None and
+                    cfg.ibg_username_y_pct is not None and
+                    cfg.ibg_password_x_pct is not None and
+                    cfg.ibg_password_y_pct is not None
+                ):
+                    try:
+                        rect = dlg.rectangle(); w = rect.width(); h = rect.height()
+                        ux = int(max(0, min(w - 1, w * float(cfg.ibg_username_x_pct))))
+                        uy = int(max(0, min(h - 1, h * float(cfg.ibg_username_y_pct))))
+                        px = int(max(0, min(w - 1, w * float(cfg.ibg_password_x_pct))))
+                        py = int(max(0, min(h - 1, h * float(cfg.ibg_password_y_pct))))
+                        logger.info("IBG: (%s) coords ux=%s,uy=%s px=%s,py=%s (w=%s,h=%s)", backend_name, ux, uy, px, py, w, h)
+                        dlg.click_input(coords=(ux, uy)); dlg.type_keys("^a{BACKSPACE}"); time.sleep(1.0)
+                        _type_human(dlg, username)
+                        dlg.click_input(coords=(px, py)); dlg.type_keys("^a{BACKSPACE}"); time.sleep(2.0)
+                        _type_human(dlg, password)
+                        logger.info("IBG: (%s) filled credentials using calibrated coords", backend_name)
+                        try:
+                            dlg.type_keys("{ENTER}", set_foreground=False)
+                        except Exception:
+                            pass
+                        return
+                    except Exception as e_inner:
+                        logger.warning("IBG: (%s) calibrated typing failed: %s", backend_name, e_inner)
+
+                # Locate fields generically
+                try:
+                    containers = [dlg]
+                    try:
+                        containers += dlg.descendants(control_type="Pane")
+                        containers += dlg.descendants(control_type="Window")
+                    except Exception:
+                        pass
+                    for container in containers:
+                        try:
+                            edits = container.descendants(control_type="Edit")
+                        except Exception:
+                            try:
+                                edits = container.descendants(class_name="Edit")  # win32
+                            except Exception:
+                                edits = []
+                        if len(edits) >= 2:
+                            try:
+                                user_edit = edits[0]; pass_edit = edits[1]
+                                user_edit.set_edit_text(""); time.sleep(1.0); _type_human(user_edit, username)
+                                pass_edit.set_edit_text(""); time.sleep(2.0); _type_human(pass_edit, password)
+                                logger.info("IBG: (%s) filled credentials using container with %s edit controls", backend_name, len(edits))
+                                try:
+                                    dlg.type_keys("{ENTER}", set_foreground=False)
+                                except Exception:
+                                    pass
+                                return
+                            except Exception:
+                                continue
+                except Exception as e_inner2:
+                    logger.warning("IBG: (%s) scanning for edits failed: %s", backend_name, e_inner2)
+
+                last_error = RuntimeError(f"{backend_name} backend could not locate input fields")
+            except Exception as e_backend:
+                last_error = e_backend
+                logger.warning("IBG: %s backend connect/automation failed: %s", backend_name, e_backend)
+
+        # Optional final fallback: foreground typing with calibrated coords
+        if (
+            _current_settings().ibg_allow_fallback_typing and
+            cfg.ibg_username_x_pct is not None and cfg.ibg_username_y_pct is not None and
+            cfg.ibg_password_x_pct is not None and cfg.ibg_password_y_pct is not None
+        ):
+            try:
+                app_fg, dlg_fg = _connect_dialog("win32")
+                try:
+                    dlg_fg.set_focus()
+                except Exception:
+                    pass
+                rect = dlg_fg.rectangle(); w = rect.width(); h = rect.height()
+                ux = int(max(0, min(w - 1, w * float(cfg.ibg_username_x_pct))))
+                uy = int(max(0, min(h - 1, h * float(cfg.ibg_username_y_pct))))
+                px = int(max(0, min(w - 1, w * float(cfg.ibg_password_x_pct))))
+                py = int(max(0, min(h - 1, h * float(cfg.ibg_password_y_pct))))
+                dlg_fg.click_input(coords=(ux, uy)); time.sleep(0.5)
+                try:
+                    from pywinauto.keyboard import send_keys  # type: ignore
+                    send_keys("^a{BACKSPACE}")
+                    for ch in username:
+                        send_keys(ch)
+                    dlg_fg.click_input(coords=(px, py)); time.sleep(0.5)
+                    send_keys("^a{BACKSPACE}")
+                    for ch in password:
+                        send_keys(ch)
+                    send_keys("{ENTER}")
+                    logger.info("IBG: foreground typing fallback succeeded")
+                    return
+                except Exception as e_send:
+                    logger.warning("IBG: foreground typing fallback failed: %s", e_send)
+            except Exception as e_fg:
+                last_error = e_fg
+                logger.warning("IBG: win32 foreground fallback failed to connect: %s", e_fg)
+
+        # If we reached here, all strategies failed
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Unable to locate IB Gateway input fields for safe automation")
         # Try hard to bring window to foreground and ready for input
         try:
             try:
@@ -460,6 +717,7 @@ def restart() -> Dict[str, Any]:
     cfg = _current_settings()
     logger.info("IBG: Restart requested. SESSIONNAME=%s", os.getenv('SESSIONNAME', ''))
     # Kill existing
+    _kill_tws()
     _kill_ibg()
     wait_s = max(1, int(cfg.ibg_wait_after_kill_seconds))
     logger.info("IBG: Waiting %ss after kill", wait_s)

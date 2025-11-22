@@ -29,10 +29,13 @@ export default function NavigationMenu() {
             <Link onClick={() => setOpen(false)} href="/ta-scan" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">TA Scan</Link>
             <Link onClick={() => setOpen(false)} href="/pllrs-scanner" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">PLLRS Scanner</Link>
             <Link onClick={() => setOpen(false)} href="/pegasus-invest-opportunities" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pegasus Invest Opportunities</Link>
+            <Link onClick={() => setOpen(false)} href="/research-reports" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Research Reports</Link>
             <Link onClick={() => setOpen(false)} href="/monitor-stocks" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Monitor Stocks</Link>
             <Link onClick={() => setOpen(false)} href="/conditional-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Conditional Orders</Link>
+            <Link onClick={() => setOpen(false)} href="/strategy-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Strategy Orders</Link>
             <Link onClick={() => setOpen(false)} href="/pattern-predictions" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pattern Predictions</Link>
             <Link onClick={() => setOpen(false)} href="/ib-gateway" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">IB Gateway</Link>
+            <Link onClick={() => setOpen(false)} href="/range-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Price Range Orders</Link>
           </div>
         </div>
       </div>

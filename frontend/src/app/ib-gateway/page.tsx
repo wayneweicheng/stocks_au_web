@@ -31,7 +31,14 @@ export default function IBGatewayPage() {
       const r = await authenticatedFetch(`${baseUrl}/api/ib-gateway/restart`, {
         method: "POST",
       });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) {
+        try {
+          const body = await r.json();
+          throw new Error(body?.detail ? `HTTP ${r.status}: ${body.detail}` : `HTTP ${r.status}`);
+        } catch {
+          throw new Error(`HTTP ${r.status}`);
+        }
+      }
       await r.json();
       // Give IBG some time before re-checking
       setTimeout(fetchStatus, 7000);
@@ -43,6 +50,7 @@ export default function IBGatewayPage() {
   };
 
   const isRunning = status?.running;
+  const isCalibrated = (status as any)?.calibrated;
   // Removed active IB connectivity probing; hide connectable indicator
 
   return (
@@ -65,6 +73,7 @@ export default function IBGatewayPage() {
           {status?.pids && status.pids.length > 0 && (
             <span className="text-xs text-slate-500">PIDs: {status.pids.join(", ")}</span>
           )}
+          <span className="text-xs text-slate-500">Calibrated: {isCalibrated ? "Yes" : "No"}</span>
           {(() => {
             const ok = status?.db_heartbeat_ok;
             const text = ok === true ? "OK" : ok === false ? "Fail" : "Unknown";

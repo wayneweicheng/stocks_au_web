@@ -9,6 +9,7 @@ interface ConditionalOrder {
   trade_account_name: string;
   order_price_type: string;
   order_price?: number;
+  difference_to_current_price?: string | number;
   price_buffer_ticks?: number;
   volume_gt?: number;
   order_volume?: number;
@@ -18,18 +19,29 @@ interface ConditionalOrder {
   created_date?: string;
 }
 
-const ORDER_TYPES = [
-  "Sell Open Price Advantage",
-  "Sell Close Price Advantage", 
-  "Sell at bid above",
-  "Sell at bid under",
-  "Buy Open Price Advantage",
-  "Buy Close Price Advantage",
-  "Buy at ask above", 
-  "Buy at bid under"
-];
+type OrderTypeOption = { id: number; name: string };
 
 const ORDER_PRICE_TYPES = ["Price", "SMA"];
+const LAST_ORDER_TYPE_KEY = "conditionalOrders.lastOrderType";
+
+function getStoredOrderType(): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const v = window.localStorage.getItem(LAST_ORDER_TYPE_KEY);
+    return v && v.trim().length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function setStoredOrderType(value: string) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(LAST_ORDER_TYPE_KEY, value);
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export default function ConditionalOrdersPage() {
   const [orders, setOrders] = useState<ConditionalOrder[]>([]);
@@ -38,9 +50,12 @@ export default function ConditionalOrdersPage() {
   const [error, setError] = useState<string>("");
   const [message, setMessage] = useState<string>("");
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
+  const [orderTypes, setOrderTypes] = useState<OrderTypeOption[]>([]);
+
+  const getInitialOrderType = () => getStoredOrderType() || "Sell Open Price Advantage";
 
   const [formData, setFormData] = useState<ConditionalOrder>({
-    order_type: "Sell Open Price Advantage",
+    order_type: getInitialOrderType(),
     stock_code: "",
     trade_account_name: "huanw2114",
     order_price_type: "Price",
@@ -73,7 +88,35 @@ export default function ConditionalOrdersPage() {
         setLoading(false);
       }
     };
+    const loadOrderTypes = async () => {
+      try {
+        const res = await fetch(`${baseUrl}/api/conditional-orders/order-types`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        // Filter out any placeholder type like All Orders (id -1)
+        const filtered = Array.isArray(data)
+          ? data.filter((x: any) => typeof x?.id === 'number' && x.id > 0 && typeof x?.name === 'string')
+          : [];
+        setOrderTypes(filtered.map((x: any) => ({ id: x.id, name: x.name })));
+        // Apply stored selection if valid, else keep current if valid, else fallback to first
+        const stored = getStoredOrderType();
+        if (stored && filtered.some((x: any) => x.name === stored)) {
+          setFormData(prev => ({ ...prev, order_type: stored }));
+        } else {
+          const current = formData.order_type || "";
+          if (!filtered.some((x: any) => x.name === current)) {
+            const first = filtered[0];
+            if (first) {
+              setFormData(prev => ({ ...prev, order_type: first.name }));
+            }
+          }
+        }
+      } catch (e: unknown) {
+        // Keep UI usable even if SP fails
+      }
+    };
     load();
+    loadOrderTypes();
   }, [baseUrl]);
 
   useEffect(() => {
@@ -150,22 +193,31 @@ export default function ConditionalOrdersPage() {
       const result = await response.json();
       setMessage(result.message);
 
-      // Reset form and editing state
+      // Persist the last used order type for next order
+      setStoredOrderType(formData.order_type);
+
+      // Reset form and editing state (preserve last used order_type)
       const getDefaultValidUntil = () => {
         const date = new Date();
         date.setDate(date.getDate() + 60);
         return date.toISOString().slice(0, 10);
       };
 
+      const lastType = getStoredOrderType() || formData.order_type;
+
       setEditingOrderId(null);
       setFormData({
-        order_type: "Sell Open Price Advantage",
+        order_type: lastType,
         stock_code: "",
         trade_account_name: "huanw2114",
         order_price_type: "Price",
+        order_price: undefined,
         price_buffer_ticks: 0,
         volume_gt: 0,
+        order_volume: undefined,
+        order_value: undefined,
         valid_until: getDefaultValidUntil(),
+        additional_settings: "",
       });
       loadOrders();
     } catch (e: unknown) {
@@ -201,14 +253,19 @@ export default function ConditionalOrdersPage() {
       date.setDate(date.getDate() + 60);
       return date.toISOString().slice(0, 10);
     };
+    const lastType = getStoredOrderType() || formData.order_type || "Sell Open Price Advantage";
     setFormData({
-      order_type: "Sell Open Price Advantage",
+      order_type: lastType,
       stock_code: "",
       trade_account_name: "huanw2114",
       order_price_type: "Price",
+      order_price: undefined,
       price_buffer_ticks: 0,
       volume_gt: 0,
+      order_volume: undefined,
+      order_value: undefined,
       valid_until: getDefaultValidUntil(),
+      additional_settings: "",
     });
   };
 
@@ -259,12 +316,16 @@ export default function ConditionalOrdersPage() {
               <label className="block text-sm mb-1 text-slate-600">Choose Order Type</label>
               <select
                 value={formData.order_type}
-                onChange={(e) => setFormData({...formData, order_type: e.target.value})}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setFormData({...formData, order_type: next});
+                  setStoredOrderType(next);
+                }}
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               >
-                {ORDER_TYPES.map((type) => (
-                  <option key={type} value={type}>{type}</option>
+                {orderTypes.map((t) => (
+                  <option key={t.id} value={t.name}>{t.name}</option>
                 ))}
               </select>
             </div>
@@ -440,6 +501,7 @@ export default function ConditionalOrdersPage() {
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Account</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Price Type</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Price</th>
+                  <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Diff to Current</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Buffer Ticks</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Custom Integer</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Order Volume</th>
@@ -457,6 +519,7 @@ export default function ConditionalOrdersPage() {
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.trade_account_name}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.order_price_type}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.order_price || "-"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.difference_to_current_price ?? "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.price_buffer_ticks ?? "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.volume_gt || "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.order_volume || "-"}</td>

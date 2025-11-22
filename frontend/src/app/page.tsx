@@ -42,6 +42,11 @@ export default function Home() {
             <Link href="/ib-gateway" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">Research Reports</h3>
+            <p className="text-sm text-slate-600 mb-4">Save, search, and open research links by stock code.</p>
+            <Link href="/research-reports" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">Order Book & Transactions</h3>
             <p className="text-sm text-slate-600 mb-4">View ASX stock transactions and order book data.</p>
             <Link href="/order-book" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
@@ -60,6 +65,16 @@ export default function Home() {
             <h3 className="font-medium text-lg mb-1">Conditional Orders</h3>
             <p className="text-sm text-slate-600 mb-4">Manage automated conditional trading orders.</p>
             <Link href="/conditional-orders" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">Strategy Orders</h3>
+            <p className="text-sm text-slate-600 mb-4">Manage live strategy orders and settings.</p>
+            <Link href="/strategy-orders" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">Price Range Orders</h3>
+            <p className="text-sm text-slate-600 mb-4">Create and manage price range orders.</p>
+            <Link href="/range-orders" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">Pegasus Invest Opportunities</h3>

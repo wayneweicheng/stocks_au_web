@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     ibg_username: str = Field(default="", validation_alias=AliasChoices("ibg_username", "IBG_USERNAME"))
     ibg_password: str = Field(default="", validation_alias=AliasChoices("ibg_password", "IBG_PASSWORD"))
     ibg_wait_after_kill_seconds: int = Field(default=10, validation_alias=AliasChoices("ibg_wait_after_kill_seconds", "IBG_WAIT_AFTER_KILL_SECONDS"))
+    # IBC integration (preferred method for unattended operation)
+    ibg_use_ibc_script: bool = Field(default=False, validation_alias=AliasChoices("ibg_use_ibc_script", "IBG_USE_IBC_SCRIPT"))
+    ibg_ibc_script_path: str = Field(default="", validation_alias=AliasChoices("ibg_ibc_script_path", "IBG_IBC_SCRIPT_PATH"))
 
     # IB API connectivity (status probing)
     ibg_api_host: str = Field(default="127.0.0.1", validation_alias=AliasChoices("ibg_api_host", "IBG_API_HOST"))
@@ -41,6 +44,8 @@ class Settings(BaseSettings):
 
     # IB Gateway UI preferences
     ibg_trading_mode: str = Field(default="Live", validation_alias=AliasChoices("ibg_trading_mode", "IBG_TRADING_MODE"))
+    # Optional: allow last-resort foreground typing fallback when UIA fails
+    ibg_allow_fallback_typing: bool = Field(default=False, validation_alias=AliasChoices("ibg_allow_fallback_typing", "IBG_ALLOW_FALLBACK_TYPING"))
     # Optional calibrated relative positions (0..1) within IB Gateway window
     ibg_username_x_pct: Optional[float] = Field(default=None, validation_alias=AliasChoices("ibg_username_x_pct", "IBG_USERNAME_X_PCT"))
     ibg_username_y_pct: Optional[float] = Field(default=None, validation_alias=AliasChoices("ibg_username_y_pct", "IBG_USERNAME_Y_PCT"))
@@ -51,6 +56,9 @@ class Settings(BaseSettings):
     ibg_live_tab_y_pct: Optional[float] = Field(default=None, validation_alias=AliasChoices("ibg_live_tab_y_pct", "IBG_LIVE_TAB_Y_PCT"))
     ibg_paper_tab_x_pct: Optional[float] = Field(default=None, validation_alias=AliasChoices("ibg_paper_tab_x_pct", "IBG_PAPER_TAB_X_PCT"))
     ibg_paper_tab_y_pct: Optional[float] = Field(default=None, validation_alias=AliasChoices("ibg_paper_tab_y_pct", "IBG_PAPER_TAB_Y_PCT"))
+
+    # IB simple order service (proxy target)
+    ib_order_service_url: str = Field(default="http://127.0.0.1:8123", validation_alias=AliasChoices("ib_order_service_url", "IB_ORDER_SERVICE_URL"))
 
 
 settings = Settings()
