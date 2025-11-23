@@ -50,9 +50,9 @@ function normalize(weights: number[]): number[] {
 export default function RangeOrdersPage() {
   const [stockCode, setStockCode] = useState<string>("QQQ");
   const [currency, setCurrency] = useState<string>("USD");
-  const [totalAmount, setTotalAmount] = useState<string>("100000");
-  const [startPrice, setStartPrice] = useState<string>("610.20");
-  const [endPrice, setEndPrice] = useState<string>("608.10");
+  const [totalAmount, setTotalAmount] = useState<string>("30000");
+  const [startPrice, setStartPrice] = useState<string>("");
+  const [endPrice, setEndPrice] = useState<string>("");
   const [side, setSide] = useState<Side>("Buy");
   const [distribution, setDistribution] = useState<Distribution>("Pyramid");
   const [numOrders, setNumOrders] = useState<string>("8");
@@ -65,6 +65,7 @@ export default function RangeOrdersPage() {
   const [quoteClose, setQuoteClose] = useState<number | null>(null);
   const [quoteLast, setQuoteLast] = useState<number | null>(null);
   const [quoteError, setQuoteError] = useState<string>("");
+  const [whatIfPrice, setWhatIfPrice] = useState<number | null>(null);
 
   const parsed = useMemo(() => {
     const total = toNumber(totalAmount);
@@ -182,6 +183,44 @@ export default function RangeOrdersPage() {
 
   const formatPctNA = (v: number | null | undefined, digits = 2) =>
     typeof v === "number" && isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%` : "N/A";
+
+  // Price slider bounds: 15% below start to 15% above end (using min/max of range)
+  const sliderBounds = useMemo(() => {
+    const low = Math.min(parsed.sp ?? 0, parsed.ep ?? 0);
+    const high = Math.max(parsed.sp ?? 0, parsed.ep ?? 0);
+    if (low <= 0 || high <= 0) return null;
+    const min = Math.max(0.01, round2(low * 0.85));
+    const max = round2(high * 1.15);
+    return { min, max };
+  }, [parsed.sp, parsed.ep]);
+
+  // Initialize what-if price when bounds or quotes change
+  useEffect(() => {
+    if (!sliderBounds) {
+      setWhatIfPrice(null);
+      return;
+    }
+    const within = (p: number | null) => p != null && p >= sliderBounds.min && p <= sliderBounds.max;
+    const candidates = [quoteLast, quoteClose, (sliderBounds.min + sliderBounds.max) / 2];
+    const pick = candidates.find(within);
+    setWhatIfPrice(typeof pick === "number" ? round2(pick) : round2((sliderBounds.min + sliderBounds.max) / 2));
+  }, [sliderBounds, quoteLast, quoteClose]);
+
+  const pnlInfo = useMemo(() => {
+    if (!totals || whatIfPrice == null) return null;
+    const target = totals.sumVolume * whatIfPrice;
+    const pnl = side === "Buy" ? target - totals.sumValue : totals.sumValue - target;
+    const pctBase = totals.sumValue || 1;
+    const pct = (pnl / pctBase) * 100;
+    return { pnl: round2(pnl), pct: round2(pct) };
+  }, [totals, whatIfPrice, side]);
+
+  const vsPrevClosePct = useMemo(() => {
+    if (quoteClose == null || whatIfPrice == null) return null;
+    if (quoteClose === 0) return null;
+    const pct = ((whatIfPrice - quoteClose) / quoteClose) * 100;
+    return pct;
+  }, [quoteClose, whatIfPrice]);
 
   const onPlaceOrders = async () => {
     if (!generated || !baseUrl) return;
@@ -431,6 +470,46 @@ export default function RangeOrdersPage() {
             )}
             {submitted && generated && generated.length > 0 && (
               <div className="p-6 flex flex-col gap-3">
+                {sliderBounds && (
+                  <div className="rounded-md border border-slate-200 p-4 bg-slate-50">
+                    <div className="flex flex-col gap-3">
+                      <div className="text-sm font-medium text-slate-700">What-if P/L (assuming all orders filled)</div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min={sliderBounds.min}
+                          max={sliderBounds.max}
+                          step={0.01}
+                          value={whatIfPrice ?? sliderBounds.min}
+                          onChange={(e) => setWhatIfPrice(parseFloat(e.target.value))}
+                          className="w-full"
+                        />
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={whatIfPrice ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value === "" ? null : parseFloat(e.target.value);
+                            if (v == null || !sliderBounds) { setWhatIfPrice(null); return; }
+                            const clamped = Math.max(sliderBounds.min, Math.min(sliderBounds.max, v));
+                            setWhatIfPrice(round2(clamped));
+                          }}
+                          className="w-28 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                        />
+                      </div>
+                      <div className="text-sm">
+                        Range: {sliderBounds.min.toFixed(2)} – {sliderBounds.max.toFixed(2)}
+                      </div>
+                      <div className="text-sm">
+                        P/L at {whatIfPrice != null ? whatIfPrice.toFixed(2) : "—"}:{" "}
+                        <span className={`${pnlInfo ? (pnlInfo.pnl > 0 ? "text-emerald-600" : pnlInfo.pnl < 0 ? "text-red-600" : "text-slate-700") : "text-slate-500"} font-semibold`}>
+                          {pnlInfo ? `${pnlInfo.pnl.toLocaleString()} (${pnlInfo.pct.toFixed(2)}%)` : "N/A"}
+                        </span>
+                        {` , vs Prev Close (${formatPctNA(vsPrevClosePct, 2)})`}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {placeError && (
                   <div className="rounded-md border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
                     {placeError}
