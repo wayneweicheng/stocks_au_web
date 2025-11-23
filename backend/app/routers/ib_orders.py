@@ -181,12 +181,17 @@ def place_order(order: PlaceOrderRequest) -> Dict[str, Any]:
         price = _round_price_for_market(px, code)
 
         # Compute quantity (do not exceed dollar amount)
-        qty = int(math.floor(float(order.stock_dollar_amount) / price))
+        qty = int(math.ceil(float(order.stock_dollar_amount) / price))
         if qty <= 0:
             raise HTTPException(status_code=400, detail="Dollar amount too small for 1 share at current price")
 
         lo = LimitOrder(order.buy_sell.upper(), qty, lmtPrice=price)
         lo.outsideRth = True
+        # Time in force: DAY (as requested)
+        try:
+            lo.tif = "DAY"
+        except Exception:
+            pass
         lo.eTradeOnly = None
         lo.firmQuoteOnly = None
         trade = ib.placeOrder(contract, lo)
@@ -225,12 +230,16 @@ def place_order_at_price(order: PlaceOrderAtPriceRequest) -> Dict[str, Any]:
         if price <= 0:
             raise HTTPException(status_code=400, detail="limit_price must be > 0")
 
-        qty = int(math.floor(float(order.stock_dollar_amount) / price))
+        qty = int(math.ceil(float(order.stock_dollar_amount) / price))
         if qty <= 0:
             raise HTTPException(status_code=400, detail="Dollar amount too small for 1 share at provided price")
 
         lo = LimitOrder(order.buy_sell.upper(), qty, lmtPrice=price)
         lo.outsideRth = True
+        try:
+            lo.tif = "DAY"
+        except Exception:
+            pass
         lo.eTradeOnly = None
         lo.firmQuoteOnly = None
         trade = ib.placeOrder(contract, lo)
@@ -297,7 +306,8 @@ def place_orders(batch: PlaceOrdersBatchRequest) -> Dict[str, Any]:
                 "order": {"stock_code": code, "qty": qty, "limit_price": price, "side": o.buy_sell.upper()},
                 "ib_order_id": getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
             })
-            ib.sleep(0.05)
+            # Space out placements to avoid pacing or throttle issues
+            ib.sleep(0.5)
         ok = all(bool(r.get("ok")) for r in results)
         return {"ok": ok, "results": results}
     except HTTPException:
@@ -327,13 +337,17 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                 results.append({"index": i, "request": {"stock_code": code}, "ok": False, "error": "Invalid limit_price"})
                 continue
 
-            qty = int(math.floor(float(o.stock_dollar_amount) / price))
+            qty = int(math.ceil(float(o.stock_dollar_amount) / price))
             if qty <= 0:
                 results.append({"index": i, "request": {"stock_code": code}, "ok": False, "error": "Dollar amount too small"})
                 continue
 
             lo = LimitOrder(o.buy_sell.upper(), qty, lmtPrice=price)
             lo.outsideRth = True
+            try:
+                lo.tif = "DAY"
+            except Exception:
+                pass
             lo.eTradeOnly = None
             lo.firmQuoteOnly = None
             trade = ib.placeOrder(contract, lo)
