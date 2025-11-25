@@ -51,6 +51,7 @@ export default function RangeOrdersPage() {
   const [stockCode, setStockCode] = useState<string>("QQQ");
   const [currency, setCurrency] = useState<string>("USD");
   const [totalAmount, setTotalAmount] = useState<string>("30000");
+  const [totalVolume, setTotalVolume] = useState<string>("");
   const [startPrice, setStartPrice] = useState<string>("");
   const [endPrice, setEndPrice] = useState<string>("");
   const [side, setSide] = useState<Side>("Buy");
@@ -69,20 +70,20 @@ export default function RangeOrdersPage() {
 
   const parsed = useMemo(() => {
     const total = toNumber(totalAmount);
+    const tv = toNumber(totalVolume);
     const sp = toNumber(startPrice);
     const ep = toNumber(endPrice);
     const n = Math.max(1, Math.min(100, Math.floor(toNumber(numOrders) ?? 0) || 8));
     const rRaw = toNumber(ratio);
     const r = rRaw && rRaw > 0 ? Math.max(1, Math.min(1.5, rRaw)) : 1; // clamp to [1,1.5]
-    return { total, sp, ep, n, r };
-  }, [totalAmount, startPrice, endPrice, numOrders, ratio]);
+    return { total, tv, sp, ep, n, r };
+  }, [totalAmount, totalVolume, startPrice, endPrice, numOrders, ratio]);
 
   const canGenerate = useMemo(() => {
-    return !!parsed.total && parsed.total! > 0
-      && !!parsed.sp && parsed.sp! > 0
-      && !!parsed.ep && parsed.ep! > 0
-      && parsed.n > 0;
-  }, [parsed]);
+    const hasPrices = !!parsed.sp && parsed.sp! > 0 && !!parsed.ep && parsed.ep! > 0;
+    const need = side === "Buy" ? (parsed.total && parsed.total > 0) : (parsed.tv && parsed.tv > 0);
+    return hasPrices && !!need && parsed.n > 0;
+  }, [parsed, side]);
 
   const generated = useMemo<GeneratedOrder[] | null>(() => {
     if (!canGenerate) return null;
@@ -109,21 +110,43 @@ export default function RangeOrdersPage() {
     }
 
     let out: GeneratedOrder[] = [];
-    for (let i = 0; i < displayPrices.length; i++) {
-      const price = displayPrices[i];
-      const weight = displayWeights[i] ?? 0;
-      const allocatedValue = round2((parsed.total ?? 0) * weight);
-      const volume = ceilInt(allocatedValue / price);
-      const computedValue = round2(volume * price);
-      out.push({
-        index: i + 1,
-        side,
-        price,
-        allocatedWeight: weight,
-        allocatedValue,
-        volume,
-        computedValue,
-      });
+    if (side === "Buy" || !parsed.tv) {
+      // Value-based allocation (Buy)
+      for (let i = 0; i < displayPrices.length; i++) {
+        const price = displayPrices[i];
+        const weight = displayWeights[i] ?? 0;
+        const allocatedValue = round2((parsed.total ?? 0) * weight);
+        const volume = ceilInt(allocatedValue / price);
+        const computedValue = round2(volume * price);
+        out.push({
+          index: i + 1,
+          side,
+          price,
+          allocatedWeight: weight,
+          allocatedValue,
+          volume,
+          computedValue,
+        });
+      }
+    } else {
+      // Volume-based allocation (Sell)
+      const tv = Math.max(1, Math.floor(parsed.tv));
+      for (let i = 0; i < displayPrices.length; i++) {
+        const price = displayPrices[i];
+        const weight = displayWeights[i] ?? 0;
+        const rawVol = tv * weight;
+        const volume = Math.max(1, ceilInt(rawVol));
+        const computedValue = round2(volume * price);
+        out.push({
+          index: i + 1,
+          side,
+          price,
+          allocatedWeight: weight,
+          allocatedValue: computedValue,
+          volume,
+          computedValue,
+        });
+      }
     }
     return out;
   }, [canGenerate, parsed, distribution, side]);
@@ -296,10 +319,28 @@ export default function RangeOrdersPage() {
                 type="number"
                 step="0.01"
                 min="0"
-                value={totalAmount}
+                value={side === "Buy" ? totalAmount : (totals?.sumValue ?? 0)}
                 onChange={(e) => setTotalAmount(e.target.value)}
-                required
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                disabled={side === "Sell"}
+                required={side === "Buy"}
+                className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
+                  side === "Sell" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
+                }`}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm mb-1 text-slate-600">Total Volume (shares)</label>
+              <input
+                type="number"
+                min="0"
+                value={side === "Buy" ? (totals?.sumVolume ?? 0) : (totalVolume || "")}
+                onChange={(e) => setTotalVolume(e.target.value)}
+                disabled={side === "Buy"}
+                required={side === "Sell"}
+                className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
+                  side === "Buy" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
+                }`}
               />
             </div>
 
@@ -416,7 +457,7 @@ export default function RangeOrdersPage() {
                 Generated {side} Orders for {stockCode} ({currency})
               </h2>
               <p className="text-sm text-slate-600 mt-1">
-                Range {Math.min(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} - {Math.max(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} | Total Amount: {currency} {round2(parsed.total ?? 0).toLocaleString()} | Prev Close: {formatNA(quoteClose)} | Last: {formatNA(quoteLast)}
+                Range {Math.min(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} - {Math.max(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} | Total Amount: {currency} {round2((side === "Buy" ? (parsed.total ?? 0) : (totals?.sumValue ?? 0))).toLocaleString()} | Prev Close: {formatNA(quoteClose)} | Last: {formatNA(quoteLast)}
               </p>
               <p className="text-xs text-slate-500 mt-2">
                 Note: Volume is rounded up to the next integer. Actual total may exceed the requested amount due to rounding.
