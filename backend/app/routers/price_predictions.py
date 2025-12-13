@@ -113,7 +113,7 @@ def get_price_prediction(
 
         # Step 3: Load and inject template
         try:
-            template = template_service.get_template(base_code)
+            template, used_fallback = template_service.get_template(base_code)
             prompt = template_service.inject_variables(
                 template=template,
                 recent_data=recent_data,
@@ -149,7 +149,7 @@ def get_price_prediction(
             # Don't fail the request if cache save fails, just log it
 
         # Return generated prediction
-        return {
+        response_data = {
             "prediction_markdown": prediction_text,
             "cached": False,
             "cache_file": cache_service.get_cache_filename(base_code, observation_date),
@@ -158,6 +158,12 @@ def get_price_prediction(
             "token_usage": token_usage,
             "generated_at": datetime.now().isoformat()
         }
+
+        # Add warning if fallback template was used
+        if used_fallback:
+            response_data["warning"] = f"No learned pattern available for {base_code}. Using SPXW fallback template."
+
+        return response_data
 
     except HTTPException:
         raise

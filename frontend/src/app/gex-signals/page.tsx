@@ -291,7 +291,13 @@ export default function GexSignalsPage() {
   const [predictionLoading, setPredictionLoading] = useState(false);
   const [predictionError, setPredictionError] = useState<string>("");
   const [predictionCached, setPredictionCached] = useState<boolean>(false);
+  const [predictionWarning, setPredictionWarning] = useState<string>("");
   const [selectedModel, setSelectedModel] = useState<string>("google/gemini-2.5-flash");
+
+  // Stock codes state
+  const [stockCodes, setStockCodes] = useState<Array<{stock_code: string, latest_date: string}>>([]);
+  const [stockCodesLoading, setStockCodesLoading] = useState(false);
+  const [latestDate, setLatestDate] = useState<string>("");
 
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const canonicalStock = (stockCode || "").toUpperCase().split(".")[0] || "SPXW";
@@ -327,6 +333,30 @@ export default function GexSignalsPage() {
       cancelled = true;
     };
   }, [canonicalStock]);
+
+  // Fetch stock codes on mount
+  useEffect(() => {
+    setStockCodesLoading(true);
+    authenticatedFetch(`${baseUrl}/api/stock-codes`)
+      .then(async (r) => {
+        if (r.ok) {
+          const data = await r.json();
+          setStockCodes(data);
+        }
+      })
+      .catch((e) => console.error("Failed to fetch stock codes:", e))
+      .finally(() => setStockCodesLoading(false));
+  }, [baseUrl]);
+
+  // Update latest date when stock code changes
+  useEffect(() => {
+    const found = stockCodes.find(s => s.stock_code === stockCode);
+    if (found) {
+      setLatestDate(found.latest_date);
+    } else {
+      setLatestDate("");
+    }
+  }, [stockCode, stockCodes]);
 
   useEffect(() => {
     if (!observationDate || !stockCode) return;
@@ -382,8 +412,10 @@ export default function GexSignalsPage() {
       const data = await r.json();
       setPrediction(data.prediction_markdown || "");
       setPredictionCached(data.cached || false);
+      setPredictionWarning(data.warning || "");
     } catch (e: any) {
       setPredictionError(e.message);
+      setPredictionWarning("");
     } finally {
       setPredictionLoading(false);
     }
@@ -464,14 +496,22 @@ export default function GexSignalsPage() {
             </div>
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-sm mb-1 text-slate-600">Stock Code</label>
-            <input
-              type="text"
+            <label className="block text-sm mb-1 text-slate-600">
+              Stock Code
+              {latestDate && <span className="ml-2 text-xs text-slate-500">(Latest: {latestDate})</span>}
+            </label>
+            <select
               value={stockCode}
-              onChange={(e) => setStockCode(e.target.value.toUpperCase())}
-              placeholder="e.g., SPXW, QQQ"
+              onChange={(e) => setStockCode(e.target.value)}
+              disabled={stockCodesLoading}
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
-            />
+            >
+              {stockCodes.map((s) => (
+                <option key={s.stock_code} value={s.stock_code}>
+                  {s.stock_code}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -527,6 +567,11 @@ export default function GexSignalsPage() {
               <div>
                 {predictionCached && (
                   <div className="mb-2 text-xs text-slate-500 italic">(Cached prediction)</div>
+                )}
+                {predictionWarning && (
+                  <div className="mb-3 rounded-md border border-yellow-200 bg-yellow-50 text-yellow-800 px-3 py-2 text-sm">
+                    ⚠️ {predictionWarning}
+                  </div>
                 )}
                 <div className="prose prose-sm max-w-none">
                   <MarkdownRenderer content={prediction} />

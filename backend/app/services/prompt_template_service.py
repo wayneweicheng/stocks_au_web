@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 from pathlib import Path
 import logging
 import re
@@ -32,7 +32,7 @@ class PromptTemplateService:
         """
         return stock_code.replace(".US", "").replace(".us", "").upper()
 
-    def get_template(self, stock_code: str) -> str:
+    def get_template(self, stock_code: str) -> Tuple[str, bool]:
         """
         Load prompt template for stock.
 
@@ -40,7 +40,9 @@ class PromptTemplateService:
             stock_code: Stock code (with or without .US suffix)
 
         Returns:
-            Template content from <StockCode>.md file
+            Tuple of (template_content, used_fallback)
+            - template_content: Template content from <StockCode>.md file
+            - used_fallback: True if SPXW.md fallback was used, False if stock-specific template found
 
         Raises:
             FileNotFoundError: If neither stock-specific nor fallback template exists
@@ -53,7 +55,7 @@ class PromptTemplateService:
             try:
                 content = template_path.read_text(encoding="utf-8")
                 logger.info(f"Loaded template: {template_path.name} ({len(content)} characters)")
-                return content
+                return content, False
             except Exception as e:
                 logger.error(f"Failed to read template {template_path}: {e}")
                 # Fall through to fallback
@@ -70,7 +72,7 @@ class PromptTemplateService:
         try:
             content = fallback_path.read_text(encoding="utf-8")
             logger.info(f"Loaded fallback template: SPXW.md ({len(content)} characters)")
-            return content
+            return content, True
         except Exception as e:
             logger.error(f"Failed to read fallback template {fallback_path}: {e}")
             raise
