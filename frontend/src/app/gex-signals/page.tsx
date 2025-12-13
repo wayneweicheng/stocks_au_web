@@ -1,0 +1,749 @@
+"use client";
+
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { authenticatedFetch } from "../utils/authenticatedFetch";
+import MarkdownRenderer from "../components/MarkdownRenderer";
+
+type AnyRow = Record<string, any>;
+
+type HorizonKey = "1d" | "2d" | "5d" | "10d" | "20d";
+
+type SignalMeta = {
+  logicId: string;
+  name: string;
+  description: string;
+  bestHorizon: HorizonKey;
+  bias?: "long" | "short";
+  horizonStats: Record<string, { avgReturnPct: number; winRatePct: number; sample: number; stars: number }>;
+  examples?: string[];
+};
+
+type TriggeredSignal = {
+  logicId: string;
+  name: string;
+  description: string;
+  bestHorizon: HorizonKey;
+  stars: number;
+  bias?: "long" | "short";
+  bestStats?: { avgReturnPct: number; winRatePct: number; sample: number };
+  examples?: string[];
+};
+
+const DEFAULT_STOCK = "SPXW";
+
+function parseNum(v: any): number {
+  if (v === null || v === undefined) return NaN;
+  if (typeof v === "number") return v;
+  const s = String(v).replace(/,/g, "").replace(/[%\s]/g, "");
+  // Keep only digits, optional leading -, and dot
+  const cleaned = s.match(/-?\d+(\.\d+)?/)?.[0] ?? "";
+  const n = Number(cleaned);
+  return isNaN(n) ? NaN : n;
+}
+
+function getField(row: AnyRow, candidates: string[]): any {
+  const keys = Object.keys(row || {});
+  for (const c of candidates) {
+    const found = keys.find((k) => k.toLowerCase() === c.toLowerCase());
+    if (found) return row[found];
+  }
+  return undefined;
+}
+
+function isSwingUp(row: AnyRow): boolean {
+  return String(row?.SwingIndicator || "").toLowerCase() === "swing up";
+}
+function isPotentialSwingUp(row: AnyRow): boolean {
+  return String(row?.PotentialSwingIndicator || "").toLowerCase() === "potential swing up";
+}
+
+// Default cross-stock signal definitions (names, bias, fallback best horizon)
+const SIGNAL_DEFS: Record<
+  string,
+  { name: string; description: string; bias?: "long" | "short"; bestHorizon: HorizonKey }
+> = {
+  GOLDEN_SETUP: {
+    name: "Golden Setup (VIX>20 & RSI<35)",
+    description: "High VIX + oversold RSI; strongest 5–10 day rally probability.",
+    bias: "long",
+    bestHorizon: "5d"
+  },
+  CRASH_SHORT: {
+    name: "Crash Signal (Swing Down + Negative GEX)",
+    description: "Short bias: swing down while GEX is negative removes support; expect next-day drop.",
+    bias: "short",
+    bestHorizon: "1d"
+  },
+  CONFIRMED_SWING_UP: {
+    name: "Confirmed Swing Up",
+    description: "Safer trend buy; consistent positive drift over multi-week horizon.",
+    bias: "long",
+    bestHorizon: "20d"
+  },
+  NEG_GEX_HIGH_VIX: {
+    name: "Negative GEX + High VIX (>20)",
+    description: "Capitulation/bottoming; volatile but powerful 10–20 day snapback.",
+    bias: "long",
+    bestHorizon: "10d"
+  },
+  VIX_VERY_HIGH: {
+    name: "VIX Very High (>20)",
+    description: "Volatility regime powerful across horizons; best at 10–20 days.",
+    bias: "long",
+    bestHorizon: "20d"
+  },
+  POT_SWING_UP_NEG_GEXCHANGE: {
+    name: "Potential Swing Up + Negative GEXChange",
+    description: "Combined swing inflection with falling GEX; consistent across all horizons.",
+    bias: "long",
+    bestHorizon: "20d"
+  },
+  GEX_ESCAPED_VERYLOW_Z: {
+    name: "GEX Escaped Very Low Z-Score",
+    description: "Breakout from deeply negative Z-score; strong follow-through across horizons.",
+    bias: "long",
+    bestHorizon: "20d"
+  },
+  GEX_ZSCORE_VERY_HIGH: {
+    name: "GEX Z-Score Very High (>2.0)",
+    description: "Extreme positive GEX often bounces next day or two.",
+    bias: "long",
+    bestHorizon: "2d"
+  },
+  GEX_ZSCORE_HIGH: {
+    name: "GEX Z-Score High (1.5 to 2.0)",
+    description: "High positive GEX; bullish across 1–5 days.",
+    bias: "long",
+    bestHorizon: "5d"
+  },
+  DARKPOOL_RATIO_GT_2: {
+    name: "Dark Pool Ratio > 2.0",
+    description: "Institutional accumulation; moderate next-day edge and context for longs.",
+    bias: "long",
+    bestHorizon: "1d"
+  },
+  DARKPOOL_RATIO_LT_0_6: {
+    name: "Dark Pool Ratio Very Low (<0.6)",
+    description: "Contrarian buy (capitulation) specific to GDX; buying exhaustion often precedes rebound.",
+    bias: "long",
+    bestHorizon: "1d"
+  },
+  DARKPOOL_RATIO_GT_2_TRAP: {
+    name: "Dark Pool Ratio High (>2.0) Trap",
+    description: "For GDX, high dark pool ratio often underperforms short-term; avoid chasing strength.",
+    bestHorizon: "1d"
+  },
+  GEX_FLIP_POSITIVE: {
+    name: "GEX Flip Positive",
+    description: "Momentum/volatility dampening regime; slight positive next day.",
+    bias: "long",
+    bestHorizon: "1d"
+  },
+  GEX_FLIP_NEGATIVE: {
+    name: "GEX Flip Negative",
+    description: "Loss of support; bearish skew next day.",
+    bias: "short",
+    bestHorizon: "1d"
+  },
+  GEX_HIGH_VOLATILITY: {
+    name: "GEX High Volatility",
+    description: "Elevated gamma volatility context; supportive for medium/long horizons in some regimes.",
+    bias: "long",
+    bestHorizon: "20d"
+  },
+  POT_SWING_DOWN_NOEDGE: {
+    name: "Potential Swing Down (No Short Edge)",
+    description: "For SLV, potential swing down is not a reliable short setup; avoid shorting.",
+    bestHorizon: "1d"
+  },
+  VIX_PANIC_GEX_POSITIVE: {
+    name: "Volatility Crush (VIX>25 & GEX>0)",
+    description: "Market panic but stock GEX stable/positive; powerful reversal setup.",
+    bias: "long",
+    bestHorizon: "10d"
+  },
+  VIX_PANIC_RSI_LT_40: {
+    name: "VIX Panic Buy (VIX>25 & RSI<40)",
+    description: "Extreme capitulation filter; deeper variant of Golden Setup.",
+    bias: "long",
+    bestHorizon: "20d"
+  },
+};
+
+function computeSignals(
+  row: AnyRow,
+  statsByLogicId: Record<string, SignalMeta | undefined>,
+  stockForThresholds: string
+): TriggeredSignal[] {
+  const z = parseNum(getField(row, ["GEX_ZScore", "GEXZSCORE"]));
+  const gex = parseNum(getField(row, ["GEX"]));
+  const vix = parseNum(getField(row, ["VIX"]));
+  const rsi = parseNum(getField(row, ["RSI"]));
+  const gexChange = parseNum(getField(row, ["GEXChange", "GEXCHANGE"]));
+  const goldenExplicit = parseNum(getField(row, ["Golden_Setup", "GOLDEN_SETUP"])) === 1;
+  const gexTurnedPositive = parseNum(getField(row, ["GEX_Turned_Positive"])) === 1;
+  const gexTurnedNegative = parseNum(getField(row, ["GEX_Turned_Negative"])) === 1;
+  const escapedVeryLow = parseNum(getField(row, ["GEX_Escaped_VeryLow_Zscore"])) === 1;
+  const gexHighVolatility = parseNum(getField(row, ["GEX_HighVolatility"])) === 1;
+  const darkPoolRatio = parseNum(getField(row, ["Stock_DarkPoolBuySellRatio", "DarkPoolBuySellRatio"]));
+  // If the DB provides a precomputed flag for Potential Swing Up + Negative GEXChange, use it as an OR condition
+  const potSwingUpNegGexChangeFlag = parseNum(getField(row, ["Pot_Swing_Up_AND_Neg_GEXChange"])) === 1;
+  const dpThreshold = stockForThresholds === "NVDA" ? 1.5 : 2.0;
+  const dpVeryLow = stockForThresholds === "GDX" ? (darkPoolRatio > 0 && darkPoolRatio < 0.6) : false;
+
+  const checks: Record<string, boolean> = {
+    POT_SWING_UP_NEG_GEXCHANGE: potSwingUpNegGexChangeFlag || (isPotentialSwingUp(row) && gexChange < 0),
+    CONFIRMED_SWING_UP: isSwingUp(row),
+    NEG_GEX_HIGH_VIX: (gex < 0) && (vix > 20),
+    GOLDEN_SETUP: goldenExplicit || (vix > 20 && rsi < 35),
+    VIX_VERY_HIGH: vix > 20,
+    VIX_PANIC_GEX_POSITIVE: (vix > 25) && (gex > 0),
+    VIX_PANIC_RSI_LT_40: (vix > 25) && (rsi < 40),
+    GEX_ESCAPED_VERYLOW_Z: escapedVeryLow,
+    GEX_ZSCORE_VERY_HIGH: z > 2.0,
+    GEX_ZSCORE_HIGH: z > 1.5 && z <= 2.0,
+    DARKPOOL_RATIO_GT_2: darkPoolRatio > dpThreshold,
+    DARKPOOL_RATIO_LT_0_6: dpVeryLow,
+    GEX_FLIP_POSITIVE: gexTurnedPositive,
+    GEX_FLIP_NEGATIVE: gexTurnedNegative,
+    CRASH_SHORT: String(getField(row, ["SwingIndicator"])).toLowerCase().includes("down") && gex < 0,
+    GEX_HIGH_VOLATILITY: gexHighVolatility
+  };
+
+  // Special-case trap signal for GDX: high dark pool ratio is not a buy
+  if (stockForThresholds === "GDX") {
+    checks["DARKPOOL_RATIO_GT_2_TRAP"] = darkPoolRatio > 2.0;
+  }
+  // Special-case SLV: Potential swing down shows no short edge
+  if (stockForThresholds === "SLV") {
+    const psd = String(getField(row, ["PotentialSwingIndicator"])).toLowerCase().includes("down");
+    if (psd) checks["POT_SWING_DOWN_NOEDGE"] = true;
+  }
+
+  const triggered: TriggeredSignal[] = [];
+  for (const logicId of Object.keys(checks)) {
+    if (!checks[logicId]) continue;
+    const def = SIGNAL_DEFS[logicId];
+    if (!def) continue;
+    const stats = statsByLogicId[logicId];
+    const bestHorizon = stats?.bestHorizon ?? def.bestHorizon;
+    const best = stats?.horizonStats?.[bestHorizon];
+    triggered.push({
+      logicId,
+      name: stats?.name ?? def.name,
+      description: stats?.description ?? def.description,
+      bestHorizon,
+      stars: best?.stars ?? 0,
+      bias: stats?.bias ?? def.bias,
+      bestStats: best ? { avgReturnPct: best.avgReturnPct, winRatePct: best.winRatePct, sample: best.sample } : undefined,
+      examples: stats?.examples,
+    });
+  }
+  return triggered;
+}
+
+function StarRating({ count }: { count: number }) {
+  const full = Math.max(0, Math.min(3, count));
+  return (
+    <span aria-label={`${full} star rating`} className="text-amber-500">
+      {"★".repeat(full)}
+      <span className="text-slate-300">{"★".repeat(3 - full)}</span>
+    </span>
+  );
+}
+
+function formatHorizonStat(m: SignalMeta, horizon: HorizonKey) {
+	const s = m.horizonStats?.[horizon];
+	if (!s) return null;
+	return `${horizon}: ${s.avgReturnPct.toFixed(2)}% avg, ${s.winRatePct.toFixed(1)}% win${s.sample ? ` (n=${s.sample})` : ""}`;
+}
+
+function BiasBadge({ bias }: { bias?: "long" | "short" }) {
+	if (!bias) return null;
+	return (
+		<span
+			className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${
+				bias === "short"
+					? "bg-red-50 text-red-700 border border-red-200"
+					: "bg-emerald-50 text-emerald-700 border border-emerald-200"
+			}`}
+		>
+			{bias === "short" ? "Short" : "Long"}
+		</span>
+	);
+}
+
+export default function GexSignalsPage() {
+  const [observationDate, setObservationDate] = useState<string>(() => {
+    const d = new Date();
+    // Default to today; allow arrows to navigate business days like other page
+    return d.toISOString().slice(0, 10);
+  });
+  const [stockCode, setStockCode] = useState<string>(DEFAULT_STOCK);
+  const [rows, setRows] = useState<AnyRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>("");
+  const [statsByLogicId, setStatsByLogicId] = useState<Record<string, SignalMeta | undefined>>({});
+  const [statsLoadError, setStatsLoadError] = useState<string>("");
+
+  // Price action prediction state
+  const [prediction, setPrediction] = useState<string>("");
+  const [predictionLoading, setPredictionLoading] = useState(false);
+  const [predictionError, setPredictionError] = useState<string>("");
+  const [predictionCached, setPredictionCached] = useState<boolean>(false);
+  const [selectedModel, setSelectedModel] = useState<string>("google/gemini-2.5-flash");
+
+  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const canonicalStock = (stockCode || "").toUpperCase().split(".")[0] || "SPXW";
+
+  useEffect(() => {
+    // Load per-stock stats JSON from /public/meta; fallback to SPXW; if both fail, clear stats
+    const code = canonicalStock;
+    const urls = [`/meta/gex_signals_meta.${code}.json`, `/meta/gex_signals_meta.SPXW.json`];
+    let cancelled = false;
+    (async () => {
+      setStatsLoadError("");
+      for (const u of urls) {
+        try {
+          const r = await fetch(u, { cache: "no-store" });
+          if (r.ok) {
+            const data = await r.json();
+            const arr: SignalMeta[] = Array.isArray(data?.signals) ? data.signals : [];
+            const map: Record<string, SignalMeta> = {};
+            for (const s of arr) map[s.logicId] = s;
+            if (!cancelled) setStatsByLogicId(map);
+            return;
+          }
+        } catch (e: any) {
+          // continue to next url
+        }
+      }
+      if (!cancelled) {
+        setStatsByLogicId({});
+        setStatsLoadError("No per-stock stats available");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canonicalStock]);
+
+  useEffect(() => {
+    if (!observationDate || !stockCode) return;
+    setLoading(true);
+    setError("");
+    authenticatedFetch(
+      `${baseUrl}/api/gex-signals?observation_date=${encodeURIComponent(observationDate)}&stock_code=${encodeURIComponent(
+        stockCode.trim().toUpperCase()
+      )}`
+    )
+      .then(async (r) => {
+        if (!r.ok) {
+          let msg = `HTTP ${r.status}`;
+          try {
+            const data = await r.json();
+            if (data && typeof data.detail === "string") {
+              msg += `: ${data.detail}`;
+            }
+          } catch {
+            try {
+              const txt = await r.text();
+              if (txt) msg += `: ${txt}`;
+            } catch {}
+          }
+          throw new Error(msg);
+        }
+        return r.json();
+      })
+      .then((data) => setRows(Array.isArray(data) ? data : []))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [baseUrl, observationDate, stockCode]);
+
+  // Fetch price action prediction
+  const fetchPrediction = useCallback(async (forceRegenerate: boolean = false) => {
+    if (!observationDate || !stockCode) return;
+    setPredictionLoading(true);
+    setPredictionError("");
+
+    const params = new URLSearchParams({
+      observation_date: observationDate,
+      stock_code: stockCode.trim().toUpperCase(),
+      regenerate: String(forceRegenerate),
+      model: selectedModel
+    });
+
+    try {
+      const r = await authenticatedFetch(`${baseUrl}/api/price-prediction?${params}`);
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${r.status}`);
+      }
+      const data = await r.json();
+      setPrediction(data.prediction_markdown || "");
+      setPredictionCached(data.cached || false);
+    } catch (e: any) {
+      setPredictionError(e.message);
+    } finally {
+      setPredictionLoading(false);
+    }
+  }, [baseUrl, observationDate, stockCode, selectedModel]);
+
+  // Don't auto-fetch prediction - only fetch when user clicks Generate/Regenerate button
+
+  const triggeredSignals = useMemo<TriggeredSignal[]>(() => {
+    const row = rows?.[0];
+    if (!row) return [];
+    return computeSignals(row, statsByLogicId, canonicalStock);
+  }, [rows, statsByLogicId, canonicalStock]);
+
+  const row = rows?.[0];
+
+	// Map of logicId -> stats (for the current stock); used to render horizon stats
+	const byId: Record<string, SignalMeta | undefined> = useMemo(() => {
+		return statsByLogicId;
+	}, [statsByLogicId]);
+
+	const grouped = useMemo(() => {
+		const groups: { short: TriggeredSignal[]; medium: TriggeredSignal[]; long: TriggeredSignal[] } = {
+			short: [],
+			medium: [],
+			long: [],
+		};
+		for (const s of triggeredSignals) {
+			if (s.bestHorizon === "1d" || s.bestHorizon === "2d") groups.short.push(s);
+			else if (s.bestHorizon === "5d") groups.medium.push(s);
+			else groups.long.push(s); // default 10d / 20d
+		}
+		return groups;
+	}, [triggeredSignals]);
+
+  return (
+    <div className="min-h-screen text-slate-800">
+      <div className="mx-auto max-w-7xl px-6 py-10">
+        <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-emerald-500 to-green-600 bg-clip-text text-transparent">
+          Market Flow Signals
+        </h1>
+
+        <div className="grid gap-4 sm:grid-cols-3 mb-6">
+          <div>
+            <label className="block text-sm mb-1 text-slate-600">Observation Date</label>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Previous business day"
+                onClick={() => {
+                  const d = new Date(observationDate);
+                  d.setDate(d.getDate() - 1);
+                  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+                  setObservationDate(d.toISOString().slice(0, 10));
+                }}
+                className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+              >
+                ←
+              </button>
+              <input
+                type="date"
+                value={observationDate}
+                onChange={(e) => setObservationDate(e.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+              />
+              <button
+                type="button"
+                aria-label="Next business day"
+                onClick={() => {
+                  const d = new Date(observationDate);
+                  d.setDate(d.getDate() + 1);
+                  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+                  setObservationDate(d.toISOString().slice(0, 10));
+                }}
+                className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+              >
+                →
+              </button>
+            </div>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm mb-1 text-slate-600">Stock Code</label>
+            <input
+              type="text"
+              value={stockCode}
+              onChange={(e) => setStockCode(e.target.value.toUpperCase())}
+              placeholder="e.g., SPXW, QQQ"
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">Error: {error}</div>
+        )}
+
+        {/* Price Action Prediction Section */}
+        <div className="mb-8">
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-slate-700">Price Action Prediction</h2>
+              <div className="flex gap-2 items-center">
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+                  <option value="openai/gpt-5-mini">GPT-5 Mini</option>
+                  <option value="qwen/qwen3-30b-a3b">Qwen3 30B</option>
+                  <option value="openai/gpt-5.1">GPT-5.1</option>
+                  <option value="openai/gpt-4.1-mini">GPT-4.1 Mini</option>
+                  <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
+                  <option value="deepseek/deepseek-v3.2">DeepSeek V3.2</option>
+                  <option value="deepseek/deepseek-r1-0528-qwen3-8b">DeepSeek R1 Qwen3 8B</option>
+                  <option value="x-ai/grok-4.1-fast">Grok 4.1 Fast</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => fetchPrediction(false)}
+                  disabled={predictionLoading}
+                  className="rounded-md border border-blue-500 bg-blue-500 px-3 py-1.5 text-sm text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {predictionLoading && !prediction ? "Generating..." : "Generate"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fetchPrediction(true)}
+                  disabled={predictionLoading}
+                  className="rounded-md border border-emerald-500 bg-white px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {predictionLoading && prediction ? "Regenerating..." : "Regenerate"}
+                </button>
+              </div>
+            </div>
+
+            {predictionLoading ? (
+              <div className="text-sm text-slate-600">Loading prediction...</div>
+            ) : predictionError ? (
+              <div className="text-sm text-red-600">Error: {predictionError}</div>
+            ) : prediction ? (
+              <div>
+                {predictionCached && (
+                  <div className="mb-2 text-xs text-slate-500 italic">(Cached prediction)</div>
+                )}
+                <div className="prose prose-sm max-w-none">
+                  <MarkdownRenderer content={prediction} />
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-slate-600">
+                Click &quot;Generate&quot; to create a price action prediction for this stock and date.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3 mb-8">
+          <div className="sm:col-span-3 rounded-lg border border-slate-200 bg-white p-4">
+            <h2 className="text-lg font-semibold mb-3 text-slate-700">Context</h2>
+            <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
+              <li>
+                <b>Best short-term signals (1–2d):</b> Potential swing up + negative GEXChange; Swing up.
+              </li>
+              <li>
+                <b>Best 5–20d signals:</b> Low/Very Low GEX Z-scores; combined swing + GEX.
+              </li>
+              <li>
+                <b>Note:</b> Very Low GEX Z (&lt;-2.0) tends to dip on day 1, then rally over 10–20 days.
+              </li>
+            </ul>
+          </div>
+        </div>
+
+		<div className="grid gap-4 sm:grid-cols-3">
+			<div className="rounded-lg border border-slate-200 bg-white p-4">
+				<h2 className="text-lg font-semibold mb-1 text-slate-700">Short-term (1–2d)</h2>
+				<p className="text-xs text-slate-500 mb-3">Best for quick tactical trades (tomorrow/2 days).</p>
+				{loading ? (
+					<div className="text-sm text-slate-600">Loading…</div>
+				) : !row ? (
+					<div className="text-sm text-slate-600">No data found for selected date/code.</div>
+				) : grouped.short.length === 0 ? (
+					<div className="text-sm text-slate-600">No short-term signals today.</div>
+				) : (
+					<ul className="space-y-3">
+						{grouped.short.map((s) => {
+							const m = byId[s.logicId];
+							return (
+								<li key={s.logicId} className="rounded-md border border-slate-200 p-3">
+									<div className="flex items-center justify-between">
+										<div className="font-medium text-slate-800">{s.name}</div>
+										<StarRating count={s.stars} />
+									</div>
+									<div className="mt-1"><BiasBadge bias={s.bias} /></div>
+									<div className="text-sm text-slate-600 mt-1">{s.description}</div>
+									<div className="text-xs text-slate-700 mt-2 space-x-3">
+										{m && <span>{formatHorizonStat(m, "1d")}</span>}
+										{m && <span>{formatHorizonStat(m, "2d")}</span>}
+									</div>
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</div>
+
+			<div className="rounded-lg border border-slate-200 bg-white p-4">
+				<h2 className="text-lg font-semibold mb-1 text-slate-700">Medium-term (5d)</h2>
+				<p className="text-xs text-slate-500 mb-3">Hold for one trading week.</p>
+				{loading ? (
+					<div className="text-sm text-slate-600">Loading…</div>
+				) : !row ? (
+					<div className="text-sm text-slate-600">No data found for selected date/code.</div>
+				) : grouped.medium.length === 0 ? (
+					<div className="text-sm text-slate-600">No medium-term signals today.</div>
+				) : (
+					<ul className="space-y-3">
+						{grouped.medium.map((s) => {
+							const m = byId[s.logicId];
+							return (
+								<li key={s.logicId} className="rounded-md border border-slate-200 p-3">
+									<div className="flex items-center justify-between">
+										<div className="font-medium text-slate-800">{s.name}</div>
+										<StarRating count={s.stars} />
+									</div>
+									<div className="mt-1"><BiasBadge bias={s.bias} /></div>
+									<div className="text-sm text-slate-600 mt-1">{s.description}</div>
+									<div className="text-xs text-slate-700 mt-2">
+										{m && <span>{formatHorizonStat(m, "5d")}</span>}
+									</div>
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</div>
+
+			<div className="rounded-lg border border-slate-200 bg-white p-4">
+				<h2 className="text-lg font-semibold mb-1 text-slate-700">Long-term (10–20d)</h2>
+				<p className="text-xs text-slate-500 mb-3">Position trades over 2–4 weeks.</p>
+				{loading ? (
+					<div className="text-sm text-slate-600">Loading…</div>
+				) : !row ? (
+					<div className="text-sm text-slate-600">No data found for selected date/code.</div>
+				) : grouped.long.length === 0 ? (
+					<div className="text-sm text-slate-600">No long-term signals today.</div>
+				) : (
+					<ul className="space-y-3">
+						{grouped.long.map((s) => {
+							const m = byId[s.logicId];
+							return (
+								<li key={s.logicId} className="rounded-md border border-slate-200 p-3">
+									<div className="flex items-center justify-between">
+										<div className="font-medium text-slate-800">{s.name}</div>
+										<StarRating count={s.stars} />
+									</div>
+									<div className="mt-1"><BiasBadge bias={s.bias} /></div>
+									<div className="text-sm text-slate-600 mt-1">{s.description}</div>
+									<div className="text-xs text-slate-700 mt-2 space-x-3">
+										{m && <span>{formatHorizonStat(m, "10d")}</span>}
+										{m && <span>{formatHorizonStat(m, "20d")}</span>}
+									</div>
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</div>
+		</div>
+
+		<div className="grid gap-4 sm:grid-cols-2 mt-4">
+			<div className="rounded-lg border border-slate-200 bg-white p-4">
+            <h2 className="text-lg font-semibold mb-3 text-slate-700">GEX Snapshot</h2>
+            {loading ? (
+              <div className="text-sm text-slate-600">Loading…</div>
+            ) : !row ? (
+              <div className="text-sm text-slate-600">No data.</div>
+            ) : (
+              <div className="text-sm text-slate-700 space-y-2">
+                <div>
+                  <b>ObservationDate:</b>{" "}
+                  {String(getField(row, ["ObservationDate", "OBSERVATIONDATE", "Date", "AsOfDate"]) ?? "")}
+                </div>
+                <div>
+                  <b>ASXCode:</b>{" "}
+                  {String(getField(row, ["StockCode", "ASXCode", "ASXCODE", "Symbol", "Ticker"]) ?? "")}
+                </div>
+                <div>
+                  <b>GEX:</b>{" "}
+                  {(() => {
+                    const formatted = getField(row, ["FormattedGEX", "FORMATTEDGEX"]);
+                    if (formatted !== undefined) return String(formatted);
+                    const n = parseNum(getField(row, ["GEX"]));
+                    return isNaN(n) ? "" : n.toLocaleString();
+                  })()}
+                </div>
+                <div>
+                  <b>Prev1GEX:</b>{" "}
+                  {(() => {
+                    const formatted = getField(row, ["FormattedPrev1GEX", "FORMATTEDPREV1GEX"]);
+                    if (formatted !== undefined) return String(formatted);
+                    const n = parseNum(getField(row, ["Prev1GEX"]));
+                    return isNaN(n) ? "" : n.toLocaleString();
+                  })()}
+                </div>
+                <div>
+                  <b>GEXChange:</b>{" "}
+                  {String(getField(row, ["GEXChange", "GEXCHANGE"]) ?? "")}
+                </div>
+                {getField(row, ["GEX_ZScore", "GEXZSCORE"]) !== undefined && (
+                  <div>
+                    <b>GEX Z-Score:</b>{" "}
+                    {String(getField(row, ["GEX_ZScore", "GEXZSCORE"]) ?? "")}
+                  </div>
+                )}
+                <div>
+                  <b>Regime:</b>{" "}
+                  {(() => {
+                    const gex = parseNum(getField(row, ["GEX"]));
+                    if (!isNaN(gex)) return gex >= 0 ? "Positive Gamma" : "Negative Gamma";
+                    const tp = parseNum(getField(row, ["GEX_Turned_Positive"]));
+                    const tn = parseNum(getField(row, ["GEX_Turned_Negative"]));
+                    if (tp === 1) return "Turned Positive";
+                    if (tn === 1) return "Turned Negative";
+                    return "Unknown";
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
+
+			<div className="rounded-lg border border-slate-200 bg-white p-4 overflow-x-auto">
+            <h2 className="text-lg font-semibold mb-3 text-slate-700">Raw Features (Debug)</h2>
+            {loading ? (
+              <div className="text-sm text-slate-600">Loading…</div>
+            ) : !row ? (
+              <div className="text-sm text-slate-600">No data.</div>
+            ) : (
+              <table className="min-w-full text-sm">
+                <tbody>
+                  {Object.keys(row)
+                    .sort()
+                    .map((k) => (
+                      <tr key={k} className="hover:bg-emerald-50/40">
+                        <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100 font-medium text-slate-600">
+                          {k}
+                        </td>
+                        <td className="px-3 py-2 border-b border-slate-100">
+                          {String(row[k] ?? "")}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+

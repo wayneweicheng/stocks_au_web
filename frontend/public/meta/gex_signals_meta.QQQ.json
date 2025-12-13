@@ -1,0 +1,272 @@
+{
+  "signals": [
+    {
+      "logicId": "GEX_HIGH_VOLATILITY",
+      "name": "GEX High Volatility Regime",
+      "description": "GEX volatility signal for trend following.",
+      "bias": "neutral",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.24, "winRatePct": 72.2, "sample": 18, "stars": 1 },
+        "2d": { "avgReturnPct": 0.08, "winRatePct": 66.7, "sample": 18, "stars": 1 },
+        "5d": { "avgReturnPct": -0.15, "winRatePct": 55.6, "sample": 18, "stars": 1 },
+        "10d": { "avgReturnPct": 2.43, "winRatePct": 77.8, "sample": 18, "stars": 3 },
+        "20d": { "avgReturnPct": 5.25, "winRatePct": 100.0, "sample": 18, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "CONFIRMED_SWING_UP",
+      "name": "Confirmed Swing Up",
+      "description": "Safer trend buy; consistent positive drift over multi-week horizon.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.48, "winRatePct": 65.4, "sample": 26, "stars": 2 },
+        "2d": { "avgReturnPct": 0.56, "winRatePct": 61.5, "sample": 26, "stars": 2 },
+        "5d": { "avgReturnPct": 0.78, "winRatePct": 69.2, "sample": 26, "stars": 2 },
+        "10d": { "avgReturnPct": 2.39, "winRatePct": 76.9, "sample": 26, "stars": 3 },
+        "20d": { "avgReturnPct": 3.37, "winRatePct": 87.5, "sample": 24, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "VIX_VERY_HIGH",
+      "name": "VIX Very High (>20)",
+      "description": "Volatility regime powerful across horizons; best at 10–20 days.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.34, "winRatePct": 63.8, "sample": 127, "stars": 2 },
+        "2d": { "avgReturnPct": 0.69, "winRatePct": 66.1, "sample": 127, "stars": 2 },
+        "5d": { "avgReturnPct": 1.84, "winRatePct": 74.8, "sample": 127, "stars": 3 },
+        "10d": { "avgReturnPct": 3.55, "winRatePct": 80.3, "sample": 122, "stars": 3 },
+        "20d": { "avgReturnPct": 5.32, "winRatePct": 86.8, "sample": 121, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "DARKPOOL_RATIO_GT_2",
+      "name": "Dark Pool Ratio > 2.0",
+      "description": "Institutional accumulation; moderate next-day edge and context for longs.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.16, "winRatePct": 57.9, "sample": 107, "stars": 1 },
+        "2d": { "avgReturnPct": 0.13, "winRatePct": 59.4, "sample": 106, "stars": 1 },
+        "5d": { "avgReturnPct": 0.56, "winRatePct": 62.3, "sample": 106, "stars": 2 },
+        "10d": { "avgReturnPct": 1.07, "winRatePct": 64.2, "sample": 106, "stars": 2 },
+        "20d": { "avgReturnPct": 2.19, "winRatePct": 83.0, "sample": 106, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "MACD_POSITIVE_HIGH_VIX",
+      "name": "MACD Positive + VIX > 18",
+      "description": "Momentum + elevated volatility; continuation pattern.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.21, "winRatePct": 56.3, "sample": 142, "stars": 1 },
+        "2d": { "avgReturnPct": 0.42, "winRatePct": 60.6, "sample": 142, "stars": 2 },
+        "5d": { "avgReturnPct": 1.13, "winRatePct": 67.6, "sample": 142, "stars": 2 },
+        "10d": { "avgReturnPct": 1.76, "winRatePct": 70.9, "sample": 141, "stars": 3 },
+        "20d": { "avgReturnPct": 3.13, "winRatePct": 82.8, "sample": 134, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "NEG_GEX_HIGH_VIX",
+      "name": "Negative GEX + High VIX (>20)",
+      "description": "Capitulation/bottoming; volatile but powerful 10–20 day snapback.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.35, "winRatePct": 65.2, "sample": 66, "stars": 2 },
+        "2d": { "avgReturnPct": 0.51, "winRatePct": 60.6, "sample": 66, "stars": 2 },
+        "5d": { "avgReturnPct": 1.49, "winRatePct": 71.2, "sample": 66, "stars": 3 },
+        "10d": { "avgReturnPct": 3.44, "winRatePct": 79.0, "sample": 62, "stars": 3 },
+        "20d": { "avgReturnPct": 4.26, "winRatePct": 78.7, "sample": 61, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "GOLDEN_SETUP",
+      "name": "Golden Setup (VIX>20 & RSI<35)",
+      "description": "High VIX + oversold RSI; strongest 5–10 day rally probability.",
+      "bias": "long",
+      "bestHorizon": "5d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.33, "winRatePct": 62.5, "sample": 32, "stars": 2 },
+        "2d": { "avgReturnPct": 0.67, "winRatePct": 56.2, "sample": 32, "stars": 1 },
+        "5d": { "avgReturnPct": 2.42, "winRatePct": 78.1, "sample": 32, "stars": 3 },
+        "10d": { "avgReturnPct": 3.06, "winRatePct": 67.9, "sample": 28, "stars": 2 },
+        "20d": { "avgReturnPct": 3.29, "winRatePct": 57.1, "sample": 28, "stars": 1 }
+      }
+    },
+    {
+      "logicId": "GEX_RISING_POS_ZSCORE",
+      "name": "GEX Rising + Positive Z-Score",
+      "description": "Increasing support with positive momentum.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.04, "winRatePct": 55.0, "sample": 180, "stars": 1 },
+        "2d": { "avgReturnPct": 0.09, "winRatePct": 57.8, "sample": 180, "stars": 1 },
+        "5d": { "avgReturnPct": 0.30, "winRatePct": 60.1, "sample": 178, "stars": 1 },
+        "10d": { "avgReturnPct": 0.83, "winRatePct": 64.4, "sample": 177, "stars": 2 },
+        "20d": { "avgReturnPct": 1.88, "winRatePct": 75.4, "sample": 175, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "GEX_ESCAPED_VERYLOW_Z",
+      "name": "GEX Escaped Very Low Z-Score",
+      "description": "Breakout from deeply negative Z-score; strong follow-through across horizons.",
+      "bias": "long",
+      "bestHorizon": "10d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.14, "winRatePct": 56.2, "sample": 16, "stars": 1 },
+        "2d": { "avgReturnPct": 0.81, "winRatePct": 81.2, "sample": 16, "stars": 3 },
+        "5d": { "avgReturnPct": 1.15, "winRatePct": 68.8, "sample": 16, "stars": 2 },
+        "10d": { "avgReturnPct": 1.63, "winRatePct": 75.0, "sample": 16, "stars": 3 },
+        "20d": { "avgReturnPct": 2.55, "winRatePct": 68.8, "sample": 16, "stars": 2 }
+      }
+    },
+    {
+      "logicId": "PRICE_ABOVE_SMA20_50",
+      "name": "Price Above SMA20 & SMA50",
+      "description": "Strong uptrend confirmation; continuation bias.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.08, "winRatePct": 56.3, "sample": 492, "stars": 1 },
+        "2d": { "avgReturnPct": 0.18, "winRatePct": 58.7, "sample": 491, "stars": 1 },
+        "5d": { "avgReturnPct": 0.51, "winRatePct": 61.6, "sample": 489, "stars": 2 },
+        "10d": { "avgReturnPct": 0.97, "winRatePct": 65.2, "sample": 489, "stars": 2 },
+        "20d": { "avgReturnPct": 1.80, "winRatePct": 74.4, "sample": 484, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "GEX_FLIP_POSITIVE",
+      "name": "GEX Flip Positive",
+      "description": "Momentum/volatility dampening regime; slight positive next day.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": -0.02, "winRatePct": 57.8, "sample": 64, "stars": 1 },
+        "2d": { "avgReturnPct": -0.06, "winRatePct": 59.4, "sample": 64, "stars": 1 },
+        "5d": { "avgReturnPct": 0.29, "winRatePct": 65.6, "sample": 64, "stars": 1 },
+        "10d": { "avgReturnPct": 1.08, "winRatePct": 71.4, "sample": 63, "stars": 3 },
+        "20d": { "avgReturnPct": 1.38, "winRatePct": 74.2, "sample": 62, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "LOW_RSI_NEG_GEX",
+      "name": "Low RSI (<40) + Negative GEX",
+      "description": "Oversold + lack of support creates reversal setup.",
+      "bias": "long",
+      "bestHorizon": "5d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.23, "winRatePct": 64.2, "sample": 67, "stars": 1 },
+        "2d": { "avgReturnPct": 0.55, "winRatePct": 56.7, "sample": 67, "stars": 1 },
+        "5d": { "avgReturnPct": 1.66, "winRatePct": 73.1, "sample": 67, "stars": 3 },
+        "10d": { "avgReturnPct": 2.28, "winRatePct": 69.8, "sample": 63, "stars": 2 },
+        "20d": { "avgReturnPct": 2.15, "winRatePct": 65.1, "sample": 63, "stars": 2 }
+      }
+    },
+    {
+      "logicId": "LOW_BB_PERCENTB",
+      "name": "BB %B < 0.2 (Near Lower Band)",
+      "description": "Price near lower Bollinger Band; bounce opportunity.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.16, "winRatePct": 58.0, "sample": 81, "stars": 1 },
+        "2d": { "avgReturnPct": 0.44, "winRatePct": 58.0, "sample": 81, "stars": 1 },
+        "5d": { "avgReturnPct": 0.81, "winRatePct": 64.2, "sample": 81, "stars": 2 },
+        "10d": { "avgReturnPct": 1.67, "winRatePct": 66.2, "sample": 77, "stars": 2 },
+        "20d": { "avgReturnPct": 2.76, "winRatePct": 71.1, "sample": 76, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "POT_SWING_UP_NEG_GEXCHANGE",
+      "name": "Potential Swing Up + Negative GEXChange",
+      "description": "Combined swing inflection with falling GEX; consistent across all horizons.",
+      "bias": "long",
+      "bestHorizon": "10d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.14, "winRatePct": 60.3, "sample": 63, "stars": 1 },
+        "2d": { "avgReturnPct": 0.55, "winRatePct": 65.1, "sample": 63, "stars": 2 },
+        "5d": { "avgReturnPct": 0.81, "winRatePct": 66.7, "sample": 63, "stars": 2 },
+        "10d": { "avgReturnPct": 1.37, "winRatePct": 70.5, "sample": 61, "stars": 3 },
+        "20d": { "avgReturnPct": 1.83, "winRatePct": 69.0, "sample": 58, "stars": 2 }
+      }
+    },
+    {
+      "logicId": "GEX_ZSCORE_VERY_HIGH",
+      "name": "GEX Z-Score Very High (>2.0)",
+      "description": "Extreme positive GEX often bounces next day or two.",
+      "bias": "long",
+      "bestHorizon": "1d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.64, "winRatePct": 71.4, "sample": 7, "stars": 0 },
+        "2d": { "avgReturnPct": 0.32, "winRatePct": 57.1, "sample": 7, "stars": 0 },
+        "5d": { "avgReturnPct": -0.79, "winRatePct": 42.9, "sample": 7, "stars": 0 },
+        "10d": { "avgReturnPct": -5.53, "winRatePct": 28.6, "sample": 7, "stars": 0 },
+        "20d": { "avgReturnPct": -2.94, "winRatePct": 57.1, "sample": 7, "stars": 0 }
+      }
+    },
+    {
+      "logicId": "GEX_FLIP_NEGATIVE",
+      "name": "GEX Flip Negative",
+      "description": "Loss of support; bearish skew next day.",
+      "bias": "short",
+      "bestHorizon": "2d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.21, "winRatePct": 46.0, "sample": 63, "stars": 0 },
+        "2d": { "avgReturnPct": 0.21, "winRatePct": 52.4, "sample": 63, "stars": 0 },
+        "5d": { "avgReturnPct": -0.30, "winRatePct": 41.3, "sample": 63, "stars": 0 },
+        "10d": { "avgReturnPct": -1.14, "winRatePct": 23.8, "sample": 63, "stars": 0 },
+        "20d": { "avgReturnPct": -1.49, "winRatePct": 26.2, "sample": 61, "stars": 0 }
+      }
+    },
+    {
+      "logicId": "EXTREME_NEG_GEXCHANGE",
+      "name": "Extreme Negative GEX Change (<-100)",
+      "description": "Rapid support removal; bearish short-term.",
+      "bias": "short",
+      "bestHorizon": "2d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.13, "winRatePct": 45.2, "sample": 126, "stars": 0 },
+        "2d": { "avgReturnPct": 0.13, "winRatePct": 46.0, "sample": 126, "stars": 0 },
+        "5d": { "avgReturnPct": -0.31, "winRatePct": 37.3, "sample": 126, "stars": 0 },
+        "10d": { "avgReturnPct": -1.12, "winRatePct": 25.6, "sample": 125, "stars": 0 },
+        "20d": { "avgReturnPct": -1.49, "winRatePct": 25.4, "sample": 122, "stars": 0 }
+      }
+    },
+    {
+      "logicId": "HIGH_BB_PERCENTB",
+      "name": "BB %B > 0.8 (Near Upper Band)",
+      "description": "Price near upper Bollinger Band; mean reversion opportunity.",
+      "bias": "short",
+      "bestHorizon": "1d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": -0.06, "winRatePct": 45.7, "sample": 256, "stars": 0 },
+        "2d": { "avgReturnPct": -0.09, "winRatePct": 44.9, "sample": 256, "stars": 0 },
+        "5d": { "avgReturnPct": -0.33, "winRatePct": 41.8, "sample": 256, "stars": 0 },
+        "10d": { "avgReturnPct": -0.92, "winRatePct": 37.1, "sample": 256, "stars": 0 },
+        "20d": { "avgReturnPct": -1.83, "winRatePct": 25.4, "sample": 256, "stars": 0 }
+      }
+    },
+    {
+      "logicId": "CRASH_SHORT",
+      "name": "Crash Signal (Swing Down + Negative GEX)",
+      "description": "Short bias: swing down while GEX is negative removes support; expect next-day drop.",
+      "bias": "short",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.35, "winRatePct": 47.4, "sample": 19, "stars": 0 },
+        "2d": { "avgReturnPct": 0.07, "winRatePct": 42.1, "sample": 19, "stars": 0 },
+        "5d": { "avgReturnPct": -0.57, "winRatePct": 42.1, "sample": 19, "stars": 0 },
+        "10d": { "avgReturnPct": -1.85, "winRatePct": 15.8, "sample": 19, "stars": 0 },
+        "20d": { "avgReturnPct": -2.17, "winRatePct": 36.8, "sample": 19, "stars": 0 }
+      }
+    }
+  ]
+}
+
+

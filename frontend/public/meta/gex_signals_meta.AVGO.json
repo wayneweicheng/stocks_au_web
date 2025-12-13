@@ -1,0 +1,76 @@
+{
+  "signals": [
+    {
+      "logicId": "GOLDEN_SETUP",
+      "name": "Golden Setup (VIX>20 & RSI<35)",
+      "description": "High VIX + oversold RSI; highest-conviction mean-reversion buy. Best at 5–10 days.",
+      "bias": "long",
+      "bestHorizon": "5d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.45, "winRatePct": 58.0, "sample": 0, "stars": 0 },
+        "5d": { "avgReturnPct": 2.20, "winRatePct": 81.0, "sample": 0, "stars": 3 },
+        "10d": { "avgReturnPct": 2.90, "winRatePct": 77.0, "sample": 0, "stars": 3 },
+        "20d": { "avgReturnPct": 3.80, "winRatePct": 73.0, "sample": 0, "stars": 2 }
+      }
+    },
+    {
+      "logicId": "CRASH_SHORT",
+      "name": "Crash Signal (Swing Down + Negative GEX)",
+      "description": "Technical breakdown with dealer short gamma; reliable short/hedge for 1–2 days.",
+      "bias": "short",
+      "bestHorizon": "1d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": -0.60, "winRatePct": 63.0, "sample": 0, "stars": 2 },
+        "2d": { "avgReturnPct": -0.92, "winRatePct": 60.0, "sample": 0, "stars": 2 },
+        "5d": { "avgReturnPct": -1.15, "winRatePct": 54.0, "sample": 0, "stars": 0 }
+      }
+    },
+    {
+      "logicId": "CONFIRMED_SWING_UP",
+      "name": "Confirmed Swing Up",
+      "description": "Trend-following; noisy short term, strong at 20 days.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.30, "winRatePct": 52.0, "sample": 0, "stars": 0 },
+        "5d": { "avgReturnPct": 1.25, "winRatePct": 66.0, "sample": 0, "stars": 2 },
+        "20d": { "avgReturnPct": 3.10, "winRatePct": 83.0, "sample": 0, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "VIX_VERY_HIGH",
+      "name": "VIX Very High (>20)",
+      "description": "Volatility regime tends to resolve higher; best at 10–20 days.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 1.50, "winRatePct": 71.0, "sample": 0, "stars": 2 },
+        "20d": { "avgReturnPct": 5.30, "winRatePct": 85.0, "sample": 0, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "GEX_ESCAPED_VERYLOW_Z",
+      "name": "GEX Escaped Very Low Z-Score",
+      "description": "Gamma reversal; relief bounce then strong 10-day follow-through.",
+      "bias": "long",
+      "bestHorizon": "10d",
+      "horizonStats": {
+        "2d": { "avgReturnPct": 1.15, "winRatePct": 69.0, "sample": 0, "stars": 2 },
+        "10d": { "avgReturnPct": 3.85, "winRatePct": 88.0, "sample": 0, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "DARKPOOL_RATIO_GT_2",
+      "name": "Dark Pool Buy Ratio > 2.0",
+      "description": "Aggressive institutional accumulation; creates a 20-day floor.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.10, "winRatePct": 54.0, "sample": 0, "stars": 1 },
+        "20d": { "avgReturnPct": 3.80, "winRatePct": 77.0, "sample": 0, "stars": 3 }
+      }
+    }
+  ]
+}
+
+

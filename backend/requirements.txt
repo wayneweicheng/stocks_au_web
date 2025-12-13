@@ -8,3 +8,5 @@ arkofdata-common @ git+https://github.com/wayneweicheng/utilities_arkofdata-comm
 psutil==6.0.0
 pywinauto==0.6.8
 ib_insync==0.9.86
+langchain-core>=0.3.37
+langchain-openai>=0.2.16

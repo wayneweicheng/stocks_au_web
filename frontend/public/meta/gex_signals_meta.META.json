@@ -1,0 +1,68 @@
+{
+  "signals": [
+    {
+      "logicId": "GOLDEN_SETUP",
+      "name": "Golden Setup (VIX>20 & RSI<35)",
+      "description": "High VIX + oversold RSI. Identifies panic bottoms with extreme accuracy.",
+      "bias": "long",
+      "bestHorizon": "10d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.68, "winRatePct": 57.1, "sample": 14, "stars": 2 },
+        "5d": { "avgReturnPct": 5.96, "winRatePct": 100.0, "sample": 14, "stars": 3 },
+        "10d": { "avgReturnPct": 7.08, "winRatePct": 100.0, "sample": 10, "stars": 3 },
+        "20d": { "avgReturnPct": 8.51, "winRatePct": 66.7, "sample": 9, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "TA_RSI_OVERSOLD",
+      "name": "RSI Deep Value (<30)",
+      "description": "Classic mean reversion. Buying when RSI dips below 30.",
+      "bias": "long",
+      "bestHorizon": "10d",
+      "horizonStats": {
+        "2d": { "avgReturnPct": 1.46, "winRatePct": 70.0, "sample": 30, "stars": 3 },
+        "5d": { "avgReturnPct": 3.82, "winRatePct": 90.0, "sample": 30, "stars": 3 },
+        "10d": { "avgReturnPct": 6.28, "winRatePct": 100.0, "sample": 26, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "BTC_BULL_TREND_ALIGN",
+      "name": "BTC Bull Trend Alignment",
+      "description": "Long META when Bitcoin is in an uptrend (>20d SMA).",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 1.14, "winRatePct": 62.1, "sample": 335, "stars": 2 },
+        "20d": { "avgReturnPct": 5.10, "winRatePct": 75.2, "sample": 335, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "TA_MACD_BULL",
+      "name": "MACD Positive Momentum",
+      "description": "Trend following: MACD Line is positive.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 1.06, "winRatePct": 56.6, "sample": 433, "stars": 2 },
+        "20d": { "avgReturnPct": 4.67, "winRatePct": 67.7, "sample": 433, "stars": 3 }
+      }
+    },
+    {
+      "logicId": "TA_BB_BREAKOUT_DOWN_FAILURE",
+      "name": "Bollinger Breakdown Failure (Short Trap)",
+      "description": "Attempts to short a BB breakdown failed, acting as a hidden Buy signal.",
+      "bias": "short",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": -1.83, "winRatePct": 35.7, "sample": 14, "stars": 1 },
+        "20d": { "avgReturnPct": -9.91, "winRatePct": 15.4, "sample": 13, "stars": 1 }
+      },
+      "note": "Negative returns on a Short bias indicate the stock price rose. This is a 'Bear Trap'."
+    }
+  ]
+}
+
+
+
+
+

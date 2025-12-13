@@ -1,0 +1,54 @@
+{
+  "signals": [
+    {
+      "logicId": "GOLDEN_SETUP",
+      "name": "Golden Setup (VIX>20 & RSI<35)",
+      "description": "Aggressive long for NVDA; tends to trigger explosive 5–10 day runs.",
+      "bias": "long",
+      "bestHorizon": "5d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 10.74, "winRatePct": 100.0, "sample": 7, "stars": 3 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "DARKPOOL_RATIO_GT_2",
+      "name": "Dark Pool Accumulation (Ratio > 1.5)",
+      "description": "Institutional accumulation; NVDA behaves like a 'coiled spring'.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "20d": { "avgReturnPct": 8.83, "winRatePct": 67.0, "sample": 0, "stars": 2 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "GEX_FLIP_POSITIVE",
+      "name": "GEX Flip Positive",
+      "description": "Volatility squeeze then grind-up; safest holding regime for NVDA.",
+      "bias": "long",
+      "bestHorizon": "10d",
+      "horizonStats": {}
+    },
+    {
+      "logicId": "CRASH_SHORT",
+      "name": "Crash Warning (Potential Swing Down + Negative GEX)",
+      "description": "High risk of sharp next-day drop; stand aside or hedge.",
+      "bias": "short",
+      "bestHorizon": "1d",
+      "horizonStats": {}
+    },
+    {
+      "logicId": "NEG_GEX_HIGH_VIX",
+      "name": "Volatility Dip Buy (GEX<0 & VIX>20)",
+      "description": "Fear entry; limited sample but showed +11.73% @5d in one trigger.",
+      "bias": "long",
+      "bestHorizon": "5d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 11.73, "winRatePct": 100.0, "sample": 1, "stars": 2 }
+      }
+    }
+  ]
+}
+
+

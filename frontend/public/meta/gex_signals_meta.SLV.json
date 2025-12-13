@@ -1,0 +1,61 @@
+{
+  "signals": [
+    {
+      "logicId": "GOLDEN_SETUP",
+      "name": "Golden Setup (VIX>20 & RSI<35)",
+      "description": "Medium-term accumulation for Silver; expect short-term chop/dip before rally.",
+      "bias": "long",
+      "bestHorizon": "10d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.00, "winRatePct": 36.4, "sample": 0, "stars": 0 },
+        "10d": { "avgReturnPct": 4.67, "winRatePct": 81.8, "sample": 0, "stars": 3 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "GEX_FLIP_POSITIVE",
+      "name": "GEX Turned Positive",
+      "description": "Momentum buy; structural regime shift supporting sustained rally.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 3.35, "winRatePct": 84.6, "sample": 0, "stars": 3 },
+        "20d": { "avgReturnPct": 6.00, "winRatePct": 91.7, "sample": 0, "stars": 3 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "CONFIRMED_SWING_UP",
+      "name": "Confirmed Swing Up",
+      "description": "Reliable short-term buy for Silver.",
+      "bias": "long",
+      "bestHorizon": "1d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.95, "winRatePct": 70.9, "sample": 0, "stars": 2 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "DARKPOOL_RATIO_GT_2",
+      "name": "Dark Pool Ratio > 2.0",
+      "description": "Not a short-term edge; acts more like a long-term accumulation zone.",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "20d": { "avgReturnPct": 0.00, "winRatePct": 67.0, "sample": 0, "stars": 2 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "POT_SWING_DOWN_NOEDGE",
+      "name": "Potential Swing Down (No Short Edge)",
+      "description": "Unreliable short; the market goes up ~55% instead; avoid shorting.",
+      "bestHorizon": "1d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": -0.19, "winRatePct": 46.0, "sample": 0, "stars": 0 }
+      },
+      "examples": []
+    }
+  ]
+}
+
+

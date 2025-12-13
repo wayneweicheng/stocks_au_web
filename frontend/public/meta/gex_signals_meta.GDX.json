@@ -1,0 +1,50 @@
+{
+  "signals": [
+    {
+      "logicId": "GOLDEN_SETUP",
+      "name": "Golden Setup (VIX>20 & RSI<35)",
+      "description": "Major trend-reversal signal for miners; requires patience.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "20d": { "avgReturnPct": 10.06, "winRatePct": 81.8, "sample": 22, "stars": 3 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "DARKPOOL_RATIO_LT_0_6",
+      "name": "Contrarian Buy: Dark Pool Ratio < 0.6",
+      "description": "Selling exhaustion/capitulation; miners bounce when dark pool activity dries up.",
+      "bias": "long",
+      "bestHorizon": "1d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": 0.80, "winRatePct": 70.7, "sample": 0, "stars": 2 },
+        "5d": { "avgReturnPct": 3.10, "winRatePct": 0, "sample": 0, "stars": 2 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "NEG_GEX_HIGH_VIX",
+      "name": "Panic Hedge (GEX<0 & VIX>20)",
+      "description": "Gold miners rally during market panics.",
+      "bias": "long",
+      "bestHorizon": "10d",
+      "horizonStats": {
+        "10d": { "avgReturnPct": 6.49, "winRatePct": 76.5, "sample": 0, "stars": 3 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "DARKPOOL_RATIO_GT_2_TRAP",
+      "name": "Trap: Dark Pool Ratio > 2.0 (Avoid)",
+      "description": "Short-term underperformance; likely LPs selling into strength. Do not chase.",
+      "bestHorizon": "1d",
+      "horizonStats": {
+        "1d": { "avgReturnPct": -0.68, "winRatePct": 38.7, "sample": 0, "stars": 0 }
+      },
+      "examples": []
+    }
+  ]
+}
+
+

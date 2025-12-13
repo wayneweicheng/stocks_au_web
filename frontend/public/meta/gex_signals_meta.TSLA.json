@@ -1,0 +1,57 @@
+{
+  "signals": [
+    {
+      "logicId": "POT_SWING_UP_NEG_GEXCHANGE",
+      "name": "Gamma Sniper (Potential Swing Up + Negative GEXChange)",
+      "description": "Rare gamma squeeze setup; best-performing TSLA signal over 10–20 days.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 10.5, "winRatePct": 75.0, "sample": 8, "stars": 2 },
+        "10d": { "avgReturnPct": 20.4, "winRatePct": 100.0, "sample": 8, "stars": 3 },
+        "20d": { "avgReturnPct": 37.5, "winRatePct": 100.0, "sample": 8, "stars": 3 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "VIX_PANIC_GEX_POSITIVE",
+      "name": "Volatility Crush (VIX>25 & GEX>0)",
+      "description": "Market panic vs. stock stability divergence; powerful 10-day reversal.",
+      "bias": "long",
+      "bestHorizon": "10d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 11.4, "winRatePct": 83.3, "sample": 0, "stars": 2 },
+        "10d": { "avgReturnPct": 25.2, "winRatePct": 83.3, "sample": 0, "stars": 3 },
+        "20d": { "avgReturnPct": 15.3, "winRatePct": 66.7, "sample": 0, "stars": 2 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "GOLDEN_SETUP",
+      "name": "Golden Setup (VIX>20 & RSI<35)",
+      "description": "Safest swing trade; consistent returns if held for 10–20 days.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 4.8, "winRatePct": 65.2, "sample": 23, "stars": 1 },
+        "10d": { "avgReturnPct": 8.0, "winRatePct": 95.2, "sample": 23, "stars": 2 },
+        "20d": { "avgReturnPct": 18.4, "winRatePct": 100.0, "sample": 23, "stars": 3 }
+      },
+      "examples": []
+    },
+    {
+      "logicId": "VIX_PANIC_RSI_LT_40",
+      "name": "VIX Panic Buy (VIX>25 & RSI<40)",
+      "description": "Deep capitulation filter; captures sharper bottoms than Golden Setup.",
+      "bias": "long",
+      "bestHorizon": "20d",
+      "horizonStats": {
+        "5d": { "avgReturnPct": 7.9, "winRatePct": 87.5, "sample": 0, "stars": 2 },
+        "20d": { "avgReturnPct": 14.3, "winRatePct": 100.0, "sample": 0, "stars": 3 }
+      },
+      "examples": []
+    }
+  ]
+}
+
+
