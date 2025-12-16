@@ -9,6 +9,27 @@ logger = logging.getLogger(__name__)
 class PromptTemplateService:
     """Service for loading and processing prompt templates from signal_pattern directory."""
 
+    # System instruction for signal strength classification
+    SIGNAL_STRENGTH_SYSTEM_PROMPT = """IMPORTANT: At the end of your analysis, you MUST provide a signal strength classification in the following JSON format:
+
+```json
+{
+  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH"
+}
+```
+
+Signal Strength Definitions:
+- STRONGLY_BULLISH: Multiple strong buy signals, positive trend alignment, high conviction upside
+- MILDLY_BULLISH: Some bullish indicators, positive bias but with caveats or mixed signals
+- NEUTRAL: Conflicting signals, unclear direction, or market in transition/consolidation
+- MILDLY_BEARISH: Some bearish indicators, negative bias but not overwhelming
+- STRONGLY_BEARISH: Multiple strong sell signals, negative trend alignment, high conviction downside
+
+Place this JSON at the very end of your markdown response after all analysis.
+---
+
+"""
+
     def __init__(self, template_dir: str = "signal_pattern"):
         """
         Initialize the template service.
@@ -82,7 +103,8 @@ class PromptTemplateService:
         template: str,
         recent_data: str,
         stock_code: Optional[str] = None,
-        observation_date: Optional[str] = None
+        observation_date: Optional[str] = None,
+        include_signal_strength_prompt: bool = True
     ) -> str:
         """
         Replace template variables with actual values.
@@ -99,11 +121,13 @@ class PromptTemplateService:
             recent_data: Tab-delimited GEX features data
             stock_code: Base stock code (optional)
             observation_date: Observation date string (optional)
+            include_signal_strength_prompt: Whether to prepend signal strength classification instructions
 
         Returns:
             Template with variables replaced
         """
-        result = template
+        # Prepend signal strength classification instructions if requested
+        result = self.SIGNAL_STRENGTH_SYSTEM_PROMPT + template if include_signal_strength_prompt else template
 
         # Check if {{ recent_data }} placeholder exists
         has_recent_data_placeholder = "{{ recent_data }}" in result or "{{recent_data}}" in result

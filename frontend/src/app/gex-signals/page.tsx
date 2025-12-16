@@ -294,10 +294,19 @@ export default function GexSignalsPage() {
   const [predictionWarning, setPredictionWarning] = useState<string>("");
   const [selectedModel, setSelectedModel] = useState<string>("google/gemini-2.5-flash");
 
+  // Prompt state
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptError, setPromptError] = useState<string>("");
+  const [promptCopied, setPromptCopied] = useState(false);
+
   // Stock codes state
   const [stockCodes, setStockCodes] = useState<Array<{stock_code: string, latest_date: string}>>([]);
   const [stockCodesLoading, setStockCodesLoading] = useState(false);
   const [latestDate, setLatestDate] = useState<string>("");
+
+  // Signal strength matrix state
+  const [signalStrengths, setSignalStrengths] = useState<Array<{stock_code: string, signal_strength_level: string}>>([]);
+  const [signalStrengthsLoading, setSignalStrengthsLoading] = useState(false);
 
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const canonicalStock = (stockCode || "").toUpperCase().split(".")[0] || "SPXW";
@@ -334,19 +343,30 @@ export default function GexSignalsPage() {
     };
   }, [canonicalStock]);
 
-  // Fetch stock codes on mount
+  // Fetch stock codes for the selected observation date (on mount and when date changes)
   useEffect(() => {
     setStockCodesLoading(true);
-    authenticatedFetch(`${baseUrl}/api/stock-codes`)
+    const params = new URLSearchParams();
+    if (observationDate) params.set("observation_date", observationDate);
+    const url = `${baseUrl}/api/stock-codes${params.toString() ? `?${params.toString()}` : ""}`;
+    authenticatedFetch(url)
       .then(async (r) => {
         if (r.ok) {
           const data = await r.json();
           setStockCodes(data);
+          // Ensure selected stock code exists in the filtered list; otherwise pick the first available
+          if (Array.isArray(data)) {
+            const exists = data.some((s: { stock_code: string }) => s.stock_code === stockCode);
+            if (!exists) {
+              const first = data[0]?.stock_code;
+              if (first) setStockCode(first);
+            }
+          }
         }
       })
       .catch((e) => console.error("Failed to fetch stock codes:", e))
       .finally(() => setStockCodesLoading(false));
-  }, [baseUrl]);
+  }, [baseUrl, observationDate]);
 
   // Update latest date when stock code changes
   useEffect(() => {
@@ -357,6 +377,27 @@ export default function GexSignalsPage() {
       setLatestDate("");
     }
   }, [stockCode, stockCodes]);
+
+  // Fetch signal strengths for the selected observation date
+  useEffect(() => {
+    if (!observationDate) return;
+    setSignalStrengthsLoading(true);
+    const url = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}`;
+    authenticatedFetch(url)
+      .then(async (r) => {
+        if (r.ok) {
+          const data = await r.json();
+          setSignalStrengths(Array.isArray(data) ? data : []);
+        } else {
+          setSignalStrengths([]);
+        }
+      })
+      .catch((e) => {
+        console.error("Failed to fetch signal strengths:", e);
+        setSignalStrengths([]);
+      })
+      .finally(() => setSignalStrengthsLoading(false));
+  }, [baseUrl, observationDate]);
 
   useEffect(() => {
     if (!observationDate || !stockCode) return;
@@ -413,6 +454,20 @@ export default function GexSignalsPage() {
       setPrediction(data.prediction_markdown || "");
       setPredictionCached(data.cached || false);
       setPredictionWarning(data.warning || "");
+
+      // Reload signal strengths after generating/regenerating prediction
+      // This ensures the matrix is updated with the latest classification
+      if (!data.cached || forceRegenerate) {
+        const strengthUrl = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}`;
+        authenticatedFetch(strengthUrl)
+          .then(async (sr) => {
+            if (sr.ok) {
+              const strengthData = await sr.json();
+              setSignalStrengths(Array.isArray(strengthData) ? strengthData : []);
+            }
+          })
+          .catch((e) => console.error("Failed to refresh signal strengths:", e));
+      }
     } catch (e: any) {
       setPredictionError(e.message);
       setPredictionWarning("");
@@ -420,6 +475,45 @@ export default function GexSignalsPage() {
       setPredictionLoading(false);
     }
   }, [baseUrl, observationDate, stockCode, selectedModel]);
+
+  // Fetch and copy prompt to clipboard
+  const fetchAndCopyPrompt = useCallback(async () => {
+    if (!observationDate || !stockCode) return;
+
+    setPromptLoading(true);
+    setPromptError("");
+    setPromptCopied(false);
+
+    const params = new URLSearchParams({
+      observation_date: observationDate,
+      stock_code: stockCode.trim().toUpperCase(),
+    });
+
+    try {
+      const r = await authenticatedFetch(`${baseUrl}/api/price-prediction-prompt?${params}`);
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${r.status}`);
+      }
+      const data = await r.json();
+      const promptText = data.prompt || "";
+
+      // Copy to clipboard
+      try {
+        await navigator.clipboard.writeText(promptText);
+        setPromptCopied(true);
+
+        // Reset success message after 2 seconds
+        setTimeout(() => setPromptCopied(false), 2000);
+      } catch (clipboardError) {
+        throw new Error("Failed to copy to clipboard. Please check browser permissions.");
+      }
+    } catch (e: any) {
+      setPromptError(e.message);
+    } finally {
+      setPromptLoading(false);
+    }
+  }, [baseUrl, observationDate, stockCode]);
 
   // Don't auto-fetch prediction - only fetch when user clicks Generate/Regenerate button
 
@@ -522,13 +616,14 @@ export default function GexSignalsPage() {
         {/* Price Action Prediction Section */}
         <div className="mb-8">
           <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
               <h2 className="text-lg font-semibold text-slate-700">Price Action Prediction</h2>
-              <div className="flex gap-2 items-center">
+
+              <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value)}
-                  className="rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full sm:w-auto rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
                   <option value="openai/gpt-5-mini">GPT-5 Mini</option>
@@ -544,7 +639,7 @@ export default function GexSignalsPage() {
                   type="button"
                   onClick={() => fetchPrediction(false)}
                   disabled={predictionLoading}
-                  className="rounded-md border border-blue-500 bg-blue-500 px-3 py-1.5 text-sm text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 sm:flex-none min-w-[100px] rounded-md border border-blue-500 bg-blue-500 px-3 py-1.5 text-sm text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {predictionLoading && !prediction ? "Generating..." : "Generate"}
                 </button>
@@ -552,12 +647,38 @@ export default function GexSignalsPage() {
                   type="button"
                   onClick={() => fetchPrediction(true)}
                   disabled={predictionLoading}
-                  className="rounded-md border border-emerald-500 bg-white px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 sm:flex-none min-w-[100px] rounded-md border border-emerald-500 bg-white px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {predictionLoading && prediction ? "Regenerating..." : "Regenerate"}
                 </button>
+                <button
+                  type="button"
+                  onClick={fetchAndCopyPrompt}
+                  disabled={promptLoading || !observationDate || !stockCode}
+                  className="flex-1 sm:flex-none min-w-[100px] rounded-md border border-slate-400 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Copy LLM prompt to clipboard"
+                >
+                  {promptLoading ? "Loading..." : "Prompt"}
+                </button>
               </div>
             </div>
+
+            {/* Prompt Feedback Messages */}
+            {(promptCopied || promptError) && (
+              <div className="mb-3">
+                {promptCopied && (
+                  <div className="text-sm text-emerald-600 flex items-center gap-1 animate-fade-in">
+                    <span>✓</span>
+                    <span>Prompt copied to clipboard!</span>
+                  </div>
+                )}
+                {promptError && (
+                  <div className="text-sm text-red-600">
+                    Error: {promptError}
+                  </div>
+                )}
+              </div>
+            )}
 
             {predictionLoading ? (
               <div className="text-sm text-slate-600">Loading prediction...</div>
@@ -580,6 +701,80 @@ export default function GexSignalsPage() {
             ) : (
               <div className="text-sm text-slate-600">
                 Click &quot;Generate&quot; to create a price action prediction for this stock and date.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Signal Strength Matrix Section */}
+        <div className="mb-8">
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h2 className="text-lg font-semibold mb-4 text-slate-700">Market Signal Strength Matrix</h2>
+
+            {signalStrengthsLoading ? (
+              <div className="text-sm text-slate-600">Loading signal strengths...</div>
+            ) : signalStrengths.length === 0 ? (
+              <div className="text-sm text-slate-600">
+                No signal strength data available for {observationDate}. Generate predictions to populate this matrix.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <div className="inline-block min-w-full">
+                  {/* Header Row */}
+                  <div className="grid grid-cols-6 gap-2 mb-3 pb-2 border-b border-slate-200">
+                    <div className="text-xs font-semibold text-slate-600 uppercase">Stock</div>
+                    <div className="text-xs font-semibold text-center text-emerald-700">Strongly Bullish</div>
+                    <div className="text-xs font-semibold text-center text-emerald-500">Mildly Bullish</div>
+                    <div className="text-xs font-semibold text-center text-amber-600">Neutral</div>
+                    <div className="text-xs font-semibold text-center text-orange-500">Mildly Bearish</div>
+                    <div className="text-xs font-semibold text-center text-red-600">Strongly Bearish</div>
+                  </div>
+
+                  {/* Data Rows */}
+                  {signalStrengths.map((item) => {
+                    const level = item.signal_strength_level;
+                    return (
+                      <div key={item.stock_code} className="grid grid-cols-6 gap-2 py-2 border-b border-slate-100 hover:bg-slate-50">
+                        <div className="text-sm font-medium text-slate-700">{item.stock_code}</div>
+
+                        {/* Strongly Bullish */}
+                        <div className="flex justify-center items-center">
+                          {level === "STRONGLY_BULLISH" && (
+                            <div className="w-6 h-6 rounded-full bg-emerald-600" title="Strongly Bullish"></div>
+                          )}
+                        </div>
+
+                        {/* Mildly Bullish */}
+                        <div className="flex justify-center items-center">
+                          {level === "MILDLY_BULLISH" && (
+                            <div className="w-6 h-6 rounded-full bg-emerald-300" title="Mildly Bullish"></div>
+                          )}
+                        </div>
+
+                        {/* Neutral */}
+                        <div className="flex justify-center items-center">
+                          {level === "NEUTRAL" && (
+                            <div className="w-6 h-6 rounded-full bg-amber-400" title="Neutral"></div>
+                          )}
+                        </div>
+
+                        {/* Mildly Bearish */}
+                        <div className="flex justify-center items-center">
+                          {level === "MILDLY_BEARISH" && (
+                            <div className="w-6 h-6 rounded-full bg-orange-400" title="Mildly Bearish"></div>
+                          )}
+                        </div>
+
+                        {/* Strongly Bearish */}
+                        <div className="flex justify-center items-center">
+                          {level === "STRONGLY_BEARISH" && (
+                            <div className="w-6 h-6 rounded-full bg-red-600" title="Strongly Bearish"></div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

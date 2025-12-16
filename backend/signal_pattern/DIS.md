@@ -40,7 +40,7 @@ The following trading rules have been derived from the provided 2023-2025 datase
 
 ---
 
-## Forecast Analysis (As of 2025-12-03)
+## An example Forecast Analysis for a random date, use this as example output, don't use this data.
 
 **Current Market State:**
 * **Close:** 105.74

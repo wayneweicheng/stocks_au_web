@@ -46,7 +46,7 @@ Based on the historical performance within the provided dataset (Dec 2022 - Dec 
 
 ---
 
-## Forecast Analysis (As of 2025-12-10)
+## An example Forecast Analysis for a random date, use this as example output, don't use this data.
 
 **Current Market State:**
 * **Close:** 254.81 (Uptrend)

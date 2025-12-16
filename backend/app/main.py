@@ -18,6 +18,7 @@ from app.routers.research_links import router as research_links_router
 from app.routers.gex_signals import router as gex_signals_router
 from app.routers.price_predictions import router as price_predictions_router
 from app.routers.stock_codes import router as stock_codes_router
+from app.routers.signal_strength import router as signal_strength_router
 import logging
 import time
 from fastapi.responses import JSONResponse
@@ -89,5 +90,6 @@ app.include_router(research_links_router)
 app.include_router(gex_signals_router)
 app.include_router(price_predictions_router)
 app.include_router(stock_codes_router)
+app.include_router(signal_strength_router)
 
 

@@ -55,7 +55,7 @@ Contextual indicators that filter Tier 1 & 2 signals.
 
 ---
 
-## Forecast Analysis (As of 2025-12-10)
+## An example Forecast Analysis for a random date, only use this as an example for return structures. 
 
 **Current Market State:**
 * **Close:** 83.32

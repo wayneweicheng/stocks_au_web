@@ -40,7 +40,7 @@ The following rules have been derived from the statistical performance of AVGO w
 
 ---
 
-## Forecast Analysis (As of 2025-12-10)
+## An example Forecast Analysis for a random date, use this as example output, don't use this data.
 
 **Current Market State:**
 * **Close:** 412.97

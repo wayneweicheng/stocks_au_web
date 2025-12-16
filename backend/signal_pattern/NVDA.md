@@ -49,7 +49,7 @@ The following rules have been statistically derived from the provided historical
 
 ---
 
-## Forecast Analysis (As of 2025-12-10)
+## An example Forecast Analysis for a random date, use this as example output, don't use this data.
 
 **Current Market State:**
 * **Close:** 183.78

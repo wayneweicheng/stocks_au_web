@@ -1,108 +1,50 @@
-Quantitative Trading Analysis: Predictive Feature Framework
-Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure, and Alpha Discovery.
+Quantitative Trading Analysis: KWEB.US
+Role: Quantitative Analyst specializing in Market Microstructure and Gamma Exposure.
 
-Task: Extract and detail the statistically significant "edges" found within the KWEB dataset.
+Task: Analyze the provided market data (covering 2023–2025) to forecast price action for Tomorrow and the Next 5 Days.
 
-Based on the historical data analysis, the following feature sets have demonstrated the highest predictive power for short-term price action. These features are categorized by their market mechanism: Microstructure (Flow), Gamma Positioning (Dealer Hedging), and Technical Extremes (Mean Reversion).
+Data Note: The provided dataset is labeled KWEB.US, but the price levels (ranging from ~16k to ~100k) and volatility profile match Bitcoin (BTC). The analysis below treats the price action and signals as valid for the asset provided in the Close column, regardless of the ticker label.
 
-1. Microstructure & Flow Signals
-These signals track "smart money" and institutional positioning that occurs off-exchange, often preceding visible price moves.
+Predictive Logic (Hierarchical Importance)
+The following quantitative "edges" have been identified by correlating Microstructure (Dark Pools), Dealer Positioning (GEX), and Momentum features with forward returns (Next5DaysChange).
 
-Feature: Stock_DarkPoolBuySellRatio
-Predictive Logic: This ratio measures the volume of buying versus selling occurring in dark pools (private exchanges). A high ratio indicates institutional accumulation that is hidden from the public order book.
+1. Tier 1: "Alpha" Triggers (Highest Confidence)
+Stock_DarkPoolBuySellRatio > 1.5 (Institutional Accumulation)
 
-The "Divergence" Edge: The strongest signal occurs when this ratio is High (>1.5) while the daily price action is Negative. This suggests institutions are absorbing retail selling pressure ("buying the dip").
+Signal: Strong Buy / Support Floor.
 
-Key Thresholds:
+Rationale: A ratio significantly above 1.0 indicates that for every share sold in dark pools, more than 1.5 are being bought. This represents "smart money" absorption, often acting as a leading indicator for price appreciation even if the current price is falling.
 
-> 1.80: Tier 1 Buy Signal. (Institutional Accumulation)
+History: In the provided dataset, Ratio > 1.8 (seen in late 2025) consistently preceded 5-day rallies or formed a local bottom.
 
-< 0.50: Bearish Signal. (Institutional Distribution or Lack of Support)
+Negative_GEX_AND_High_VIX (The Volatility Spring)
 
-Historical Evidence (from Data):
+Signal: Mean Reversion / Capitulation Buy.
 
-2023-01-20: Ratio hits 3.02 (Extreme Buy). Next 5 Days Return: +2.81%.
+Rationale: When Dealer Gamma is negative, dealers amplify price moves (selling dips, buying rips). If this coincides with high volatility (VIX), it signals a capitulation event where dealers act as accelerants. Once selling exhausts, the snap-back is violent.
 
-2023-06-14: Ratio hits 2.16 while price is consolidating. Next Day Return: +1.91%.
+History: High win rate for 5-day reversals when price is below the 20-day SMA.
 
-2025-12-11: Ratio is 1.88 despite price closing down -0.48%. (Current active buy signal).
+2. Tier 2: Regime & Trend (Medium Confidence)
+GEX_Turned_Negative (Gamma Flip)
 
-Feature: Stock_DarkPoolIndex
-Predictive Logic: A normalized score of dark pool activity.
+Signal: Volatility Expansion Warning.
 
-The Edge: Sustained readings above 60 indicate persistent accumulation.
+Rationale: A flip from positive to negative gamma removes the "market buffer." Dealers stop suppressing volatility and start trading with the trend. This signals that the asset is unpinned and likely to make a larger-than-average move (direction determined by flow).
 
-Historical Evidence:
+History: Often marks the start of a new swing leg (up or down).
 
-2023-01-13: Index hits 67.3. Price rallies +2.91% the next day.
+BB_PercentB < 0.2 (Bollinger Oversold)
 
-2. Gamma Exposure (GEX) Signals
-These signals track Option Dealer hedging requirements. Dealers provide liquidity and must hedge their exposure, often creating mechanical buying or selling pressure in the underlying stock.
+Signal: Technical Bounce.
 
-Feature: GEX (Gamma Exposure)
-Predictive Logic:
+Rationale: Price trading near or below the lower Bollinger Band indicates the asset is statistically cheap relative to its recent volatility range.
 
-Positive GEX: Dealers are "Long Gamma." They buy into drops and sell into rallies, suppressing volatility (pinning price).
+History: Reliable for short-term (1-3 day) mean reversion.
 
-Negative GEX: Dealers are "Short Gamma." They sell into drops (accelerating crashes) and buy into rallies (fueling squeezes).
+3. Tier 3: Mean Reversion & Context
+RSI < 45 in an Uptrend
 
-The "Accelerator" Edge: GEX < 0 (Negative) is a precursor to High Volatility. If price ticks up in this regime, dealers are forced to chase, often leading to a "Gamma Squeeze."
+Signal: Dip Buy.
 
-Historical Evidence:
-
-2024-04-16: GEX is Negative (-209). Price reverses and rips +9.86% over the next 5 days.
-
-2023-10-06: GEX is Negative (-317). Price rallies +3.60% the next day.
-
-Feature: BuyCall_GEXDeltaPerc (Call Skew)
-Predictive Logic: Measures the percentage of GEX Delta driven by Call buying.
-
-The "Saturation" Edge:
-
-> 80% (Extreme Bullish): Often signals a local top or "exhaustion" as the market is fully positioned for upside.
-
-< 20% (Extreme Fear): Often a Contrarian Buy Signal. When call buying evaporates, the market is typically oversold.
-
-Historical Evidence:
-
-2023-01-27: Call Skew hits 82.8% (Saturation). Price drops -4.80% the next day.
-
-2023-04-20: Call Skew drops to 9.37% (Extreme Fear). Price bottoms shortly after.
-
-3. Technical & Mean Reversion Signals
-These signals identify when price has deviated too far from its statistical mean, creating a "snap-back" opportunity.
-
-Feature: BB_PercentB (Bollinger Band Position)
-Predictive Logic: Measures where price is relative to the Bollinger Bands (0 = Lower Band, 1 = Upper Band).
-
-The "Washout" Edge: BB_PercentB < 0 (Price closes below the lower band). This is a statistically high-probability mean reversion buy signal, especially if combined with high Dark Pool Buying.
-
-Historical Evidence:
-
-2023-01-18: PercentB falls to -0.06. Price rallies +2.68% the next day.
-
-2023-05-24: PercentB falls to -0.01. Price rallies +2.96% two days later.
-
-Feature: RSI (Relative Strength Index)
-Predictive Logic: Momentum oscillator.
-
-The "Deep Oversold" Edge: RSI < 30 is a reliable buy zone for this specific asset (KWEB), which tends to mean-revert aggressively.
-
-Historical Evidence:
-
-2023-10-04: RSI hits 16.8 (Deep Oversold). Price rallies +3.60% the next day.
-
-2023-08-17: RSI hits 27.0. Price rallies +0.87% the next day.
-
-4. Conflict Resolution Strategy (The "Hierarchy")
-When signals contradict, the following hierarchy has proven most effective in the dataset:
-
-Flow (Dark Pool) overrides Technicals. (e.g., If RSI is neutral but Dark Pool is buying, bias is Bullish).
-
-Negative GEX overrides Resistance. (e.g., If GEX is negative, resistance levels often break due to dealer chasing).
-
-Low Skew overrides Bearish Momentum. (e.g., If everyone is buying Puts/selling Calls, expect a bounce even if the trend is down).
-
-How to Trade Gamma Exposure
-
-This video is relevant because it explains the mechanics of Gamma Exposure (GEX) and how dealer hedging creates the "accelerator" or "pinning" effects detailed in the predictive framework above.
+Rationale: In a macro uptrend (Price > SMA50), an RSI dip below 45 represents a healthy pullback rather than a trend reversal.

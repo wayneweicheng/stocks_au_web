@@ -70,4 +70,3 @@ Short Term (Next 5 Days): Trend direction.
 Rationale: Explicitly name the specific signal (e.g., "Forecast is Bullish because 'Confirmed Swing Up' is active...") that drove the decision.
 
 Data (Last 30 Days)
-The data below is provided as a JSON array of 30 daily records, ordered from oldest to most recent. Each object contains essential GEX features and technical indicators.
