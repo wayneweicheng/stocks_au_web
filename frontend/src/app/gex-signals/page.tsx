@@ -295,6 +295,7 @@ export default function GexSignalsPage() {
   const [selectedModel, setSelectedModel] = useState<string>("google/gemini-2.5-flash");
 
   // Prompt state
+  const [promptText, setPromptText] = useState<string>("");
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptError, setPromptError] = useState<string>("");
   const [promptCopied, setPromptCopied] = useState(false);
@@ -476,8 +477,8 @@ export default function GexSignalsPage() {
     }
   }, [baseUrl, observationDate, stockCode, selectedModel]);
 
-  // Fetch and copy prompt to clipboard
-  const fetchAndCopyPrompt = useCallback(async () => {
+  // Fetch prompt from API (doesn't copy yet)
+  const fetchPrompt = useCallback(async () => {
     if (!observationDate || !stockCode) return;
 
     setPromptLoading(true);
@@ -496,24 +497,50 @@ export default function GexSignalsPage() {
         throw new Error(data.detail || `HTTP ${r.status}`);
       }
       const data = await r.json();
-      const promptText = data.prompt || "";
-
-      // Copy to clipboard
-      try {
-        await navigator.clipboard.writeText(promptText);
-        setPromptCopied(true);
-
-        // Reset success message after 2 seconds
-        setTimeout(() => setPromptCopied(false), 2000);
-      } catch (clipboardError) {
-        throw new Error("Failed to copy to clipboard. Please check browser permissions.");
-      }
+      setPromptText(data.prompt || "");
     } catch (e: any) {
       setPromptError(e.message);
+      setPromptText("");
     } finally {
       setPromptLoading(false);
     }
   }, [baseUrl, observationDate, stockCode]);
+
+  // Copy prompt to clipboard (synchronous, mobile-friendly)
+  const copyPromptToClipboard = useCallback(() => {
+    if (!promptText) return;
+
+    setPromptError("");
+    setPromptCopied(false);
+
+    // Mobile-friendly copy: Use a temporary textarea
+    const textarea = document.createElement("textarea");
+    textarea.value = promptText;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    textarea.setAttribute("readonly", "");
+    document.body.appendChild(textarea);
+
+    try {
+      textarea.focus();
+      textarea.select();
+
+      // Use execCommand for maximum mobile compatibility
+      const success = document.execCommand("copy");
+      if (!success) {
+        throw new Error("Copy command failed");
+      }
+
+      setPromptCopied(true);
+      // Reset success message after 2 seconds
+      setTimeout(() => setPromptCopied(false), 2000);
+    } catch (clipboardError) {
+      setPromptError("Failed to copy. Please select and copy manually.");
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }, [promptText]);
 
   // Don't auto-fetch prediction - only fetch when user clicks Generate/Regenerate button
 
@@ -653,13 +680,24 @@ export default function GexSignalsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={fetchAndCopyPrompt}
+                  onClick={fetchPrompt}
                   disabled={promptLoading || !observationDate || !stockCode}
                   className="flex-1 sm:flex-none min-w-[100px] rounded-md border border-slate-400 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Copy LLM prompt to clipboard"
+                  title="Fetch LLM prompt"
                 >
-                  {promptLoading ? "Loading..." : "Prompt"}
+                  {promptLoading ? "Loading..." : "Get Prompt"}
                 </button>
+                {promptText && (
+                  <button
+                    type="button"
+                    onClick={copyPromptToClipboard}
+                    disabled={!promptText}
+                    className="flex-1 sm:flex-none min-w-[100px] rounded-md border border-green-500 bg-green-500 px-3 py-1.5 text-sm text-white hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title="Copy prompt to clipboard"
+                  >
+                    Copy
+                  </button>
+                )}
               </div>
             </div>
 

@@ -67,6 +67,8 @@ class PlaceOrderAtPriceRequest(BaseModel):
     stock_dollar_amount: float
     buy_sell: str  # BUY | SELL
     limit_price: float
+    place_day: bool = True
+    place_overnight: bool = False
 
     @field_validator("buy_sell")
     @classmethod
@@ -93,6 +95,8 @@ class PlaceOrderAtPriceRequest(BaseModel):
 
 class PlaceOrdersAtPriceBatchRequest(BaseModel):
     orders: List[PlaceOrderAtPriceRequest]
+    place_day: bool = True
+    place_overnight: bool = False
 
     @field_validator("orders")
     @classmethod
@@ -116,10 +120,12 @@ def _connect_ib() -> "tuple[IB, asyncio.AbstractEventLoop]":
     # Prefer IB Gateway defaults first (4002 live, 4001 paper), then TWS (7496/7497)
     candidate_ports = [port_cfg] if port_cfg > 0 else [4002, 4001, 7496, 7497]
     last_err: Exception | None = None
+    # Use a fixed client ID so we can cancel orders placed by this same client
+    fixed_client_id = 12345
     for p in candidate_ports:
         try:
-            ib.connect(host, p, clientId=random.randint(10000, 50000), timeout=30)
-            logger.info("IB: connected to %s:%s", host, p)
+            ib.connect(host, p, clientId=fixed_client_id)
+            logger.info("IB: connected to %s:%s with clientId=%s", host, p, fixed_client_id)
             return ib, loop
         except Exception as e:
             last_err = e
@@ -128,18 +134,21 @@ def _connect_ib() -> "tuple[IB, asyncio.AbstractEventLoop]":
     raise HTTPException(status_code=502, detail=f"Failed to connect to IB API at {host}:{candidate_ports} ({last_err})")
 
 
-def _build_contract(stock_code: str):
+def _build_contract(stock_code: str, overnight: bool = False):
     sym = (stock_code or "").strip().upper()
     if "." in sym:
         symbol_part, suffix = sym.split(".", 1)
         if suffix == "US":
-            return Stock(symbol_part, "SMART", "USD")
+            exchange = "OVERNIGHT" if overnight else "SMART"
+            return Stock(symbol_part, exchange, "USD")
         if suffix == "AX":
             return Stock(symbol_part, "ASX", "AUD")
         # Default for unknown suffix
-        return Stock(symbol_part, "SMART", "USD")
+        exchange = "OVERNIGHT" if overnight else "SMART"
+        return Stock(symbol_part, exchange, "USD")
     # Assume US if no suffix
-    return Stock(sym, "SMART", "USD")
+    exchange = "OVERNIGHT" if overnight else "SMART"
+    return Stock(sym, exchange, "USD")
 
 
 def _round_price_for_market(price: float, stock_code: str) -> float:
@@ -223,9 +232,6 @@ def place_order_at_price(order: PlaceOrderAtPriceRequest) -> Dict[str, Any]:
     ib, loop = _connect_ib()
     try:
         code = _normalize_us_symbol(order.stock_code)
-        contract = _build_contract(code)
-        ib.qualifyContracts(contract)
-
         price = float(order.limit_price)
         if price <= 0:
             raise HTTPException(status_code=400, detail="limit_price must be > 0")
@@ -234,25 +240,73 @@ def place_order_at_price(order: PlaceOrderAtPriceRequest) -> Dict[str, Any]:
         if qty <= 0:
             raise HTTPException(status_code=400, detail="Dollar amount too small for 1 share at provided price")
 
-        lo = LimitOrder(order.buy_sell.upper(), qty, lmtPrice=price)
-        lo.outsideRth = True
-        try:
-            lo.tif = "DAY"
-        except Exception:
-            pass
-        lo.eTradeOnly = None
-        lo.firmQuoteOnly = None
-        trade = ib.placeOrder(contract, lo)
+        # Validate at least one exchange is selected
+        if not order.place_day and not order.place_overnight:
+            raise HTTPException(status_code=400, detail="At least one of place_day or place_overnight must be true")
 
-        return {
-            "message": f"Placed {order.buy_sell.upper()} {qty} {code} @ {price}",
-            "order": {
+        orders_placed = []
+
+        # Place SMART exchange order if requested
+        if order.place_day:
+            contract = _build_contract(code, overnight=False)
+            ib.qualifyContracts(contract)
+            lo = LimitOrder(order.buy_sell.upper(), qty, lmtPrice=price)
+            lo.outsideRth = True
+            try:
+                lo.tif = "DAY"
+            except Exception:
+                pass
+            lo.eTradeOnly = None
+            lo.firmQuoteOnly = None
+            trade = ib.placeOrder(contract, lo)
+            orders_placed.append({
+                "exchange": "SMART",
                 "stock_code": code,
                 "qty": qty,
                 "limit_price": price,
                 "side": order.buy_sell.upper(),
-            },
-            "ib_order_id": getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
+                "ib_order_id": getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
+            })
+
+        # Place OVERNIGHT exchange order if requested
+        if order.place_overnight:
+            if order.place_day:
+                ib.sleep(0.2)  # Pause between orders to avoid rate limiting
+            contract_overnight = _build_contract(code, overnight=True)
+            ib.qualifyContracts(contract_overnight)
+            lo_overnight = LimitOrder(order.buy_sell.upper(), qty, lmtPrice=price)
+            lo_overnight.outsideRth = True
+            try:
+                lo_overnight.tif = "DAY"
+            except Exception:
+                pass
+            lo_overnight.eTradeOnly = None
+            lo_overnight.firmQuoteOnly = None
+            trade_overnight = ib.placeOrder(contract_overnight, lo_overnight)
+            orders_placed.append({
+                "exchange": "OVERNIGHT",
+                "stock_code": code,
+                "qty": qty,
+                "limit_price": price,
+                "side": order.buy_sell.upper(),
+                "ib_order_id": getattr(trade_overnight, "order", None).orderId if getattr(trade_overnight, "order", None) else None,
+            })
+
+        # Build message based on what was placed
+        exchanges = []
+        if order.place_day:
+            exchanges.append("SMART")
+        if order.place_overnight:
+            exchanges.append("OVERNIGHT")
+        message = f"Placed {order.buy_sell.upper()} {qty} {code} @ {price}"
+        if len(exchanges) > 1:
+            message += f" ({' + '.join(exchanges)})"
+        elif len(exchanges) == 1:
+            message += f" ({exchanges[0]})"
+
+        return {
+            "message": message,
+            "orders": orders_placed,
         }
     except HTTPException:
         raise
@@ -326,12 +380,14 @@ def place_orders(batch: PlaceOrdersBatchRequest) -> Dict[str, Any]:
 def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, Any]:
     ib, loop = _connect_ib()
     results: List[Dict[str, Any]] = []
+
+    # Validate at least one exchange is selected
+    if not batch.place_day and not batch.place_overnight:
+        raise HTTPException(status_code=400, detail="At least one of place_day or place_overnight must be true")
+
     try:
         for i, o in enumerate(batch.orders, start=1):
             code = _normalize_us_symbol(o.stock_code)
-            contract = _build_contract(code)
-            ib.qualifyContracts(contract)
-
             price = float(o.limit_price)
             if price <= 0:
                 results.append({"index": i, "request": {"stock_code": code}, "ok": False, "error": "Invalid limit_price"})
@@ -342,22 +398,81 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                 results.append({"index": i, "request": {"stock_code": code}, "ok": False, "error": "Dollar amount too small"})
                 continue
 
-            lo = LimitOrder(o.buy_sell.upper(), qty, lmtPrice=price)
-            lo.outsideRth = True
-            try:
-                lo.tif = "DAY"
-            except Exception:
-                pass
-            lo.eTradeOnly = None
-            lo.firmQuoteOnly = None
-            trade = ib.placeOrder(contract, lo)
+            orders_placed = []
+
+            # Place SMART exchange order if requested
+            if batch.place_day:
+                try:
+                    contract = _build_contract(code, overnight=False)
+                    ib.qualifyContracts(contract)
+                    lo = LimitOrder(o.buy_sell.upper(), qty, lmtPrice=price)
+                    lo.outsideRth = True
+                    try:
+                        lo.tif = "DAY"
+                    except Exception:
+                        pass
+                    lo.eTradeOnly = None
+                    lo.firmQuoteOnly = None
+                    trade = ib.placeOrder(contract, lo)
+                    orders_placed.append({
+                        "exchange": "SMART",
+                        "stock_code": code,
+                        "qty": qty,
+                        "limit_price": price,
+                        "side": o.buy_sell.upper(),
+                        "ib_order_id": getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
+                    })
+                except Exception as e:
+                    logger.warning("Failed to place SMART order for %s: %s", code, e)
+                    # Don't fail entire batch if day order fails, add error to this order
+                    orders_placed.append({
+                        "exchange": "SMART",
+                        "stock_code": code,
+                        "error": f"Failed: {e}"
+                    })
+                    # If day order fails and we're only placing day orders, mark this result as failed
+                    if not batch.place_overnight:
+                        results.append({"index": i, "request": {"stock_code": code}, "ok": False, "error": f"SMART order failed: {e}"})
+                        continue
+
+            # Place OVERNIGHT exchange order if requested
+            if batch.place_overnight:
+                try:
+                    contract_overnight = _build_contract(code, overnight=True)
+                    ib.qualifyContracts(contract_overnight)
+                    lo_overnight = LimitOrder(o.buy_sell.upper(), qty, lmtPrice=price)
+                    lo_overnight.outsideRth = True
+                    try:
+                        lo_overnight.tif = "DAY"
+                    except Exception:
+                        pass
+                    lo_overnight.eTradeOnly = None
+                    lo_overnight.firmQuoteOnly = None
+                    trade_overnight = ib.placeOrder(contract_overnight, lo_overnight)
+                    orders_placed.append({
+                        "exchange": "OVERNIGHT",
+                        "stock_code": code,
+                        "qty": qty,
+                        "limit_price": price,
+                        "side": o.buy_sell.upper(),
+                        "ib_order_id": getattr(trade_overnight, "order", None).orderId if getattr(trade_overnight, "order", None) else None,
+                    })
+                except Exception as e:
+                    logger.warning("Failed to place OVERNIGHT order for %s: %s", code, e)
+                    # Don't fail the entire operation if overnight order fails
+                    orders_placed.append({
+                        "exchange": "OVERNIGHT",
+                        "stock_code": code,
+                        "error": f"Failed: {e}"
+                    })
+
             results.append({
                 "index": i,
                 "ok": True,
-                "order": {"stock_code": code, "qty": qty, "limit_price": price, "side": o.buy_sell.upper()},
-                "ib_order_id": getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
+                "orders": orders_placed,
+                "request": {"stock_code": code, "limit_price": price, "buy_sell": o.buy_sell.upper()},
             })
-            ib.sleep(0.05)
+
         ok = all(bool(r.get("ok")) for r in results)
         return {"ok": ok, "results": results}
     except HTTPException:
@@ -508,5 +623,134 @@ def _try_tcp(host: str, port: int) -> bool:
             return True
     except Exception:
         return False
+
+
+@router.post("/cancel-all-orders-for-stock")
+def cancel_all_orders_for_stock(stock_code: str, side: str = None) -> Dict[str, Any]:
+    """
+    Cancel all open orders (SMART and OVERNIGHT) for a given stock symbol.
+    Optionally filter by side (BUY or SELL).
+    """
+    logger.info("Cancel request: stock_code=%s, side=%s", stock_code, side)
+    ib, loop = _connect_ib()
+    try:
+        code = _normalize_us_symbol(stock_code)
+
+        # Validate side parameter if provided
+        if side:
+            side_upper = side.strip().upper()
+            if side_upper not in ("BUY", "SELL"):
+                raise HTTPException(status_code=400, detail="side must be BUY or SELL")
+        else:
+            side_upper = None
+
+        # Get all open trades with timeout protection
+        logger.info("Fetching open trades...")
+        try:
+            # Request open orders from this client (we can only cancel our own orders)
+            # Note: We use a fixed clientId=12345, so this will only return orders placed with that clientId
+            ib.reqOpenOrders()
+            # Give IB time to send the open orders
+            ib.sleep(1.0)
+            open_trades = ib.openTrades()
+            logger.info("Found %d open trades total", len(open_trades))
+        except Exception as e:
+            logger.error("Failed to fetch open trades: %s", e)
+            raise HTTPException(status_code=500, detail=f"Failed to fetch open trades: {e}")
+
+        # Filter trades for this stock (check both SMART and OVERNIGHT exchanges)
+        symbol_without_suffix = code.split(".")[0] if "." in code else code
+        logger.info("Filtering for symbol: %s", symbol_without_suffix)
+
+        # Debug: log all open trade symbols
+        for t in open_trades:
+            if hasattr(t.contract, "symbol"):
+                logger.info("Open trade symbol: %s (exchange: %s, action: %s)",
+                           t.contract.symbol,
+                           getattr(t.contract, "exchange", "?"),
+                           getattr(t.order, "action", "?") if hasattr(t, "order") else "?")
+
+        matching_trades = [
+            t for t in open_trades
+            if hasattr(t.contract, "symbol") and t.contract.symbol.upper() == symbol_without_suffix.upper()
+        ]
+        logger.info("Found %d trades for %s", len(matching_trades), symbol_without_suffix)
+
+        # Further filter by side if specified
+        if side_upper:
+            matching_trades = [
+                t for t in matching_trades
+                if hasattr(t.order, "action") and t.order.action.upper() == side_upper
+            ]
+            logger.info("After filtering by %s: %d trades", side_upper, len(matching_trades))
+
+        if not matching_trades:
+            side_msg = f" {side_upper}" if side_upper else ""
+            # Debug info: include all open trade symbols in the response
+            debug_trades = [
+                {
+                    "symbol": t.contract.symbol if hasattr(t.contract, "symbol") else "?",
+                    "exchange": getattr(t.contract, "exchange", "?"),
+                    "action": getattr(t.order, "action", "?") if hasattr(t, "order") else "?"
+                }
+                for t in open_trades[:10]  # Limit to first 10 for brevity
+            ]
+            return {
+                "ok": True,
+                "message": f"No open{side_msg} orders found for {code}",
+                "cancelled_count": 0,
+                "orders": [],
+                "debug": {
+                    "total_open_trades": len(open_trades),
+                    "searched_for": symbol_without_suffix,
+                    "side_filter": side_upper,
+                    "sample_trades": debug_trades
+                }
+            }
+
+        # Cancel each matching order
+        cancelled_orders = []
+        for trade in matching_trades:
+            try:
+                logger.info("Cancelling order ID %s for %s", trade.order.orderId, code)
+                ib.cancelOrder(trade.order)
+                # Wait for cancellation to be processed
+                ib.sleep(0.1)
+                cancelled_orders.append({
+                    "order_id": trade.order.orderId,
+                    "symbol": trade.contract.symbol,
+                    "exchange": trade.contract.exchange,
+                    "side": trade.order.action,
+                    "qty": trade.order.totalQuantity,
+                    "limit_price": getattr(trade.order, "lmtPrice", None),
+                    "status": "cancelled"
+                })
+            except Exception as e:
+                logger.warning("Failed to cancel order %s for %s: %s", trade.order.orderId, code, e)
+                cancelled_orders.append({
+                    "order_id": trade.order.orderId,
+                    "symbol": trade.contract.symbol,
+                    "exchange": trade.contract.exchange,
+                    "status": "failed",
+                    "error": str(e)
+                })
+
+        side_msg = f" {side_upper}" if side_upper else ""
+        return {
+            "ok": True,
+            "message": f"Cancelled {len(cancelled_orders)}{side_msg} orders for {code}",
+            "cancelled_count": len(cancelled_orders),
+            "orders": cancelled_orders
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("IB cancel_all_orders_for_stock unexpected error for %s: %s", stock_code, e)
+        raise HTTPException(status_code=500, detail=f"Unexpected IB error: {e}")
+    finally:
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
 
 

@@ -67,6 +67,13 @@ export default function RangeOrdersPage() {
   const [quoteLast, setQuoteLast] = useState<number | null>(null);
   const [quoteError, setQuoteError] = useState<string>("");
   const [whatIfPrice, setWhatIfPrice] = useState<number | null>(null);
+  const [placeDayOrders, setPlaceDayOrders] = useState<boolean>(true);
+  const [placeOvernightOrders, setPlaceOvernightOrders] = useState<boolean>(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState<boolean>(false);
+  const [cancelSide, setCancelSide] = useState<"BUY" | "SELL" | null>(null);
+  const [cancelling, setCancelling] = useState<boolean>(false);
+  const [cancelResult, setCancelResult] = useState<any | null>(null);
+  const [cancelError, setCancelError] = useState<string>("");
 
   const parsed = useMemo(() => {
     const total = toNumber(totalAmount);
@@ -75,7 +82,7 @@ export default function RangeOrdersPage() {
     const ep = toNumber(endPrice);
     const n = Math.max(1, Math.min(100, Math.floor(toNumber(numOrders) ?? 0) || 8));
     const rRaw = toNumber(ratio);
-    const r = rRaw && rRaw > 0 ? Math.max(1, Math.min(1.5, rRaw)) : 1; // clamp to [1,1.5]
+    const r = rRaw && rRaw > 0 ? Math.max(0.75, Math.min(1.5, rRaw)) : 1; // clamp to [0.75,1.5]
     return { total, tv, sp, ep, n, r };
   }, [totalAmount, totalVolume, startPrice, endPrice, numOrders, ratio]);
 
@@ -247,6 +254,13 @@ export default function RangeOrdersPage() {
 
   const onPlaceOrders = async () => {
     if (!generated || !baseUrl) return;
+
+    // Validate at least one option is selected
+    if (!placeDayOrders && !placeOvernightOrders) {
+      setPlaceError("Please select at least one order placement option (Day or Overnight)");
+      return;
+    }
+
     setPlacing(true);
     setPlaceError("");
     setPlaceResult(null);
@@ -262,7 +276,11 @@ export default function RangeOrdersPage() {
       const res = await authenticatedFetch(`${baseUrl}/api/ib/place-orders-at-price`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orders }),
+        body: JSON.stringify({
+          orders,
+          place_day: placeDayOrders,
+          place_overnight: placeOvernightOrders
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -277,12 +295,77 @@ export default function RangeOrdersPage() {
     }
   };
 
+  const onCancelAllOrders = async () => {
+    if (!baseUrl || !stockCode || !cancelSide) return;
+    setCancelling(true);
+    setCancelError("");
+    setCancelResult(null);
+
+    // Create abort controller for fetch timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 30000);
+
+    try {
+      const res = await authenticatedFetch(`${baseUrl}/api/ib/cancel-all-orders-for-stock?stock_code=${encodeURIComponent(normalizeUsSymbol(stockCode))}&side=${cancelSide}`, {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const errDetail = typeof data?.detail === "string" ? data.detail : "Order cancellation failed";
+        throw new Error(errDetail);
+      }
+      setCancelResult(data);
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      if (e.name === "AbortError") {
+        setCancelError("Request timed out after 30 seconds. The backend may be busy or IB Gateway may not be responding.");
+      } else {
+        setCancelError(e?.message || "Failed to cancel orders");
+      }
+    } finally {
+      clearTimeout(timeoutId);
+      setCancelling(false);
+      setShowCancelConfirm(false);
+      setCancelSide(null);
+    }
+  };
+
   return (
     <div className="min-h-screen text-slate-800">
       <div className="mx-auto max-w-7xl px-6 py-10">
-        <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">
-          Price Range Orders
-        </h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl sm:text-4xl font-semibold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">
+            Price Range Orders
+          </h1>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setCancelSide("BUY");
+                setShowCancelConfirm(true);
+              }}
+              disabled={!stockCode || cancelling}
+              className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400/40 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel All BUY
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCancelSide("SELL");
+                setShowCancelConfirm(true);
+              }}
+              disabled={!stockCode || cancelling}
+              className="rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel All SELL
+            </button>
+          </div>
+        </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">
           <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -401,7 +484,7 @@ export default function RangeOrdersPage() {
                 </label>
                 <input
                   type="range"
-                  min={1}
+                  min={0.75}
                   max={1.5}
                   step={0.01}
                   value={ratio}
@@ -412,7 +495,7 @@ export default function RangeOrdersPage() {
                   <input
                     type="number"
                     step="0.01"
-                    min={1}
+                    min={0.75}
                     max={1.5}
                     value={ratio}
                     onChange={(e) => setRatio(e.target.value)}
@@ -436,6 +519,33 @@ export default function RangeOrdersPage() {
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-3">
+              <div className="space-y-3">
+                <div className="text-sm font-medium text-slate-700">Order Placement Options:</div>
+                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={placeDayOrders}
+                    onChange={(e) => setPlaceDayOrders(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-2 focus:ring-blue-400/40"
+                  />
+                  <span>Place day orders (SMART exchange, DAY TIF)</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={placeOvernightOrders}
+                    onChange={(e) => setPlaceOvernightOrders(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-2 focus:ring-blue-400/40"
+                  />
+                  <span>Place overnight orders (OVERNIGHT exchange, DAY TIF)</span>
+                </label>
+                <p className="text-xs text-slate-500">
+                  Select one or both options. Orders will be placed on selected exchange(s).
+                </p>
+              </div>
             </div>
 
             <div className="sm:col-span-2 lg:col-span-3">
@@ -585,11 +695,43 @@ export default function RangeOrdersPage() {
                     <div className="font-semibold mb-1">Placement results</div>
                     <ul className="list-disc pl-5">
                       {placeResult.results.map((r: any, idx: number) => {
-                        // Support both old proxy shape and new direct shape
-                        const isProxy = r.result !== undefined;
-                        const ok = isProxy ? !!r.result.ok : !!r.ok;
-                        const side = isProxy ? r.request?.buy_sell : r.order?.side;
-                        const code = isProxy ? r.request?.stock_code : r.order?.stock_code;
+                        const ok = !!r.ok;
+                        if (!ok) {
+                          return (
+                            <li key={idx} className="text-red-600">
+                              Order {idx + 1}: Failed - {r.error || "Unknown error"}
+                            </li>
+                          );
+                        }
+
+                        // New format with multiple orders (SMART + OVERNIGHT)
+                        if (Array.isArray(r.orders)) {
+                          return (
+                            <li key={idx}>
+                              <div className="font-medium">Order {idx + 1}:</div>
+                              <ul className="list-none pl-4 mt-1">
+                                {r.orders.map((order: any, orderIdx: number) => {
+                                  if (order.error) {
+                                    return (
+                                      <li key={orderIdx} className="text-amber-600">
+                                        [{order.exchange}] {order.stock_code} - {order.error}
+                                      </li>
+                                    );
+                                  }
+                                  return (
+                                    <li key={orderIdx} className="text-emerald-600">
+                                      [{order.exchange}] {order.side} {order.stock_code} x {order.qty} @ {order.limit_price} — OK (ID: {order.ib_order_id})
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </li>
+                          );
+                        }
+
+                        // Legacy format support
+                        const side = r.order?.side || r.request?.buy_sell;
+                        const code = r.order?.stock_code || r.request?.stock_code;
                         const qty = r.order?.qty;
                         const lp = r.order?.limit_price ?? r.request?.limit_price;
                         return (
@@ -603,6 +745,111 @@ export default function RangeOrdersPage() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Cancel All Orders Confirmation Modal */}
+        {showCancelConfirm && cancelSide && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+              <h2 className="text-xl font-semibold mb-4 text-slate-800">Confirm Cancel All {cancelSide} Orders</h2>
+              <p className="text-slate-600 mb-6">
+                Are you sure you want to cancel ALL <span className="font-semibold">{cancelSide}</span> orders for <span className="font-semibold">{stockCode}</span>?
+                This will cancel {cancelSide} orders on both SMART and OVERNIGHT exchanges.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCancelConfirm(false);
+                    setCancelSide(null);
+                  }}
+                  disabled={cancelling}
+                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400/40 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={onCancelAllOrders}
+                  disabled={cancelling}
+                  className={`px-4 py-2 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 disabled:opacity-50 flex items-center gap-2 ${
+                    cancelSide === "BUY"
+                      ? "bg-red-600 hover:bg-red-700 focus:ring-red-400/40"
+                      : "bg-orange-600 hover:bg-orange-700 focus:ring-orange-400/40"
+                  }`}
+                >
+                  {cancelling && (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  )}
+                  {cancelling ? "Cancelling..." : `Yes, Cancel All ${cancelSide}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cancel Results */}
+        {cancelResult && (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-4">Cancellation Results</h2>
+            <p className="text-slate-700 mb-3">{cancelResult.message}</p>
+            {cancelResult.orders && cancelResult.orders.length > 0 && (
+              <div className="text-sm">
+                <div className="font-semibold mb-2">Cancelled Orders:</div>
+                <ul className="list-disc pl-5">
+                  {cancelResult.orders.map((order: any, idx: number) => (
+                    <li key={idx} className={order.status === "cancelled" ? "text-emerald-600" : "text-red-600"}>
+                      [{order.exchange}] {order.side} {order.symbol} x {order.qty} @ {order.limit_price || "N/A"} — {order.status === "cancelled" ? "Cancelled" : `Failed: ${order.error}`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {cancelResult.debug && (
+              <div className="mt-4 text-sm bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="font-semibold mb-2 text-slate-700">Debug Information:</div>
+                <div className="text-slate-600 space-y-1">
+                  <div>Total open trades: {cancelResult.debug.total_open_trades}</div>
+                  <div>Searched for symbol: {cancelResult.debug.searched_for}</div>
+                  <div>Side filter: {cancelResult.debug.side_filter || "None"}</div>
+                  {cancelResult.debug.sample_trades && cancelResult.debug.sample_trades.length > 0 && (
+                    <div>
+                      <div className="font-medium mt-2 mb-1">Sample open trades:</div>
+                      <ul className="list-disc pl-5">
+                        {cancelResult.debug.sample_trades.map((trade: any, idx: number) => (
+                          <li key={idx}>
+                            Symbol: {trade.symbol}, Exchange: {trade.exchange}, Action: {trade.action}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setCancelResult(null)}
+              className="mt-4 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400/40"
+            >
+              Close
+            </button>
+          </div>
+        )}
+
+        {/* Cancel Error */}
+        {cancelError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 mb-6">
+            <div className="text-red-700 font-semibold mb-2">Error Cancelling Orders</div>
+            <p className="text-red-600 text-sm">{cancelError}</p>
+            <button
+              type="button"
+              onClick={() => setCancelError("")}
+              className="mt-3 px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-400/40"
+            >
+              Close
+            </button>
           </div>
         )}
       </div>
