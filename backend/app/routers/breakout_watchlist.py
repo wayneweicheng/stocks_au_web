@@ -28,29 +28,46 @@ def get_recent_data(observation_date: date, max_price: float = MAX_PRICE) -> Lis
     - Additional buffer for pattern detection
     """
     query = """
-    WITH RankedData AS (
+    WITH TodayCandidates AS (
+        SELECT a.ASXCode
+        FROM StockDB.[Transform].[PriceHistory] AS a
+        WHERE a.ObservationDate = ?
+          AND a.[Close] <= ?
+          AND a.[Value] >= 10000
+    ),
+    RankedData AS (
         SELECT
-            ASXCode,
-            ObservationDate,
-            [Open],
-            [Close],
-            [High],
-            [Low],
-            [Value],
-            PriceChangeVsPrevClose,
-            ROW_NUMBER() OVER(PARTITION BY ASXCode ORDER BY ObservationDate DESC) as rn
-        FROM [Transform].[PriceHistory]
-        WHERE [Close] <= ? AND ObservationDate <= ?
+            a.ASXCode,
+            a.ObservationDate,
+            a.[Open],
+            a.[Close],
+            a.[High],
+            a.[Low],
+            a.[Value],
+            a.PriceChangeVsPrevClose,
+            b.TomorrowChange,
+            b.Next2DaysChange,
+            b.Next5DaysChange,
+            b.Next10DaysChange,
+            ROW_NUMBER() OVER(PARTITION BY a.ASXCode ORDER BY a.ObservationDate DESC) as rn
+        FROM StockDB.[Transform].[PriceHistory] as a
+        LEFT JOIN StockDB.[Transform].[PriceHistory24Month] as b
+            ON a.ASXCode = b.ASXCode
+            AND a.ObservationDate = b.ObservationDate
+        INNER JOIN TodayCandidates tc
+            ON tc.ASXCode = a.ASXCode
+        WHERE a.ObservationDate <= ?
     )
     SELECT * FROM RankedData
     WHERE rn <= 25
     ORDER BY ASXCode, rn ASC
+    OPTION (RECOMPILE)
     """
 
     try:
         logger.info(f"Fetching data for date {observation_date}, max_price {max_price}")
         model = get_sql_model()
-        data = model.execute_read_query(query, (max_price, observation_date))
+        data = model.execute_read_query(query, (observation_date, max_price, observation_date))
         logger.info(f"Retrieved {len(data) if data else 0} rows from database")
         return data or []
     except Exception as e:
@@ -147,7 +164,11 @@ def analyze_breakout_patterns(
                 'VolumeVal': f"${t0['Value']:,.0f}",
                 'VolRatio': f"{volume_ratio_t0:.1f}x",
                 'Date': t0['ObservationDate'].strftime('%Y-%m-%d') if hasattr(t0['ObservationDate'], 'strftime') else str(t0['ObservationDate']),
-                'Note': ''
+                'Note': '',
+                '1dChange': t0.get('TomorrowChange'),
+                '2dChange': t0.get('Next2DaysChange'),
+                '5dChange': t0.get('Next5DaysChange'),
+                '10dChange': t0.get('Next10DaysChange'),
             })
             if symbol in DEBUG_SYMBOLS:
                 logger.info(f"{symbol}: Selected FRESH BREAKOUT candidate (change={pct_change_t0:.2f}%, vol_ratio={volume_ratio_t0:.2f}x, turnover=${t0['Value']:,.0f})")
@@ -340,7 +361,11 @@ def analyze_breakout_patterns(
                         'VolumeVal': f"${t0['Value']:,.0f}",
                         'VolRatio': f"{breakout_vol_ratio:.1f}x",
                         'Date': t0['ObservationDate'].strftime('%Y-%m-%d') if hasattr(t0['ObservationDate'], 'strftime') else str(t0['ObservationDate']),
-                        'Note': f"Ran {round(breakout_gain, 1)}% on {breakout_date_str} ({days_since_breakout}d ago)"
+                        'Note': f"Ran {round(breakout_gain, 1)}% on {breakout_date_str} ({days_since_breakout}d ago)",
+                        '1dChange': t0.get('TomorrowChange'),
+                        '2dChange': t0.get('Next2DaysChange'),
+                        '5dChange': t0.get('Next5DaysChange'),
+                        '10dChange': t0.get('Next10DaysChange'),
                     })
                     break  # Found consolidation pattern, move to next stock
             else:

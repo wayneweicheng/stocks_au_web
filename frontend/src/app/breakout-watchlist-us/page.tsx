@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
-export default function BreakoutWatchlistPage() {
+export default function BreakoutWatchlistUSPage() {
   const [dateFrom, setDateFrom] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [minTurnover, setMinTurnover] = useState<number>(500000);
   const [minPctGain, setMinPctGain] = useState<number>(8.0);
@@ -38,7 +38,7 @@ export default function BreakoutWatchlistPage() {
       min_pct_gain: minPctGain.toString(),
       max_price: maxPrice.toString(),
     });
-    authenticatedFetch(`${baseUrl}/api/breakout-watchlist?${params}`)
+    authenticatedFetch(`${baseUrl}/api/breakout-watchlist-us?${params}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -52,7 +52,7 @@ export default function BreakoutWatchlistPage() {
     <div className="min-h-screen text-slate-800">
       <div className="mx-auto max-w-7xl px-6 py-10">
         <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-purple-500 to-pink-600 bg-clip-text text-transparent">
-          Breakout Watch List (ASX)
+          Breakout Watch List (US)
         </h1>
 
         <div className="grid gap-4 sm:grid-cols-4 mb-6">
@@ -195,7 +195,6 @@ export default function BreakoutWatchlistPage() {
                       const value = row[k];
                       let cellClass = "px-3 py-2 whitespace-nowrap border-b border-slate-100";
 
-                      // Color scale for change fields
                       if (changeKeys.has(k)) {
                         const num =
                           typeof value === "number"
@@ -208,7 +207,6 @@ export default function BreakoutWatchlistPage() {
                         }
                       }
 
-                      // Highlight pattern type
                       if (k === "Pattern") {
                         cellClass += value === "FRESH BREAKOUT"
                           ? " text-purple-700 font-semibold"
@@ -239,3 +237,5 @@ export default function BreakoutWatchlistPage() {
     </div>
   );
 }
+
+
