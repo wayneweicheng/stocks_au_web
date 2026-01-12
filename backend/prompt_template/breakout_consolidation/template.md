@@ -9,24 +9,20 @@ The Structure Rule (Macro): A bullish tape signal is invalid if the stock is str
 
 The Setup: Analyzing the "Breakout Day" (Day 1) plus the consolidation (Day 2 & 3), set against the backdrop of the last 60 days.
 
-Date Math Instruction (CRITICAL)
-
-Trading Days vs. Calendar Days: Remember that markets trade 5 days a week. 30 Trading Days = 6 Calendar Weeks (approx 1.5 months).
-
-Counting: When checking dates in the "Trapped Supply" section, count the rows in the data if unsure. 30 rows back = 30 trading days.
-
 Analysis Tasks
-Step 1: The Macro Context (60-Day Structure) Analyze the "Battlefield" before the breakout using [Price History Data]:
+Step 1: The Macro Context (60-Day Structure) Analyze the "Battlefield" before the breakout using [Block B]:
 
 Base vs. Channel Check: Identify if the 30-60 day trend is a "Flat Base" (High Quality/Energy Building) or a "Rising Channel" (Low Quality/Exhaustion Risk).
 
-Trapped Supply (STRICT LOGIC): Identify high-volume "Red Days" (Close < Open) in the history.
+Trapped Supply (Bagholder Audit): Identify high-volume "Red Days" (Close < Open) in the history. Apply these two strict filters:
 
-The 30-Day Cutoff: Calculate the date exactly 30 trading days (6 weeks) prior to the Breakout Day.
+The Price Rule: Only count bagholders trapped at prices AT or ABOVE the Breakout Day Close. If the red day price is below the breakout close, they are not "overhanging" supply.
 
-Active Risk: If a high-volume Red Day occurred after this cutoff date (within the last 30 trading days), it is an "Active Bagholder Wall" and a major risk.
+The Time Rule (30 Trading Days): 30 Trading Days ≈ 6 Calendar Weeks.
 
-Stale Supply: If the high-volume Red Day occurred before this cutoff date (more than 30 trading days ago), label it "Stale Supply." Consider these holders "washed out" and less of a risk.
+Active Risk: If the Red Day is within the last 30 trading days, it is a significant "Bagholder Wall."
+
+Stale Risk: If the Red Day is older than 30 trading days, consider it "Stale" (less risk) as holders have likely washed out.
 
 Moving Averages: Confirm price position relative to 20 and 50 SMAs.
 
@@ -34,13 +30,9 @@ Step 2: Pre-Breakout Compression & Volume (STRICT) Analyze the 5 days leading up
 
 Compression: Check for tightening spreads/low volatility.
 
-The Volume Spike (MANDATORY): Breakout Day Volume must be strictly the largest of the last 5 trading days.
+The Volume Spike (MANDATORY): Breakout Day Volume must be strictly the largest of the last 5 trading days. ###want to emphasize only compare to the last 5 trading days, NOT the entire 60 trading days###. FAIL this step if any of the prior 5 days had higher volume.
 
-Note: Do NOT compare to the entire 60 days. Only the last 5.
-
-Condition: FAIL this step if any of the prior 5 days had higher volume than the Breakout Day.
-
-Step 3: The Broker Net-Volume Audit (CRITICAL) Before identifying a "Winner," you must calculate the Net Position of the top 5 most active brokers in [Broker Report Data] to avoid polarity errors:
+Step 3: The Broker Net-Volume Audit (CRITICAL) Before identifying a "Winner," you must calculate the Net Position of the top 5 most active brokers in [Block A] to avoid polarity errors:
 
 Total Buy Volume: Sum of all volume where the broker is the 'Buyer'.
 
@@ -70,18 +62,18 @@ Volume Test: Confirm volume is drying up (significantly lower than Day 1).
 
 Step 6: Synthesis & Verdict
 
-Strongly Bullish (Blue Sky): Bullish Tape + Flat Base + Vol Spike PASS + Top 50% Hold.
+Bullish Tape + Flat Base + Vol Spike PASS + Top 50% Hold = Strongly Bullish (Blue Sky).
 
-Mildly Bullish / Caution: Bullish Tape + Flat Base + Vol Spike FAIL + Top 50% Hold.
+Bullish Tape + Flat Base + Vol Spike FAIL + Top 50% Hold = Mildly Bullish / Caution.
 
-Neutral / Avoid: Bullish Tape + Rising Channel.
+Bullish Tape + Rising Channel = Neutral / Avoid.
 
-Strongly Bearish (Failed Breakout): Bearish Tape + Day 2 Bottom 50% Close.
+Bearish Tape + Day 2 Bottom 50% Close = Strongly Bearish (Failed Breakout).
 
 Output Format
-1. Executive Verdict: [Verdict Option] (One decisive sentence. If the Volume Spike failed, you MUST downgrade and state why.)
+Executive Verdict: [Verdict Option] (One decisive sentence. If the Volume Spike failed, you MUST downgrade and state why.)
 
-2. The Structural Analysis (60-Day View)
+The Structural Analysis (60-Day View)
 
 Structure Type: [Flat Base / Rising Channel]
 
@@ -91,11 +83,11 @@ Compression: [Yes/No]
 
 Volume Spike: [PASS/FAIL]
 
-Key Resistance: $[Price] (Bagholder Wall) - State explicitly if the wall is "Active" (within 30 trading days) or "Stale" (older).
+Key Resistance: $[Price] (Bagholder Wall) - Note if Active (recent/above price) or Stale/Irrelevant.
 
-3. Broker Audit Table | Broker Name | Total Bought | Total Sold | Net Volume | Status | | :--- | :--- | :--- | :--- | :--- | | [Broker 1] | | | | [Net Buyer/Seller] | | [Broker 2] | | | | [Net Buyer/Seller] |
+Broker Audit Table | Broker Name | Total Bought | Total Sold | Net Volume | Status | | :--- | :--- | :--- | :--- | :--- | | [Broker 1] | | | | [Net Buyer/Seller] | | [Broker 2] | | | | [Net Buyer/Seller] |
 
-4. The "Smart Money" Analysis
+The "Smart Money" Analysis
 
 The Winner (Top Net Buyer): [Name]
 
@@ -105,13 +97,13 @@ Winner Avg Price: $[Price] vs. Day 1 VWAP: $[Price]
 
 Insight: [Who absorbed whose volume?]
 
-5. The Retest (Day 2 & 3)
+The Retest (Day 2 & 3)
 
 Day 2 Hold: [Top 33% / Top 50% / Bottom 50%] -> [PASS/FAIL]
 
 Volume: [Dried up? / Increased?]
 
-6. Trade Plan
+Trade Plan
 
 Strategy: [e.g., Aggressive Buy / Wait / Avoid]
 
@@ -119,14 +111,18 @@ Buy Zone: $[Price Range]
 
 Invalidation: Close below $[Price]
 
-Few-Shot Examples for "Trapped Supply" Date Logic:
+Few-Shot Logic Examples for "Trapped Supply":
 
-Observation Date: 2026-01-06.
+Situation: Breakout Close is $0.50 on Jan 6th.
 
-Scenario A: Red Day on 2025-12-10 ($0.045). Time gap: ~18 trading days. Verdict: ACTIVE Bagholder Wall (Risk).
+Case A: High Vol Red Day on Jan 2nd (4 days ago) at High $0.55. Verdict: ACTIVE Bagholder Wall (Recent + Price is Higher).
 
-Scenario B: Red Day on 2025-10-17 ($0.045). Time gap: ~55 trading days. Verdict: STALE Supply (Not a major risk).
+Case B: High Vol Red Day on Nov 15th (35 trading days ago) at High $0.60. Verdict: STALE Supply (Price is higher, but Time is > 30 days).
 
-Price History Data: <Price History Data>
+Case C: High Vol Red Day on Jan 2nd (4 days ago) at High $0.45. Verdict: NO RISK (Price is lower than Breakout Close $0.50).
 
-Broker Report Data: <Broker Report Data>
+Price History Data:
+<Price History Data>
+
+Broker Report Data:
+<Broker Report Data>
