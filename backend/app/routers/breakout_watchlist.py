@@ -13,6 +13,7 @@ logger = logging.getLogger("app.breakout_watchlist")
 MIN_TURNOVER = 500000   # $500,000 Value Traded
 MIN_PCT_GAIN = 8.0      # 8% Gain
 MAX_PRICE = 5.00        # Penny stock filter
+MAX_DAY2_INCREASE_PCT = 20.0  # Day 2 can be up to 20% higher than Day 1 if both have low volume
 
 # Debug symbols for deep logging
 DEBUG_SYMBOLS = {'AQI.AX', 'HWK.AX', 'AR1.AX', 'QPM.AX', 'AEE.AX', 'ELS.AX'}
@@ -80,7 +81,8 @@ def analyze_breakout_patterns(
     observation_date: date,
     min_turnover: float = MIN_TURNOVER,
     min_pct_gain: float = MIN_PCT_GAIN,
-    max_price: float = MAX_PRICE
+    max_price: float = MAX_PRICE,
+    max_day2_increase_pct: float = MAX_DAY2_INCREASE_PCT
 ) -> List[Dict[str, Any]]:
     """
     Analyzes stock data to identify breakout patterns as of the observation date.
@@ -287,13 +289,45 @@ def analyze_breakout_patterns(
                     # Convert volumes to float for comparison
                     current_volume = float(current_day['Value'])
                     prev_volume_float = float(prev_volume)
+                    breakout_volume = float(breakout_day['Value'])
 
-                    # Volume MUST be strictly decreasing
-                    if current_volume >= prev_volume_float:
-                        is_valid_consolidation = False
-                        if symbol in DEBUG_SYMBOLS:
-                            logger.info(f"{symbol}: Failed consolidation at day_idx={day_idx}: volume={current_volume:,.0f} >= prev={prev_volume_float:,.0f}")
-                        break
+                    # Calculate how many days after breakout we are
+                    days_after_breakout = i - day_idx
+
+                    # Special case: Day 2 after breakout can be higher than Day 1
+                    # IF both Day 1 and Day 2 have significantly lower volume than breakout
+                    if days_after_breakout == 2:
+                        # Day 2 can be up to max_day2_increase_pct% higher than Day 1
+                        # IF both have significantly lower volume than breakout (e.g., < 50% of breakout volume)
+                        day1_volume = prev_volume_float
+                        day2_volume = current_volume
+
+                        # Check if both days have significantly lower volume than breakout
+                        if day1_volume < (breakout_volume * 0.5) and day2_volume < (breakout_volume * 0.5):
+                            # Allow Day 2 to be up to max_day2_increase_pct% higher than Day 1
+                            max_allowed_day2_volume = day1_volume * (1 + max_day2_increase_pct / 100)
+                            if day2_volume > max_allowed_day2_volume:
+                                is_valid_consolidation = False
+                                if symbol in DEBUG_SYMBOLS:
+                                    logger.info(f"{symbol}: Failed consolidation at day_idx={day_idx} (Day 2): volume={day2_volume:,.0f} > {max_day2_increase_pct}% above Day 1 ({max_allowed_day2_volume:,.0f})")
+                                break
+                            else:
+                                if symbol in DEBUG_SYMBOLS:
+                                    logger.info(f"{symbol}: Day 2 volume check passed: {day2_volume:,.0f} <= {max_allowed_day2_volume:,.0f} (Day 1: {day1_volume:,.0f}, breakout: {breakout_volume:,.0f})")
+                        else:
+                            # If volumes aren't significantly lower than breakout, use strict decreasing rule
+                            if current_volume >= prev_volume_float:
+                                is_valid_consolidation = False
+                                if symbol in DEBUG_SYMBOLS:
+                                    logger.info(f"{symbol}: Failed consolidation at day_idx={day_idx} (Day 2): volume={current_volume:,.0f} >= prev={prev_volume_float:,.0f} (not both < 50% of breakout)")
+                                break
+                    else:
+                        # For all other days, volume MUST be strictly decreasing
+                        if current_volume >= prev_volume_float:
+                            is_valid_consolidation = False
+                            if symbol in DEBUG_SYMBOLS:
+                                logger.info(f"{symbol}: Failed consolidation at day_idx={day_idx}: volume={current_volume:,.0f} >= prev={prev_volume_float:,.0f}")
+                            break
 
                     # Consolidation day close must not exceed breakout close + half body size
                     # This ensures consolidation days don't close too high
@@ -384,6 +418,7 @@ def get_breakout_watchlist(
     min_turnover: float = Query(MIN_TURNOVER, description="Minimum turnover in dollars"),
     min_pct_gain: float = Query(MIN_PCT_GAIN, description="Minimum percentage gain"),
     max_price: float = Query(MAX_PRICE, description="Maximum stock price (penny stock filter)"),
+    max_day2_increase_pct: float = Query(MAX_DAY2_INCREASE_PCT, description="Max % Day 2 can be higher than Day 1 when both have low volume"),
     username: str = Depends(verify_credentials)
 ) -> List[Dict[str, Any]]:
     """
@@ -392,10 +427,13 @@ def get_breakout_watchlist(
     Patterns identified:
     - FRESH BREAKOUT: Stock's gain > min_pct_gain% on observation date
     - CONSOLIDATION: Yesterday had big gain, observation date is consolidating
+
+    Special rule: Day 2 after breakout can be up to max_day2_increase_pct% higher than Day 1,
+    as long as both days have significantly lower volume (< 50%) than the breakout day.
     """
     try:
         logger.info(f"Analyzing breakout patterns for {observation_date} (user: {username})")
-        candidates = analyze_breakout_patterns(observation_date, min_turnover, min_pct_gain, max_price)
+        candidates = analyze_breakout_patterns(observation_date, min_turnover, min_pct_gain, max_price, max_day2_increase_pct)
         logger.info(f"Found {len(candidates)} candidates")
         return candidates
     except Exception as e:
