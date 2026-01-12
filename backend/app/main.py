@@ -22,6 +22,7 @@ from app.routers.signal_strength import router as signal_strength_router
 from app.routers.breakout_watchlist import router as breakout_watchlist_router
 from app.routers.breakout_watchlist_us import router as breakout_watchlist_us_router
 from app.routers.gap_up_watchlist import router as gap_up_watchlist_router
+from app.routers.breakout_consolidation_analysis import router as breakout_consolidation_analysis_router
 import logging
 import time
 from fastapi.responses import JSONResponse
@@ -97,5 +98,6 @@ app.include_router(signal_strength_router)
 app.include_router(breakout_watchlist_router)
 app.include_router(breakout_watchlist_us_router)
 app.include_router(gap_up_watchlist_router)
+app.include_router(breakout_consolidation_analysis_router)
 
 

@@ -29,6 +29,7 @@ export default function NavigationMenu() {
             <Link onClick={() => setOpen(false)} href="/ta-scan" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">TA Scan</Link>
             <Link onClick={() => setOpen(false)} href="/breakout-watchlist" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Breakout Watch List (ASX)</Link>
             <Link onClick={() => setOpen(false)} href="/breakout-watchlist-us" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Breakout Watch List (US)</Link>
+            <Link onClick={() => setOpen(false)} href="/breakout-consolidation-analysis" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Breakout Consolidation Analysis</Link>
             <Link onClick={() => setOpen(false)} href="/gap-up-watchlist" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Gap Up Watchlist (ASX)</Link>
             <Link onClick={() => setOpen(false)} href="/pllrs-scanner" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">PLLRS Scanner</Link>
             <Link onClick={() => setOpen(false)} href="/pegasus-invest-opportunities" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pegasus Invest Opportunities</Link>

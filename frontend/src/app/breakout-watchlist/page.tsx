@@ -5,12 +5,15 @@ import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 export default function BreakoutWatchlistPage() {
   const [dateFrom, setDateFrom] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [minTurnover, setMinTurnover] = useState<number>(500000);
-  const [minPctGain, setMinPctGain] = useState<number>(8.0);
-  const [maxPrice, setMaxPrice] = useState<number>(5.0);
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fixed parameters (read-only, embedded in SQL logic)
+  const minTurnover = 500000;
+  const minPctGain = 8.0;
+  const maxPrice = 5.0;
 
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
@@ -28,15 +31,13 @@ export default function BreakoutWatchlistPage() {
     return "";
   };
 
-  useEffect(() => {
+  const fetchData = (refresh: boolean = false) => {
     if (!dateFrom) return;
     setLoading(true);
     setError("");
     const params = new URLSearchParams({
       date: dateFrom,
-      min_turnover: minTurnover.toString(),
-      min_pct_gain: minPctGain.toString(),
-      max_price: maxPrice.toString(),
+      refresh: refresh.toString(),
     });
     authenticatedFetch(`${baseUrl}/api/breakout-watchlist?${params}`)
       .then(async (r) => {
@@ -45,8 +46,20 @@ export default function BreakoutWatchlistPage() {
       })
       .then(setRows)
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [baseUrl, dateFrom, minTurnover, minPctGain, maxPrice]);
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchData(true);
+  };
+
+  useEffect(() => {
+    fetchData(false);
+  }, [baseUrl, dateFrom]);
 
   return (
     <div className="min-h-screen text-slate-800">
@@ -55,7 +68,7 @@ export default function BreakoutWatchlistPage() {
           Breakout Watch List (ASX)
         </h1>
 
-        <div className="grid gap-4 sm:grid-cols-4 mb-6">
+        <div className="grid gap-4 sm:grid-cols-5 mb-6">
           <div>
             <label className="block text-sm mb-1 text-slate-600">Date</label>
             <div className="flex items-center gap-2">
@@ -100,8 +113,9 @@ export default function BreakoutWatchlistPage() {
             <input
               type="number"
               value={minTurnover}
-              onChange={(e) => setMinTurnover(Number(e.target.value))}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400/40"
+              disabled
+              className="w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-500 cursor-not-allowed"
+              title="Fixed parameter (embedded in SQL logic)"
             />
           </div>
           <div>
@@ -112,8 +126,9 @@ export default function BreakoutWatchlistPage() {
               type="number"
               step="0.1"
               value={minPctGain}
-              onChange={(e) => setMinPctGain(Number(e.target.value))}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400/40"
+              disabled
+              className="w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-500 cursor-not-allowed"
+              title="Fixed parameter (embedded in SQL logic)"
             />
           </div>
           <div>
@@ -124,9 +139,22 @@ export default function BreakoutWatchlistPage() {
               type="number"
               step="0.1"
               value={maxPrice}
-              onChange={(e) => setMaxPrice(Number(e.target.value))}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400/40"
+              disabled
+              className="w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-500 cursor-not-allowed"
+              title="Fixed parameter (embedded in SQL logic)"
             />
+          </div>
+          <div>
+            <label className="block text-sm mb-1 text-slate-600">&nbsp;</label>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className="w-full rounded-md border border-purple-300 bg-purple-100 px-3 py-2 text-sm text-purple-700 hover:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Recalculate results for this date"
+            >
+              {refreshing ? "Refreshing..." : "🔄 Refresh Data"}
+            </button>
           </div>
         </div>
 
