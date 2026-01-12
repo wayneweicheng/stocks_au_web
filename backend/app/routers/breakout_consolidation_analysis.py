@@ -50,7 +50,7 @@ def get_breakout_consolidation_analysis(
     observation_date: date = Query(..., description="Observation date, e.g. 2026-01-09"),
     stock_code: str = Query(..., min_length=1, description="Stock code, e.g. SKK.AX"),
     regenerate: bool = Query(False, description="Force regeneration even if cached file exists"),
-    model: str = Query("google/gemini-2.5-flash", description="LLM model to use for generation"),
+    model: str = Query("google/gemini-3-flash-preview", description="LLM model to use for generation"),
     username: str = Depends(verify_credentials),
 ) -> Dict[str, Any]:
     """

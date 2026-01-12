@@ -19,7 +19,7 @@ export default function BreakoutConsolidationAnalysisPage() {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string>("");
   const [analysisCached, setAnalysisCached] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<string>("google/gemini-2.5-flash");
+  const [selectedModel, setSelectedModel] = useState<string>("google/gemini-3-flash-preview");
 
   // Prompt state
   const [promptText, setPromptText] = useState<string>("");
@@ -251,8 +251,8 @@ export default function BreakoutConsolidationAnalysisPage() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="w-full sm:w-auto rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
+                  <option value="google/gemini-3-flash-preview">Gemini 3 Flash Preview (Default)</option>
                   <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-                  <option value="google/gemini-3-flash-preview">Gemini 3 Flash Preview</option>
                   <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
                   <option value="google/gemini-3-pro-preview">Gemini 3 Pro Preview</option>
                   <option value="openai/gpt-5-mini">GPT-5 Mini</option>
