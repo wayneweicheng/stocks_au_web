@@ -46,7 +46,9 @@ Step 4: The "Smart Money" Test (Day 1 Tape) Using the audit from Step 3:
 
 Identify the Winner: The broker with the highest positive Net Volume.
 
-The VWAP Test: Compare Winner Avg Price vs. Day 1 VWAP. (Avg < VWAP = Accumulation; Avg > VWAP = Chasing).
+The VWAP Test: Compare Winner Avg Price vs. Day 1 VWAP. 
+- Avg <= VWAP = Accumulation (Bullish).
+- Avg > VWAP = Chasing (NOT Bullish). **CRITICAL:** If the Winner is chasing (Avg > VWAP), this is a negative signal that weakens the setup.
 
 The Absorption: Did the Winner buy specifically against a major institutional dump?
 
@@ -62,16 +64,14 @@ Volume Test: Confirm volume is drying up (significantly lower than Day 1).
 
 Step 6: Synthesis & Verdict
 
-Bullish Tape + Flat Base + Vol Spike PASS + Top 50% Hold = Strongly Bullish (Blue Sky).
-
-Bullish Tape + Flat Base + Vol Spike FAIL + Top 50% Hold = Mildly Bullish / Caution.
-
-Bullish Tape + Rising Channel = Neutral / Avoid.
-
-Bearish Tape + Day 2 Bottom 50% Close = Strongly Bearish (Failed Breakout).
+**STRICT VERDICT RULES:**
+1.  **Strongly Bullish (Blue Sky):** Requires Bullish Tape (Winner Avg <= VWAP) + Flat Base + Vol Spike PASS + Top 50% Hold.
+2.  **Mildly Bullish / Caution:** If Winner Avg > VWAP (Chasing) OR Day 2 Hold = FAIL (Bottom 50%), the verdict MUST be downgraded to Mildly Bullish or Neutral.
+3.  **Neutral / Avoid:** Rising Channel OR Bearish Tape.
+4.  **Strongly Bearish (Failed Breakout):** Bearish Tape + Day 2 Bottom 50% Close.
 
 Output Format
-Executive Verdict: [Verdict Option] (One decisive sentence. If the Volume Spike failed, you MUST downgrade and state why.)
+Executive Verdict: [Verdict Option] (One decisive sentence. If the Volume Spike failed, OR Day 2 Hold failed, OR Winner > VWAP, you must downgrade accordingly.)
 
 The Structural Analysis (60-Day View)
 
@@ -95,7 +95,7 @@ Smart Retail Check: [PASS/FAIL]
 
 Winner Avg Price: $[Price] vs. Day 1 VWAP: $[Price]
 
-Insight: [Who absorbed whose volume?]
+Insight: [Who absorbed whose volume? Does Avg > VWAP indicate chasing?]
 
 The Retest (Day 2 & 3)
 
