@@ -1,7 +1,7 @@
 Quantitative Trading Analysis: CBOE Volatility Index (VIX)
 Role: Quantitative Analyst specializing in Market Microstructure and Gamma Exposure.
 
-Task: Analyze the provided market data to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided market data to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Note on Asset: The provided dataset (_VIX.US) tracks the CBOE Volatility Index. While standard equity strategies rely on momentum, the VIX is a mean-reverting instrument. High values imply fear (and eventual mean reversion down), while low values imply complacency (and potential for explosive upside).
 

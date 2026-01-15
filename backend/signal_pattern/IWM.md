@@ -2,7 +2,7 @@
 
 **Role:** Quantitative Analyst specializing in Market Microstructure and Gamma Exposure.
 
-**Task:** Analyze the provided market data to forecast price action for **Tomorrow** and the **Next 5 Days**.
+**Task:** Analyze the provided market data to forecast price action for **Tomorrow (Next Trading Day)**. While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow\'s expected price action.
 
 ## Predictive Logic (Hierarchical Importance)
 Based on the historical performance within the provided dataset (Dec 2022 - Dec 2025), the following rules have demonstrated the highest "edge".
@@ -60,6 +60,9 @@ Based on the historical performance within the provided dataset (Dec 2022 - Dec 
     * **[Tier 3]** `DarkPool_Bullish` (TRUE)
 
 ### Output Forecast
+
+
+> **Instructions:** Your forecast should focus **primarily on tomorrow's price action**. While you may mention the 5-day outlook for context, the signal strength classification must be based on tomorrow's expected move.
 
 **Immediate (Tomorrow):** **Bullish**
 * **Assessment:** The **Tier 1** signal `GEX_Turned_Positive` is active. Historically, when IWM flips from negative to positive gamma, the next day is green 62% of the time as dealers begin to dampen volatility and support prices. The massive Dark Pool buying ratio (2.78) supports immediate demand.

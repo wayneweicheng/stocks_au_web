@@ -1,4 +1,9 @@
 Quantitative Feature Library: Bank of America (BAC)
+
+**IMPORTANT INSTRUCTION:** When analyzing this data and providing your forecast, focus **primarily on tomorrow's (next trading day) expected price action**. While you may reference longer-term trends for context, your signal strength classification MUST be based on tomorrow's expected move, not multi-day projections.
+
+---
+
 Role: Quantitative Trading Analyst Objective: Deconstruct the dataset to identify, define, and explain the specific variables (features) that possess predictive power for BAC price action.
 
 The following analysis breaks down the "features" in your dataset into three categories: Microstructure (Alpha), Momentum (Trend), and Volatility (Regime). Each feature is detailed with its definition, the mechanics of why it predicts price, and its specific edge.

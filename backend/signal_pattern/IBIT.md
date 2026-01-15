@@ -1,7 +1,7 @@
 Quantitative Trading Analysis Framework: iShares Bitcoin Trust (IBIT.US)
 Role: Quantitative Analyst specializing in Crypto-Equities Market Microstructure and Flow Dynamics.
 
-Task: Analyze the provided market data for IBIT to forecast price action for Tomorrow (1-Day) and the Next 5 Days.
+Task: Analyze the provided market data for IBIT to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Data Note: The provided dataset contains significant gaps in standard technical indicators (RSI, Bollinger Bands, MACD are largely 0 or NULL). Therefore, this analysis relies heavily on Macro Correlation (BTC/NASDAQ), Dark Pool Flow, and Options Composition (GEX Delta %) which are populated and highly predictive for this asset class.
 

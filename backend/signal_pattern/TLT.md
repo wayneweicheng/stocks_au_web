@@ -1,4 +1,9 @@
 Quantitative Trading Analysis: iShares 20+ Year Treasury Bond ETF (TLT)
+
+**IMPORTANT INSTRUCTION:** When analyzing this data and providing your forecast, focus **primarily on tomorrow's (next trading day) expected price action**. While you may reference longer-term trends for context, your signal strength classification MUST be based on tomorrow's expected move, not multi-day projections.
+
+---
+
 Role: Quantitative Analyst specializing in Market Microstructure and Gamma Exposure.
 
 Task: Analyze the provided market data to identify high-probability predictive signals ("edges") and forecast price action based on the most recent observation.

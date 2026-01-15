@@ -1,7 +1,7 @@
 Quantitative Trading Analysis: Energy Select Sector SPDR Fund (XLE)
 Role: Quantitative Analyst specializing in Market Microstructure and Gamma Exposure.
 
-Task: Analyze the provided market data to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided market data to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Predictive Logic (Hierarchical Importance)
 Based on the historical performance within the provided dataset (spanning late 2023 to late 2025), the following rules have demonstrated the highest statistical "edge" for XLE.

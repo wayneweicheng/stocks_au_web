@@ -54,6 +54,9 @@ The following trading rules have been derived from the provided 2023-2025 datase
 
 ### Output Forecast
 
+
+> **Instructions:** Your forecast should focus **primarily on tomorrow\'s price action**. While you may mention the 5-day outlook for context, the signal strength classification must be based on tomorrow\'s expected move.
+
 **Immediate (Tomorrow - Dec 04):** **Bullish (Rebound)**
 * **Assessment:** The combination of **RSI at 31** and the **Potential Swing Up** indicator creates a high-probability technical bounce scenario. The positive Gamma profile suggests dealers will support the price if it dips slightly, but will likely dampen any explosive upside. Expect a green day, likely testing the 106.50 level.
 

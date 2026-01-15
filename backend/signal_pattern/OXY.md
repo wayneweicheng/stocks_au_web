@@ -1,4 +1,9 @@
 Quantitative Signal Framework: Occidental Petroleum (OXY)
+
+**IMPORTANT INSTRUCTION:** When analyzing this data and providing your forecast, focus **primarily on tomorrow's (next trading day) expected price action**. While you may reference longer-term trends for context, your signal strength classification MUST be based on tomorrow's expected move, not multi-day projections.
+
+---
+
 Target Asset: OXY (Energy Sector / Exploration & Production) Data Regime: High sensitivity to institutional flows (Dark Pools) and Dealer Gamma hedging.
 
 1. Tier 1: "Alpha" Signals (Highest Predictive Value)

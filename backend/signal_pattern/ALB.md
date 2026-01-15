@@ -1,7 +1,7 @@
 Quantitative Trading Analysis Framework: Albemarle Corp (ALB)
 Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure (GEX), and Momentum Strategies.
 
-Task: Analyze the provided historical data (2023-2025) for ALB to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided historical data (2023-2025) for ALB to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Data Note: The provided dataset contains price scaling anomalies (prices jumping from ~$100 to ~$100,000). The analysis below focuses strictly on the relative signals (Ratios, Z-Scores, Binary Flags) which remain statistically valid regardless of the absolute price scaling.
 

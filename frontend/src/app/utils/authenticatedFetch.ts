@@ -1,5 +1,5 @@
 export const authenticatedFetch = (url: string, options: RequestInit = {}) => {
-  const authData = sessionStorage.getItem('auth');
+  const authData = localStorage.getItem('auth');
   if (!authData) {
     throw new Error('No authentication data');
   }

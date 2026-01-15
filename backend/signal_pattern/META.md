@@ -1,7 +1,7 @@
 Quantitative Trading Analysis Framework: Meta Platforms (META)
 Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure (GEX), and Volatility Arbitrage.
 
-Task: Analyze the provided historical market data (2023-2025) for META to forecast price action for Tomorrow (1-Day) and the Next 5 Days.
+Task: Analyze the provided historical market data (2023-2025) for META to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Predictive Logic (Hierarchical Importance)
 The following rules have been identified as statistically significant "edges" based on the provided 3-year dataset for META.

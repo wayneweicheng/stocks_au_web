@@ -379,11 +379,11 @@ export default function GexSignalsPage() {
     }
   }, [stockCode, stockCodes]);
 
-  // Fetch signal strengths for the selected observation date
+  // Fetch signal strengths for the selected observation date (GEX source only)
   useEffect(() => {
     if (!observationDate) return;
     setSignalStrengthsLoading(true);
-    const url = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}`;
+    const url = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}&source_type=GEX`;
     authenticatedFetch(url)
       .then(async (r) => {
         if (r.ok) {
@@ -459,7 +459,7 @@ export default function GexSignalsPage() {
       // Reload signal strengths after generating/regenerating prediction
       // This ensures the matrix is updated with the latest classification
       if (!data.cached || forceRegenerate) {
-        const strengthUrl = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}`;
+        const strengthUrl = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}&source_type=GEX`;
         authenticatedFetch(strengthUrl)
           .then(async (sr) => {
             if (sr.ok) {

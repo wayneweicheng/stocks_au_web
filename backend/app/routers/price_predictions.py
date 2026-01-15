@@ -164,7 +164,8 @@ def get_price_prediction(
                 success = db_service.upsert_signal_strength(
                     stock_code=base_code,
                     observation_date=observation_date,
-                    signal_strength_level=signal_strength
+                    signal_strength_level=signal_strength,
+                    source_type="GEX"
                 )
 
                 if success:

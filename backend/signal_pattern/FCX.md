@@ -1,7 +1,7 @@
 Quantitative Trading Analysis Framework: Freeport-McMoRan Inc. (FCX)
 Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure (GEX), and Momentum Strategies.
 
-Task: Analyze the provided historical data (ending 2025-12-11) to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided historical data (ending 2025-12-11) to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Data Note: The VIX included in the dataset represents the S&P 500 Volatility Index, serving as a macro risk proxy, not the implied volatility of FCX specifically.
 

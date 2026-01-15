@@ -1,4 +1,9 @@
 Quantitative Trading Analysis Framework: Oracle Corporation (ORCL)
+
+**IMPORTANT INSTRUCTION:** When analyzing this data and providing your forecast, focus **primarily on tomorrow's (next trading day) expected price action**. While you may reference longer-term trends for context, your signal strength classification MUST be based on tomorrow's expected move, not multi-day projections.
+
+---
+
 Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure, and Mean Reversion.
 
 Dataset Scope: Historical trading data for ORCL (late 2023 – late 2025).

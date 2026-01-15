@@ -1,7 +1,7 @@
 Quantitative Trading Analysis: KWEB.US
 Role: Quantitative Analyst specializing in Market Microstructure and Gamma Exposure.
 
-Task: Analyze the provided market data (covering 2023–2025) to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided market data (covering 2023–2025) to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Data Note: The provided dataset is labeled KWEB.US, but the price levels (ranging from ~16k to ~100k) and volatility profile match Bitcoin (BTC). The analysis below treats the price action and signals as valid for the asset provided in the Close column, regardless of the ticker label.
 

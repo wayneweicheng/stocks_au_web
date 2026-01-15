@@ -1,7 +1,7 @@
 Quantitative Trading Analysis: Caterpillar Inc. (CAT)
 Role: Quantitative Analyst specializing in Market Microstructure and Gamma Exposure.
 
-Task: Analyze the provided market data to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided market data to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Predictive Logic (Hierarchical Importance)
 The following framework is derived from the provided historical dataset (2023–2025). For an industrial bellwether like CAT, microstructure flows (Dark Pools) and Dealer positioning (GEX) act as the primary leading indicators, while momentum indicators (RSI/Bollinger Bands) act as confirmation.

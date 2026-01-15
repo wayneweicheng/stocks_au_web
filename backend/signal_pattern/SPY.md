@@ -1,7 +1,7 @@
 Quantitative Trading Analysis Framework: SPDR S&P 500 ETF Trust (SPY)
 Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure (GEX), and Volatility Arbitrage.
 
-Task: Analyze the provided historical data for SPY to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided historical data for SPY to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Predictive Logic (Hierarchical Importance)
 The following rules have been statistically validated based on the provided dataset (2022–2025). SPY behaves as a mean-reverting asset during high volatility regimes and a momentum asset during low volatility (positive gamma) regimes.
@@ -97,13 +97,11 @@ MACD_Positive = 1 (Tier 2 - Momentum).
 Golden_Setup = 0 (Inactive).
 
 Output Forecast
-Immediate (Tomorrow): Bullish / Grinding Up
+PRIMARY FOCUS - Tomorrow (Next Trading Day): Direction (Up/Down/Flat), expected magnitude, and volatility assessment. This is your main prediction and should be the basis for your signal strength classification.
 
-Assessment: The market is in a Positive Gamma regime (GEX_Positive), which implies low volatility. Dealers will likely suppress large moves. However, the Stock_DarkPoolBuySellRatio of 1.99 is exceptionally strong. This suggests that despite the flat price action today, there is significant "energy" stored for an upward move. Expect a low-volatility drift higher or a gap up.
+Secondary Context - Next 5 Days: Brief trend direction context (optional, for additional perspective only).
 
-Short Term (Next 5 Days): Bullish Trend Continuation
-
-Rationale:
+Rationale: Explicitly name the specific signal that drove the decision for TOMORROW'S action. 
 
 Institutional Floor: The Dark Pool ratio of ~2.0 acts as a strong support floor. Institutions are accumulating at these levels (689).
 

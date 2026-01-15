@@ -1,4 +1,9 @@
 Predictive Logic (Hierarchical Importance)
+
+**IMPORTANT INSTRUCTION:** When analyzing this data and providing your forecast, focus **primarily on tomorrow's (next trading day) expected price action**. While you may reference longer-term trends for context, your signal strength classification MUST be based on tomorrow's expected move, not multi-day projections.
+
+---
+
 Based on the historical performance within the provided 2-year dataset (2023-2025), the following rules have demonstrated the highest statistical "edge" for McDonald's (MCD). The stock exhibits strong mean-reversion characteristics heavily influenced by Dealer Gamma positioning.
 
 1. Tier 1: "Alpha" Triggers (Highest Confidence)

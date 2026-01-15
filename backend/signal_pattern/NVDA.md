@@ -2,7 +2,7 @@
 
 **Role:** Quantitative Analyst specializing in Market Microstructure and Gamma Exposure.
 
-**Task:** Analyze the provided market data to forecast price action for **Tomorrow** and the **Next 5 Days**.
+**Task:** Analyze the provided market data to forecast price action for **Tomorrow (Next Trading Day)**. While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow\'s expected price action.
 
 ---
 
@@ -66,6 +66,9 @@ The following rules have been statistically derived from the provided historical
     * **Tier 3:** `GEX_Turned_Negative` is 0 (GEX is positive). `GEX_Change` was negative (-0.88), showing gamma remains steady.
 
 ### Output Forecast
+
+
+> **Instructions:** Your forecast should focus **primarily on tomorrow\'s price action**. While you may mention the 5-day outlook for context, the signal strength classification must be based on tomorrow\'s expected move.
 
 **Immediate (Tomorrow):** **Bearish / Flat**
 * **Assessment:** The "Golden Setup" from 12-09 failed to produce a follow-through day (TodayChange was -0.64). With Price hovering just above the SMA20 (183.18) and RSI failing to break 50, momentum is stalling. The lack of a Tier 1 trigger today suggests a lack of immediate catalysts. The moderate positive GEX (Z-score 1.43) will likely dampen volatility, pinning the price near current levels or drifting lower.

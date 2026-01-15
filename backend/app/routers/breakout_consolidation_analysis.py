@@ -261,7 +261,8 @@ Place this JSON at the very end of your markdown response after all analysis.
                 success = db_service.upsert_signal_strength(
                     stock_code=normalized_code,
                     observation_date=observation_date,
-                    signal_strength_level=signal_strength
+                    signal_strength_level=signal_strength,
+                    source_type="BREAKOUT"
                 )
 
                 if success:

@@ -71,6 +71,9 @@ The following signals from our framework are currently **TRUE**:
 
 ### Output Forecast
 
+
+> **Instructions:** Your forecast should focus **primarily on tomorrow\'s price action**. While you may mention the 5-day outlook for context, the signal strength classification must be based on tomorrow\'s expected move.
+
 **Immediate (Tomorrow):** **Neutral / Slight Bullish Bias**
 * **Assessment:** While the momentum (Price above SMAs, Rising Gamma) is undeniably bullish, the high Dark Pool Ratio (1.62) historically acts as a drag on next-day performance (46% historical win rate). We expect the price to hold gains or grind slightly higher, but a violent breakout tomorrow is less statistically likely than a consolidation.
 

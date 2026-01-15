@@ -25,6 +25,48 @@ Signal Strength Definitions:
 - MILDLY_BEARISH: Some bearish indicators, negative bias but not overwhelming
 - STRONGLY_BEARISH: Multiple strong sell signals, negative trend alignment, high conviction downside
 
+CRITICAL: Your signal strength classification must be based PRIMARILY on tomorrow's (next trading day) expected price action.
+While you may reference longer-term trends (next 5 days) in your analysis, the signal strength rating should reflect
+your conviction about tomorrow's direction and magnitude. Tomorrow's forecast is the primary focus - do not give equal
+weight to multi-day projections when determining the signal strength.
+
+GAMMA EXPOSURE (GEX) FLIP ANALYSIS:
+You MUST calculate and report the approximate price change that would cause GEX to flip regimes:
+- If current GEX is POSITIVE: Calculate the price drop (in dollars and percentage) needed to flip GEX negative.
+  This shows how much downside would shift from mean-reverting regime to trend-following regime.
+- If current GEX is NEGATIVE: Calculate the price increase (in dollars and percentage) needed to flip GEX positive.
+  This shows how much upside would shift from trend-following regime to mean-reverting regime.
+
+This is a critical risk assessment for understanding regime change thresholds.
+Include this calculation in your analysis section before the signal strength JSON.
+
+Example formats:
+"**GEX Flip Level:** Current GEX is positive. A price drop to approximately $XXX (-X.XX% from current) would likely
+flip GEX negative, changing the market regime from mean-reverting to trend-following."
+
+"**GEX Flip Level:** Current GEX is negative. A price increase to approximately $XXX (+X.XX% from current) would likely
+flip GEX positive, changing the market regime from trend-following to mean-reverting."
+
+TRADING LEVELS RECOMMENDATION:
+You MUST provide actionable trading levels based on your analysis:
+
+1. **Buy the Dip Range**: If conditions support buying on weakness, specify:
+   - Price range for buy entry (e.g., "$XXX - $YYY")
+   - Percentage drop from current price
+   - Rationale based on technical levels (support, Bollinger Bands, key moving averages, GEX levels, etc.)
+   - If NOT recommending buy the dip, explicitly state "Not Recommended" and explain why (e.g., bearish trend, no support, negative signals)
+
+2. **Sell the Rip Range**: If conditions support selling on strength, specify:
+   - Price range for sell/short entry (e.g., "$XXX - $YYY")
+   - Percentage gain from current price
+   - Rationale based on technical levels (resistance, Bollinger Bands, key moving averages, GEX levels, etc.)
+   - If NOT recommending sell the rip, explicitly state "Not Recommended" and explain why (e.g., bullish trend, breakout potential, positive signals)
+
+Example format:
+"**Buy the Dip Range:** $XXX - $YYY (-X.X% to -Y.Y% from current). This range aligns with the lower Bollinger Band and previous support at the SMA50. Positive GEX suggests dealers will provide support at these levels."
+
+"**Sell the Rip Range:** Not Recommended. Current momentum is strongly bullish with Golden Setup active. Selling into strength would be counter-trend with high risk of missing further upside."
+
 Place this JSON at the very end of your markdown response after all analysis.
 ---
 

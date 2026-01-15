@@ -18,7 +18,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [credentials, setCredentials] = useState<{ username: string; password: string } | null>(null);
 
   useEffect(() => {
-    const storedAuth = sessionStorage.getItem('auth');
+    const storedAuth = localStorage.getItem('auth');
     if (storedAuth) {
       const authData = JSON.parse(storedAuth);
       setIsAuthenticated(true);
@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           username,
           credentials: { username, password }
         };
-        sessionStorage.setItem('auth', JSON.stringify(authData));
+        localStorage.setItem('auth', JSON.stringify(authData));
         setIsAuthenticated(true);
         setUsername(username);
         setCredentials({ username, password });
@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    sessionStorage.removeItem('auth');
+    localStorage.removeItem('auth');
     setIsAuthenticated(false);
     setUsername(null);
     setCredentials(null);

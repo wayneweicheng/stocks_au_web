@@ -1,7 +1,7 @@
 Quantitative Trading Analysis: SPDR Gold Shares (GLD)
 Role: Quantitative Analyst specializing in Market Microstructure and Gamma Exposure.
 
-Task: Analyze the provided market data to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided market data to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Predictive Logic (Hierarchical Importance)
 The following framework has been derived from the statistical behavior of GLD over the provided 2-year window (2023-2025). Gold exhibits distinct "Momentum Persistence" characteristics that differ from mean-reverting equities.

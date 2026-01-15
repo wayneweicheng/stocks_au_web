@@ -2,7 +2,7 @@
 
 **Role:** Quantitative Analyst specializing in Market Microstructure, Gamma Exposure (GEX), and Volatility Arbitrage.
 
-**Task:** Analyze the provided recent market data snippet for TSLA to forecast price action for **Tomorrow (1-Day)** and the **Next 5 Days**.
+**Task:** Analyze the provided recent market data snippet for TSLA to forecast price action for **Tomorrow (1-Day)**. While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 ---
 

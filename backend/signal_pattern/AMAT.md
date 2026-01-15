@@ -1,7 +1,7 @@
 Quantitative Trading Analysis Framework: Applied Materials (AMAT)
 Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure (GEX), and Volatility Arbitrage.
 
-Task: Identify and detail the statistically significant "edges" (predictive signals) derived from the provided historical data for AMAT.
+Task: Analyze the provided historical data for AMAT to forecast price action for tomorrow (next trading day). While you may reference longer-term patterns, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Predictive Logic (Hierarchical Importance)
 The following rules have been statistically validated based on the provided historical dataset (2023-2025). These signals are categorized by their predictive power and reliability in forecasting short-term price action.

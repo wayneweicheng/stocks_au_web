@@ -37,14 +37,19 @@ export default function Home() {
 
         <section className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-lg border border-slate-200 bg-white p-6">
-            <h3 className="font-medium text-lg mb-1">Breakout Watch List (ASX)</h3>
-            <p className="text-sm text-slate-600 mb-4">Identify ASX breakout and consolidation candidates.</p>
-            <Link href="/breakout-watchlist" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">IB Gateway</h3>
             <p className="text-sm text-slate-600 mb-4">Start, stop and view IB Gateway status and heartbeat.</p>
             <Link href="/ib-gateway" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">Breakout Consolidation Analysis</h3>
+            <p className="text-sm text-slate-600 mb-4">AI-powered analysis of breakout and consolidation patterns.</p>
+            <Link href="/breakout-consolidation-analysis" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-6">
+            <h3 className="font-medium text-lg mb-1">Breakout Watch List</h3>
+            <p className="text-sm text-slate-600 mb-4">Identify ASX breakout and consolidation candidates.</p>
+            <Link href="/breakout-watchlist" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">Research Reports</h3>

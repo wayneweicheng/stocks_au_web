@@ -1,5 +1,10 @@
 Quantitative Feature Dictionary: SPDR S&P Biotech ETF (XBI)Role: Quantitative Analyst specializing in Market Microstructure and Alpha Factor ConstructionTask: Deconstruct the predictive features identified in the XBI historical dataset. This report defines the specific "Alpha Factors"—measurable properties of the market that carry statistical predictive power—and details their mechanics and historical signal behavior.1. Microstructure & Gamma Factors (Dealer Positioning)These features track the positioning of Market Makers (Dealers). Dealers are obligated to hedge their options books, and their hedging flows can accelerate or dampen price moves.Net Gamma Exposure (GEX)Definition: The aggregate dollar value of Gamma exposure held by Market Makers across all option strikes.Mechanism:
 
+**IMPORTANT INSTRUCTION:** When analyzing this data and providing your forecast, focus **primarily on tomorrow's (next trading day) expected price action**. While you may reference longer-term trends for context, your signal strength classification MUST be based on tomorrow's expected move, not multi-day projections.
+
+---
+
+
 Positive GEX (> $0): Dealers are "Long Gamma." They buy when price drops and sell when price rises to hedge. This dampens volatility and pins price.
 Negative GEX (< $0): Dealers are "Short Gamma." They must sell when price drops (to hedge puts) and buy when price rises (to hedge calls). This accelerates volatility and trend extension.
 Predictive Detail: In XBI, Negative GEX regimes often precede the largest 5-day directional moves (both crashes and "squeeze" rallies).Negative_GEX_AND_High_VIX (The Capitulation Flag)Signal Type: Contrarian Reversal (Bullish)Logic: When Dealer Gamma is negative (accelerating downside) AND Volatility (VIX) is already high, the market is typically in a state of panic selling.Edge: Historically marks local bottoms. Once the selling pressure exhausts, the "Short Gamma" dealers are forced to buy back aggressively, fueling a V-shaped recovery.Stock_DarkPoolBuySellRatioDefinition: The ratio of buying volume to selling volume executed in "Dark Pools" (off-exchange private venues used by institutions).Logic:

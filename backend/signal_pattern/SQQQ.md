@@ -1,7 +1,7 @@
 Quantitative Trading Analysis: ProShares UltraPro Short QQQ (SQQQ)
 Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure, and Inverse Leveraged ETF Dynamics.
 
-Task: Analyze the provided market data to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided market data to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Predictive Logic (Hierarchical Importance)
 Important Context: SQQQ is a 3x leveraged inverse ETF. It rises when the Nasdaq-100 falls. Therefore, signals that are "Bullish" for the general market (e.g., Positive Gamma, Low VIX) are Bearish for SQQQ. Conversely, signs of market stress are Bullish for SQQQ.
@@ -75,15 +75,11 @@ Is_Potential_Swing_Up == 1 (Tier 3: Bullish)
 GEXChange = +33.5% (Tier 2: Bearish - Gamma is strengthening)
 
 Output Forecast
-Immediate (Tomorrow): Bearish / Flat
+PRIMARY FOCUS - Tomorrow (Next Trading Day): Direction (Up/Down/Flat), expected magnitude, and volatility assessment. This is your main prediction and should be the basis for your signal strength classification.
 
-Assessment: The most powerful signal active is GEX_Turned_Positive. When dealers flip to positive gamma, they suppress volatility. SQQQ requires volatility to thrive. The market is entering a "stabilization" phase where dealers will buy any Nasdaq dips, preventing the underlying index from dropping.
+Secondary Context - Next 5 Days: Brief trend direction context (optional, for additional perspective only).
 
-Conflict Resolution: While the Potential_Swing_Up technical indicator is active, it is overridden by the Tier 1 microstructure signal. A technical swing up in a Positive Gamma regime usually results in a "fake out" or sideways decay.
-
-Short Term (Next 5 Days): Bearish (Trend Down)
-
-Rationale:
+Rationale: Explicitly name the specific signal that drove the decision for TOMORROW'S action. 
 
 Microstructure: Gamma is positive and increasing (+33% change). This acts as a "volatility clamp," forcing the Nasdaq into a low-volatility grind, which triggers leverage decay in SQQQ.
 

@@ -1,7 +1,7 @@
 Quantitative Trading Analysis: iShares Silver Trust (SLV)
 Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure, and Mean Reversion.
 
-Task: Analyze the provided historical and projected market data (up to Dec 2025) to forecast price action for Tomorrow and the Next 5 Days.
+Task: Analyze the provided historical and projected market data (up to Dec 2025) to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
 
 Predictive Logic (Hierarchical Importance)
 The following signals have been isolated based on the provided dataset, ranked by their historical predictive power ("Edge").

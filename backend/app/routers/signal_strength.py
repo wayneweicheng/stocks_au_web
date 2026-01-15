@@ -12,6 +12,7 @@ logger = logging.getLogger("app.signal_strength")
 @router.get("/signal-strength")
 def get_signal_strengths(
     observation_date: date = Query(..., description="Observation date to retrieve signal strengths for"),
+    source_type: str = Query(None, description="Filter by source type: GEX or BREAKOUT. If not provided, returns all."),
     username: str = Depends(verify_credentials),
 ) -> List[Dict[str, Any]]:
     """
@@ -21,6 +22,7 @@ def get_signal_strengths(
 
     Args:
         observation_date: Date to retrieve signal strengths for
+        source_type: Optional filter by source type ("GEX" for Market Flow Signals or "BREAKOUT" for Breakout Analysis)
         username: Authenticated username (injected by dependency)
 
     Returns:
@@ -29,6 +31,7 @@ def get_signal_strengths(
           {
             "stock_code": "NVDA",
             "signal_strength_level": "STRONGLY_BULLISH",
+            "source_type": "GEX",
             "created_at": "2025-01-15T10:30:00",
             "updated_at": "2025-01-15T10:30:00"
           },
@@ -37,10 +40,12 @@ def get_signal_strengths(
     """
     try:
         db_service = SignalStrengthDBService()
-        results = db_service.get_signal_strengths_by_date(observation_date)
+        results = db_service.get_signal_strengths_by_date(observation_date, source_type)
 
         logger.info(
-            f"Retrieved {len(results)} signal strength records for {observation_date} (user: {username})"
+            f"Retrieved {len(results)} signal strength records for {observation_date}" +
+            (f" (source: {source_type})" if source_type else "") +
+            f" (user: {username})"
         )
 
         return results
