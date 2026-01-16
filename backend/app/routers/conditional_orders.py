@@ -275,3 +275,49 @@ def delete_conditional_order(order_id: int) -> Dict[str, Any]:
         return {"message": "Conditional order deleted successfully"}
     except Exception as e:
         return {"message": f"Note: Stored procedure may not exist. Error: {str(e)}"}
+
+
+@router.get("/conditional-orders/stock-price/{stock_code}")
+def get_stock_price_history(stock_code: str) -> Dict[str, Any]:
+    """Fetch the latest price and 3-day price history for a stock"""
+    try:
+        obj_sql_server_model = SQLServerModel(database='StockDB')
+
+        # Normalize stock code to ensure .AX suffix
+        normalized_code = stock_code.strip().upper()
+        if not normalized_code.endswith('.AX'):
+            normalized_code = f"{normalized_code}.AX"
+
+        data = obj_sql_server_model.execute_read_usp(
+            """
+            SELECT TOP 3
+                ASXCode,
+                ObservationDate,
+                [Open],
+                [Close],
+                [Value] as TradeValue,
+                CAST([Value]*1.0/Volume as decimal(10, 4)) as VWAP,
+                TodayChange as PriceChange,
+                TomorrowChange as Next1DChange,
+                Next2DaysChange as Next2DChange
+            FROM StockDB.Transform.PriceHistory24Month
+            WHERE ASXCode = ?
+            and Volume > 0
+            ORDER BY ObservationDate DESC
+            """,
+            (normalized_code,)
+        )
+
+        if data and len(data) > 0:
+            return {
+                "stock_code": normalized_code,
+                "price_history": data
+            }
+        else:
+            return {
+                "stock_code": normalized_code,
+                "price_history": [],
+                "message": f"No price history found for {normalized_code}"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching stock price: {str(e)}")

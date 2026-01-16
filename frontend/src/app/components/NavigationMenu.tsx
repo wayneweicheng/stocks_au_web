@@ -27,10 +27,9 @@ export default function NavigationMenu() {
           <div className="py-2" role="menu">
             <Link onClick={() => setOpen(false)} href="/order-book" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Order Book</Link>
             <Link onClick={() => setOpen(false)} href="/ta-scan" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">TA Scan</Link>
-            <Link onClick={() => setOpen(false)} href="/breakout-watchlist" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Breakout Watch List (ASX)</Link>
-            <Link onClick={() => setOpen(false)} href="/breakout-watchlist-us" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Breakout Watch List (US)</Link>
+            <Link onClick={() => setOpen(false)} href="/breakout-watchlist" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Breakout Watch List</Link>
             <Link onClick={() => setOpen(false)} href="/breakout-consolidation-analysis" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Breakout Consolidation Analysis</Link>
-            <Link onClick={() => setOpen(false)} href="/gap-up-watchlist" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Gap Up Watchlist (ASX)</Link>
+            <Link onClick={() => setOpen(false)} href="/gap-up-watchlist" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Gap Up Watchlist</Link>
             <Link onClick={() => setOpen(false)} href="/pllrs-scanner" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">PLLRS Scanner</Link>
             <Link onClick={() => setOpen(false)} href="/pegasus-invest-opportunities" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pegasus Invest Opportunities</Link>
             <Link onClick={() => setOpen(false)} href="/research-reports" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Research Reports</Link>
@@ -41,6 +40,8 @@ export default function NavigationMenu() {
             <Link onClick={() => setOpen(false)} href="/gex-signals" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Market Flow Signals</Link>
             <Link onClick={() => setOpen(false)} href="/ib-gateway" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">IB Gateway</Link>
             <Link onClick={() => setOpen(false)} href="/range-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Price Range Orders</Link>
+            <Link onClick={() => setOpen(false)} href="/integrated-charts" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Integrated Charts</Link>
+            <Link onClick={() => setOpen(false)} href="/trading-halt" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Trading Halt</Link>
           </div>
         </div>
       </div>

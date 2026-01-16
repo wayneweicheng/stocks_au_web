@@ -1,0 +1,15 @@
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\StockInfoReport.dll.config
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\StockInfoReport.dll
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\StockInfoReport.pdb
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\DotNet.Highcharts.dll
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\GetYahoo.exe
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\GetYahoo.pdb
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\GetYahoo.exe.config
+C:\Development\Repo\TradeSimple\StockInfoReport\obj\Debug\StockInfoReport.csprojAssemblyReference.cache
+C:\Development\Repo\TradeSimple\StockInfoReport\obj\Debug\StockInfoReport.csproj.CoreCompileInputs.cache
+C:\Development\Repo\TradeSimple\StockInfoReport\obj\Debug\StockInfoReport.csproj.CopyComplete
+C:\Development\Repo\TradeSimple\StockInfoReport\obj\Debug\StockInfoReport.dll
+C:\Development\Repo\TradeSimple\StockInfoReport\obj\Debug\StockInfoReport.pdb
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\Newtonsoft.Json.dll
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\Newtonsoft.Json.xml
+C:\Development\Repo\TradeSimple\StockInfoReport\bin\TA-Lib-Core.dll

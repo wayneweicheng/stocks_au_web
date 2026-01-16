@@ -65,7 +65,7 @@ export default function BreakoutWatchlistPage() {
     <div className="min-h-screen text-slate-800">
       <div className="mx-auto max-w-7xl px-6 py-10">
         <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-purple-500 to-pink-600 bg-clip-text text-transparent">
-          Breakout Watch List (ASX)
+          Breakout Watch List
         </h1>
 
         <div className="grid gap-4 sm:grid-cols-5 mb-6">
@@ -241,6 +241,25 @@ export default function BreakoutWatchlistPage() {
                         cellClass += value === "FRESH BREAKOUT"
                           ? " text-purple-700 font-semibold"
                           : " text-pink-700 font-semibold";
+                      }
+
+                      // Make Symbol/Code column clickable to open integrated charts
+                      const isSymbolColumn = k.toLowerCase() === "symbol" || k.toLowerCase() === "code";
+                      if (isSymbolColumn && value) {
+                        return (
+                          <td key={k} className={cellClass}>
+                            <button
+                              onClick={() => {
+                                const symbol = String(value).replace(".AX", "").replace(".AU", "").trim();
+                                window.open(`/integrated-charts?symbol=${encodeURIComponent(symbol)}&market=ASX`, "_blank");
+                              }}
+                              className="text-purple-600 hover:text-purple-800 hover:underline font-medium cursor-pointer"
+                              title={`Open charts for ${value}`}
+                            >
+                              {String(value ?? "")}
+                            </button>
+                          </td>
+                        );
                       }
 
                       return (

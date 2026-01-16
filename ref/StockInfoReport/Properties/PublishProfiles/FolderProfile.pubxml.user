@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+This file is used by the publish/package process of your Web project. You can customize the behavior of this process
+by editing this MSBuild file. In order to learn more about this please visit https://go.microsoft.com/fwlink/?LinkID=208121. 
+-->
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TimeStampOfAssociatedLegacyPublishXmlFile />
+    <_PublishTargetUrl>C:\Websites\StockReport</_PublishTargetUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <File Include="AccountBalance.aspx">
+      <publishTime>10/08/2021 09:39:06</publishTime>
+    </File>
+    <File Include="AccountHoldings.aspx">
+      <publishTime>10/08/2021 09:39:06</publishTime>
+    </File>
+    <File Include="AnnounementKeyword.aspx">
+      <publishTime>01/01/0001 00:00:00</publishTime>
+    </File>
+    <File Include="ASX300StockSectorPerformance.aspx">
+      <publishTime>06/26/2022 01:02:46</publishTime>
+    </File>
+    <File Include="ASXIndexReport.aspx">
+      <publishTime>08/10/2021 09:48:59</publishTime>
+    </File>
+    <File Include="BackTest.aspx">
+      <publishTime>09/23/2019 20:28:14</publishTime>
+    </File>
+    <File Include="BatchDailyCharts.aspx">
+      <publishTime>08/10/2021 09:48:59</publishTime>
+    </File>
+    <File Include="bin/DotNet.Highcharts.dll">
+      <publishTime>09/23/2019 20:28:14</publishTime>
+    </File>
+    <File Include="bin/GetYahoo.exe">
+      <publishTime>11/01/2024 21:36:50</publishTime>
+    </File>
+    <File Include="bin/GetYahoo.exe.config">
+      <publishTime>09/23/2019 20:28:13</publishTime>
+    </File>
+    <File Include="bin/GetYahoo.pdb">
+      <publishTime>11/01/2024 21:36:50</publishTime>
+    </File>
+    <File Include="bin/Newtonsoft.Json.dll">
+      <publishTime>02/18/2018 09:44:54</publishTime>
+    </File>
+    <File Include="bin/StockInfoReport.dll">
+      <publishTime>11/01/2024 21:36:51</publishTime>
+    </File>
+    <File Include="bin/StockInfoReport.pdb">
+      <publishTime>11/01/2024 21:36:51</publishTime>
+    </File>
+    <File Include="bin/TA-Lib-Core.dll">
+      <publishTime>09/07/2013 13:01:58</publishTime>
+    </File>
+    <File Include="bin/TALibraryInCSharp.dll">
+      <publishTime>01/08/2022 23:25:46</publishTime>
+    </File>
+    <File Include="bin/TALibraryInCSharp.pdb">
+      <publishTime>01/08/2022 23:25:46</publishTime>
+    </File>
+    <File Include="BrokerAnalysis.aspx">
+      <publishTime>08/10/2021 09:48:59</publishTime>
+    </File>
+    <File Include="BrokerBuySellPerc.aspx">
+      <publishTime>08/10/2021 09:48:59</publishTime>
+    </File>
+    <File Include="BrokerReport.aspx">
+      <publishTime>08/10/2021 09:48:59</publishTime>
+    </File>
+    <File Include="BrokerReportStandard.aspx">
+      <publishTime>11/11/2021 23:09:27</publishTime>
+    </File>
+    <File Include="CourseOfSale.aspx">
+      <publishTime>07/14/2023 22:14:34</publishTime>
+    </File>
+    <File Include="CourseOfSaleBasic.aspx">
+      <publishTime>08/10/2022 19:08:50</publishTime>
+    </File>
+    <File Include="CourseOfSaleInstitute.aspx">
+      <publishTime>08/10/2021 09:49:00</publishTime>
+    </File>
+    <File Include="CurrentHoldings.aspx">
+      <publishTime>10/08/2021 09:39:06</publishTime>
+    </File>
+    <File Include="CurrentWatchs.aspx">
+      <publishTime>10/22/2021 20:34:40</publishTime>
+    </File>
+    <File Include="Default.aspx">
+      <publishTime>11/01/2024 21:36:16</publishTime>
+    </File>
+    <File Include="EnteryMyTrade.aspx">
+      <publishTime>08/10/2021 09:48:59</publishTime>
+    </File>
+    <File Include="FirstBuySell.aspx">
+      <publishTime>08/13/2022 19:10:09</publishTime>
+    </File>
+    <File Include="FirstBuySellASXOnly.aspx">
+      <publishTime>08/13/2022 19:10:26</publishTime>
+    </File>
+    <File Include="Global.asax">
+      <publishTime>09/23/2019 20:28:14</publishTime>
+    </File>
+    <File Include="HCCommonStock.aspx">
+      <publishTime>08/10/2021 09:48:59</publishTime>
+    </File>
+    <File Include="IntegratedCharts.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="LargeSale.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="Login.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="ManageAlert.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="ManageConditionalOrder.aspx">
+      <publishTime>08/19/2023 23:16:36</publishTime>
+    </File>
+    <File Include="ManageHCPoster.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="ManageMonitorStock.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="ManageStockKeyToken.aspx">
+      <publishTime>01/01/0001 00:00:00</publishTime>
+    </File>
+    <File Include="MarketDepth.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="packages.config">
+      <publishTime>09/23/2019 20:28:15</publishTime>
+    </File>
+    <File Include="PublicDownload/SectorInvestmentAnalysis.tsv">
+      <publishTime>09/23/2019 20:28:14</publishTime>
+    </File>
+    <File Include="Ref/DotNet.Highcharts.dll">
+      <publishTime>09/23/2019 20:28:14</publishTime>
+    </File>
+    <File Include="SearchAnn.html">
+      <publishTime>11/01/2024 21:36:32</publishTime>
+    </File>
+    <File Include="StockAnnouncementToday.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="StockAnnQuery.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="StockBuyvsSell.aspx">
+      <publishTime>08/10/2021 09:49:00</publishTime>
+    </File>
+    <File Include="StockDirectorBuy.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="StockInsight.aspx">
+      <publishTime>08/10/2021 09:49:00</publishTime>
+    </File>
+    <File Include="StockScanResult.aspx">
+      <publishTime>08/10/2021 09:48:58</publishTime>
+    </File>
+    <File Include="StockScreening.aspx">
+      <publishTime>08/10/2021 09:48:57</publishTime>
+    </File>
+    <File Include="StockSectorPerformanceToday.aspx">
+      <publishTime>01/01/0001 00:00:00</publishTime>
+    </File>
+    <File Include="StockWatchList.aspx">
+      <publishTime>01/29/2022 11:10:48</publishTime>
+    </File>
+    <File Include="TradeRequest.aspx">
+      <publishTime>08/10/2021 09:48:57</publishTime>
+    </File>
+    <File Include="TradeStrategySuggestion.aspx">
+      <publishTime>11/24/2023 23:06:55</publishTime>
+    </File>
+    <File Include="TradingHalt.aspx">
+      <publishTime>08/10/2021 09:48:50</publishTime>
+    </File>
+    <File Include="Web.config">
+      <publishTime>07/30/2023 08:03:33</publishTime>
+    </File>
+  </ItemGroup>
+</Project>

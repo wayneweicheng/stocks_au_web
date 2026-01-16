@@ -67,7 +67,7 @@ export default function GapUpWatchlistPage() {
     <div className="min-h-screen text-slate-800">
       <div className="mx-auto max-w-7xl px-6 py-10">
         <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-blue-500 to-cyan-600 bg-clip-text text-transparent">
-          Gap Up Watchlist (ASX)
+          Gap Up Watchlist
         </h1>
 
         <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-7 mb-6">

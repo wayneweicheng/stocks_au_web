@@ -19,6 +19,24 @@ interface ConditionalOrder {
   created_date?: string;
 }
 
+interface PriceHistoryRecord {
+  ASXCode: string;
+  ObservationDate: string;
+  Open: number;
+  Close: number;
+  TradeValue: number;
+  VWAP: number;
+  PriceChange: number;
+  Next1DChange: number;
+  Next2DChange: number;
+}
+
+interface StockPriceData {
+  stock_code: string;
+  price_history: PriceHistoryRecord[];
+  message?: string;
+}
+
 type OrderTypeOption = { id: number; name: string };
 
 const ORDER_PRICE_TYPES = ["Price", "SMA"];
@@ -51,6 +69,12 @@ export default function ConditionalOrdersPage() {
   const [message, setMessage] = useState<string>("");
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
   const [orderTypes, setOrderTypes] = useState<OrderTypeOption[]>([]);
+  const [stockPriceData, setStockPriceData] = useState<StockPriceData | null>(null);
+  const [fetchingPrice, setFetchingPrice] = useState(false);
+  const [stockCodeWarning, setStockCodeWarning] = useState<string>("");
+  const [priceWarning, setPriceWarning] = useState<string>("");
+  const [volumeDisplay, setVolumeDisplay] = useState<string>("");
+  const [valueDisplay, setValueDisplay] = useState<string>("");
 
   const getInitialOrderType = () => getStoredOrderType() || "Sell Open Price Advantage";
 
@@ -129,20 +153,41 @@ export default function ConditionalOrdersPage() {
         order_volume: 0,
         order_value: undefined
       }));
+      setVolumeDisplay("0");
+      setValueDisplay("");
     } else if (isBuyOrder) {
       // For buy orders, clear order_volume
       setFormData(prev => ({
         ...prev,
         order_volume: undefined
       }));
+      setVolumeDisplay("");
     } else if (isSellOrder) {
       // For sell orders, clear order_value
       setFormData(prev => ({
         ...prev,
         order_value: undefined
       }));
+      setValueDisplay("");
     }
   }, [formData.order_type]);
+
+  // Sync display values when formData changes externally (like when editing)
+  useEffect(() => {
+    if (formData.order_volume !== undefined && formData.order_volume !== null) {
+      setVolumeDisplay(formatNumberWithCommas(formData.order_volume));
+    } else {
+      setVolumeDisplay("");
+    }
+  }, [formData.order_volume]);
+
+  useEffect(() => {
+    if (formData.order_value !== undefined && formData.order_value !== null) {
+      setValueDisplay(formatNumberWithCommas(formData.order_value));
+    } else {
+      setValueDisplay("");
+    }
+  }, [formData.order_value]);
 
   const loadOrders = async () => {
     try {
@@ -219,6 +264,11 @@ export default function ConditionalOrdersPage() {
         valid_until: getDefaultValidUntil(),
         additional_settings: "",
       });
+      setStockPriceData(null);
+      setStockCodeWarning("");
+      setPriceWarning("");
+      setVolumeDisplay("");
+      setValueDisplay("");
       loadOrders();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error');
@@ -243,6 +293,17 @@ export default function ConditionalOrdersPage() {
       valid_until: order.valid_until,
       additional_settings: order.additional_settings,
     });
+    // Fetch price data for the stock being edited
+    fetchStockPrice(order.stock_code).then(() => {
+      // Validate price after stock price data is fetched
+      validateOrderPrice(order.order_price);
+    });
+    // Check for .AX warning when editing
+    if (order.stock_code.trim().toUpperCase().endsWith('.AX')) {
+      setStockCodeWarning("Stock code should not include the .AX suffix. Please enter only the stock code (e.g., 'CBA' instead of 'CBA.AX').");
+    } else {
+      setStockCodeWarning("");
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -267,6 +328,11 @@ export default function ConditionalOrdersPage() {
       valid_until: getDefaultValidUntil(),
       additional_settings: "",
     });
+    setStockPriceData(null);
+    setStockCodeWarning("");
+    setPriceWarning("");
+    setVolumeDisplay("");
+    setValueDisplay("");
   };
 
   const handleDelete = async (orderId: number) => {
@@ -284,6 +350,141 @@ export default function ConditionalOrdersPage() {
       loadOrders();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Unknown error');
+    }
+  };
+
+  const fetchStockPrice = async (stockCode: string) => {
+    if (!stockCode || stockCode.trim() === "") {
+      setStockPriceData(null);
+      return;
+    }
+
+    try {
+      setFetchingPrice(true);
+      const normalized = stockCode.trim().toUpperCase();
+      const response = await fetch(`${baseUrl}/api/conditional-orders/stock-price/${normalized}`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data: StockPriceData = await response.json();
+      setStockPriceData(data);
+    } catch (e: unknown) {
+      console.error("Failed to fetch stock price:", e);
+      setStockPriceData(null);
+    } finally {
+      setFetchingPrice(false);
+    }
+  };
+
+  const validateOrderPrice = (price: number | undefined) => {
+    if (!price || !stockPriceData || stockPriceData.price_history.length === 0) {
+      setPriceWarning("");
+      return;
+    }
+
+    const latestClose = Number(stockPriceData.price_history[0].Close) || 0;
+    if (latestClose === 0) {
+      setPriceWarning("");
+      return;
+    }
+
+    const priceDifference = ((price - latestClose) / latestClose) * 100;
+    const absDifference = Math.abs(priceDifference);
+
+    if (absDifference > 20) {
+      setPriceWarning(`Warning: Your price is ${absDifference.toFixed(1)}% ${priceDifference > 0 ? 'higher' : 'lower'} than the latest close price ($${latestClose.toFixed(3)}). This is a significant difference.`);
+    } else {
+      setPriceWarning("");
+    }
+  };
+
+  const handleStockCodeChange = (value: string) => {
+    setFormData({...formData, stock_code: value});
+
+    // Check if the value contains .AX suffix
+    if (value.trim().toUpperCase().endsWith('.AX')) {
+      setStockCodeWarning("Stock code should not include the .AX suffix. Please enter only the stock code (e.g., 'CBA' instead of 'CBA.AX').");
+    } else {
+      setStockCodeWarning("");
+    }
+  };
+
+  const handleOrderPriceChange = (value: string) => {
+    const price = value === "" ? undefined : parseFloat(value);
+    setFormData({...formData, order_price: price});
+    validateOrderPrice(price);
+  };
+
+  const calculatePriceDifference = (): { difference: number; percentage: number; isHigher: boolean } | null => {
+    if (!formData.order_price || !stockPriceData || stockPriceData.price_history.length === 0) {
+      return null;
+    }
+
+    const latestClose = Number(stockPriceData.price_history[0].Close) || 0;
+    if (latestClose === 0) return null;
+
+    const difference = formData.order_price - latestClose;
+    const percentage = (difference / latestClose) * 100;
+
+    return {
+      difference,
+      percentage,
+      isHigher: difference > 0
+    };
+  };
+
+  const handleStockCodeBlur = () => {
+    fetchStockPrice(formData.stock_code).then(() => {
+      // Re-validate price after fetching new stock data
+      validateOrderPrice(formData.order_price);
+    });
+  };
+
+  const formatNumberWithCommas = (value: number): string => {
+    return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  };
+
+  const parseNumberFromFormatted = (value: string): number | undefined => {
+    const cleaned = value.replace(/,/g, '');
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? undefined : parsed;
+  };
+
+  const handleVolumeChange = (value: string) => {
+    setVolumeDisplay(value);
+    const numericValue = value === "" ? undefined : parseInt(value.replace(/,/g, ''));
+    setFormData({...formData, order_volume: numericValue});
+  };
+
+  const handleVolumeBlur = () => {
+    if (formData.order_volume !== undefined && formData.order_volume !== null) {
+      setVolumeDisplay(formatNumberWithCommas(formData.order_volume));
+    }
+  };
+
+  const handleVolumeFocus = () => {
+    if (formData.order_volume !== undefined && formData.order_volume !== null) {
+      setVolumeDisplay(formData.order_volume.toString());
+    }
+  };
+
+  const handleValueChange = (value: string) => {
+    setValueDisplay(value);
+    const numericValue = parseNumberFromFormatted(value);
+    setFormData({...formData, order_value: numericValue});
+  };
+
+  const handleValueBlur = () => {
+    if (formData.order_value !== undefined && formData.order_value !== null) {
+      setValueDisplay(formatNumberWithCommas(formData.order_value));
+    }
+  };
+
+  const handleValueFocus = () => {
+    if (formData.order_value !== undefined && formData.order_value !== null) {
+      setValueDisplay(formData.order_value.toString());
     }
   };
 
@@ -335,11 +536,24 @@ export default function ConditionalOrdersPage() {
               <input
                 type="text"
                 value={formData.stock_code}
-                onChange={(e) => setFormData({...formData, stock_code: e.target.value})}
+                onChange={(e) => handleStockCodeChange(e.target.value)}
+                onBlur={handleStockCodeBlur}
                 required
                 placeholder="e.g., CBA"
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  stockCodeWarning
+                    ? 'border-amber-400 bg-amber-50 focus:ring-amber-400/40 focus:border-amber-400/40'
+                    : 'border-slate-300 bg-white focus:ring-blue-400/40 focus:border-blue-400/40'
+                }`}
               />
+              {stockCodeWarning && (
+                <p className="text-xs text-amber-700 mt-1 flex items-start gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 mt-0.5 flex-shrink-0">
+                    <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                  </svg>
+                  <span>{stockCodeWarning}</span>
+                </p>
+              )}
             </div>
 
             <div>
@@ -374,9 +588,44 @@ export default function ConditionalOrdersPage() {
                 type="number"
                 step="0.01"
                 value={formData.order_price ?? ""}
-                onChange={(e) => setFormData({...formData, order_price: e.target.value === "" ? undefined : parseFloat(e.target.value)})}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                onChange={(e) => handleOrderPriceChange(e.target.value)}
+                className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  priceWarning
+                    ? 'border-amber-400 bg-amber-50 focus:ring-amber-400/40 focus:border-amber-400/40'
+                    : 'border-slate-300 bg-white focus:ring-blue-400/40 focus:border-blue-400/40'
+                }`}
               />
+              {priceWarning && (
+                <p className="text-xs text-amber-700 mt-1 flex items-start gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 mt-0.5 flex-shrink-0">
+                    <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                  </svg>
+                  <span>{priceWarning}</span>
+                </p>
+              )}
+              {(() => {
+                const priceDiff = calculatePriceDifference();
+                if (!priceDiff) return null;
+
+                return (
+                  <p className={`text-xs mt-1 flex items-center gap-1 font-medium ${
+                    priceDiff.isHigher ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {priceDiff.isHigher ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path fillRule="evenodd" d="M10 17a.75.75 0 01-.75-.75V5.612L5.29 9.77a.75.75 0 01-1.08-1.04l5.25-5.5a.75.75 0 011.08 0l5.25 5.5a.75.75 0 11-1.08 1.04l-3.96-4.158V16.25A.75.75 0 0110 17z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    <span>
+                      ${Math.abs(priceDiff.difference).toFixed(3)} ({priceDiff.isHigher ? '+' : ''}{priceDiff.percentage.toFixed(2)}%) vs latest close
+                    </span>
+                  </p>
+                );
+              })()}
             </div>
 
             <div>
@@ -402,10 +651,13 @@ export default function ConditionalOrdersPage() {
             <div>
               <label className="block text-sm mb-1 text-slate-600">Order Volume</label>
               <input
-                type="number"
-                value={formData.order_volume ?? ""}
-                onChange={(e) => setFormData({...formData, order_volume: e.target.value ? parseInt(e.target.value) : undefined})}
+                type="text"
+                value={volumeDisplay}
+                onChange={(e) => handleVolumeChange(e.target.value)}
+                onBlur={handleVolumeBlur}
+                onFocus={handleVolumeFocus}
                 disabled={formData.order_type.startsWith("Buy")}
+                placeholder="0"
                 className={`w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
                   formData.order_type.startsWith("Buy")
                     ? "bg-slate-100 text-slate-500 cursor-not-allowed"
@@ -420,11 +672,13 @@ export default function ConditionalOrdersPage() {
             <div>
               <label className="block text-sm mb-1 text-slate-600">Order Value</label>
               <input
-                type="number"
-                step="0.01"
-                value={formData.order_value ?? ""}
-                onChange={(e) => setFormData({...formData, order_value: e.target.value === "" ? undefined : parseFloat(e.target.value)})}
+                type="text"
+                value={valueDisplay}
+                onChange={(e) => handleValueChange(e.target.value)}
+                onBlur={handleValueBlur}
+                onFocus={handleValueFocus}
                 disabled={formData.order_type.startsWith("Sell")}
+                placeholder="0.00"
                 className={`w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
                   formData.order_type.startsWith("Sell")
                     ? "bg-slate-100 text-slate-500 cursor-not-allowed"
@@ -481,6 +735,89 @@ export default function ConditionalOrdersPage() {
           </form>
         </div>
 
+        {/* Stock Price Information */}
+        {fetchingPrice && (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">
+            <div className="flex items-center gap-2 text-slate-600">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
+              <span className="text-sm">Fetching stock price data...</span>
+            </div>
+          </div>
+        )}
+
+        {stockPriceData && stockPriceData.price_history.length > 0 && (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-4">
+              Stock Price Information - {stockPriceData.stock_code}
+            </h2>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600 uppercase text-[11px] tracking-wide">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">Date</th>
+                    <th className="px-3 py-2 text-right font-medium">Open</th>
+                    <th className="px-3 py-2 text-right font-medium">Close</th>
+                    <th className="px-3 py-2 text-right font-medium">VWAP</th>
+                    <th className="px-3 py-2 text-right font-medium">Trade Value</th>
+                    <th className="px-3 py-2 text-right font-medium">Price Change</th>
+                    <th className="px-3 py-2 text-right font-medium">Next 1D Change</th>
+                    <th className="px-3 py-2 text-right font-medium">Next 2D Change</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockPriceData.price_history.map((record, idx) => {
+                    const openPrice = Number(record.Open) || 0;
+                    const closePrice = Number(record.Close) || 0;
+                    const vwap = Number(record.VWAP) || 0;
+                    const tradeValue = Number(record.TradeValue) || 0;
+                    const priceChange = Number(record.PriceChange) || 0;
+                    const next1DChange = Number(record.Next1DChange) || 0;
+                    const next2DChange = Number(record.Next2DChange) || 0;
+
+                    return (
+                      <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {new Date(record.ObservationDate).toLocaleDateString()}
+                        </td>
+                        <td className="px-3 py-2 text-right">${openPrice.toFixed(3)}</td>
+                        <td className="px-3 py-2 text-right">${closePrice.toFixed(3)}</td>
+                        <td className="px-3 py-2 text-right font-medium text-blue-600">
+                          ${vwap.toFixed(4)}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          ${tradeValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </td>
+                        <td className={`px-3 py-2 text-right font-medium ${
+                          priceChange > 0 ? 'text-green-600' : priceChange < 0 ? 'text-red-600' : 'text-slate-600'
+                        }`}>
+                          {priceChange > 0 ? '+' : ''}{priceChange.toFixed(2)}%
+                        </td>
+                        <td className={`px-3 py-2 text-right ${
+                          next1DChange > 0 ? 'text-green-600' : next1DChange < 0 ? 'text-red-600' : 'text-slate-600'
+                        }`}>
+                          {next1DChange > 0 ? '+' : ''}{next1DChange.toFixed(2)}%
+                        </td>
+                        <td className={`px-3 py-2 text-right ${
+                          next2DChange > 0 ? 'text-green-600' : next2DChange < 0 ? 'text-red-600' : 'text-slate-600'
+                        }`}>
+                          {next2DChange > 0 ? '+' : ''}{next2DChange.toFixed(2)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {stockPriceData && stockPriceData.price_history.length === 0 && stockPriceData.message && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 mb-6">
+            <p className="text-sm text-amber-800">{stockPriceData.message}</p>
+          </div>
+        )}
+
         <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto relative">
           <h2 className="text-xl font-semibold p-6 pb-0">Existing Conditional Orders</h2>
           
@@ -499,9 +836,7 @@ export default function ConditionalOrdersPage() {
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Order Type</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Stock Code</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Account</th>
-                  <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Price Type</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Price</th>
-                  <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Diff to Current</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Buffer Ticks</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Custom Integer</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Order Volume</th>
@@ -517,9 +852,7 @@ export default function ConditionalOrdersPage() {
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.order_type || "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100 font-medium">{order.stock_code}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.trade_account_name}</td>
-                    <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.order_price_type}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.order_price || "-"}</td>
-                    <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.difference_to_current_price ?? "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.price_buffer_ticks ?? "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.volume_gt || "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{order.order_volume || "-"}</td>
