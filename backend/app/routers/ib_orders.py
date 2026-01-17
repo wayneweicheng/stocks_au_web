@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, field_validator
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from .auth import verify_credentials
 from app.core.config import settings
 import math
@@ -10,11 +10,12 @@ import logging
 import asyncio
 
 try:
-    from ib_insync import IB, Stock, LimitOrder  # type: ignore
+    from ib_insync import IB, Stock, LimitOrder, StopOrder  # type: ignore
 except Exception:  # pragma: no cover
     IB = None  # type: ignore
     Stock = None  # type: ignore
     LimitOrder = None  # type: ignore
+    StopOrder = None  # type: ignore
 
 
 router = APIRouter(prefix="/api/ib", tags=["ib-orders"], dependencies=[Depends(verify_credentials)])
@@ -93,10 +94,25 @@ class PlaceOrderAtPriceRequest(BaseModel):
         return float(v)
 
 
+class BracketOrderConfig(BaseModel):
+    """Configuration for bracket orders with take-profit and stop-loss."""
+    enabled: bool = False
+    take_profit_offset: float = 0.0  # Dollar amount offset for take-profit
+    stop_loss_offset: float = 0.0    # Dollar amount offset for stop-loss
+
+    @field_validator("take_profit_offset", "stop_loss_offset")
+    @classmethod
+    def validate_offsets(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("Offset must be >= 0")
+        return float(v)
+
+
 class PlaceOrdersAtPriceBatchRequest(BaseModel):
     orders: List[PlaceOrderAtPriceRequest]
     place_day: bool = True
     place_overnight: bool = False
+    bracket_config: Optional[BracketOrderConfig] = None  # Optional bracket order settings
 
     @field_validator("orders")
     @classmethod
@@ -158,6 +174,77 @@ def _round_price_for_market(price: float, stock_code: str) -> float:
     if sc.endswith(".AX"):
         tick = 0.01
     return round(max(0.0, float(price)), 2 if tick == 0.01 else 4)
+
+
+def _create_bracket_orders(
+    ib: "IB",
+    action: str,
+    qty: int,
+    entry_price: float,
+    tp_offset: float,
+    sl_offset: float,
+    stock_code: str
+) -> tuple:
+    """
+    Create a bracket order with parent entry, take-profit, and stop-loss orders.
+
+    For BUY: TP is above entry (sell higher), SL is below entry (sell lower)
+    For SELL: TP is below entry (buy lower to cover), SL is above entry (buy higher to stop out)
+
+    Returns: (parent_order, tp_order, sl_order)
+    """
+    action_upper = action.upper()
+    exit_action = "SELL" if action_upper == "BUY" else "BUY"
+
+    # Calculate TP and SL prices based on direction
+    if action_upper == "BUY":
+        tp_price = _round_price_for_market(entry_price + tp_offset, stock_code)
+        sl_price = _round_price_for_market(entry_price - sl_offset, stock_code)
+    else:  # SELL (short)
+        tp_price = _round_price_for_market(entry_price - tp_offset, stock_code)
+        sl_price = _round_price_for_market(entry_price + sl_offset, stock_code)
+
+    # Parent order (entry limit order)
+    parent = LimitOrder(action_upper, qty, lmtPrice=entry_price)
+    parent.orderId = ib.client.getReqId()
+    parent.transmit = False  # Don't transmit until all orders are ready
+    parent.outsideRth = True
+    try:
+        parent.tif = "DAY"
+    except Exception:
+        pass
+    parent.eTradeOnly = None
+    parent.firmQuoteOnly = None
+
+    # Take-profit order (limit order at target price)
+    tp = LimitOrder(exit_action, qty, lmtPrice=tp_price)
+    tp.parentId = parent.orderId
+    tp.ocaGroup = f"bracket_{parent.orderId}"
+    tp.ocaType = 2  # Cancel all remaining when one fills
+    tp.transmit = False
+    tp.outsideRth = True
+    try:
+        tp.tif = "DAY"
+    except Exception:
+        pass
+    tp.eTradeOnly = None
+    tp.firmQuoteOnly = None
+
+    # Stop-loss order (stop order at stop price)
+    sl = StopOrder(exit_action, qty, auxPrice=sl_price)
+    sl.parentId = parent.orderId
+    sl.ocaGroup = f"bracket_{parent.orderId}"
+    sl.ocaType = 2  # Cancel all remaining when one fills
+    sl.transmit = True  # Last order triggers transmission of all
+    sl.outsideRth = True
+    try:
+        sl.tif = "DAY"
+    except Exception:
+        pass
+    sl.eTradeOnly = None
+    sl.firmQuoteOnly = None
+
+    return parent, tp, sl, tp_price, sl_price
 
 
 @router.post("/place-order")
@@ -405,23 +492,75 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                 try:
                     contract = _build_contract(code, overnight=False)
                     ib.qualifyContracts(contract)
-                    lo = LimitOrder(o.buy_sell.upper(), qty, lmtPrice=price)
-                    lo.outsideRth = True
-                    try:
-                        lo.tif = "DAY"
-                    except Exception:
-                        pass
-                    lo.eTradeOnly = None
-                    lo.firmQuoteOnly = None
-                    trade = ib.placeOrder(contract, lo)
-                    orders_placed.append({
-                        "exchange": "SMART",
-                        "stock_code": code,
-                        "qty": qty,
-                        "limit_price": price,
-                        "side": o.buy_sell.upper(),
-                        "ib_order_id": getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
-                    })
+
+                    # Check if bracket orders are enabled
+                    use_bracket = (
+                        batch.bracket_config is not None
+                        and batch.bracket_config.enabled
+                        and batch.bracket_config.take_profit_offset > 0
+                        and batch.bracket_config.stop_loss_offset > 0
+                    )
+
+                    if use_bracket:
+                        # Create and place bracket order (parent + TP + SL)
+                        parent, tp_order, sl_order, tp_price, sl_price = _create_bracket_orders(
+                            ib=ib,
+                            action=o.buy_sell.upper(),
+                            qty=qty,
+                            entry_price=price,
+                            tp_offset=batch.bracket_config.take_profit_offset,
+                            sl_offset=batch.bracket_config.stop_loss_offset,
+                            stock_code=code
+                        )
+
+                        # Place all three orders
+                        parent_trade = ib.placeOrder(contract, parent)
+                        tp_trade = ib.placeOrder(contract, tp_order)
+                        sl_trade = ib.placeOrder(contract, sl_order)
+
+                        exit_side = "SELL" if o.buy_sell.upper() == "BUY" else "BUY"
+                        orders_placed.append({
+                            "exchange": "SMART",
+                            "order_type": "bracket",
+                            "stock_code": code,
+                            "parent": {
+                                "ib_order_id": getattr(parent_trade, "order", None).orderId if getattr(parent_trade, "order", None) else None,
+                                "side": o.buy_sell.upper(),
+                                "qty": qty,
+                                "limit_price": price,
+                            },
+                            "take_profit": {
+                                "ib_order_id": getattr(tp_trade, "order", None).orderId if getattr(tp_trade, "order", None) else None,
+                                "side": exit_side,
+                                "qty": qty,
+                                "limit_price": tp_price,
+                            },
+                            "stop_loss": {
+                                "ib_order_id": getattr(sl_trade, "order", None).orderId if getattr(sl_trade, "order", None) else None,
+                                "side": exit_side,
+                                "qty": qty,
+                                "stop_price": sl_price,
+                            },
+                        })
+                    else:
+                        # Place simple limit order (existing behavior)
+                        lo = LimitOrder(o.buy_sell.upper(), qty, lmtPrice=price)
+                        lo.outsideRth = True
+                        try:
+                            lo.tif = "DAY"
+                        except Exception:
+                            pass
+                        lo.eTradeOnly = None
+                        lo.firmQuoteOnly = None
+                        trade = ib.placeOrder(contract, lo)
+                        orders_placed.append({
+                            "exchange": "SMART",
+                            "stock_code": code,
+                            "qty": qty,
+                            "limit_price": price,
+                            "side": o.buy_sell.upper(),
+                            "ib_order_id": getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
+                        })
                 except Exception as e:
                     logger.warning("Failed to place SMART order for %s: %s", code, e)
                     # Don't fail entire batch if day order fails, add error to this order
@@ -548,19 +687,97 @@ def get_quote(stock_code: str) -> Dict[str, Any]:
     except Exception as e:
         logger.warning("IB get_quote failed for %s: %s", code, e)
         return {"ok": False, "stock_code": code, "error": str(e), "last": None, "close": None, "bid": None, "ask": None, "mid": None}
+
+
+@router.get("/position")
+def get_position(stock_code: str) -> Dict[str, Any]:
+    """
+    Get the current position for a symbol from the IB account.
+    Returns position size (positive for long, negative for short), average cost, and market value.
+    """
+    code = _normalize_us_symbol(stock_code)
+    symbol_without_suffix = code.split(".")[0] if "." in code else code
+
+    try:
+        ib, loop = _connect_ib()
+        try:
+            # Request portfolio positions
+            ib.reqPositions()
+            # Give IB time to send positions
+            ib.sleep(1.0)
+
+            positions = ib.positions()
+            logger.info("Found %d total positions in account", len(positions))
+
+            # Find position for the requested symbol
+            matching_position = None
+            for pos in positions:
+                pos_symbol = getattr(pos.contract, "symbol", "").upper()
+                if pos_symbol == symbol_without_suffix.upper():
+                    matching_position = pos
+                    break
+
+            if matching_position is None:
+                return {
+                    "ok": True,
+                    "stock_code": code,
+                    "position": 0,
+                    "avg_cost": None,
+                    "market_value": None,
+                    "unrealized_pnl": None,
+                    "message": f"No position found for {code}",
+                }
+
+            # Extract position details
+            position_size = float(matching_position.position)  # Positive for long, negative for short
+            avg_cost = float(matching_position.avgCost) if matching_position.avgCost else None
+
+            # Try to get market value from portfolio items
+            market_value = None
+            unrealized_pnl = None
+            try:
+                portfolio = ib.portfolio()
+                for item in portfolio:
+                    item_symbol = getattr(item.contract, "symbol", "").upper()
+                    if item_symbol == symbol_without_suffix.upper():
+                        market_value = float(item.marketValue) if item.marketValue else None
+                        unrealized_pnl = float(item.unrealizedPNL) if item.unrealizedPNL else None
+                        break
+            except Exception as e:
+                logger.warning("Failed to get portfolio details for %s: %s", code, e)
+
+            return {
+                "ok": True,
+                "stock_code": code,
+                "position": position_size,
+                "avg_cost": avg_cost,
+                "market_value": market_value,
+                "unrealized_pnl": unrealized_pnl,
+                "position_type": "long" if position_size > 0 else "short" if position_size < 0 else "flat",
+            }
+        finally:
+            try:
+                ib.disconnect()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning("IB get_position failed for %s: %s", code, e)
+        return {"ok": False, "stock_code": code, "error": str(e), "position": None}
+
+
 @router.get("/ping")
 def ping() -> Dict[str, Any]:
     """Attempt to connect to IB using configured host/port(s) and report result quickly."""
     host = (settings.ibg_api_host or "127.0.0.1").strip() or "127.0.0.1"
     port_cfg = int(settings.ibg_api_port or 0)
     candidate_ports = [port_cfg] if port_cfg > 0 else [4002, 4001, 7497, 7496]
-    details: list[Dict[str, Any]] = []
+    details: List[Dict[str, Any]] = []
 
     # First, try raw TCP reachability to distinguish network vs API handshake
     import socket
 
     if IB is None:
-        details_list: list[Dict[str, Any]] = []
+        details_list: List[Dict[str, Any]] = []
         for p in candidate_ports:
             details_list.append({"port": p, "tcp_ok": _try_tcp(host, p)})
         return {

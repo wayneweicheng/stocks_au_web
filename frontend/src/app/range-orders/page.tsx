@@ -75,6 +75,19 @@ export default function RangeOrdersPage() {
   const [cancelResult, setCancelResult] = useState<any | null>(null);
   const [cancelError, setCancelError] = useState<string>("");
 
+  // Bracket order settings (SMART only)
+  const [enableBracket, setEnableBracket] = useState<boolean>(false);
+  const [takeProfitOffset, setTakeProfitOffset] = useState<string>("2.00");
+  const [stopLossOffset, setStopLossOffset] = useState<string>("3.00");
+  const [bracketOffsetType, setBracketOffsetType] = useState<"dollar" | "percent">("dollar");
+
+  // Position mode: open (new position) or close (existing position)
+  const [positionMode, setPositionMode] = useState<"open" | "close">("open");
+  const [currentPosition, setCurrentPosition] = useState<number | null>(null);
+  const [positionType, setPositionType] = useState<"long" | "short" | "flat" | null>(null);
+  const [positionLoading, setPositionLoading] = useState<boolean>(false);
+  const [positionError, setPositionError] = useState<string>("");
+
   const parsed = useMemo(() => {
     const total = toNumber(totalAmount);
     const tv = toNumber(totalVolume);
@@ -88,9 +101,12 @@ export default function RangeOrdersPage() {
 
   const canGenerate = useMemo(() => {
     const hasPrices = !!parsed.sp && parsed.sp! > 0 && !!parsed.ep && parsed.ep! > 0;
-    const need = side === "Buy" ? (parsed.total && parsed.total > 0) : (parsed.tv && parsed.tv > 0);
+    // In close position mode, we always use volume-based allocation
+    const need = positionMode === "close"
+      ? (parsed.tv && parsed.tv > 0)
+      : (side === "Buy" ? (parsed.total && parsed.total > 0) : (parsed.tv && parsed.tv > 0));
     return hasPrices && !!need && parsed.n > 0;
-  }, [parsed, side]);
+  }, [parsed, side, positionMode]);
 
   const generated = useMemo<GeneratedOrder[] | null>(() => {
     if (!canGenerate) return null;
@@ -116,9 +132,12 @@ export default function RangeOrdersPage() {
       displayWeights = normalize(raw);
     }
 
-    let out: GeneratedOrder[] = [];
-    if (side === "Buy" || !parsed.tv) {
-      // Value-based allocation (Buy)
+    const out: GeneratedOrder[] = [];
+    // Use volume-based allocation in Close Position mode (regardless of side) or when side is Sell in Open mode
+    const useVolumeAllocation = positionMode === "close" || (side === "Sell" && parsed.tv);
+
+    if (!useVolumeAllocation) {
+      // Value-based allocation (Open Position Buy)
       for (let i = 0; i < displayPrices.length; i++) {
         const price = displayPrices[i];
         const weight = displayWeights[i] ?? 0;
@@ -136,13 +155,40 @@ export default function RangeOrdersPage() {
         });
       }
     } else {
-      // Volume-based allocation (Sell)
-      const tv = Math.max(1, Math.floor(parsed.tv));
+      // Volume-based allocation (Close Position or Open Position Sell)
+      const tv = Math.max(1, Math.floor(parsed.tv ?? 0));
+      // Calculate volumes with rounding, ensuring total matches exactly
+      const rawVolumes = displayWeights.map(w => tv * w);
+      const roundedVolumes = rawVolumes.map(v => Math.max(1, Math.floor(v)));
+
+      // Adjust to match exact total volume
+      const currentTotal = roundedVolumes.reduce((a, b) => a + b, 0);
+      const diff = tv - currentTotal;
+
+      // Distribute the difference to orders with highest fractional parts first
+      if (diff > 0) {
+        const fractionalParts = rawVolumes.map((v, i) => ({ idx: i, frac: v - Math.floor(v) }));
+        fractionalParts.sort((a, b) => b.frac - a.frac);
+        for (let i = 0; i < diff && i < fractionalParts.length; i++) {
+          roundedVolumes[fractionalParts[i].idx]++;
+        }
+      } else if (diff < 0) {
+        // Remove from orders with lowest fractional parts (but keep minimum 1)
+        const fractionalParts = rawVolumes.map((v, i) => ({ idx: i, frac: v - Math.floor(v), vol: roundedVolumes[i] }));
+        fractionalParts.sort((a, b) => a.frac - b.frac);
+        let toRemove = Math.abs(diff);
+        for (let i = 0; toRemove > 0 && i < fractionalParts.length; i++) {
+          if (roundedVolumes[fractionalParts[i].idx] > 1) {
+            roundedVolumes[fractionalParts[i].idx]--;
+            toRemove--;
+          }
+        }
+      }
+
       for (let i = 0; i < displayPrices.length; i++) {
         const price = displayPrices[i];
         const weight = displayWeights[i] ?? 0;
-        const rawVol = tv * weight;
-        const volume = Math.max(1, ceilInt(rawVol));
+        const volume = roundedVolumes[i];
         const computedValue = round2(volume * price);
         out.push({
           index: i + 1,
@@ -156,7 +202,7 @@ export default function RangeOrdersPage() {
       }
     }
     return out;
-  }, [canGenerate, parsed, distribution, side]);
+  }, [canGenerate, parsed, distribution, side, positionMode]);
 
   const totals = useMemo(() => {
     if (!generated) return null;
@@ -208,11 +254,118 @@ export default function RangeOrdersPage() {
     }
   }, [baseUrl, stockCode]);
 
+  // Load position when Close Position mode is selected or stock code changes
+  const loadPosition = async () => {
+    if (!baseUrl || !stockCode || stockCode.trim().length === 0) {
+      setCurrentPosition(null);
+      setPositionType(null);
+      return;
+    }
+    setPositionLoading(true);
+    setPositionError("");
+    try {
+      const sc = normalizeUsSymbol(stockCode);
+      const res = await authenticatedFetch(`${baseUrl}/api/ib/position?stock_code=${encodeURIComponent(sc)}`);
+      const data = await res.json();
+      if (!data.ok) {
+        setPositionError(data.error || "Failed to load position");
+        setCurrentPosition(null);
+        setPositionType(null);
+        return;
+      }
+      const pos = typeof data.position === "number" ? data.position : 0;
+      setCurrentPosition(pos);
+      setPositionType(data.position_type || (pos > 0 ? "long" : pos < 0 ? "short" : "flat"));
+
+      // Auto-fill volume and set appropriate side when in close mode
+      if (positionMode === "close" && pos !== 0) {
+        const absPos = Math.abs(pos);
+        setTotalVolume(absPos.toString());
+        // To close a long position, we sell. To close a short position, we buy.
+        setSide(pos > 0 ? "Sell" : "Buy");
+      }
+    } catch (err: any) {
+      setPositionError(err?.message || "Failed to load position");
+      setCurrentPosition(null);
+      setPositionType(null);
+    } finally {
+      setPositionLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (positionMode === "close") {
+      loadPosition();
+    } else {
+      // Reset position data when switching to open mode
+      setCurrentPosition(null);
+      setPositionType(null);
+      setPositionError("");
+    }
+  }, [positionMode, stockCode, baseUrl]);
+
   const formatNA = (v: number | null | undefined, digits = 2) =>
     typeof v === "number" && isFinite(v) ? v.toFixed(digits) : "N/A";
 
   const formatPctNA = (v: number | null | undefined, digits = 2) =>
     typeof v === "number" && isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%` : "N/A";
+
+  // Bracket order preview calculation with dollar/percent conversion
+  const bracketPreview = useMemo(() => {
+    const tpInput = toNumber(takeProfitOffset) ?? 0;
+    const slInput = toNumber(stopLossOffset) ?? 0;
+    if (!generated || generated.length === 0 || tpInput <= 0 || slInput <= 0) return null;
+
+    // Use the first order's price as representative example
+    const examplePrice = generated[0].price;
+    const exampleSide = side;
+
+    // Convert to dollar offsets based on mode
+    let tpDollar: number;
+    let slDollar: number;
+    let tpPercent: number;
+    let slPercent: number;
+
+    if (bracketOffsetType === "dollar") {
+      tpDollar = tpInput;
+      slDollar = slInput;
+      tpPercent = (tpInput / examplePrice) * 100;
+      slPercent = (slInput / examplePrice) * 100;
+    } else {
+      // percent mode - convert to dollar
+      tpDollar = (tpInput / 100) * examplePrice;
+      slDollar = (slInput / 100) * examplePrice;
+      tpPercent = tpInput;
+      slPercent = slInput;
+    }
+
+    if (exampleSide === "Buy") {
+      return {
+        entryPrice: examplePrice,
+        tpPrice: round2(examplePrice + tpDollar),
+        slPrice: round2(examplePrice - slDollar),
+        tpAction: "SELL",
+        slAction: "SELL",
+        tpDollar: round2(tpDollar),
+        slDollar: round2(slDollar),
+        tpPercent: round2(tpPercent),
+        slPercent: round2(slPercent),
+      };
+    } else {
+      // Sell (short)
+      return {
+        entryPrice: examplePrice,
+        tpPrice: round2(examplePrice - tpDollar),
+        slPrice: round2(examplePrice + slDollar),
+        tpAction: "BUY",
+        slAction: "BUY",
+        tpDollar: round2(tpDollar),
+        slDollar: round2(slDollar),
+        tpPercent: round2(tpPercent),
+        slPercent: round2(slPercent),
+      };
+    }
+  }, [generated, side, takeProfitOffset, stopLossOffset, bracketOffsetType]);
 
   // Price slider bounds: 15% below start to 15% above end (using min/max of range)
   const sliderBounds = useMemo(() => {
@@ -252,12 +405,56 @@ export default function RangeOrdersPage() {
     return pct;
   }, [quoteClose, whatIfPrice]);
 
+  // Deltas vs latest price for Start/End
+  const startVsLast = useMemo(() => {
+    if (quoteLast == null || !parsed.sp || parsed.sp <= 0 || quoteLast <= 0) return null;
+    const abs = round2(parsed.sp - quoteLast);
+    const pct = ((parsed.sp - quoteLast) / quoteLast) * 100;
+    return { abs, pct: round2(pct) };
+  }, [quoteLast, parsed.sp]);
+
+  const endVsLast = useMemo(() => {
+    if (quoteLast == null || !parsed.ep || parsed.ep <= 0 || quoteLast <= 0) return null;
+    const abs = round2(parsed.ep - quoteLast);
+    const pct = ((parsed.ep - quoteLast) / quoteLast) * 100;
+    return { abs, pct: round2(pct) };
+  }, [quoteLast, parsed.ep]);
+
+  // Estimated total value at latest price (based on generated total volume)
+  const estTotalAtLast = useMemo(() => {
+    if (!totals || quoteLast == null || quoteLast <= 0) return null;
+    return round2(totals.sumVolume * quoteLast);
+  }, [totals, quoteLast]);
+
   const onPlaceOrders = async () => {
     if (!generated || !baseUrl) return;
 
     // Validate at least one option is selected
     if (!placeDayOrders && !placeOvernightOrders) {
       setPlaceError("Please select at least one order placement option (Day or Overnight)");
+      return;
+    }
+
+    // Validate position exists when in Close Position mode
+    if (positionMode === "close") {
+      if (currentPosition === null || currentPosition === 0) {
+        setPlaceError(`Cannot close position: No position found for ${stockCode}. Switch to "Open Position" mode to place new orders.`);
+        return;
+      }
+      // Also validate we're trading in the right direction to close
+      const requestedVolume = toNumber(totalVolume) ?? 0;
+      const absPosition = Math.abs(currentPosition);
+      if (requestedVolume > absPosition) {
+        setPlaceError(`Volume (${requestedVolume}) exceeds current position size (${absPosition}). Reduce volume or switch to "Open Position" mode.`);
+        return;
+      }
+    }
+
+    // Validate bracket offsets if enabled (only in open position mode)
+    const tpOffsetInput = toNumber(takeProfitOffset) ?? 0;
+    const slOffsetInput = toNumber(stopLossOffset) ?? 0;
+    if (enableBracket && placeDayOrders && positionMode === "open" && (tpOffsetInput <= 0 || slOffsetInput <= 0)) {
+      setPlaceError("Take-Profit and Stop-Loss offsets must be greater than 0 for bracket orders");
       return;
     }
 
@@ -273,13 +470,35 @@ export default function RangeOrdersPage() {
         buy_sell: buySell,
         limit_price: o.price,
       }));
+
+      // Build bracket config if enabled and using SMART exchange (not in close position mode)
+      // Convert percent to dollar if needed (API always expects dollar amounts)
+      let bracketConfig = null;
+      if (enableBracket && placeDayOrders && positionMode === "open" && tpOffsetInput > 0 && slOffsetInput > 0) {
+        // Use the first order's price as reference for percent conversion
+        const refPrice = generated[0].price;
+        const tpDollar = bracketOffsetType === "percent"
+          ? round2((tpOffsetInput / 100) * refPrice)
+          : tpOffsetInput;
+        const slDollar = bracketOffsetType === "percent"
+          ? round2((slOffsetInput / 100) * refPrice)
+          : slOffsetInput;
+
+        bracketConfig = {
+          enabled: true,
+          take_profit_offset: tpDollar,
+          stop_loss_offset: slDollar,
+        };
+      }
+
       const res = await authenticatedFetch(`${baseUrl}/api/ib/place-orders-at-price`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orders,
           place_day: placeDayOrders,
-          place_overnight: placeOvernightOrders
+          place_overnight: placeOvernightOrders,
+          bracket_config: bracketConfig,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -369,6 +588,70 @@ export default function RangeOrdersPage() {
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">
           <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Position Mode Toggle */}
+            <div className="sm:col-span-2 lg:col-span-3">
+              <div className="flex items-center gap-4 p-3 rounded-md bg-slate-50 border border-slate-200">
+                <span className="text-sm font-medium text-slate-700">Position Mode:</span>
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="positionMode"
+                    value="open"
+                    checked={positionMode === "open"}
+                    onChange={() => setPositionMode("open")}
+                    className="w-4 h-4 text-blue-500 focus:ring-2 focus:ring-blue-400/40"
+                  />
+                  <span className={positionMode === "open" ? "text-blue-600 font-medium" : "text-slate-600"}>
+                    Open Position
+                  </span>
+                </label>
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="positionMode"
+                    value="close"
+                    checked={positionMode === "close"}
+                    onChange={() => setPositionMode("close")}
+                    className="w-4 h-4 text-orange-500 focus:ring-2 focus:ring-orange-400/40"
+                  />
+                  <span className={positionMode === "close" ? "text-orange-600 font-medium" : "text-slate-600"}>
+                    Close Position
+                  </span>
+                </label>
+                {positionMode === "close" && (
+                  <div className="ml-auto flex items-center gap-2">
+                    {positionLoading && (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-300 border-t-orange-600" />
+                    )}
+                    {!positionLoading && currentPosition !== null && (
+                      <span className={`text-sm font-semibold px-2 py-0.5 rounded ${
+                        positionType === "long" ? "text-emerald-700 bg-emerald-100" :
+                        positionType === "short" ? "text-red-700 bg-red-100" : "text-slate-600 bg-slate-100"
+                      }`}>
+                        Current: {positionType === "long" ? "+" : ""}{currentPosition} shares ({positionType})
+                      </span>
+                    )}
+                    {!positionLoading && positionError && (
+                      <span className="text-sm text-red-600">{positionError}</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={loadPosition}
+                      disabled={positionLoading}
+                      className="text-xs text-blue-600 hover:text-blue-700 underline disabled:opacity-50"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                )}
+              </div>
+              {positionMode === "close" && currentPosition === 0 && !positionLoading && !positionError && (
+                <p className="text-sm text-amber-600 mt-2">
+                  No position found for {stockCode}. Cannot close a position that doesn&apos;t exist.
+                </p>
+              )}
+            </div>
+
             <div>
               <label className="block text-sm mb-1 text-slate-600">Stock Code</label>
               <input
@@ -402,14 +685,28 @@ export default function RangeOrdersPage() {
                 type="number"
                 step="0.01"
                 min="0"
-                value={side === "Buy" ? totalAmount : (totals?.sumValue ?? 0)}
+                value={positionMode === "close" ? (totals?.sumValue ?? 0) : (side === "Buy" ? totalAmount : (totals?.sumValue ?? 0))}
                 onChange={(e) => setTotalAmount(e.target.value)}
-                disabled={side === "Sell"}
-                required={side === "Buy"}
+                disabled={positionMode === "close" || side === "Sell"}
+                required={side === "Buy" && positionMode === "open"}
                 className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
-                  side === "Sell" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
+                  positionMode === "close" || side === "Sell" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
                 }`}
               />
+              {positionMode === "close" && (
+                <p className="text-xs text-slate-500 mt-1">Computed from volume × average price</p>
+              )}
+              {estTotalAtLast != null && totals && (
+                <div className="text-xs text-slate-500 mt-1">
+                  <div>Est. at Last (${formatNA(quoteLast, 2)}): {currency} {estTotalAtLast.toLocaleString()}</div>
+                  <div className="mt-0.5">
+                    {positionMode === "open" && side === "Buy" && parsed.total
+                      ? <>Δ vs entered: {currency} {(round2(estTotalAtLast - (parsed.total ?? 0))).toLocaleString()}</>
+                      : <>Δ vs generated: {currency} {(round2(estTotalAtLast - (totals?.sumValue ?? 0))).toLocaleString()}</>
+                    }
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -417,14 +714,24 @@ export default function RangeOrdersPage() {
               <input
                 type="number"
                 min="0"
-                value={side === "Buy" ? (totals?.sumVolume ?? 0) : (totalVolume || "")}
+                value={positionMode === "close" ? totalVolume : (side === "Buy" ? (totals?.sumVolume ?? 0) : (totalVolume || ""))}
                 onChange={(e) => setTotalVolume(e.target.value)}
-                disabled={side === "Buy"}
-                required={side === "Sell"}
+                disabled={positionMode === "open" && side === "Buy"}
+                required={positionMode === "close" || side === "Sell"}
                 className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
-                  side === "Buy" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
+                  positionMode === "open" && side === "Buy" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
                 }`}
               />
+              {positionMode === "close" && currentPosition !== null && currentPosition !== 0 && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Max closable: {Math.abs(currentPosition)} shares
+                  {toNumber(totalVolume) !== Math.abs(currentPosition) && toNumber(totalVolume) !== null && toNumber(totalVolume)! > 0 && (
+                    <span className="text-amber-600 ml-2">
+                      (partial close: {toNumber(totalVolume)} of {Math.abs(currentPosition)})
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
 
             <div>
@@ -438,6 +745,11 @@ export default function RangeOrdersPage() {
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
+              {quoteLast != null && startVsLast && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Δ vs Last (${formatNA(quoteLast, 2)}): {startVsLast.abs >= 0 ? "+" : ""}{startVsLast.abs.toFixed(2)} ({startVsLast.pct >= 0 ? "+" : ""}{startVsLast.pct.toFixed(2)}%)
+                </p>
+              )}
             </div>
 
             <div>
@@ -451,6 +763,11 @@ export default function RangeOrdersPage() {
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
+              {quoteLast != null && endVsLast && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Δ vs Last (${formatNA(quoteLast, 2)}): {endVsLast.abs >= 0 ? "+" : ""}{endVsLast.abs.toFixed(2)} ({endVsLast.pct >= 0 ? "+" : ""}{endVsLast.pct.toFixed(2)}%)
+                </p>
+              )}
             </div>
 
             <div>
@@ -548,6 +865,138 @@ export default function RangeOrdersPage() {
               </div>
             </div>
 
+            {/* Bracket Order Settings (SMART only, disabled in Close Position mode) */}
+            <div className="sm:col-span-2 lg:col-span-3">
+              <div className={`rounded-md border p-4 space-y-3 ${positionMode === "close" ? "border-slate-200 bg-slate-100" : "border-slate-200 bg-slate-50/50"}`}>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium text-slate-700">
+                    Bracket Order Settings (SMART only)
+                    {positionMode === "close" && <span className="text-slate-400 font-normal ml-2">— disabled in Close Position mode</span>}
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enableBracket && positionMode === "open"}
+                      onChange={(e) => setEnableBracket(e.target.checked)}
+                      disabled={!placeDayOrders || positionMode === "close"}
+                      className="w-4 h-4 rounded border-slate-300 text-emerald-500 focus:ring-2 focus:ring-emerald-400/40 disabled:opacity-50"
+                    />
+                    <span className={!placeDayOrders || positionMode === "close" ? "text-slate-400" : ""}>Enable bracket orders</span>
+                  </label>
+                </div>
+
+                {enableBracket && placeDayOrders && positionMode === "open" && (
+                  <div className="space-y-3 pt-2">
+                    {/* Offset Type Radio Buttons */}
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-slate-600">Offset Type:</span>
+                      <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="bracketOffsetType"
+                          value="dollar"
+                          checked={bracketOffsetType === "dollar"}
+                          onChange={() => setBracketOffsetType("dollar")}
+                          className="w-4 h-4 text-blue-500 focus:ring-2 focus:ring-blue-400/40"
+                        />
+                        <span>Dollar ($)</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="bracketOffsetType"
+                          value="percent"
+                          checked={bracketOffsetType === "percent"}
+                          onChange={() => setBracketOffsetType("percent")}
+                          className="w-4 h-4 text-blue-500 focus:ring-2 focus:ring-blue-400/40"
+                        />
+                        <span>Percent (%)</span>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm mb-1 text-slate-600">
+                          Take-Profit Offset {bracketOffsetType === "dollar" ? "($)" : "(%)"}
+                        </label>
+                        <div className="flex items-center">
+                          <span className="text-slate-500 mr-1">{bracketOffsetType === "dollar" ? "$" : ""}</span>
+                          <input
+                            type="number"
+                            step={bracketOffsetType === "dollar" ? "0.01" : "0.1"}
+                            min="0"
+                            value={takeProfitOffset}
+                            onChange={(e) => setTakeProfitOffset(e.target.value)}
+                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                          />
+                          <span className="text-slate-500 ml-1">{bracketOffsetType === "percent" ? "%" : ""}</span>
+                        </div>
+                        {bracketPreview && (
+                          <div className="text-xs text-slate-500 mt-1">
+                            {bracketOffsetType === "dollar"
+                              ? `= ${bracketPreview.tpPercent.toFixed(2)}%`
+                              : `= $${bracketPreview.tpDollar.toFixed(2)}`}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm mb-1 text-slate-600">
+                          Stop-Loss Offset {bracketOffsetType === "dollar" ? "($)" : "(%)"}
+                        </label>
+                        <div className="flex items-center">
+                          <span className="text-slate-500 mr-1">{bracketOffsetType === "dollar" ? "$" : ""}</span>
+                          <input
+                            type="number"
+                            step={bracketOffsetType === "dollar" ? "0.01" : "0.1"}
+                            min="0"
+                            value={stopLossOffset}
+                            onChange={(e) => setStopLossOffset(e.target.value)}
+                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/40 focus:border-red-400/40"
+                          />
+                          <span className="text-slate-500 ml-1">{bracketOffsetType === "percent" ? "%" : ""}</span>
+                        </div>
+                        {bracketPreview && (
+                          <div className="text-xs text-slate-500 mt-1">
+                            {bracketOffsetType === "dollar"
+                              ? `= ${bracketPreview.slPercent.toFixed(2)}%`
+                              : `= $${bracketPreview.slDollar.toFixed(2)}`}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {bracketPreview && (
+                      <div className="rounded-md bg-white border border-slate-200 p-3 text-sm">
+                        <div className="font-medium text-slate-700 mb-2">Preview for {side.toUpperCase()} @ ${bracketPreview.entryPrice.toFixed(2)}:</div>
+                        <div className="space-y-1 text-slate-600">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                            <span>Take-Profit: {bracketPreview.tpAction} @ ${bracketPreview.tpPrice.toFixed(2)} (${bracketPreview.tpDollar.toFixed(2)} / {bracketPreview.tpPercent.toFixed(2)}%)</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+                            <span>Stop-Loss: {bracketPreview.slAction} @ ${bracketPreview.slPrice.toFixed(2)} (${bracketPreview.slDollar.toFixed(2)} / {bracketPreview.slPercent.toFixed(2)}%)</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="text-xs text-slate-500">
+                      Bracket orders attach take-profit and stop-loss orders to each entry. When one fills, the other is cancelled (OCO).
+                      <br />
+                      <span className="text-amber-600 font-medium">Note: Bracket orders only work for SMART exchange. OVERNIGHT orders will be simple limit orders.</span>
+                    </p>
+                  </div>
+                )}
+
+                {!placeDayOrders && positionMode === "open" && (
+                  <p className="text-xs text-amber-600">
+                    Enable &quot;Place day orders (SMART)&quot; above to use bracket orders.
+                  </p>
+                )}
+              </div>
+            </div>
+
             <div className="sm:col-span-2 lg:col-span-3">
               <button
                 type="submit"
@@ -568,6 +1017,8 @@ export default function RangeOrdersPage() {
               </h2>
               <p className="text-sm text-slate-600 mt-1">
                 Range {Math.min(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} - {Math.max(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} | Total Amount: {currency} {round2((side === "Buy" ? (parsed.total ?? 0) : (totals?.sumValue ?? 0))).toLocaleString()} | Prev Close: {formatNA(quoteClose)} | Last: {formatNA(quoteLast)}
+                {startVsLast && ` | ΔStart vs Last: ${startVsLast.abs >= 0 ? "+" : ""}${startVsLast.abs.toFixed(2)} (${startVsLast.pct >= 0 ? "+" : ""}${startVsLast.pct.toFixed(2)}%)`}
+                {endVsLast && ` | ΔEnd vs Last: ${endVsLast.abs >= 0 ? "+" : ""}${endVsLast.abs.toFixed(2)} (${endVsLast.pct >= 0 ? "+" : ""}${endVsLast.pct.toFixed(2)}%)`}
               </p>
               <p className="text-xs text-slate-500 mt-2">
                 Note: Volume is rounded up to the next integer. Actual total may exceed the requested amount due to rounding.
@@ -612,7 +1063,26 @@ export default function RangeOrdersPage() {
                   <tfoot>
                     <tr className="bg-slate-100 font-medium">
                       <td className="px-3 py-2 border-t border-slate-200" colSpan={6}>Totals</td>
-                      <td className="px-3 py-2 border-t border-slate-200">{totals.sumVolume}</td>
+                      <td className="px-3 py-2 border-t border-slate-200">
+                        <span className="flex items-center gap-1.5">
+                          {totals.sumVolume}
+                          {positionMode === "close" && parsed.tv && (
+                            totals.sumVolume === parsed.tv ? (
+                              <span className="inline-flex items-center text-emerald-600" title="Volume matches exactly">
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center text-amber-600" title={`Expected ${parsed.tv}, got ${totals.sumVolume}`}>
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                              </span>
+                            )
+                          )}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 border-t border-slate-200">{totals.sumValue.toLocaleString()}</td>
                     </tr>
                   </tfoot>
@@ -718,6 +1188,28 @@ export default function RangeOrdersPage() {
                                       </li>
                                     );
                                   }
+
+                                  // Handle bracket order format
+                                  if (order.order_type === "bracket" && order.parent) {
+                                    return (
+                                      <li key={orderIdx} className="mb-2">
+                                        <div className="text-blue-600 font-medium">[{order.exchange}] Bracket Order:</div>
+                                        <ul className="list-none pl-4 mt-1 space-y-0.5">
+                                          <li className="text-slate-700">
+                                            Entry: {order.parent.side} x {order.parent.qty} @ ${order.parent.limit_price?.toFixed(2)} (ID: {order.parent.ib_order_id})
+                                          </li>
+                                          <li className="text-emerald-600">
+                                            TP: {order.take_profit.side} @ ${order.take_profit.limit_price?.toFixed(2)} (ID: {order.take_profit.ib_order_id})
+                                          </li>
+                                          <li className="text-red-600">
+                                            SL: {order.stop_loss.side} @ ${order.stop_loss.stop_price?.toFixed(2)} (ID: {order.stop_loss.ib_order_id})
+                                          </li>
+                                        </ul>
+                                      </li>
+                                    );
+                                  }
+
+                                  // Standard limit order format
                                   return (
                                     <li key={orderIdx} className="text-emerald-600">
                                       [{order.exchange}] {order.side} {order.stock_code} x {order.qty} @ {order.limit_price} — OK (ID: {order.ib_order_id})
