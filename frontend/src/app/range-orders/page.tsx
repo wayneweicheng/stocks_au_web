@@ -65,7 +65,9 @@ export default function RangeOrdersPage() {
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const [quoteClose, setQuoteClose] = useState<number | null>(null);
   const [quoteLast, setQuoteLast] = useState<number | null>(null);
+  const [quoteMid, setQuoteMid] = useState<number | null>(null);
   const [quoteError, setQuoteError] = useState<string>("");
+  const [quoteSource, setQuoteSource] = useState<string | null>(null);
   const [whatIfPrice, setWhatIfPrice] = useState<number | null>(null);
   const [placeDayOrders, setPlaceDayOrders] = useState<boolean>(true);
   const [placeOvernightOrders, setPlaceOvernightOrders] = useState<boolean>(false);
@@ -223,35 +225,74 @@ export default function RangeOrdersPage() {
     return `${up}.US`;
   };
 
-  // Load IB quote (prev close and last) when stock code changes or after submit
+  // Load quote from DB only when stock code changes
   useEffect(() => {
-    const loadQuote = async () => {
+    let cancelled = false;
+
+    const loadQuoteFromDb = async () => {
       setQuoteError("");
-      setQuoteClose(null);
-      setQuoteLast(null);
       try {
         if (!baseUrl) return;
         const sc = normalizeUsSymbol(stockCode);
         if (!sc) return;
-        const res = await authenticatedFetch(`${baseUrl}/api/ib/quote?stock_code=${encodeURIComponent(sc)}`);
-        if (!res.ok) {
-          return;
+
+        // Fetch DB price only (no IB calls)
+        try {
+          const dbRes = await authenticatedFetch(`${baseUrl}/api/ib/db-quote?stock_code=${encodeURIComponent(sc)}`);
+          if (cancelled) return; // Don't update state if component unmounted or stock changed
+
+          if (dbRes.ok) {
+            const data = await dbRes.json();
+            if (cancelled) return;
+
+            // Check both HTTP status and data.ok field
+            if (data?.ok === true) {
+              const dbClose = typeof data?.close === "number" ? data.close : null;
+              const dbLast = typeof data?.last === "number" ? data.last : null;
+              const dbMid = typeof data?.mid === "number" ? data.mid : null;
+              // Only set if any > 0
+              const pick = [dbLast, dbClose, dbMid].find(v => typeof v === "number" && isFinite(v) && v > 0) ?? null;
+              if (pick != null) {
+                setQuoteClose(dbClose);
+                setQuoteLast(dbLast);
+                setQuoteMid(dbMid);
+                setQuoteSource("db");
+                return;
+              }
+            }
+          }
+        } catch (e: any) {
+          if (!cancelled) {
+            setQuoteError(e?.message || "Failed to load quote from DB");
+          }
         }
-        const data = await res.json();
-        const close = typeof data?.close === "number" ? data.close : null;
-        const last = typeof data?.last === "number" ? data.last : null;
-        setQuoteClose(close);
-        setQuoteLast(last);
+
+        // No quote found, clear to Not Available (only if not cancelled)
+        if (!cancelled) {
+          setQuoteClose(null);
+          setQuoteLast(null);
+          setQuoteMid(null);
+          setQuoteSource(null);
+        }
       } catch (err: any) {
-        setQuoteError(err?.message || "Failed to load quote");
+        if (!cancelled) {
+          setQuoteError(err?.message || "Failed to load quote");
+        }
       }
     };
+
     if (stockCode && stockCode.trim().length > 0) {
-      loadQuote();
+      loadQuoteFromDb();
     } else {
       setQuoteClose(null);
       setQuoteLast(null);
+      setQuoteMid(null);
+      setQuoteSource(null);
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [baseUrl, stockCode]);
 
   // Load position when Close Position mode is selected or stock code changes
@@ -294,14 +335,8 @@ export default function RangeOrdersPage() {
   };
 
   useEffect(() => {
-    if (positionMode === "close") {
-      loadPosition();
-    } else {
-      // Reset position data when switching to open mode
-      setCurrentPosition(null);
-      setPositionType(null);
-      setPositionError("");
-    }
+    // Always load position so we can display it in both Open and Close modes
+    loadPosition();
   }, [positionMode, stockCode, baseUrl]);
 
   const formatNA = (v: number | null | undefined, digits = 2) =>
@@ -618,32 +653,45 @@ export default function RangeOrdersPage() {
                     Close Position
                   </span>
                 </label>
-                {positionMode === "close" && (
-                  <div className="ml-auto flex items-center gap-2">
-                    {positionLoading && (
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-300 border-t-orange-600" />
-                    )}
-                    {!positionLoading && currentPosition !== null && (
-                      <span className={`text-sm font-semibold px-2 py-0.5 rounded ${
-                        positionType === "long" ? "text-emerald-700 bg-emerald-100" :
-                        positionType === "short" ? "text-red-700 bg-red-100" : "text-slate-600 bg-slate-100"
-                      }`}>
-                        Current: {positionType === "long" ? "+" : ""}{currentPosition} shares ({positionType})
-                      </span>
-                    )}
-                    {!positionLoading && positionError && (
-                      <span className="text-sm text-red-600">{positionError}</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={loadPosition}
-                      disabled={positionLoading}
-                      className="text-xs text-blue-600 hover:text-blue-700 underline disabled:opacity-50"
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                )}
+                <div className="ml-auto flex items-center gap-2">
+                  {(() => {
+                    const p = typeof quoteLast === "number" && isFinite(quoteLast)
+                      ? quoteLast
+                      : (typeof quoteClose === "number" && isFinite(quoteClose) ? quoteClose
+                        : (typeof quoteMid === "number" && isFinite(quoteMid) ? quoteMid : null));
+                    if (p == null) {
+                      return <span className="text-sm font-semibold text-slate-500" title={quoteError || undefined}>
+                        Price: Not Available{quoteError ? ` (${quoteError})` : ""}
+                      </span>;
+                    }
+                    const src = (quoteSource || "ib").toString().toUpperCase();
+                    return <span className="text-sm font-semibold text-slate-700">${p.toFixed(2)} <span className="text-xs text-slate-500">[{src}]</span></span>;
+                  })()}
+                  {positionLoading && (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-300 border-t-orange-600" />
+                  )}
+                  {!positionLoading && currentPosition !== null && (
+                    <span className={`text-sm font-semibold px-2 py-0.5 rounded ${
+                      positionType === "long" ? "text-emerald-700 bg-emerald-100" :
+                      positionType === "short" ? "text-red-700 bg-red-100" : "text-slate-600 bg-slate-100"
+                    }`}>
+                      Current: {positionType === "long" ? "+" : ""}{currentPosition} shares ({positionType})
+                    </span>
+                  )}
+                  {!positionLoading && currentPosition === null && (
+                    <span className="text-sm font-semibold text-slate-500" title={positionError || undefined}>
+                      Position: Not Available{positionError ? ` (${positionError})` : ""}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={loadPosition}
+                    disabled={positionLoading}
+                    className="text-xs text-blue-600 hover:text-blue-700 underline disabled:opacity-50"
+                  >
+                    Refresh
+                  </button>
+                </div>
               </div>
               {positionMode === "close" && currentPosition === 0 && !positionLoading && !positionError && (
                 <p className="text-sm text-amber-600 mt-2">

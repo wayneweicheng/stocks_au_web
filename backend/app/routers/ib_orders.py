@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, field_validator
 from typing import List, Dict, Any, Optional
 from .auth import verify_credentials
 from app.core.config import settings
+from app.core.db import get_db_connection
 import math
 import random
 import time
@@ -29,6 +30,68 @@ def _normalize_us_symbol(symbol: str) -> str:
     if "." in s:
         return s
     return f"{s}.US"
+
+
+
+
+def _fallback_db_quote_us(code: str) -> Dict[str, Any] | None:
+    """
+    Fallback quote using SQL database when IB is unavailable.
+    Tries multiple sources:
+    1. StockDB_US.StockData.PriceHistory (US market) with .US suffix
+    2. StockDB_US.StockData.PriceHistory with .AX suffix (IB holdings convention)
+    """
+    try:
+        code_stripped = (code or "").strip()
+        if not code_stripped:
+            logger.info("DB quote: empty code provided")
+            return None
+
+        # Extract base symbol
+        if "." in code_stripped:
+            base, _ = code_stripped.split(".", 1)
+        else:
+            base = code_stripped
+
+        # Try multiple suffix conventions
+        suffixes_to_try = [".US", ".AX"]
+
+        sql = """
+            SELECT TOP 1 ASXCode, ObservationDate, [Close]
+            FROM StockDB_US.StockData.PriceHistory
+            WHERE LOWER(ASXCode) = LOWER(?)
+            ORDER BY ObservationDate DESC
+        """
+
+        logger.info("DB quote: looking up base=%s with suffixes=%s", base, suffixes_to_try)
+
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            for suffix in suffixes_to_try:
+                lookup_code = f"{base}{suffix}"
+                logger.info("DB quote: trying lookup_code=%s", lookup_code)
+                cur.execute(sql, (lookup_code,))
+                row = cur.fetchone()
+                logger.info("DB quote: row=%s", row)
+                if row and row[2] is not None:
+                    close = float(row[2])
+                    r2 = lambda v: None if v is None else round(float(v), 4)
+                    logger.info("DB quote: found close=%s for %s", close, lookup_code)
+                    return {
+                        "ok": True,
+                        "stock_code": code,
+                        "last": r2(close),
+                        "close": r2(close),
+                        "bid": None,
+                        "ask": None,
+                        "mid": None,
+                        "source": "db",
+                    }
+        logger.info("DB quote: no data found for %s", code)
+        return None
+    except Exception as e:
+        logger.warning("DB fallback quote failed for %s: %s", code, e)
+        return None
 
 
 class PlaceOrderRequest(BaseModel):
@@ -133,14 +196,19 @@ def _connect_ib() -> "tuple[IB, asyncio.AbstractEventLoop]":
     ib = IB()
     host = (settings.ibg_api_host or "127.0.0.1").strip() or "127.0.0.1"
     port_cfg = int(settings.ibg_api_port or 0)
-    # Prefer IB Gateway defaults first (4002 live, 4001 paper), then TWS (7496/7497)
-    candidate_ports = [port_cfg] if port_cfg > 0 else [4002, 4001, 7496, 7497]
+    # Try configured port first but also try common defaults to improve resilience
+    candidate_ports = []
+    if port_cfg > 0:
+        candidate_ports.append(port_cfg)
+    for p in [4002, 4001, 7496, 7497]:
+        if p not in candidate_ports:
+            candidate_ports.append(p)
     last_err: Exception | None = None
     # Use a fixed client ID so we can cancel orders placed by this same client
     fixed_client_id = 12345
     for p in candidate_ports:
         try:
-            ib.connect(host, p, clientId=fixed_client_id)
+            ib.connect(host, p, clientId=fixed_client_id, timeout=10)
             logger.info("IB: connected to %s:%s with clientId=%s", host, p, fixed_client_id)
             return ib, loop
         except Exception as e:
@@ -627,7 +695,7 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
 
 
 @router.get("/quote")
-def get_quote(stock_code: str) -> Dict[str, Any]:
+def get_quote(stock_code: str, ib_only: bool = Query(False)) -> Dict[str, Any]:
     """
     Return lightweight quote fields for a symbol. Does not raise on data gaps.
     Response: { ok, stock_code, last, close, bid, ask, mid }
@@ -638,6 +706,11 @@ def get_quote(stock_code: str) -> Dict[str, Any]:
         try:
             contract = _build_contract(code)
             ib.qualifyContracts(contract)
+            # Prefer real-time first; fall back to delayed if needed
+            try:
+                ib.reqMarketDataType(1)  # 1 = real-time
+            except Exception:
+                pass
             # Request common generic ticks (221 Mark Price, 225 RT Volume, 294/295 Last/Auction)
             ticker = ib.reqMktData(contract, "221,225,294,295", False, False)
             start = time.time()
@@ -656,6 +729,28 @@ def get_quote(stock_code: str) -> Dict[str, Any]:
                 bid = getattr(ticker, "bid", float("nan"))
                 ask = getattr(ticker, "ask", float("nan"))
 
+            # If still no data, switch to delayed market data and try again
+            if math.isnan(last) and math.isnan(close) and math.isnan(bid) and math.isnan(ask):
+                try:
+                    ib.reqMarketDataType(3)  # 3 = delayed
+                except Exception:
+                    pass
+                ticker = ib.reqMktData(contract, "221,225,294,295", False, False)
+                start = time.time()
+                last = getattr(ticker, "last", float("nan"))
+                close = getattr(ticker, "close", float("nan"))
+                bid = getattr(ticker, "bid", float("nan"))
+                ask = getattr(ticker, "ask", float("nan"))
+                while (
+                    (math.isnan(last) and math.isnan(close) and math.isnan(bid) and math.isnan(ask))
+                    and (time.time() - start < 3.0)
+                ):
+                    ib.sleep(0.2)
+                    last = getattr(ticker, "last", float("nan"))
+                    close = getattr(ticker, "close", float("nan"))
+                    bid = getattr(ticker, "bid", float("nan"))
+                    ask = getattr(ticker, "ask", float("nan"))
+
             def clean(x: float) -> float | None:
                 return None if x is None or (isinstance(x, float) and (math.isnan(x) or math.isinf(x))) else float(x)
 
@@ -670,7 +765,7 @@ def get_quote(stock_code: str) -> Dict[str, Any]:
             def r2(v: float | None) -> float | None:
                 return None if v is None else round(v, 4)
 
-            return {
+            result = {
                 "ok": True,
                 "stock_code": code,
                 "last": r2(last_c),
@@ -678,7 +773,15 @@ def get_quote(stock_code: str) -> Dict[str, Any]:
                 "bid": r2(bid_c),
                 "ask": r2(ask_c),
                 "mid": r2(mid_c),
+                "source": "ib",
             }
+            # If IB produced no usable fields, fall back to DB only (unless ib_only=true)
+            if all(result.get(k) is None for k in ("last", "close", "bid", "ask", "mid")):
+                if not ib_only:
+                    fb_db = _fallback_db_quote_us(code)
+                    if fb_db:
+                        return fb_db
+            return result
         finally:
             try:
                 ib.disconnect()
@@ -686,38 +789,54 @@ def get_quote(stock_code: str) -> Dict[str, Any]:
                 pass
     except Exception as e:
         logger.warning("IB get_quote failed for %s: %s", code, e)
+        # On exception, try DB only (unless ib_only=true)
+        if not ib_only:
+            fb_db = _fallback_db_quote_us(code)
+            if fb_db:
+                return fb_db
         return {"ok": False, "stock_code": code, "error": str(e), "last": None, "close": None, "bid": None, "ask": None, "mid": None}
+
+
+@router.get("/db-quote")
+def get_db_quote(stock_code: str) -> Dict[str, Any]:
+    """
+    Return the latest DB price for the symbol only (no IB calls).
+    Useful for DB-first UI loading.
+    """
+    code = _normalize_us_symbol(stock_code)
+    fb_db = _fallback_db_quote_us(code)
+    if fb_db:
+        return fb_db
+    return {"ok": False, "stock_code": code, "last": None, "close": None, "bid": None, "ask": None, "mid": None, "source": "db"}
 
 
 @router.get("/position")
 def get_position(stock_code: str) -> Dict[str, Any]:
     """
-    Get the current position for a symbol from the IB account.
+    Get the current position for a symbol from the database (IB holdings synced to DB).
     Returns position size (positive for long, negative for short), average cost, and market value.
     """
     code = _normalize_us_symbol(stock_code)
+    # Extract base symbol (e.g., 'NVDA' from 'NVDA.US')
     symbol_without_suffix = code.split(".")[0] if "." in code else code
+    # Database stores symbols with .AX suffix (e.g., 'NVDA.AX')
+    db_symbol = f"{symbol_without_suffix}.AX"
 
     try:
-        ib, loop = _connect_ib()
-        try:
-            # Request portfolio positions
-            ib.reqPositions()
-            # Give IB time to send positions
-            ib.sleep(1.0)
+        sql = """
+            SELECT TOP 1 ASXCode, HeldPrice, HeldVolume, CreateDate
+            FROM StockDB.StockData.CurrentHoldings
+            WHERE SourceSystem = 'IB'
+              AND AccountName = 'huanw2114'
+              AND UPPER(ASXCode) = UPPER(?)
+            ORDER BY CreateDate DESC
+        """
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(sql, (db_symbol,))
+            row = cur.fetchone()
 
-            positions = ib.positions()
-            logger.info("Found %d total positions in account", len(positions))
-
-            # Find position for the requested symbol
-            matching_position = None
-            for pos in positions:
-                pos_symbol = getattr(pos.contract, "symbol", "").upper()
-                if pos_symbol == symbol_without_suffix.upper():
-                    matching_position = pos
-                    break
-
-            if matching_position is None:
+            if row is None:
                 return {
                     "ok": True,
                     "stock_code": code,
@@ -725,43 +844,30 @@ def get_position(stock_code: str) -> Dict[str, Any]:
                     "avg_cost": None,
                     "market_value": None,
                     "unrealized_pnl": None,
+                    "position_type": "flat",
                     "message": f"No position found for {code}",
+                    "source": "db",
                 }
 
-            # Extract position details
-            position_size = float(matching_position.position)  # Positive for long, negative for short
-            avg_cost = float(matching_position.avgCost) if matching_position.avgCost else None
+            # Extract position details from DB row
+            held_price = float(row[1]) if row[1] is not None else None
+            held_volume = int(row[2]) if row[2] is not None else 0
 
-            # Try to get market value from portfolio items
-            market_value = None
-            unrealized_pnl = None
-            try:
-                portfolio = ib.portfolio()
-                for item in portfolio:
-                    item_symbol = getattr(item.contract, "symbol", "").upper()
-                    if item_symbol == symbol_without_suffix.upper():
-                        market_value = float(item.marketValue) if item.marketValue else None
-                        unrealized_pnl = float(item.unrealizedPNL) if item.unrealizedPNL else None
-                        break
-            except Exception as e:
-                logger.warning("Failed to get portfolio details for %s: %s", code, e)
+            # Determine position type based on volume
+            position_type = "long" if held_volume > 0 else "short" if held_volume < 0 else "flat"
 
             return {
                 "ok": True,
                 "stock_code": code,
-                "position": position_size,
-                "avg_cost": avg_cost,
-                "market_value": market_value,
-                "unrealized_pnl": unrealized_pnl,
-                "position_type": "long" if position_size > 0 else "short" if position_size < 0 else "flat",
+                "position": held_volume,
+                "avg_cost": held_price,
+                "market_value": round(held_price * held_volume, 2) if held_price and held_volume else None,
+                "unrealized_pnl": None,  # Not available from DB
+                "position_type": position_type,
+                "source": "db",
             }
-        finally:
-            try:
-                ib.disconnect()
-            except Exception:
-                pass
     except Exception as e:
-        logger.warning("IB get_position failed for %s: %s", code, e)
+        logger.warning("DB get_position failed for %s: %s", code, e)
         return {"ok": False, "stock_code": code, "error": str(e), "position": None}
 
 

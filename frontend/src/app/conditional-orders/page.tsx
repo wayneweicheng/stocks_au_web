@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 interface ConditionalOrder {
   id?: number;
@@ -75,6 +76,7 @@ export default function ConditionalOrdersPage() {
   const [priceWarning, setPriceWarning] = useState<string>("");
   const [volumeDisplay, setVolumeDisplay] = useState<string>("");
   const [valueDisplay, setValueDisplay] = useState<string>("");
+  const [currency, setCurrency] = useState<"USD" | "AUD">("USD");
 
   const getInitialOrderType = () => getStoredOrderType() || "Sell Open Price Advantage";
 
@@ -212,9 +214,12 @@ export default function ConditionalOrdersPage() {
     try {
       let response;
 
-      // Normalize stock code: ensure .AX suffix if missing
+      // Normalize stock code based on selected currency
       const normalized = (formData.stock_code || "").trim().toUpperCase();
-      const stockCode = normalized.endsWith(".AX") ? normalized : `${normalized}.AX`;
+      const stockCode =
+        currency === "USD"
+          ? (normalized.endsWith(".US") ? normalized : `${normalized}.US`)
+          : (normalized.endsWith(".AX") ? normalized : `${normalized}.AX`);
       const payload = { ...formData, stock_code: stockCode } as any;
 
       if (editingOrderId) {
@@ -361,15 +366,60 @@ export default function ConditionalOrdersPage() {
 
     try {
       setFetchingPrice(true);
-      const normalized = stockCode.trim().toUpperCase();
-      const response = await fetch(`${baseUrl}/api/conditional-orders/stock-price/${normalized}`);
+      const normalizedRaw = stockCode.trim().toUpperCase();
+      const hasSuffix = normalizedRaw.includes(".");
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (currency === "USD") {
+        // Fetch via IB for US
+        const usCode = hasSuffix ? normalizedRaw : `${normalizedRaw}.US`;
+        const ibRes = await authenticatedFetch(`${baseUrl}/api/ib/quote?stock_code=${encodeURIComponent(usCode)}`);
+        if (ibRes.ok) {
+          const ib = await ibRes.json().catch(() => ({}));
+          const close = typeof ib?.close === "number" ? ib.close : null;
+          const last = typeof ib?.last === "number" ? ib.last : null;
+          const bid = typeof ib?.bid === "number" ? ib.bid : null;
+          const ask = typeof ib?.ask === "number" ? ib.ask : null;
+          const mid = typeof ib?.mid === "number" ? ib.mid : (bid != null && ask != null ? (bid + ask) / 2 : null);
+          const pick = last ?? close ?? mid ?? bid ?? ask;
+          const today = new Date().toISOString().slice(0, 10);
+          const code = typeof ib?.stock_code === "string" && ib.stock_code ? ib.stock_code : usCode;
+          setStockPriceData({
+            stock_code: code,
+            price_history: pick != null ? [{
+              ASXCode: code,
+              ObservationDate: today,
+              Open: pick,
+              Close: pick,
+              TradeValue: 0,
+              VWAP: pick,
+              PriceChange: 0,
+              Next1DChange: 0,
+              Next2DChange: 0,
+            }] : [],
+            message: pick == null ? `No US quote available for ${code}` : undefined,
+          });
+          return;
+        }
+        setStockPriceData({
+          stock_code: usCode,
+          price_history: [],
+          message: `No US quote available for ${usCode}`,
+        });
+      } else {
+        // AUD: use ASX history endpoint
+        const asxCode = hasSuffix ? normalizedRaw : `${normalizedRaw}.AX`;
+        const response = await fetch(`${baseUrl}/api/conditional-orders/stock-price/${asxCode}`);
+        if (response.ok) {
+          const data: StockPriceData = await response.json();
+          setStockPriceData(data);
+        } else {
+          setStockPriceData({
+            stock_code: asxCode,
+            price_history: [],
+            message: `No price history found for ${asxCode}`,
+          });
+        }
       }
-
-      const data: StockPriceData = await response.json();
-      setStockPriceData(data);
     } catch (e: unknown) {
       console.error("Failed to fetch stock price:", e);
       setStockPriceData(null);
@@ -403,11 +453,21 @@ export default function ConditionalOrdersPage() {
   const handleStockCodeChange = (value: string) => {
     setFormData({...formData, stock_code: value});
 
-    // Check if the value contains .AX suffix
-    if (value.trim().toUpperCase().endsWith('.AX')) {
-      setStockCodeWarning("Stock code should not include the .AX suffix. Please enter only the stock code (e.g., 'CBA' instead of 'CBA.AX').");
+    const up = value.trim().toUpperCase();
+    if (currency === "AUD") {
+      // For AUD, warn if user typed .AX
+      if (up.endsWith('.AX')) {
+        setStockCodeWarning("Do not include the .AX suffix. Enter base code only (e.g., 'CBA').");
+      } else {
+        setStockCodeWarning("");
+      }
     } else {
-      setStockCodeWarning("");
+      // For USD, warn if user typed .US
+      if (up.endsWith('.US')) {
+        setStockCodeWarning("Do not include the .US suffix. Enter base code only (e.g., 'QQQ').");
+      } else {
+        setStockCodeWarning("");
+      }
     }
   };
 
@@ -441,6 +501,16 @@ export default function ConditionalOrdersPage() {
       validateOrderPrice(formData.order_price);
     });
   };
+
+  // Re-fetch price when currency changes (if code present)
+  useEffect(() => {
+    if ((formData.stock_code || "").trim() !== "") {
+      fetchStockPrice(formData.stock_code);
+    } else {
+      setStockPriceData(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency]);
 
   const formatNumberWithCommas = (value: number): string => {
     return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -532,6 +602,18 @@ export default function ConditionalOrdersPage() {
             </div>
 
             <div>
+              <label className="block text-sm mb-1 text-slate-600">Currency</label>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as "USD" | "AUD")}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+              >
+                <option value="USD">USD</option>
+                <option value="AUD">AUD</option>
+              </select>
+            </div>
+
+            <div>
               <label className="block text-sm mb-1 text-slate-600">Stock Code</label>
               <input
                 type="text"
@@ -539,7 +621,7 @@ export default function ConditionalOrdersPage() {
                 onChange={(e) => handleStockCodeChange(e.target.value)}
                 onBlur={handleStockCodeBlur}
                 required
-                placeholder="e.g., CBA"
+                placeholder={currency === "USD" ? "e.g., QQQ" : "e.g., CBA"}
                 className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
                   stockCodeWarning
                     ? 'border-amber-400 bg-amber-50 focus:ring-amber-400/40 focus:border-amber-400/40'
