@@ -132,3 +132,29 @@ def create_research_link(
         raise HTTPException(status_code=500, detail=f"Failed to create research link: {str(e)}")
 
 
+@router.delete("/research-links/{link_id}")
+def delete_research_link(
+    link_id: int,
+    username: str = Depends(verify_credentials),
+) -> Dict[str, str]:
+    try:
+        db = SQLServerModel(database="StockDB")
+
+        # Ensure it exists
+        exists = db.execute_read_usp(
+            "SELECT ResearchLinkID FROM [Research].[ResearchLink] WHERE ResearchLinkID = ?",
+            (link_id,),
+        ) or []
+        if not exists:
+            raise HTTPException(status_code=404, detail="Research link not found")
+
+        db.execute_update_usp(
+            "DELETE FROM [Research].[ResearchLink] WHERE ResearchLinkID = ?",
+            (link_id,),
+        )
+        return {"message": "Research link deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete research link: {str(e)}")
+

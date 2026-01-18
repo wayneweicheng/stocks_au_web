@@ -32,7 +32,7 @@ export default function NavigationMenu() {
             <Link onClick={() => setOpen(false)} href="/gap-up-watchlist" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Gap Up Watchlist</Link>
             <Link onClick={() => setOpen(false)} href="/pllrs-scanner" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">PLLRS Scanner</Link>
             <Link onClick={() => setOpen(false)} href="/pegasus-invest-opportunities" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pegasus Invest Opportunities</Link>
-            <Link onClick={() => setOpen(false)} href="/research-reports" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Research Reports</Link>
+            <Link onClick={() => setOpen(false)} href="/research-hub" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Research Hub</Link>
             <Link onClick={() => setOpen(false)} href="/monitor-stocks" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Monitor Stocks</Link>
             <Link onClick={() => setOpen(false)} href="/conditional-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Conditional Orders</Link>
             <Link onClick={() => setOpen(false)} href="/strategy-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Strategy Orders</Link>
