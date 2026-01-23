@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, Depends, HTTPException
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
 from app.routers.auth import verify_credentials
 from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
@@ -10,13 +10,13 @@ router = APIRouter(prefix="/api", tags=["research-links"])
 
 class ResearchLinkCreate(BaseModel):
     stock_code: str
-    url: HttpUrl
+    content: str  # Markdown content of the research report
 
 
 class ResearchLink(BaseModel):
     id: int
     stock_code: str
-    url: str
+    content: str  # Markdown content
     added_at: str
     added_by: Optional[str] = None
 
@@ -64,7 +64,7 @@ def list_research_links(
             SELECT
                 ResearchLinkID as id,
                 StockCode as stock_code,
-                Url as url,
+                Content as content,
                 CONVERT(varchar(19), AddedAt, 126) as added_at, -- ISO 8601 without timezone
                 AddedBy as added_by
             FROM [Research].[ResearchLink]
@@ -96,10 +96,10 @@ def create_research_link(
         # Insert the row
         db.execute_update_usp(
             """
-            INSERT INTO [Research].[ResearchLink] (StockCode, Url, AddedBy)
+            INSERT INTO [Research].[ResearchLink] (StockCode, Content, AddedBy)
             VALUES (?, ?, ?)
             """,
-            (payload.stock_code.strip().upper(), str(payload.url), username),
+            (payload.stock_code.strip().upper(), payload.content, username),
         )
 
         # Read back the inserted row (latest match for safety)
@@ -108,14 +108,14 @@ def create_research_link(
             SELECT TOP 1
                 ResearchLinkID as id,
                 StockCode as stock_code,
-                Url as url,
+                Content as content,
                 CONVERT(varchar(19), AddedAt, 126) as added_at,
                 AddedBy as added_by
             FROM [Research].[ResearchLink]
-            WHERE StockCode = ? AND Url = ?
+            WHERE StockCode = ? AND AddedBy = ?
             ORDER BY AddedAt DESC
             """,
-            (payload.stock_code.strip().upper(), str(payload.url)),
+            (payload.stock_code.strip().upper(), username),
         ) or []
 
         if not rows:
@@ -130,6 +130,66 @@ def create_research_link(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create research link: {str(e)}")
+
+
+class ResearchLinkUpdate(BaseModel):
+    content: str  # Updated markdown content
+
+
+@router.put("/research-links/{link_id}", response_model=ResearchLink)
+def update_research_link(
+    link_id: int,
+    payload: ResearchLinkUpdate,
+    username: str = Depends(verify_credentials),
+) -> ResearchLink:
+    try:
+        db = SQLServerModel(database="StockDB")
+
+        # Ensure it exists
+        exists = db.execute_read_usp(
+            "SELECT ResearchLinkID FROM [Research].[ResearchLink] WHERE ResearchLinkID = ?",
+            (link_id,),
+        ) or []
+        if not exists:
+            raise HTTPException(status_code=404, detail="Research link not found")
+
+        # Update the content
+        db.execute_update_usp(
+            """
+            UPDATE [Research].[ResearchLink]
+            SET Content = ?
+            WHERE ResearchLinkID = ?
+            """,
+            (payload.content, link_id),
+        )
+
+        # Read back the updated row
+        rows = db.execute_read_usp(
+            """
+            SELECT
+                ResearchLinkID as id,
+                StockCode as stock_code,
+                Content as content,
+                CONVERT(varchar(19), AddedAt, 126) as added_at,
+                AddedBy as added_by
+            FROM [Research].[ResearchLink]
+            WHERE ResearchLinkID = ?
+            """,
+            (link_id,),
+        ) or []
+
+        if not rows:
+            raise HTTPException(status_code=500, detail="Update succeeded but could not read back row")
+
+        row = rows[0]
+        if isinstance(row.get("added_at"), str) and len(row["added_at"]) == 19:
+            row["added_at"] += "Z"
+
+        return row  # type: ignore
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update research link: {str(e)}")
 
 
 @router.delete("/research-links/{link_id}")

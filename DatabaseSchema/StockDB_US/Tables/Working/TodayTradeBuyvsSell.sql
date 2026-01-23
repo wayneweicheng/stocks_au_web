@@ -1,0 +1,30 @@
+-- Table: [Working].[TodayTradeBuyvsSell]
+
+CREATE TABLE [Working].[TodayTradeBuyvsSell] (
+    [ASXCode] [varchar](10) NOT NULL,
+    [CurrentDate] [date] NULL,
+    [BuyTradeValue] [decimal](38,4) NULL,
+    [SellTradeValue] [decimal](38,4) NULL,
+    [TradeVolume] [int] NULL,
+    [VWAP] [numeric](38,6) NULL,
+    [BuyVsSell] [numeric](38,6) NULL,
+    [MC] [numeric](23,5) NULL,
+    [CashPosition] [numeric](26,6) NULL,
+    [BuyVsMC] [numeric](38,6) NULL,
+    [Poster] [nvarchar](MAX) NULL,
+    [AnnDescr] [varchar](200) NULL,
+    [SearchTerm] [nvarchar](MAX) NULL,
+    [MovingAverage5d] [numeric](38,6) NULL,
+    [MovingAverage10d] [numeric](38,6) NULL,
+    [MovingAverage30d] [numeric](38,6) NULL,
+    [MovingAverage60d] [numeric](38,6) NULL,
+    [MovingAverage10dVol] [decimal](20,4) NULL,
+    [VolumeVsAvg10] [numeric](38,20) NULL,
+    [MovingAverage120dVol] [decimal](20,4) NULL,
+    [VolumeVsAvg120] [numeric](38,20) NULL,
+    [MaxClose20d] [decimal](20,4) NULL,
+    [MinClose20d] [decimal](20,4) NULL,
+    [Nature] [nvarchar](MAX) NULL,
+    [ChangePerc] [decimal](10,2) NULL,
+    [NumPrevDay] [int] NULL
+);

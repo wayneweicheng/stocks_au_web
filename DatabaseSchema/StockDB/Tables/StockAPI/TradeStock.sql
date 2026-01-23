@@ -1,0 +1,36 @@
+-- Table: [StockAPI].[TradeStock]
+
+CREATE TABLE [StockAPI].[TradeStock] (
+    [TradeStockId] [int] IDENTITY(1,1) NOT NULL,
+    [ASXCode] [varchar](20) NULL,
+    [BuySellFlag] [char](1) NOT NULL,
+    [Price] [decimal](20,4) NOT NULL,
+    [StopLossPrice] [decimal](20,4) NULL,
+    [StopProfitPrice] [decimal](20,4) NULL,
+    [CreateDate] [datetime] NOT NULL,
+    [LastTryDate] [datetime] NULL,
+    [OrderPlaceDate] [datetime] NULL,
+    [OrderPlaceVolume] [int] NULL,
+    [OrderReceiptID] [varchar](50) NULL,
+    [OrderFillPrice] [decimal](20,4) NULL,
+    [OrderFillDate] [datetime] NULL,
+    [OrderFillVolume] [int] NULL,
+    [TradeStatus] [varchar](2) NULL,
+    [TradeStatusMessage] [varchar](MAX) NULL,
+    [AccountNumber] [varchar](50) NULL,
+    [TradeTypeID] [varchar](10) NULL,
+    [ErrorCount] [int] NULL,
+    [TradeTypeMessage] [varchar](MAX) NULL,
+    [TradeRank] [int] NULL,
+    [IsNotificationSent] [bit] NULL,
+    [TradeAccountName] [varchar](100) NULL,
+    [LastUpdateDate] [datetime] NULL,
+    [LinkedTradeStockId] [int] NULL,
+    [OrderId] [int] NULL,
+    [SourceOrderId] [varchar](100) NULL,
+    [SourceOrderStatus] [varchar](100) NULL,
+    [ConditionCode] [varchar](10) NULL,
+    [RSI] [decimal](10,3) NULL
+,
+    CONSTRAINT [pk_stockapitradestock_tradestockid] PRIMARY KEY (TradeStockId)
+);

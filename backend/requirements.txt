@@ -10,3 +10,4 @@ pywinauto==0.6.8
 ib_insync==0.9.86
 langchain-core>=0.3.37
 langchain-openai>=0.2.16
+email-validator>=2.0.0

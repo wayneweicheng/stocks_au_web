@@ -1,0 +1,37 @@
+-- Table: [StockData].[DirectorInterest]
+
+CREATE TABLE [StockData].[DirectorInterest] (
+    [DirectorInterestId] [int] IDENTITY(1,1) NOT NULL,
+    [UniqueKey] [int] NOT NULL,
+    [AnnouncementID] [int] NOT NULL,
+    [ASXCode] [varchar](10) NOT NULL,
+    [AnnDateTime] [smalldatetime] NOT NULL,
+    [AnnDescr] [varchar](200) NOT NULL,
+    [DirectorNameRaw] [nvarchar](MAX) NULL,
+    [DateOfLastNoticeRaw] [nvarchar](MAX) NULL,
+    [DirectOrIndirectRaw] [nvarchar](MAX) NULL,
+    [NatureOfInterestRaw] [nvarchar](MAX) NULL,
+    [DateOfChangeRaw] [nvarchar](MAX) NULL,
+    [HeldBeforeChangeRaw] [nvarchar](MAX) NULL,
+    [ClassRaw] [nvarchar](MAX) NULL,
+    [NumberAcquiredRaw] [nvarchar](MAX) NULL,
+    [NumberDisposedRaw] [nvarchar](MAX) NULL,
+    [ValueConsiderationRaw] [nvarchar](MAX) NULL,
+    [HeldAfterChangesRaw] [nvarchar](MAX) NULL,
+    [NatureOfChangeRaw] [nvarchar](MAX) NULL,
+    [DirectorName] [varchar](200) NULL,
+    [DateOfLastNotice] [varchar](200) NULL,
+    [DirectOrIndirect] [varchar](200) NULL,
+    [NatureOfInterest] [varchar](MAX) NULL,
+    [DateOfChange] [varchar](200) NULL,
+    [HeldBeforeChange] [varchar](MAX) NULL,
+    [Class] [varchar](MAX) NULL,
+    [NumberAcquire] [varchar](MAX) NULL,
+    [NumberDisposed] [varchar](MAX) NULL,
+    [ValueConsideration] [varchar](MAX) NULL,
+    [HeldAfterChange] [varchar](MAX) NULL,
+    [NatureOfChange] [varchar](MAX) NULL,
+    [DirectorAnnContent] [varchar](MAX) NULL
+,
+    CONSTRAINT [pk_stockdata_directorinterest_DirectorInterestId] PRIMARY KEY (DirectorInterestId)
+);

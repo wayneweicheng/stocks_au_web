@@ -1,0 +1,477 @@
+-- Stored procedure: [Report].[usp_Get_Strategy_BullishBarCorssMA]
+
+
+CREATE PROCEDURE [Report].[usp_Get_Strategy_BullishBarCorssMA]
+@pbitDebug AS BIT = 0,
+@pintErrorNumber AS INT = 0 OUTPUT,
+@pintNumPrevDay AS INT = 0,
+@pbitASXCodeOnly as bit = 0
+AS
+/******************************************************************************
+File: usp_Get_Strategy_BullishBarCorssMA.sql
+Stored Procedure Name: usp_Get_Strategy_BullishBarCorssMA
+Overview
+-----------------
+usp_Get_Strategy_BullishBarCorssMA
+
+Input Parameters
+----------------
+@pbitDebug		-- Set to 1 to force the display of debugging information
+
+Output Parameters
+-----------------
+@pintErrorNumber		-- Contains 0 if no error, or ERROR_NUMBER() on error
+
+Example of use
+-----------------
+*******************************************************************************
+Change History - (copy and repeat section below)
+*******************************************************************************
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Date:		2021-08-23
+Author:		WAYNE CHENG
+Description: Initial Version
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+******************************B*************************************************/
+
+SET NOCOUNT ON
+
+BEGIN --Proc
+
+	IF @pintErrorNumber <> 0
+	BEGIN
+		-- Assume the application is in an error state, so get out quickly
+		-- Remove this check if this stored procedure should run regardless of a previous error
+		RETURN @pintErrorNumber
+	END
+
+	BEGIN TRY
+
+		-- Error variable declarations
+		DECLARE @vchProcedureName AS VARCHAR(100);		SET @vchProcedureName = 'usp_Get_Strategy_BullishBarCorssMA'
+		DECLARE @vchSchema AS NVARCHAR(50);				SET @vchSchema = 'Report'
+		DECLARE @intErrorNumber AS INT;					SET @intErrorNumber = 0
+		DECLARE @intErrorSeverity AS INT;				SET @intErrorSeverity = 0
+		DECLARE @intErrorState AS INT;					SET @intErrorState = 0	
+		DECLARE @vchErrorProcedure AS NVARCHAR(126);	SET @vchErrorProcedure = ''
+		DECLARE @intErrorLine AS INT;					SET @intErrorLine  = 0
+		DECLARE @vchErrorMessage AS NVARCHAR(4000);		SET @vchErrorMessage = ''
+
+		set nocount on;
+
+		--Normal varible declarations
+		
+		--Code goes here 		
+		--declare @pintNumPrevDay as int = 17
+		--declare @pbitASXCodeOnly as bit = 0
+
+		declare @dtObservationDate as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay, getdate()) as date)
+		declare @dtObservationDatePrev1 as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay - 1, getdate()) as date)
+		declare @dtObservationDatePrevN as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay -10, getdate()) as date)
+		declare @dtObservationDateNext1 as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay + 1, getdate()) as date)
+		declare @dtObservationDateNext3 as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay + 3, getdate()) as date)
+		declare @dtObservationDateNext7 as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay + 7, getdate()) as date)
+
+		--select @dtObservationDate
+		--select @dtObservationDatePrev1 
+		--select @dtObservationDatePrevN 
+
+		if object_id(N'Tempdb.dbo.#TempPriceSummaryLatest') is not null 
+			drop table #TempPriceSummaryLatest
+
+		select 
+			*
+		into #TempPriceSummaryLatest
+		from StockData.v_PriceSummary
+		where 1 = 1
+		and ObservationDate >= @dtObservationDatePrevN
+		--and ASXCode = 'SYA.AX'
+		and DateTo is null
+		and LatestForTheDay = 1
+		and [PrevClose] > 0
+		and Volume > 0
+
+		if object_id(N'Tempdb.dbo.#TempPriceSummary2') is not null 
+			drop table #TempPriceSummary2
+
+		select 
+			*, 
+			lag([Close]) over (partition by ASXCode order by ObservationDate) as PreviousDay_Close, 
+			row_number() over (partition by ASXCode order by ObservationDate) as RowNumber
+		into #TempPriceSummary2
+		from #TempPriceSummaryLatest
+		where 1= 1 
+
+		if object_id(N'Tempdb.dbo.#TempPriceSummary') is not null 
+			drop table #TempPriceSummary
+
+		select *
+		into #TempPriceSummary
+		from #TempPriceSummary2
+		where ObservationDate = @dtObservationDate
+
+		if object_id(N'Tempdb.dbo.#TempPriceSummaryPrev1') is not null 
+			drop table #TempPriceSummaryPrev1
+
+		select *, cast(null as decimal(20, 4)) as PreviousDay_Close, row_number() over (partition by ASXCode order by DateFrom) as RowNumber
+		into #TempPriceSummaryPrev1
+		from StockData.v_PriceSummary
+		where ObservationDate = @dtObservationDatePrev1
+		and DateTo is null
+		and [PrevClose] > 0
+		and Volume > 0
+
+		if object_id(N'Tempdb.dbo.#TempNextDayPrice') is not null
+			drop table #TempNextDayPrice
+
+		select *, cast(null as decimal(20, 4)) as PreviousDay_Close, row_number() over (partition by ASXCode order by DateFrom) as RowNumber
+		into #TempNextDayPrice
+		from StockData.v_PriceSummary
+		where ObservationDate = @dtObservationDateNext1
+		and DateTo is null
+		and [PrevClose] > 0
+		and Volume > 0
+
+		if object_id(N'Tempdb.dbo.#TempNextDay3Price') is not null
+			drop table #TempNextDay3Price
+
+		select *, cast(null as decimal(20, 4)) as PreviousDay_Close, row_number() over (partition by ASXCode order by DateFrom) as RowNumber
+		into #TempNextDay3Price
+		from StockData.v_PriceSummary
+		where ObservationDate = @dtObservationDateNext3
+		and DateTo is null
+		and [PrevClose] > 0
+		and Volume > 0
+
+		if object_id(N'Tempdb.dbo.#TempNextDay7Price') is not null
+			drop table #TempNextDay7Price
+
+		select *, cast(null as decimal(20, 4)) as PreviousDay_Close, row_number() over (partition by ASXCode order by DateFrom) as RowNumber
+		into #TempNextDay7Price
+		from StockData.v_PriceSummary
+		where ObservationDate = @dtObservationDateNext7
+		and DateTo is null
+		and [PrevClose] > 0
+		and Volume > 0
+
+		if object_id(N'Tempdb.dbo.#TempCashPosition') is not null
+			drop table #TempCashPosition
+
+		select *
+		into #TempCashPosition
+		from 
+		(
+		select 
+			*, 
+			row_number() over (partition by ASXCode order by AnnDateTime desc) as RowNumber
+		from StockData.CashPosition
+		) as x
+		where RowNumber = 1
+
+		delete a
+		from #TempCashPosition as a
+		where datediff(day, AnnDateTime, getdate()) > 105
+
+		if object_id(N'Tempdb.dbo.#TempCashVsMC') is not null
+			drop table #TempCashVsMC
+
+		select cast((a.CashPosition/1000.0)/(b.CleansedMarketCap * 1.0) as decimal(10, 3)) as CashVsMC, (a.CashPosition/1000.0) as CashPosition, (b.CleansedMarketCap * 1.0) as MC, b.ASXCode
+		into #TempCashVsMC
+		from #TempCashPosition as a
+		right join StockData.CompanyInfo as b
+		on a.ASXCode = b.ASXCode
+		and b.DateTo is null
+		--and a.CashPosition/1000 * 1.0/(b.CleansedMarketCap * 1) >  0.5
+		--and a.CashPosition/1000.0 > 1
+		order by a.CashPosition/1000.0 * 1.0/(b.CleansedMarketCap * 1) desc
+		
+		if object_id(N'Tempdb.dbo.#TempAnnouncement') is not null
+			drop table #TempAnnouncement
+
+		select 
+			ASXCode,
+			AnnDescr,
+			AnnDateTime,
+			row_number() over (partition by ASXCode order by AnnDateTime asc) as RowNumber
+		into #TempAnnouncement
+		from Transform.v_Announcement as x
+		where cast(AnnDateTime as date) = @dtObservationDate
+
+		if @pbitASXCodeOnly = 0
+		begin
+			select distinct
+				'Bullish Bar Cross MA' as ReportType,
+				ann.[AnnDescr],
+				a.ASXCode, 
+				@dtObservationDate as ObservationDate,
+				m.BrokerCode as ObservationDateBuyBroker,
+				n.BrokerCode as ObservationDateSellBroker,
+				m2.BrokerCode as RecentBuyBroker,
+				n2.BrokerCode as RecentSellBroker,
+				cast(abs(phs.SMA10-SMA5) + abs(phs.SMA20-SMA5) + abs(phs.SMA20-SMA10) as decimal(10, 3)) as SumMADiff,
+				cast(phs.ATR as decimal(10, 3)) as ATR,
+				case when a.[Close] > plfm.MovingAverage100D and a.[Close] > plfm.MovingAverage50D then 1 else 0 end as AboveLongMA,
+				case when plfm.MovingAverage100D >= plfm2.MovingAverage100D and plfm.MovingAverage50D >= plfm2.MovingAverage50D then 1 else 0 end TrendUpLongMA,
+				ttsu.FriendlyNameList,
+				cast(coalesce(f.SharesIssued*a.[Close]*1.0, g.MC) as decimal(8, 2)) as MC,
+				cast(g.CashPosition as decimal(8, 2)) CashPosition,
+				a.[Close] as CurrentClose,
+				cast(a.[Value]/1000.0 as int) as [T/O in K],
+				cast(j.MedianTradeValue as int) as [MedianValue Wk],
+				cast(j.MedianTradeValueDaily as int) as [MedianValue Day],
+				cast(j.MedianPriceChangePerc as varchar(20)) + '%' as [MedianPriceChg],
+				cast(a.Volume*1.0/(f.FloatingShares*10000) as decimal(20, 2)) as [T/O Rate],
+				a.[close],
+				cast((a.[Close] - a.[Open])*100.0/(a.[High] - a.[Open]) as int) as BarStrength
+				--case when ndp.[Close] > 0 and a.[Close] > 0 then cast((ndp.[Close] - a.[Close])*100.0/a.[Close] as decimal(20, 2)) else null end as NextDayCloseProfit,
+				--case when nd3p.[Close] > 0 and a.[Close] > 0 then cast((nd3p.[Close] - a.[Close])*100.0/a.[Close] as decimal(20, 2)) else null end as NextDay3CloseProfit,
+				--case when nd7p.[Close] > 0 and a.[Close] > 0 then cast((nd7p.[Close] - a.[Close])*100.0/a.[Close] as decimal(20, 2)) else null end as NextDay7CloseProfit
+			from 
+			(
+				select a.ASXCode, a.[Close], a.[Value], a.Volume, a.[Open], a.[High], a.[Low], a.PreviousDay_Close, c.MAValue
+				from #TempPriceSummary as a
+				inner join StockData.v_PriceSummary_Latest_Future_MA_KV as b
+				on a.ASXCode = b.ASXCode
+				and b.RowNumber = @pintNumPrevDay + 2
+				and a.[Close] > b.MAValue
+				and b.MAKey = 'MovingAverage5d'
+				inner join StockData.v_PriceSummary_Latest_Future_MA_KV as b1
+				on a.ASXCode = b1.ASXCode
+				and b1.RowNumber = @pintNumPrevDay + 2
+				and a.[Close] > b1.MAValue
+				and b1.MAKey = 'MovingAverage10d'
+				inner join StockData.v_PriceSummary_Latest_Future_MA_KV as c
+				on a.ASXCode = c.ASXCode
+				and c.RowNumber = @pintNumPrevDay + 3
+				and c.MAKey = 'MovingAverage5d'
+				inner join StockData.v_PriceSummary_Latest_Future_MA_KV as c1
+				on a.ASXCode = c1.ASXCode
+				and c1.RowNumber = @pintNumPrevDay + 3
+				and c1.MAKey = 'MovingAverage10d'
+				inner join StockData.v_PriceSummary_Latest_Future_MA_KV as d
+				on a.ASXCode = d.ASXCode
+				and d.RowNumber = @pintNumPrevDay + 2
+				and d.MAKey = 'MovingAverage20d'
+				and a.[Close] >= d.MAValue
+				where a.PreviousDay_Close <= c.MAValue or a.PreviousDay_Close <= c1.MAValue 
+				and a.[Value] > 50000
+				and a.[Close] < 10
+				and a.[Close] >= 0.015
+			) as a
+			left join StockData.v_CompanyFloatingShare as f
+			on a.ASXCode = f.ASXCode
+			left join #TempCashVsMC as g
+			on a.ASXCode = g.ASXCode
+			left join StockData.MedianTradeValue as j
+			on a.ASXCode = j.ASXCode
+			left join [Transform].[BrokerReportList] as m
+			on a.ASXCode = m.ASXCode
+			and m.LookBackNoDays = 0
+			and m.ObservationDate = cast(@dtObservationDate as date)
+			and m.NetBuySell = 'B'
+			left join [Transform].[BrokerReportList] as n
+			on a.ASXCode = n.ASXCode
+			and n.LookBackNoDays = 0
+			and n.ObservationDate = cast(@dtObservationDate as date)
+			and n.NetBuySell = 'S'
+			left join [Transform].[BrokerReportList] as m2
+			on a.ASXCode = m2.ASXCode
+			and m2.LookBackNoDays = 10
+			and m2.ObservationDate = cast(@dtObservationDate as date)
+			and m2.NetBuySell = 'B'
+			left join [Transform].[BrokerReportList] as n2
+			on a.ASXCode = n2.ASXCode
+			and n2.LookBackNoDays = 10
+			and n2.ObservationDate = cast(@dtObservationDate as date)
+			and n2.NetBuySell = 'S'
+			left join Transform.TTSymbolUser as ttsu
+			on a.ASXCode = ttsu.ASXCode
+			left join #TempAnnouncement as ann
+			on a.ASXCode = ann.ASXCode
+			and ann.RowNumber = 1
+			--left join #TempNextDayPrice as ndp
+			--on a.ASXCode = ndp.ASXCode
+			--left join #TempNextDay3Price as nd3p
+			--on a.ASXCode = nd3p.ASXCode
+			--left join #TempNextDay7Price as nd7p
+			--on a.ASXCode = nd7p.ASXCode
+			left join Transform.PriceSummaryLatestFutureMA as plfm
+			on a.ASXCode = plfm.ASXCode
+			and plfm.RowNumber = @pintNumPrevDay + 2
+			left join Transform.PriceSummaryLatestFutureMA as plfm2
+			on a.ASXCode = plfm2.ASXCode
+			and plfm2.RowNumber = @pintNumPrevDay + 3
+			left join StockData.v_PriceHistorySecondary_SMART as phs
+			on a.ASXCode = phs.ASXCode
+			and phs.ObservationDate = cast(@dtObservationDate as date)
+			where 1 = 1
+			and (a.[High] - a.[Open]) > 0 
+			and cast(a.[Value]/1000.0 as int) > 50
+			and isjson(phs.AdditionalElements) > 0
+			and isnull(phs.RSI6, 50) >= 50.0
+			and isnull(phs.RSI6, 50) <= 75.0
+			and phs.[Close] > phs.VWAP
+			and abs(phs.SMA10-SMA5) + abs(phs.SMA20-SMA5) + abs(phs.SMA20-SMA10) <= 1.0*phs.ATR
+			--and abs(phs.SMA10-SMA5) + abs(phs.SMA20-SMA5) + abs(phs.SMA20-SMA10) <
+			--and cast((a.[Close] - a.[Open])*100.0/(a.[High] - a.[Open]) as int) >= 50
+			--and (cast(a.[Value]/1000.0 as int) > 80 or cast(a.Volume*1.0/(f.FloatingShares*10000) as decimal(20, 2)) >= 1.0)
+		end
+		else
+		begin
+			if object_id(N'Tempdb.dbo.#TempOutput') is not null
+				drop table #TempOutput
+
+			select 
+			identity(int, 1, 1) as DisplayOrder,
+			*
+			into #TempOutput
+			from
+			(
+				select 
+					'Bullish Bar Cross MA' as ReportType,
+					ann.[AnnDescr],
+					a.ASXCode, 
+					@dtObservationDate as ObservationDate,
+					m.BrokerCode as ObservationDateBuyBroker,
+					n.BrokerCode as ObservationDateSellBroker,
+					m2.BrokerCode as RecentBuyBroker,
+					n2.BrokerCode as RecentSellBroker,
+					ttsu.FriendlyNameList,
+					cast(coalesce(f.SharesIssued*a.[Close]*1.0, g.MC) as decimal(8, 2)) as MC,
+					cast(g.CashPosition as decimal(8, 2)) CashPosition,
+					a.[Close] as CurrentClose,
+					cast(a.[Value]/1000.0 as int) as [T/O in K],
+					cast(j.MedianTradeValue as int) as [MedianValue Wk],
+					cast(j.MedianTradeValueDaily as int) as [MedianValue Day],
+					cast(j.MedianPriceChangePerc as varchar(20)) + '%' as [MedianPriceChg],
+					cast(a.Volume*1.0/(f.FloatingShares*10000) as decimal(20, 2)) as [T/O Rate],
+					a.[close],
+					cast((a.[Close] - a.[Open])*100.0/(a.[High] - a.[Open]) as int) as BarStrength,
+					CrossMACount,
+					case when ndp.[Close] > 0 and a.[Close] > 0 then cast((ndp.[Close] - a.[Close])*100.0/a.[Close] as decimal(20, 2)) else null end as NextDayCloseProfit,
+					case when nd3p.[Close] > 0 and a.[Close] > 0 then cast((nd3p.[Close] - a.[Close])*100.0/a.[Close] as decimal(20, 2)) else null end as NextDay3CloseProfit
+				from 
+				(
+					select a.ASXCode, a.[Close], a.[Value], a.Volume, a.[Open], a.[High], a.[Low], count(a.ASXCode) as CrossMACount
+					from #TempPriceSummary as a
+					inner join StockData.v_PriceSummary_Latest_Future_MA_KV as b
+					on a.ASXCode = b.ASXCode
+					and b.RowNumber = @pintNumPrevDay + 2
+					and a.[Close] > b.MAValue
+					inner join #TempPriceSummaryPrev1 as a1
+					on a.ASXCode = a1.ASXCode
+					inner join StockData.v_PriceSummary_Latest_Future_MA_KV as b1
+					on a.ASXCode = b1.ASXCode
+					and b1.RowNumber = @pintNumPrevDay + 3
+					and a1.[Close] < b1.MAValue
+					and b.MAKey = b1.MAKey
+					and a.Volume > a1.Volume
+					inner join 
+					(
+						select ASXCode, max(Volume) as MaxVolume
+						from Transform.PriceSummaryLatestFutureMA
+						where RowNumber between @pintNumPrevDay + 3 and @pintNumPrevDay + 3 + 5
+						group by ASXCode
+					) as plfm
+					on a.ASXCode = plfm.ASXCode
+					and a.Volume > plfm.MaxVolume
+					where case when a.PrevClose > 0 then (a.[Close] - a.PrevClose)/a.PrevClose else null end > 0.05
+					and a.[Close] < 5
+					and a.[Close] >= 0.015
+					group by a.ASXCode, a.[Close], a.[Value], a.Volume, a.[Open], a.[High], a.[Low]
+					having count(a.ASXCode) >= 3
+				) as a
+				left join StockData.v_CompanyFloatingShare as f
+				on a.ASXCode = f.ASXCode
+				left join #TempCashVsMC as g
+				on a.ASXCode = g.ASXCode
+				left join StockData.MedianTradeValue as j
+				on a.ASXCode = j.ASXCode
+				left join [Transform].[BrokerReportList] as m
+				on a.ASXCode = m.ASXCode
+				and m.LookBackNoDays = 0
+				and m.ObservationDate = cast(@dtObservationDate as date)
+				and m.NetBuySell = 'B'
+				left join [Transform].[BrokerReportList] as n
+				on a.ASXCode = n.ASXCode
+				and n.LookBackNoDays = 0
+				and n.ObservationDate = cast(@dtObservationDate as date)
+				and n.NetBuySell = 'S'
+				left join [Transform].[BrokerReportList] as m2
+				on a.ASXCode = m2.ASXCode
+				and m2.LookBackNoDays = 10
+				and m2.ObservationDate = cast(@dtObservationDate as date)
+				and m2.NetBuySell = 'B'
+				left join [Transform].[BrokerReportList] as n2
+				on a.ASXCode = n2.ASXCode
+				and n2.LookBackNoDays = 10
+				and n2.ObservationDate = cast(@dtObservationDate as date)
+				and n2.NetBuySell = 'S'
+				left join Transform.TTSymbolUser as ttsu
+				on a.ASXCode = ttsu.ASXCode
+				left join #TempAnnouncement as ann
+				on a.ASXCode = ann.ASXCode
+				and ann.RowNumber = 1
+				left join #TempNextDayPrice as ndp
+				on a.ASXCode = ndp.ASXCode
+				left join #TempNextDay3Price as nd3p
+				on a.ASXCode = nd3p.ASXCode
+				where 1 = 1
+				and (a.[High] - a.[Open]) > 0 
+				--and cast((a.[Close] - a.[Open])*100.0/(a.[High] - a.[Open]) as int) >= 50
+				--and (cast(a.[Value]/1000.0 as int) > 80 or cast(a.Volume*1.0/(f.FloatingShares*10000) as decimal(20, 2)) >= 1.0)
+			) as x
+			order by ASXCode desc;
+			
+			select
+				distinct
+				ASXCode,
+				DisplayOrder,
+				ObservationDate,
+				OBJECT_SCHEMA_NAME(@@PROCID) + '.' + OBJECT_NAME(@@PROCID) as ReportProc
+			from #TempOutput			
+
+		end
+
+
+	END TRY
+
+	BEGIN CATCH
+		-- Store the details of the error
+		SELECT	@intErrorNumber = ERROR_NUMBER(), @intErrorSeverity = ERROR_SEVERITY(),
+				@intErrorState = ERROR_STATE(), @vchErrorProcedure = ERROR_PROCEDURE(),
+				@intErrorLine = ERROR_LINE(), @vchErrorMessage = ERROR_MESSAGE()
+	END CATCH
+
+	IF @intErrorNumber = 0 OR @vchErrorProcedure = ''
+	BEGIN
+		-- No Error occured in this procedure
+
+		--COMMIT TRANSACTION 
+
+		IF @pbitDebug = 1
+		BEGIN
+			PRINT 'Procedure ' + @vchSchema + '.' + @vchProcedureName + ' finished executing (successfully) at ' + CAST(getdate() as varchar(20))
+		END
+	END
+
+	ELSE
+	BEGIN
+
+		--IF @@TRANCOUNT > 0
+		--BEGIN
+		--	ROLLBACK TRANSACTION
+		--END
+			
+		--EXECUTE da_utility.dbo.[usp_DAU_ErrorLog] 'StoredProcedure', @vchErrorProcedure, @vchSchema, @intErrorNumber,
+		--@intErrorSeverity, @intErrorState, @intErrorLine, @vchErrorMessage
+
+		--Raise the error back to the calling stored proc if needed		
+		RAISERROR (@vchErrorMessage, @intErrorSeverity, @intErrorState)
+	END
+
+
+	SET @pintErrorNumber = @intErrorNumber	-- Set the return parameter
+
+
+END

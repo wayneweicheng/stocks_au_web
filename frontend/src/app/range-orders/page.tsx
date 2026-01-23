@@ -80,6 +80,7 @@ export default function RangeOrdersPage() {
   // Bracket order settings (SMART only)
   const [enableBracket, setEnableBracket] = useState<boolean>(false);
   const [takeProfitOffset, setTakeProfitOffset] = useState<string>("2.00");
+  const [enableStopLoss, setEnableStopLoss] = useState<boolean>(true);
   const [stopLossOffset, setStopLossOffset] = useState<string>("3.00");
   const [bracketOffsetType, setBracketOffsetType] = useState<"dollar" | "percent">("dollar");
 
@@ -346,10 +347,11 @@ export default function RangeOrdersPage() {
     typeof v === "number" && isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%` : "N/A";
 
   // Bracket order preview calculation with dollar/percent conversion
+  // Stop-loss is optional - controlled by enableStopLoss checkbox
   const bracketPreview = useMemo(() => {
     const tpInput = toNumber(takeProfitOffset) ?? 0;
-    const slInput = toNumber(stopLossOffset) ?? 0;
-    if (!generated || generated.length === 0 || tpInput <= 0 || slInput <= 0) return null;
+    const slInput = enableStopLoss ? (toNumber(stopLossOffset) ?? 0) : 0;
+    if (!generated || generated.length === 0 || tpInput <= 0) return null;
 
     // Use the first order's price as representative example
     const examplePrice = generated[0].price;
@@ -365,42 +367,46 @@ export default function RangeOrdersPage() {
       tpDollar = tpInput;
       slDollar = slInput;
       tpPercent = (tpInput / examplePrice) * 100;
-      slPercent = (slInput / examplePrice) * 100;
+      slPercent = slInput > 0 ? (slInput / examplePrice) * 100 : 0;
     } else {
       // percent mode - convert to dollar
       tpDollar = (tpInput / 100) * examplePrice;
-      slDollar = (slInput / 100) * examplePrice;
+      slDollar = slInput > 0 ? (slInput / 100) * examplePrice : 0;
       tpPercent = tpInput;
       slPercent = slInput;
     }
+
+    const hasSl = enableStopLoss && slInput > 0;
 
     if (exampleSide === "Buy") {
       return {
         entryPrice: examplePrice,
         tpPrice: round2(examplePrice + tpDollar),
-        slPrice: round2(examplePrice - slDollar),
+        slPrice: hasSl ? round2(examplePrice - slDollar) : null,
         tpAction: "SELL",
         slAction: "SELL",
         tpDollar: round2(tpDollar),
-        slDollar: round2(slDollar),
+        slDollar: hasSl ? round2(slDollar) : null,
         tpPercent: round2(tpPercent),
-        slPercent: round2(slPercent),
+        slPercent: hasSl ? round2(slPercent) : null,
+        hasSl,
       };
     } else {
       // Sell (short)
       return {
         entryPrice: examplePrice,
         tpPrice: round2(examplePrice - tpDollar),
-        slPrice: round2(examplePrice + slDollar),
+        slPrice: hasSl ? round2(examplePrice + slDollar) : null,
         tpAction: "BUY",
         slAction: "BUY",
         tpDollar: round2(tpDollar),
-        slDollar: round2(slDollar),
+        slDollar: hasSl ? round2(slDollar) : null,
         tpPercent: round2(tpPercent),
-        slPercent: round2(slPercent),
+        slPercent: hasSl ? round2(slPercent) : null,
+        hasSl,
       };
     }
-  }, [generated, side, takeProfitOffset, stopLossOffset, bracketOffsetType]);
+  }, [generated, side, takeProfitOffset, stopLossOffset, bracketOffsetType, enableStopLoss]);
 
   // Price slider bounds: 15% below start to 15% above end (using min/max of range)
   const sliderBounds = useMemo(() => {
@@ -486,10 +492,11 @@ export default function RangeOrdersPage() {
     }
 
     // Validate bracket offsets if enabled (only in open position mode)
+    // At least Take-Profit must be set; Stop-Loss is optional
     const tpOffsetInput = toNumber(takeProfitOffset) ?? 0;
     const slOffsetInput = toNumber(stopLossOffset) ?? 0;
-    if (enableBracket && placeDayOrders && positionMode === "open" && (tpOffsetInput <= 0 || slOffsetInput <= 0)) {
-      setPlaceError("Take-Profit and Stop-Loss offsets must be greater than 0 for bracket orders");
+    if (enableBracket && placeDayOrders && positionMode === "open" && tpOffsetInput <= 0) {
+      setPlaceError("Take-Profit offset must be greater than 0 for bracket orders");
       return;
     }
 
@@ -508,16 +515,19 @@ export default function RangeOrdersPage() {
 
       // Build bracket config if enabled and using SMART exchange (not in close position mode)
       // Convert percent to dollar if needed (API always expects dollar amounts)
+      // Stop-loss is optional - controlled by enableStopLoss checkbox
       let bracketConfig = null;
-      if (enableBracket && placeDayOrders && positionMode === "open" && tpOffsetInput > 0 && slOffsetInput > 0) {
+      if (enableBracket && placeDayOrders && positionMode === "open" && tpOffsetInput > 0) {
         // Use the first order's price as reference for percent conversion
         const refPrice = generated[0].price;
         const tpDollar = bracketOffsetType === "percent"
           ? round2((tpOffsetInput / 100) * refPrice)
           : tpOffsetInput;
-        const slDollar = bracketOffsetType === "percent"
-          ? round2((slOffsetInput / 100) * refPrice)
-          : slOffsetInput;
+        const slDollar = enableStopLoss && slOffsetInput > 0
+          ? (bracketOffsetType === "percent"
+              ? round2((slOffsetInput / 100) * refPrice)
+              : slOffsetInput)
+          : 0;
 
         bracketConfig = {
           enabled: true,
@@ -595,30 +605,8 @@ export default function RangeOrdersPage() {
           <h1 className="text-3xl sm:text-4xl font-semibold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">
             Price Range Orders
           </h1>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setCancelSide("BUY");
-                setShowCancelConfirm(true);
-              }}
-              disabled={!stockCode || cancelling}
-              className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400/40 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel All BUY
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setCancelSide("SELL");
-                setShowCancelConfirm(true);
-              }}
-              disabled={!stockCode || cancelling}
-              className="rounded-md bg-orange-600 px-3 py-2 text-sm font-medium text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-400/40 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel All SELL
-            </button>
-          </div>
+          {/* Cancel All buttons hidden - IB API requires same client ID to cancel orders,
+              but we now use random client IDs to avoid connection conflicts */}
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">
@@ -988,26 +976,35 @@ export default function RangeOrdersPage() {
                         )}
                       </div>
                       <div>
-                        <label className="block text-sm mb-1 text-slate-600">
-                          Stop-Loss Offset {bracketOffsetType === "dollar" ? "($)" : "(%)"}
+                        <label className="flex items-center gap-2 text-sm mb-1 text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={enableStopLoss}
+                            onChange={(e) => setEnableStopLoss(e.target.checked)}
+                            className="rounded border-slate-300 text-red-500 focus:ring-red-400/40"
+                          />
+                          <span className={!enableStopLoss ? "text-slate-400" : ""}>
+                            Stop-Loss Offset {bracketOffsetType === "dollar" ? "($)" : "(%)"}
+                          </span>
                         </label>
                         <div className="flex items-center">
-                          <span className="text-slate-500 mr-1">{bracketOffsetType === "dollar" ? "$" : ""}</span>
+                          <span className={`mr-1 ${enableStopLoss ? "text-slate-500" : "text-slate-300"}`}>{bracketOffsetType === "dollar" ? "$" : ""}</span>
                           <input
                             type="number"
                             step={bracketOffsetType === "dollar" ? "0.01" : "0.1"}
                             min="0"
                             value={stopLossOffset}
                             onChange={(e) => setStopLossOffset(e.target.value)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/40 focus:border-red-400/40"
+                            disabled={!enableStopLoss}
+                            className={`w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/40 focus:border-red-400/40 ${!enableStopLoss ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"}`}
                           />
-                          <span className="text-slate-500 ml-1">{bracketOffsetType === "percent" ? "%" : ""}</span>
+                          <span className={`ml-1 ${enableStopLoss ? "text-slate-500" : "text-slate-300"}`}>{bracketOffsetType === "percent" ? "%" : ""}</span>
                         </div>
-                        {bracketPreview && (
+                        {bracketPreview && bracketPreview.hasSl && (
                           <div className="text-xs text-slate-500 mt-1">
                             {bracketOffsetType === "dollar"
-                              ? `= ${bracketPreview.slPercent.toFixed(2)}%`
-                              : `= $${bracketPreview.slDollar.toFixed(2)}`}
+                              ? `= ${bracketPreview.slPercent?.toFixed(2)}%`
+                              : `= $${bracketPreview.slDollar?.toFixed(2)}`}
                           </div>
                         )}
                       </div>
@@ -1021,10 +1018,17 @@ export default function RangeOrdersPage() {
                             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
                             <span>Take-Profit: {bracketPreview.tpAction} @ ${bracketPreview.tpPrice.toFixed(2)} (${bracketPreview.tpDollar.toFixed(2)} / {bracketPreview.tpPercent.toFixed(2)}%)</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
-                            <span>Stop-Loss: {bracketPreview.slAction} @ ${bracketPreview.slPrice.toFixed(2)} (${bracketPreview.slDollar.toFixed(2)} / {bracketPreview.slPercent.toFixed(2)}%)</span>
-                          </div>
+                          {bracketPreview.hasSl ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+                              <span>Stop-Loss: {bracketPreview.slAction} @ ${bracketPreview.slPrice?.toFixed(2)} (${bracketPreview.slDollar?.toFixed(2)} / {bracketPreview.slPercent?.toFixed(2)}%)</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-slate-400">
+                              <span className="inline-block w-2 h-2 rounded-full bg-slate-300"></span>
+                              <span>Stop-Loss: Not configured</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -1246,12 +1250,16 @@ export default function RangeOrdersPage() {
                                           <li className="text-slate-700">
                                             Entry: {order.parent.side} x {order.parent.qty} @ ${order.parent.limit_price?.toFixed(2)} (ID: {order.parent.ib_order_id})
                                           </li>
-                                          <li className="text-emerald-600">
-                                            TP: {order.take_profit.side} @ ${order.take_profit.limit_price?.toFixed(2)} (ID: {order.take_profit.ib_order_id})
-                                          </li>
-                                          <li className="text-red-600">
-                                            SL: {order.stop_loss.side} @ ${order.stop_loss.stop_price?.toFixed(2)} (ID: {order.stop_loss.ib_order_id})
-                                          </li>
+                                          {order.take_profit && (
+                                            <li className="text-emerald-600">
+                                              TP: {order.take_profit.side} @ ${order.take_profit.limit_price?.toFixed(2)} (ID: {order.take_profit.ib_order_id})
+                                            </li>
+                                          )}
+                                          {order.stop_loss && (
+                                            <li className="text-red-600">
+                                              SL: {order.stop_loss.side} @ ${order.stop_loss.stop_price?.toFixed(2)} (ID: {order.stop_loss.ib_order_id})
+                                            </li>
+                                          )}
                                         </ul>
                                       </li>
                                     );

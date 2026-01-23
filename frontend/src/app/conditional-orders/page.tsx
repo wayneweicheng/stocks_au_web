@@ -76,7 +76,7 @@ export default function ConditionalOrdersPage() {
   const [priceWarning, setPriceWarning] = useState<string>("");
   const [volumeDisplay, setVolumeDisplay] = useState<string>("");
   const [valueDisplay, setValueDisplay] = useState<string>("");
-  const [currency, setCurrency] = useState<"USD" | "AUD">("USD");
+  const [currency, setCurrency] = useState<"USD" | "AUD">("AUD");
 
   const getInitialOrderType = () => getStoredOrderType() || "Sell Open Price Advantage";
 

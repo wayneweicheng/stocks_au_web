@@ -1,0 +1,236 @@
+-- Stored procedure: [StockData].[usp_AddPriceHistoryByElement]
+
+
+
+CREATE PROCEDURE [StockData].[usp_AddPriceHistoryByElement]
+@pbitDebug AS BIT = 0,
+@pintErrorNumber AS INT = 0 OUTPUT,
+@pvchStockCode as varchar(10),
+@pdecOpen as decimal(20, 4),
+@pdecHigh as decimal(20, 4),
+@pdecLow as decimal(20, 4),
+@pdecClose as decimal(20, 4),
+@pintVolume as bigint,
+@pdecAverage as decimal(20, 4),
+@pintBarCount as int,
+@pdtObservationDate as date,
+@pbitReplaceExisting as bit = 0,
+@pvchExchange as varchar(20),
+@pvchAdditionalElements as varchar(max) = ''
+AS
+/******************************************************************************
+File: usp_AddPriceHistoryByElement.sql
+Stored Procedure Name: usp_AddPriceHistoryByElement
+Overview
+-----------------
+usp_AddPriceHistoryByElement
+
+Input Parameters
+-----------------
+@pbitDebug		-- Set to 1 to force the display of debugging information
+
+Output Parameters
+-----------------
+@pintErrorNumber		-- Contains 0 if no error, or ERROR_NUMBER() on error
+
+Example of use
+-----------------
+*******************************************************************************
+Change History - (copy and repeat section below)
+*******************************************************************************
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Date:		2021-05-18
+Author:		WAYNE CHENG
+Description: Initial Version
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+*******************************************************************************/
+
+SET NOCOUNT ON
+
+BEGIN --Proc
+
+	IF @pintErrorNumber <> 0
+	BEGIN
+		-- Assume the application is in an error state, so get out quickly
+		-- Remove this check if this stored procedure should run regardless of a previous error
+		RETURN @pintErrorNumber
+	END
+
+	BEGIN TRY
+
+		-- Error variable declarations
+		DECLARE @vchProcedureName AS VARCHAR(100);		SET @vchProcedureName = 'usp_AddPriceHistoryByElement'
+		DECLARE @vchSchema AS NVARCHAR(50);				SET @vchSchema = 'StockData'
+		DECLARE @intErrorNumber AS INT;					SET @intErrorNumber = 0
+		DECLARE @intErrorSeverity AS INT;				SET @intErrorSeverity = 0
+		DECLARE @intErrorState AS INT;					SET @intErrorState = 0	
+		DECLARE @vchErrorProcedure AS NVARCHAR(126);	SET @vchErrorProcedure = ''
+		DECLARE @intErrorLine AS INT;					SET @intErrorLine  = 0
+		DECLARE @vchErrorMessage AS NVARCHAR(4000);		SET @vchErrorMessage = ''
+
+		set nocount on;
+
+		--Normal varible declarations
+
+		--Code goes here 
+		--begin transaction
+		set dateformat dmy
+
+		if @pbitReplaceExisting = 0
+		begin
+			insert into StockData.PriceHistorySecondary
+			(
+				[ASXCode],
+				[ObservationDate],
+				[Close],
+				[Open],
+				[Low],
+				[High],
+				[Volume],
+				[VWAP],
+				[Trades],
+				Exchange,
+				AdditionalElements,
+				CreateDate,
+				ModifyDate
+			)
+			select
+				[ASXCode],
+				[ObservationDate],
+				[Close],
+				[Open],
+				[Low],
+				[High],
+				[Volume],
+				[VWAP],
+				[Trades],
+				Exchange,
+				AdditionalElements,
+				CreateDate,
+				ModifyDate
+			from
+			(
+				select
+					@pvchStockCode + '.AX' as [ASXCode],
+					@pdtObservationDate as [ObservationDate],
+					@pdecClose as [Close],
+					@pdecOpen as [Open],
+					@pdecLow as [Low],
+					@pdecHigh as [High],
+					@pintVolume as [Volume],
+					@pdecAverage as [VWAP],
+					@pintBarCount [Trades],
+					@pvchExchange as Exchange,
+					@pvchAdditionalElements as AdditionalElements,
+					getdate() as CreateDate,	
+					getdate() as ModifyDate	
+			) as a
+			where not exists
+			(
+				select 1
+				from StockData.PriceHistorySecondary
+				where ObservationDate = cast(a.ObservationDate as date)
+				and ASXCode = @pvchStockCode + '.AX'
+				and Exchange = @pvchExchange
+			)
+		end
+		else
+		begin
+			delete a
+			from StockData.PriceHistorySecondary as a
+			where ASXCode = @pvchStockCode + '.AX'
+			and ObservationDate = @pdtObservationDate
+			and Exchange = @pvchExchange
+
+			insert into StockData.PriceHistorySecondary
+			(
+				[ASXCode],
+				[ObservationDate],
+				[Close],
+				[Open],
+				[Low],
+				[High],
+				[Volume],
+				[VWAP],
+				[Trades],
+				Exchange,
+				AdditionalElements,
+				CreateDate,
+				ModifyDate
+			)
+			select
+				[ASXCode],
+				[ObservationDate],
+				[Close],
+				[Open],
+				[Low],
+				[High],
+				[Volume],
+				[VWAP],
+				[Trades],
+				Exchange,
+				AdditionalElements,
+				CreateDate,
+				ModifyDate
+			from
+			(
+				select
+					@pvchStockCode + '.AX' as [ASXCode],
+					@pdtObservationDate as [ObservationDate],
+					@pdecClose as [Close],
+					@pdecOpen as [Open],
+					@pdecLow as [Low],
+					@pdecHigh as [High],
+					@pintVolume as [Volume],
+					@pdecAverage as [VWAP],
+					@pintBarCount [Trades],
+					@pvchExchange as Exchange,
+					@pvchAdditionalElements as AdditionalElements,
+					getdate() as CreateDate,	
+					getdate() as ModifyDate	
+			) as a
+		end
+
+
+		
+	END TRY
+
+	BEGIN CATCH
+		-- Store the details of the error
+		SELECT	@intErrorNumber = ERROR_NUMBER(), @intErrorSeverity = ERROR_SEVERITY(),
+				@intErrorState = ERROR_STATE(), @vchErrorProcedure = ERROR_PROCEDURE(),
+				@intErrorLine = ERROR_LINE(), @vchErrorMessage = ERROR_MESSAGE()
+	END CATCH
+
+	IF @intErrorNumber = 0 OR @vchErrorProcedure = ''
+	BEGIN
+		-- No Error occured in this procedure
+
+		--COMMIT TRANSACTION 
+
+		IF @pbitDebug = 1
+		BEGIN
+			PRINT 'Procedure ' + @vchSchema + '.' + @vchProcedureName + ' finished executing (successfully) at ' + CAST(getdate() as varchar(20))
+		END
+	END
+
+	ELSE
+	BEGIN
+
+		--IF @@TRANCOUNT > 0
+		--BEGIN
+		--	ROLLBACK TRANSACTION
+		--END
+			
+		--EXECUTE da_utility.dbo.[usp_DAU_ErrorLog] 'StoredProcedure', @vchErrorProcedure, @vchSchema, @intErrorNumber,
+		--@intErrorSeverity, @intErrorState, @intErrorLine, @vchErrorMessage
+
+		--Raise the error back to the calling stored proc if needed		
+		RAISERROR (@vchErrorMessage, @intErrorSeverity, @intErrorState)
+	END
+
+
+	SET @pintErrorNumber = @intErrorNumber	-- Set the return parameter
+
+
+END

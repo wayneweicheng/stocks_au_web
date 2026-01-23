@@ -1,0 +1,398 @@
+-- Stored procedure: [Report].[usp_Get_Strategy_DerivedInstitutePerformance]
+
+
+CREATE PROCEDURE [Report].[usp_Get_Strategy_DerivedInstitutePerformance]
+@pbitDebug AS BIT = 0,
+@pintErrorNumber AS INT = 0 OUTPUT,
+@pintNumPrevDay AS INT = 0,
+@pbitASXCodeOnly as bit = 0
+AS
+/******************************************************************************
+File: usp_Get_Strategy_ChiXVolumeSurge.sql
+Stored Procedure Name: usp_Get_Strategy_ChiXVolumeSurge
+Overview
+-----------------
+usp_Get_Strategy_ChiXVolumeSurge
+
+Input Parameters
+----------------
+@pbitDebug		-- Set to 1 to force the display of debugging information
+
+Output Parameters
+-----------------
+@pintErrorNumber		-- Contains 0 if no error, or ERROR_NUMBER() on error
+
+Example of use
+-----------------
+*******************************************************************************
+Change History - (copy and repeat section below)
+*******************************************************************************
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+Date:		2021-03-23
+Author:		WAYNE CHENG
+Description: Initial Version
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+******************************B*************************************************/
+
+SET NOCOUNT ON
+
+BEGIN --Proc
+
+	IF @pintErrorNumber <> 0
+	BEGIN
+		-- Assume the application is in an error state, so get out quickly
+		-- Remove this check if this stored procedure should run regardless of a previous error
+		RETURN @pintErrorNumber
+	END
+
+	BEGIN TRY
+
+		-- Error variable declarations
+		DECLARE @vchProcedureName AS VARCHAR(100);		SET @vchProcedureName = 'usp_Get_Strategy_ChiXVolumeSurge'
+		DECLARE @vchSchema AS NVARCHAR(50);				SET @vchSchema = 'Report'
+		DECLARE @intErrorNumber AS INT;					SET @intErrorNumber = 0
+		DECLARE @intErrorSeverity AS INT;				SET @intErrorSeverity = 0
+		DECLARE @intErrorState AS INT;					SET @intErrorState = 0	
+		DECLARE @vchErrorProcedure AS NVARCHAR(126);	SET @vchErrorProcedure = ''
+		DECLARE @intErrorLine AS INT;					SET @intErrorLine  = 0
+		DECLARE @vchErrorMessage AS NVARCHAR(4000);		SET @vchErrorMessage = ''
+
+		set nocount on;
+
+		--Normal varible declarations
+		
+		--Code goes here 		
+		--declare @pintNumPrevDay as int = 0
+		declare @dtObservationDate as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay, getdate()) as date)
+		declare @dtObservationDatePrevN as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay - 2, getdate()) as date)
+		declare @dtObservationDatePrevNMinur60 as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay - 62, getdate()) as date)
+
+		if object_id(N'Tempdb.dbo.#TempDerivedInstitutePerformance') is not null
+			drop table #TempDerivedInstitutePerformance
+
+		select 
+			x.*,
+			x.Quantity*100.0/y.Quantity as QuantityPerc,
+			x.TradeValue*100.0/y.TradeValue as TradeValuePerc,
+			isnull(c.PriceChangeVsPrevClose, d.PriceChangeVsPrevClose) as PriceChangeVsPrevClose,
+			isnull(c.PriceChangeVsOpen, d.PriceChangeVsOpen) as PriceChangeVsOpen
+		into #TempDerivedInstitutePerformance
+		from
+		(
+			select 
+				a.ASXCode,
+				cast(SaleDateTime as date) as ObservationDate,
+				isnull(DerivedInstitute, 0) as DerivedInstitute,
+				a.ActBuySellInd, 
+				sum(a.Quantity*a.Price)/sum(a.Quantity) as VWAP,
+				sum(a.Quantity) as Quantity, 
+				sum(a.Quantity*a.Price) as TradeValue
+			from StockData.CourseOfSaleSecondary as a
+			where 1 = 1
+			--and ASXCode = @pvchStockCode
+			--and cast(SaleDateTime as date) = @pdtObservationDate
+			and ActBuySellInd is not null
+			group by a.ASXCode, cast(SaleDateTime as date), isnull(DerivedInstitute, 0), a.ActBuySellInd
+		) as x
+		inner join
+		(
+			select 
+				a.ASXCode, 
+				cast(SaleDateTime as date) as ObservationDate,
+				isnull(DerivedInstitute, 0) as DerivedInstitute,
+				sum(a.Quantity*a.Price)/sum(a.Quantity) as VWAP,
+				sum(a.Quantity) as Quantity, 
+				sum(a.Quantity*a.Price) as TradeValue
+			from StockData.CourseOfSaleSecondary as a
+			where 1 = 1
+			--and ASXCode = @pvchStockCode
+			--and cast(SaleDateTime as date) = @pdtObservationDate
+			and ActBuySellInd is not null
+			group by a.ASXCode, cast(SaleDateTime as date), isnull(DerivedInstitute, 0)
+		) as y
+		on x.DerivedInstitute = y.DerivedInstitute
+		and x.ASXCode = y.ASXCode
+		and x.ObservationDate = y.ObservationDate
+		left join Transform.PriceHistory as c
+		on x.ASXCode = c.ASXCode
+		and c.ObservationDate = x.ObservationDate
+		left join [StockData].[v_PriceSummary_Latest_Today] as d
+		on x.ASXCode = d.ASXCode
+		and x.ObservationDate = d.ObservationDate
+		order by x.ASXCode, x.ObservationDate, isnull(x.DerivedInstitute, 0), x.ActBuySellInd;
+
+		if object_id(N'Tempdb.dbo.#TempBRAggregateLastNDay') is not null
+			drop table #TempBRAggregateLastNDay
+
+		select ASXCode, b.DisplayBrokerCode as BrokerCode, sum(NetValue) as NetValue
+		into #TempBRAggregateLastNDay
+		from StockData.BrokerReport as a
+		inner join LookupRef.v_BrokerName as b
+		on a.BrokerCode = b.BrokerCode
+		where ObservationDate >= Common.DateAddBusinessDay(-8, getdate())
+		and ObservationDate <= getdate()
+		group by ASXCode, b.DisplayBrokerCode
+
+		if object_id(N'Tempdb.dbo.#TempBrokerReportListLastNDay') is not null
+			drop table #TempBrokerReportListLastNDay
+
+		select distinct x.ASXCode, stuff((
+			select top 4 ',' + [BrokerCode]
+			from #TempBRAggregateLastNDay as a
+			where x.ASXCode = a.ASXCode
+			order by NetValue desc
+			for xml path('')), 1, 1, ''
+		) as [BrokerCode]
+		into #TempBrokerReportListLastNDay
+		from #TempBRAggregateLastNDay as x
+
+		if object_id(N'Tempdb.dbo.#TempBrokerReportListNegLastNDay') is not null
+			drop table #TempBrokerReportListNegLastNDay
+
+		select distinct x.ASXCode, stuff((
+			select top 4 ',' + [BrokerCode]
+			from #TempBRAggregateLastNDay as a
+			where x.ASXCode = a.ASXCode
+			order by NetValue asc
+			for xml path('')), 1, 1, ''
+		) as [BrokerCode]
+		into #TempBrokerReportListNegLastNDay
+		from #TempBRAggregateLastNDay as x
+
+		if object_id(N'Tempdb.dbo.#TempInstitutePerc') is not null
+			drop table #TempInstitutePerc
+
+		select 
+			x.ObservationDate,
+			x.ASXCode as ASXCode,
+			isnull(DerivedInstitute, 0) as DerivedInstitute, 
+			x.VWAP as VWAP,
+			format(x.Quantity, 'N0') as Quantity, 
+			format(x.TradeValue, 'N0') as TradeValue,
+			x.Quantity*100.0/y.Quantity as QuantityPerc,
+			x.TradeValue*100.0/y.TradeValue as TradeValuePerc,
+			c.PriceChangeVsPrevClose,
+			c.PriceChangeVsOpen
+		into #TempInstitutePerc
+		from
+		(
+			select 
+				a.ASXCode,
+				ObservationDate as ObservationDate,
+				isnull(DerivedInstitute, 0) as DerivedInstitute, 
+				sum(a.Quantity*a.Price)/sum(a.Quantity) as VWAP,
+				sum(a.Quantity) as Quantity, 
+				sum(a.Quantity*a.Price) as TradeValue
+			from StockData.CourseOfSaleSecondary as a with(nolock)
+			where 1 = 1
+			and
+			(
+				a.ObservationDate >= Common.DateAddBusinessDay(-20, @dtObservationDate)
+				and
+				a.ObservationDate <= @dtObservationDate
+			)
+			group by a.ASXCode, isnull(DerivedInstitute, 0), a.ObservationDate
+		) as x
+		inner join
+		(
+			select
+				a.ASXCode,
+				a.ObservationDate as ObservationDate,
+				sum(a.Quantity*a.Price)/sum(a.Quantity) as VWAP,
+				sum(a.Quantity) as Quantity, 
+				sum(a.Quantity*a.Price) as TradeValue
+			from StockData.CourseOfSaleSecondary as a with(nolock)
+			where 1 = 1
+			and
+			(
+				a.ObservationDate >= Common.DateAddBusinessDay(-20, @dtObservationDate)
+				and
+				a.ObservationDate <= @dtObservationDate
+			)
+			group by a.ASXCode, a.ObservationDate
+		) as y
+		on x.ASXCode = y.ASXCode
+		and x.ObservationDate = y.ObservationDate
+		left join Transform.PriceHistory as c with(nolock)
+		on x.ASXCode = c.ASXCode
+		and x.ObservationDate = c.ObservationDate
+		and 
+		(
+			c.ObservationDate >= Common.DateAddBusinessDay(-20, @dtObservationDate)
+			and
+			c.ObservationDate <= @dtObservationDate
+		)
+		where x.DerivedInstitute = 1
+		order by x.ObservationDate desc, x.DerivedInstitute;
+
+		if object_id(N'Tempdb.dbo.#TempInstitutePercRank') is not null
+			drop table #TempInstitutePercRank
+
+		select 
+			*, 
+			row_number() over (partition by ASXCode order by ObservationDate desc) as RowNumber,
+			avg(TradeValuePerc) over (partition by ASXCode order by ObservationDate asc rows 9 preceding) as AvgTradeValuePerc
+		into #TempInstitutePercRank
+		from #TempInstitutePerc
+
+		if object_id(N'Tempdb.dbo.#TempInstituteMarketParticipation') is not null
+			drop table #TempInstituteMarketParticipation
+		
+		select a.*, b.TradeValuePerc as InstituteBuyPerc, b.VWAP as InstituteBuyVWAP, c.TradeValuePerc as RetailBuyPerc, c.VWAP as RetailBuyVWAP
+		into #TempInstituteMarketParticipation
+		from #TempInstitutePercRank as a
+		inner join #TempDerivedInstitutePerformance as b
+		on a.ASXCode = b.ASXCode
+		and a.ObservationDate = b.ObservationDate
+		and b.ActBuySellInd = 'B'
+		and b.DerivedInstitute = 1
+		inner join #TempDerivedInstitutePerformance as c
+		on a.ASXCode = c.ASXCode
+		and a.ObservationDate = c.ObservationDate
+		and c.ActBuySellInd = 'B'
+		and c.DerivedInstitute = 0
+		where 1 = 1
+		order by a.ObservationDate desc;
+
+		if @pbitASXCodeOnly = 0
+		begin
+			select 
+				'Derived Institute Performance' as ReportType,
+				a.DerivedInstitute,
+				a.ASXCode,
+				a.ObservationDate,
+				a.VWAP,
+				a.Quantity,
+				x.TradeValue as InstituteTradeValue,
+				--x.QuantityPerc as InstituteQuantityPerc,
+				format(x.TradeValuePerc, 'N1') as InstituteTradeValuePerc,
+				format(x.AvgTradeValuePerc, 'N1') as AvgTradeValuePerc,
+				a.PriceChangeVsPrevClose,
+				a.PriceChangeVsOpen,
+				b.VWAP,
+				a.VWAP/b.VWAP VWAPRatio, 
+				case when a.VWAP > b.VWAP then 1 else 0 end as VWAPStrength,
+				x.InstituteBuyPerc,
+				x.RetailBuyPerc,
+				x.InstituteBuyVWAP,
+				x.RetailBuyVWAP,
+				m2.BrokerCode as RecentTopBuyBroker,
+				n2.BrokerCode as RecentTopSellBroker,
+				ttsu.FriendlyNameList
+			from #TempDerivedInstitutePerformance as a
+			inner join #TempDerivedInstitutePerformance as b
+			on a.ASXCode = b.ASXCode
+			and a.ObservationDate = b.ObservationDate
+			and a.DerivedInstitute = 1
+			and b.DerivedInstitute = 0
+			and a.ActBuySellInd = 'B'
+			and b.ActBuySellInd = 'B'
+			left join StockData.StockStatsHistoryPlus as c
+			on a.ASXCode = c.ASXCode
+			and a.ObservationDate = c.ObservationDate
+			left join StockData.StockStatsHistoryPlus as d
+			on a.ASXCode = d.ASXCode
+			and c.DateSeqReverse + 1 = d.DateSeqReverse
+			left join #TempBrokerReportListLastNDay as m2
+			on a.ASXCode = m2.ASXCode
+			left join #TempBrokerReportListNegLastNDay as n2
+			on a.ASXCode = n2.ASXCode
+			left join Transform.TTSymbolUser as ttsu
+			on a.ASXCode = ttsu.ASXCode
+			left join #TempInstituteMarketParticipation as x
+			on a.ASXCode = x.ASXCode
+			and a.ObservationDate = x.ObservationDate
+			where 
+			(
+				--(x.TradeValuePerc > 40 and a.TradeValuePerc > 55 and b.TradeValuePerc < 48)
+				--or
+				--(x.TradeValuePerc > 40 and a.TradeValuePerc > 65 and b.TradeValuePerc < 50)
+				--or
+				(x.TradeValuePerc > 50 and x.TradeValuePerc > 1.2*x.AvgTradeValuePerc and a.TradeValuePerc > 60)
+			)
+			--and 
+			--(
+			--	a.VWAP > b.VWAP
+			--	or
+			--	a.VWAP > 0.995*b.VWAP
+			--)
+			and a.TradeValue > 50000
+			and a.TradeValue > 0.5*b.TradeValue
+			--and c.MovingAverage60d > d.MovingAverage60d
+			--and c.MovingAverage5d > d.MovingAverage5d
+			--and c.[Close] > c.MovingAverage10d
+			--and a.PriceChangeVsPrevClose < -1
+			and isnull(a.PriceChangeVsPrevClose, 0) >= 0
+			and a.ObservationDate >= @dtObservationDatePrevN
+			order by a.ObservationDate desc, x.TradeValuePerc desc, a.ASXCode desc
+
+		end
+		else
+		begin
+			print 'skip'
+			
+			--if object_id(N'Tempdb.dbo.#TempOutput') is not null
+			--	drop table #TempOutput
+
+			--select 
+			--identity(int, 1, 1) as DisplayOrder,
+			--*
+			--into #TempOutput
+			--from
+			--(
+			--	select 
+			--		'ChiX Analysis' as ReportType,
+			--) as x
+			--order by ASXCode desc;
+			
+			--select
+			--	distinct
+			--	ASXCode,
+			--	DisplayOrder,
+			--	ObservationDate,
+			--	OBJECT_SCHEMA_NAME(@@PROCID) + '.' + OBJECT_NAME(@@PROCID) as ReportProc
+			--from #TempOutput
+
+		end
+
+	END TRY
+
+	BEGIN CATCH
+		-- Store the details of the error
+		SELECT	@intErrorNumber = ERROR_NUMBER(), @intErrorSeverity = ERROR_SEVERITY(),
+				@intErrorState = ERROR_STATE(), @vchErrorProcedure = ERROR_PROCEDURE(),
+				@intErrorLine = ERROR_LINE(), @vchErrorMessage = ERROR_MESSAGE()
+	END CATCH
+
+	IF @intErrorNumber = 0 OR @vchErrorProcedure = ''
+	BEGIN
+		-- No Error occured in this procedure
+
+		--COMMIT TRANSACTION 
+
+		IF @pbitDebug = 1
+		BEGIN
+			PRINT 'Procedure ' + @vchSchema + '.' + @vchProcedureName + ' finished executing (successfully) at ' + CAST(getdate() as varchar(20))
+		END
+	END
+
+	ELSE
+	BEGIN
+
+		--IF @@TRANCOUNT > 0
+		--BEGIN
+		--	ROLLBACK TRANSACTION
+		--END
+			
+		--EXECUTE da_utility.dbo.[usp_DAU_ErrorLog] 'StoredProcedure', @vchErrorProcedure, @vchSchema, @intErrorNumber,
+		--@intErrorSeverity, @intErrorState, @intErrorLine, @vchErrorMessage
+
+		--Raise the error back to the calling stored proc if needed		
+		RAISERROR (@vchErrorMessage, @intErrorSeverity, @intErrorState)
+	END
+
+
+	SET @pintErrorNumber = @intErrorNumber	-- Set the return parameter
+
+
+END

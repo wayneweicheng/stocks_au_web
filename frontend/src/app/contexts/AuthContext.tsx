@@ -8,6 +8,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   credentials: { username: string; password: string } | null;
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -16,6 +17,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [username, setUsername] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<{ username: string; password: string } | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
     const storedAuth = localStorage.getItem('auth');
@@ -25,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUsername(authData.username);
       setCredentials(authData.credentials);
     }
+    setLoading(false);
   }, []);
 
   const login = async (username: string, password: string): Promise<boolean> => {
@@ -65,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, username, login, logout, credentials }}>
+    <AuthContext.Provider value={{ isAuthenticated, username, login, logout, credentials, loading }}>
       {children}
     </AuthContext.Provider>
   );

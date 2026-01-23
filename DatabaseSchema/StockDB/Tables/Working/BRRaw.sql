@@ -1,0 +1,32 @@
+-- Table: [Working].[BRRaw]
+
+CREATE TABLE [Working].[BRRaw] (
+    [Symbol] [varchar](200) NULL,
+    [Buy Value] [varchar](200) NULL,
+    [Sell Value] [varchar](200) NULL,
+    [Net Value] [varchar](200) NULL,
+    [Total Value] [varchar](200) NULL,
+    [Buy Volume] [varchar](200) NULL,
+    [Sell Volume] [varchar](200) NULL,
+    [Net Volume] [varchar](200) NULL,
+    [Total Volume] [varchar](200) NULL,
+    [No  Buys] [varchar](200) NULL,
+    [No  Sells] [varchar](200) NULL,
+    [Trades] [varchar](200) NULL,
+    [Buy Price] [varchar](200) NULL,
+    [Sell Price] [varchar](200) NULL,
+    [% Rank] [varchar](200) NULL,
+    [Call Buy Val] [varchar](200) NULL,
+    [Call Buy Vol] [varchar](200) NULL,
+    [Call Buy Trad] [varchar](200) NULL,
+    [Put Buy Val] [varchar](200) NULL,
+    [Put Buy Vol] [varchar](200) NULL,
+    [Put Buy Trad] [varchar](200) NULL,
+    [Call Sell Val] [varchar](200) NULL,
+    [Call Sell Vol] [varchar](200) NULL,
+    [Call Sell Trad] [varchar](200) NULL,
+    [Put Sell Val] [varchar](200) NULL,
+    [Put Sell Vol] [varchar](200) NULL,
+    [Put Sell Trad] [varchar](200) NULL,
+    [Column 27] [varchar](200) NULL
+);

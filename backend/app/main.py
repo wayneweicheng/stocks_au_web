@@ -26,6 +26,10 @@ from app.routers.breakout_watchlist_us import router as breakout_watchlist_us_ro
 from app.routers.gap_up_watchlist import router as gap_up_watchlist_router
 from app.routers.breakout_consolidation_analysis import router as breakout_consolidation_analysis_router
 from app.routers.trading_halt import router as trading_halt_router
+from app.routers.notification_users import router as notification_users_router
+from app.routers.subscription_types import router as subscription_types_router
+from app.routers.user_subscriptions import router as user_subscriptions_router
+from app.routers.announcement_analysis import router as announcement_analysis_router
 import logging
 import time
 from fastapi.responses import JSONResponse
@@ -105,5 +109,9 @@ app.include_router(breakout_watchlist_us_router)
 app.include_router(gap_up_watchlist_router)
 app.include_router(breakout_consolidation_analysis_router)
 app.include_router(trading_halt_router)
+app.include_router(notification_users_router)
+app.include_router(subscription_types_router)
+app.include_router(user_subscriptions_router)
+app.include_router(announcement_analysis_router)
 
 

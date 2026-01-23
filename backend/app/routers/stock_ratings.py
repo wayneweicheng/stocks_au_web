@@ -65,6 +65,7 @@ class TippedStock(BaseModel):
     neutral_count: int
     bearish_count: int
     latest_rating_date: str
+    latest_research_date: Optional[str] = None
 
 
 class TippedStocksList(BaseModel):
@@ -142,8 +143,8 @@ def list_stock_ratings(
 
 @router.get("/stock-ratings/tipped-stocks", response_model=TippedStocksList)
 def list_tipped_stocks(
-    sort_by: str = Query(default="bullish_commenters", description="Sort by 'bullish_commenters' or 'latest'"),
-    sort_dir: str = Query(default="desc", description="Sort direction 'asc' or 'desc' (applies to 'latest')"),
+    sort_by: str = Query(default="bullish_commenters", description="Sort by 'bullish_commenters', 'latest', or 'latest_research'"),
+    sort_dir: str = Query(default="desc", description="Sort direction 'asc' or 'desc' (applies to 'latest' and 'latest_research')"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=30, ge=1, le=100),
     username: str = Depends(verify_credentials),
@@ -162,31 +163,34 @@ def list_tipped_stocks(
         # Validate sort options
         sort_by_normalized = (sort_by or "").lower()
         sort_dir_normalized = (sort_dir or "").lower()
-        if sort_by_normalized not in ("bullish_commenters", "latest"):
+        if sort_by_normalized not in ("bullish_commenters", "latest", "latest_research"):
             sort_by_normalized = "bullish_commenters"
         if sort_dir_normalized not in ("asc", "desc"):
             sort_dir_normalized = "desc"
 
         # Build ORDER BY safely from whitelist
         if sort_by_normalized == "bullish_commenters":
-            order_clause = "ORDER BY COUNT(DISTINCT CASE WHEN Rating = 'Bullish' THEN CommenterID END) DESC, StockCode ASC"
-        else:
-            # latest
-            order_clause = f"ORDER BY MAX(RatingDate) {sort_dir_normalized.upper()}, StockCode ASC"
+            order_clause = "ORDER BY COUNT(DISTINCT CASE WHEN sr.Rating = 'Bullish' THEN sr.CommenterID END) DESC, sr.StockCode ASC"
+        elif sort_by_normalized == "latest":
+            order_clause = f"ORDER BY MAX(sr.RatingDate) {sort_dir_normalized.upper()}, sr.StockCode ASC"
+        else:  # latest_research
+            order_clause = f"ORDER BY MAX(rl.AddedAt) {sort_dir_normalized.upper()}, sr.StockCode ASC"
 
         offset = (page - 1) * page_size
         rows = db.execute_read_usp(
             f"""
             SELECT
-                StockCode as stock_code,
+                sr.StockCode as stock_code,
                 COUNT(*) as total_ratings,
-                SUM(CASE WHEN Rating = 'Bullish' THEN 1 ELSE 0 END) as bullish_count,
-                COUNT(DISTINCT CASE WHEN Rating = 'Bullish' THEN CommenterID END) as bullish_commenters_count,
-                SUM(CASE WHEN Rating = 'Neutral' THEN 1 ELSE 0 END) as neutral_count,
-                SUM(CASE WHEN Rating = 'Bearish' THEN 1 ELSE 0 END) as bearish_count,
-                CONVERT(varchar(10), MAX(RatingDate), 23) as latest_rating_date
-            FROM [Research].[StockRating]
-            GROUP BY StockCode
+                SUM(CASE WHEN sr.Rating = 'Bullish' THEN 1 ELSE 0 END) as bullish_count,
+                COUNT(DISTINCT CASE WHEN sr.Rating = 'Bullish' THEN sr.CommenterID END) as bullish_commenters_count,
+                SUM(CASE WHEN sr.Rating = 'Neutral' THEN 1 ELSE 0 END) as neutral_count,
+                SUM(CASE WHEN sr.Rating = 'Bearish' THEN 1 ELSE 0 END) as bearish_count,
+                CONVERT(varchar(10), MAX(sr.RatingDate), 23) as latest_rating_date,
+                CONVERT(varchar(10), MAX(rl.AddedAt), 23) as latest_research_date
+            FROM [Research].[StockRating] sr
+            LEFT JOIN [Research].[ResearchLink] rl ON rl.StockCode = sr.StockCode
+            GROUP BY sr.StockCode
             {order_clause}
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
             """,

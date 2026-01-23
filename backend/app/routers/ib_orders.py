@@ -204,12 +204,13 @@ def _connect_ib() -> "tuple[IB, asyncio.AbstractEventLoop]":
         if p not in candidate_ports:
             candidate_ports.append(p)
     last_err: Exception | None = None
-    # Use a fixed client ID so we can cancel orders placed by this same client
-    fixed_client_id = 12345
+    # Use a random client ID to avoid "client id already in use" errors
+    # when previous connections weren't cleanly closed or concurrent requests occur
+    random_client_id = random.randint(10000, 50000)
     for p in candidate_ports:
         try:
-            ib.connect(host, p, clientId=fixed_client_id, timeout=10)
-            logger.info("IB: connected to %s:%s with clientId=%s", host, p, fixed_client_id)
+            ib.connect(host, p, clientId=random_client_id, timeout=10)
+            logger.info("IB: connected to %s:%s with clientId=%s", host, p, random_client_id)
             return ib, loop
         except Exception as e:
             last_err = e
@@ -254,23 +255,34 @@ def _create_bracket_orders(
     stock_code: str
 ) -> tuple:
     """
-    Create a bracket order with parent entry, take-profit, and stop-loss orders.
+    Create a bracket order with parent entry and optional take-profit and/or stop-loss orders.
 
     For BUY: TP is above entry (sell higher), SL is below entry (sell lower)
     For SELL: TP is below entry (buy lower to cover), SL is above entry (buy higher to stop out)
 
-    Returns: (parent_order, tp_order, sl_order)
+    At least one of tp_offset or sl_offset must be > 0.
+
+    Returns: (parent_order, tp_order or None, sl_order or None, tp_price or None, sl_price or None)
     """
     action_upper = action.upper()
     exit_action = "SELL" if action_upper == "BUY" else "BUY"
 
+    has_tp = tp_offset > 0
+    has_sl = sl_offset > 0
+
     # Calculate TP and SL prices based on direction
+    tp_price = None
+    sl_price = None
     if action_upper == "BUY":
-        tp_price = _round_price_for_market(entry_price + tp_offset, stock_code)
-        sl_price = _round_price_for_market(entry_price - sl_offset, stock_code)
+        if has_tp:
+            tp_price = _round_price_for_market(entry_price + tp_offset, stock_code)
+        if has_sl:
+            sl_price = _round_price_for_market(entry_price - sl_offset, stock_code)
     else:  # SELL (short)
-        tp_price = _round_price_for_market(entry_price - tp_offset, stock_code)
-        sl_price = _round_price_for_market(entry_price + sl_offset, stock_code)
+        if has_tp:
+            tp_price = _round_price_for_market(entry_price - tp_offset, stock_code)
+        if has_sl:
+            sl_price = _round_price_for_market(entry_price + sl_offset, stock_code)
 
     # Parent order (entry limit order)
     parent = LimitOrder(action_upper, qty, lmtPrice=entry_price)
@@ -284,33 +296,39 @@ def _create_bracket_orders(
     parent.eTradeOnly = None
     parent.firmQuoteOnly = None
 
-    # Take-profit order (limit order at target price)
-    tp = LimitOrder(exit_action, qty, lmtPrice=tp_price)
-    tp.parentId = parent.orderId
-    tp.ocaGroup = f"bracket_{parent.orderId}"
-    tp.ocaType = 2  # Cancel all remaining when one fills
-    tp.transmit = False
-    tp.outsideRth = True
-    try:
-        tp.tif = "DAY"
-    except Exception:
-        pass
-    tp.eTradeOnly = None
-    tp.firmQuoteOnly = None
+    # Take-profit order (limit order at target price) - optional
+    tp = None
+    if has_tp:
+        tp = LimitOrder(exit_action, qty, lmtPrice=tp_price)
+        tp.parentId = parent.orderId
+        if has_sl:
+            tp.ocaGroup = f"bracket_{parent.orderId}"
+            tp.ocaType = 2  # Cancel all remaining when one fills
+        tp.transmit = False if has_sl else True  # If no SL, TP is the last order
+        tp.outsideRth = True
+        try:
+            tp.tif = "DAY"
+        except Exception:
+            pass
+        tp.eTradeOnly = None
+        tp.firmQuoteOnly = None
 
-    # Stop-loss order (stop order at stop price)
-    sl = StopOrder(exit_action, qty, auxPrice=sl_price)
-    sl.parentId = parent.orderId
-    sl.ocaGroup = f"bracket_{parent.orderId}"
-    sl.ocaType = 2  # Cancel all remaining when one fills
-    sl.transmit = True  # Last order triggers transmission of all
-    sl.outsideRth = True
-    try:
-        sl.tif = "DAY"
-    except Exception:
-        pass
-    sl.eTradeOnly = None
-    sl.firmQuoteOnly = None
+    # Stop-loss order (stop order at stop price) - optional
+    sl = None
+    if has_sl:
+        sl = StopOrder(exit_action, qty, sl_price)
+        sl.parentId = parent.orderId
+        if has_tp:
+            sl.ocaGroup = f"bracket_{parent.orderId}"
+            sl.ocaType = 2  # Cancel all remaining when one fills
+        sl.transmit = True  # SL is always the last order when present
+        sl.outsideRth = True
+        try:
+            sl.tif = "DAY"
+        except Exception:
+            pass
+        sl.eTradeOnly = None
+        sl.firmQuoteOnly = None
 
     return parent, tp, sl, tp_price, sl_price
 
@@ -561,16 +579,15 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                     contract = _build_contract(code, overnight=False)
                     ib.qualifyContracts(contract)
 
-                    # Check if bracket orders are enabled
+                    # Check if bracket orders are enabled (at least one of TP or SL must be set)
                     use_bracket = (
                         batch.bracket_config is not None
                         and batch.bracket_config.enabled
-                        and batch.bracket_config.take_profit_offset > 0
-                        and batch.bracket_config.stop_loss_offset > 0
+                        and (batch.bracket_config.take_profit_offset > 0 or batch.bracket_config.stop_loss_offset > 0)
                     )
 
                     if use_bracket:
-                        # Create and place bracket order (parent + TP + SL)
+                        # Create and place bracket order (parent + optional TP + optional SL)
                         parent, tp_order, sl_order, tp_price, sl_price = _create_bracket_orders(
                             ib=ib,
                             action=o.buy_sell.upper(),
@@ -581,13 +598,26 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                             stock_code=code
                         )
 
-                        # Place all three orders
+                        # Place parent order first
                         parent_trade = ib.placeOrder(contract, parent)
-                        tp_trade = ib.placeOrder(contract, tp_order)
-                        sl_trade = ib.placeOrder(contract, sl_order)
+                        ib.sleep(0.05)  # Small delay between bracket order components
+
+                        # Place TP order if configured
+                        tp_trade = None
+                        if tp_order is not None:
+                            tp_trade = ib.placeOrder(contract, tp_order)
+                            ib.sleep(0.05)
+
+                        # Place SL order if configured
+                        sl_trade = None
+                        if sl_order is not None:
+                            sl_trade = ib.placeOrder(contract, sl_order)
+
+                        # Wait for IB to process the bracket order before placing the next one
+                        ib.sleep(0.3)
 
                         exit_side = "SELL" if o.buy_sell.upper() == "BUY" else "BUY"
-                        orders_placed.append({
+                        order_result = {
                             "exchange": "SMART",
                             "order_type": "bracket",
                             "stock_code": code,
@@ -597,19 +627,22 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                                 "qty": qty,
                                 "limit_price": price,
                             },
-                            "take_profit": {
+                        }
+                        if tp_trade is not None:
+                            order_result["take_profit"] = {
                                 "ib_order_id": getattr(tp_trade, "order", None).orderId if getattr(tp_trade, "order", None) else None,
                                 "side": exit_side,
                                 "qty": qty,
                                 "limit_price": tp_price,
-                            },
-                            "stop_loss": {
+                            }
+                        if sl_trade is not None:
+                            order_result["stop_loss"] = {
                                 "ib_order_id": getattr(sl_trade, "order", None).orderId if getattr(sl_trade, "order", None) else None,
                                 "side": exit_side,
                                 "qty": qty,
                                 "stop_price": sl_price,
-                            },
-                        })
+                            }
+                        orders_placed.append(order_result)
                     else:
                         # Place simple limit order (existing behavior)
                         lo = LimitOrder(o.buy_sell.upper(), qty, lmtPrice=price)

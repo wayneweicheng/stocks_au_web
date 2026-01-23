@@ -1,0 +1,49 @@
+-- Table: [StockData].[PriceSummaryToday]
+
+CREATE TABLE [StockData].[PriceSummaryToday] (
+    [PriceSummaryID] [int] IDENTITY(1,1) NOT NULL,
+    [ASXCode] [varchar](10) NOT NULL,
+    [Bid] [decimal](20,4) NULL,
+    [Offer] [decimal](20,4) NULL,
+    [Open] [decimal](20,4) NULL,
+    [High] [decimal](20,4) NULL,
+    [Low] [decimal](20,4) NULL,
+    [Close] [decimal](20,4) NULL,
+    [Volume] [bigint] NULL,
+    [Value] [decimal](20,4) NULL,
+    [Trades] [int] NULL,
+    [VWAP] [decimal](20,4) NULL,
+    [DateFrom] [datetime] NOT NULL,
+    [DateTo] [datetime] NULL,
+    [LastVerifiedDate] [smalldatetime] NULL,
+    [bids] [decimal](20,4) NULL,
+    [bidsTotalVolume] [bigint] NULL,
+    [offers] [decimal](20,4) NULL,
+    [offersTotalVolume] [bigint] NULL,
+    [IndicativePrice] [decimal](20,4) NULL,
+    [SurplusVolume] [bigint] NULL,
+    [PrevClose] [decimal](20,4) NULL,
+    [SysLastSaleDate] [datetime] NULL,
+    [SysCreateDate] [datetime] NULL,
+    [Prev1PriceSummaryID] [int] NULL,
+    [Prev1Bid] [decimal](20,4) NULL,
+    [Prev1Offer] [decimal](20,4) NULL,
+    [Prev1Volume] [bigint] NULL,
+    [Prev1Value] [decimal](20,4) NULL,
+    [VolumeDelta] [int] NULL,
+    [ValueDelta] [decimal](20,4) NULL,
+    [TimeIntervalInSec] [int] NULL,
+    [BuySellInd] [char](1) NULL,
+    [Prev1Close] [decimal](20,4) NULL,
+    [LatestForTheDay] [bit] NULL,
+    [ObservationDate] [date] NULL,
+    [MatchVolume] [int] NULL,
+    [SeqNumber] [int] NULL,
+    [WatchListName] [varchar](100) NOT NULL
+,
+    CONSTRAINT [pk_stockdatapricesummarytoday_pricesummaryid] PRIMARY KEY (PriceSummaryID)
+);
+
+CREATE INDEX [idx_stockdatapricesummarytoday_asxcodeobdatevolume] ON [StockData].[PriceSummaryToday] (Open, Close, Value, VWAP, DateFrom, ASXCode, ObservationDate, Volume);
+CREATE INDEX [idx_stockdatapricesummarytoday_observationdate] ON [StockData].[PriceSummaryToday] (ASXCode, Open, Close, PrevClose, ObservationDate, LatestForTheDay, DateTo);
+CREATE INDEX [idx_stockdatapricesummarytoday_watchlistnameasxcode] ON [StockData].[PriceSummaryToday] (WatchListName, ASXCode);
