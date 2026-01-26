@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import date
 from app.core.db import get_sql_model
 import logging
@@ -81,6 +81,45 @@ class GEXDataService:
         except Exception as e:
             logger.error(f"Failed to query GEX features for {stock_code}: {e}")
             raise
+
+    def get_latest_observation_date(
+        self,
+        stock_code: str,
+        as_of_date: date
+    ) -> Optional[date]:
+        """
+        Get the most recent ObservationDate (cast to date) on or before as_of_date for a stock.
+
+        Args:
+            stock_code: Stock code (with or without .US suffix)
+            as_of_date: Upper bound date (inclusive)
+
+        Returns:
+            date if found, otherwise None
+        """
+        try:
+            base_code = self.normalize_stock_code(stock_code)
+            db_stock_code = f"{base_code}.US"
+            model = get_sql_model()
+
+            sql = f"""
+            SELECT TOP (1) CAST(ObservationDate AS date) AS ObservationDate
+            FROM [{self.db_name}].[{self.schema}].[{self.table}]
+            WHERE ASXCode = ?
+              AND CAST(ObservationDate AS date) <= ?
+            ORDER BY ObservationDate DESC
+            """
+            params = (db_stock_code, as_of_date.isoformat())
+            logger.info(f"Querying latest ObservationDate for {db_stock_code} up to {as_of_date}")
+            rows = model.execute_read_query(sql, params) or []
+            if not rows:
+                return None
+            latest = rows[0].get("ObservationDate")
+            # rows already cast to date by SQL; still normalize to date object if needed
+            return latest if isinstance(latest, date) else date.fromisoformat(str(latest)[:10])
+        except Exception as e:
+            logger.error(f"Failed to get latest ObservationDate for {stock_code}: {e}")
+            return None
 
     def format_as_tab_delimited(self, rows: List[Dict[str, Any]], essential_columns_only: bool = True) -> str:
         """

@@ -30,6 +30,9 @@ from app.routers.notification_users import router as notification_users_router
 from app.routers.subscription_types import router as subscription_types_router
 from app.routers.user_subscriptions import router as user_subscriptions_router
 from app.routers.announcement_analysis import router as announcement_analysis_router
+from app.routers.gex_auto_insight import router as gex_auto_insight_router
+from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
+from contextlib import asynccontextmanager
 import logging
 import time
 from fastapi.responses import JSONResponse
@@ -42,7 +45,20 @@ if not logger.handlers:
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
 
-app = FastAPI(title="Stocks AU Backend")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events."""
+    # Startup
+    logger.info("Starting background scheduler...")
+    start_scheduler()
+    yield
+    # Shutdown
+    logger.info("Stopping background scheduler...")
+    stop_scheduler()
+
+
+app = FastAPI(title="Stocks AU Backend", lifespan=lifespan)
 
 origins = [origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()]
 logger.info("CORS: allow_origins=%s allow_origin_regex=%s", origins, settings.allowed_origin_regex)
@@ -113,5 +129,12 @@ app.include_router(notification_users_router)
 app.include_router(subscription_types_router)
 app.include_router(user_subscriptions_router)
 app.include_router(announcement_analysis_router)
+app.include_router(gex_auto_insight_router)
+
+
+@app.get("/api/scheduler/status")
+def scheduler_status():
+    """Get the status of the background scheduler and its jobs."""
+    return get_scheduler_status()
 
 
