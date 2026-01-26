@@ -113,3 +113,9 @@ The `start-apps.ps1` script manages both services:
 - Both applications support hot reload during development
 - CORS is configured to allow frontend-backend communication
 - Authentication system is implemented across both frontend and backend
+
+## Database Schema
+Databases used by this application is located in SQL Server. The schema of the objects are located at:
+StockDB: DatabaseSchema\StockDB
+StockDB_US: DatabaseSchema\StockDB_US
+if any objects need to be created/updated, please update them there.

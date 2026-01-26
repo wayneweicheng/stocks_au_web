@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import GEXAutoInsightTab from "../components/GEXAutoInsightTab";
 
 type AnyRow = Record<string, any>;
 
@@ -309,6 +310,9 @@ export default function GexSignalsPage() {
   const [signalStrengths, setSignalStrengths] = useState<Array<{stock_code: string, signal_strength_level: string}>>([]);
   const [signalStrengthsLoading, setSignalStrengthsLoading] = useState(false);
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"signals" | "autoinsight">("signals");
+
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const canonicalStock = (stockCode || "").toUpperCase().split(".")[0] || "SPXW";
 
@@ -578,6 +582,36 @@ export default function GexSignalsPage() {
           Market Flow Signals
         </h1>
 
+        {/* Tab Navigation */}
+        <div className="flex border-b border-slate-200 mb-6">
+          <button
+            type="button"
+            onClick={() => setActiveTab("signals")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === "signals"
+                ? "border-emerald-500 text-emerald-600"
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+            }`}
+          >
+            Signals
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("autoinsight")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === "autoinsight"
+                ? "border-emerald-500 text-emerald-600"
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+            }`}
+          >
+            Market Flow Admin
+          </button>
+        </div>
+
+        {activeTab === "autoinsight" ? (
+          <GEXAutoInsightTab />
+        ) : (
+          <>
         <div className="grid gap-4 sm:grid-cols-3 mb-6">
           <div>
             <label className="block text-sm mb-1 text-slate-600">Observation Date</label>
@@ -1019,6 +1053,8 @@ export default function GexSignalsPage() {
             )}
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
