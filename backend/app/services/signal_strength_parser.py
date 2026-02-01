@@ -105,6 +105,83 @@ class SignalStrengthParser:
             return None
 
     @classmethod
+    def extract_trade_ranges(cls, llm_output: str) -> dict:
+        """
+        Extract 'Buy the Dip Range' and 'Sell the Rip Range' as plain text strings.
+        Returns dict with optional keys: buy_dip_range, sell_rip_range
+        """
+        result: dict = {}
+        try:
+            if not llm_output:
+                return result
+
+            # Normalize whitespace for robust regex
+            text = llm_output
+
+            # Patterns:
+            # - Buy the Dip Range: "... 618.4 - 620.3" or "not recommend" (case-insensitive)
+            # - Sell the Rip Range: same styles
+            # Number pattern: allows optional $ and commas
+            num = r'\$?\s*(?:-?\d{1,3}(?:,\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?)'
+            range_pattern = rf'(?P<a>{num})\s*[-–—]\s*(?P<b>{num})'
+            # Also support "a to b"
+            range_to_pattern = rf'(?P<a2>{num})\s*(?:to|TO)\s*(?P<b2>{num})'
+            not_recommend_pattern = r'(not\s+recommend(?:ed)?)'
+
+            def find_after(label_variants: list[str]) -> Optional[str]:
+                for label in label_variants:
+                    # capture after label up to EOL
+                    m = re.search(label + r'\s*[:\-]?\s*(.+)', text, re.IGNORECASE)
+                    if m:
+                        tail = m.group(1).strip()
+                        # First try explicit range
+                        mr = re.search(range_pattern, tail, re.IGNORECASE)
+                        if mr:
+                            def clean(x: str) -> str:
+                                return x.replace("$", "").replace(",", "").strip()
+                            a = clean(mr.group('a'))
+                            b = clean(mr.group('b'))
+                            return f"{a}–{b}"
+                        # Alternate "a to b" phrasing
+                        mr2 = re.search(range_to_pattern, tail, re.IGNORECASE)
+                        if mr2:
+                            def clean2(x: str) -> str:
+                                return x.replace("$", "").replace(",", "").strip()
+                            a = clean2(mr2.group('a2'))
+                            b = clean2(mr2.group('b2'))
+                            return f"{a}–{b}"
+                        # Then try "not recommend"
+                        mn = re.search(not_recommend_pattern, tail, re.IGNORECASE)
+                        if mn:
+                            return mn.group(1).lower()
+                        # Otherwise return first tokenish phrase up to break
+                        # but keep it conservative: only return if short
+                        candidate = tail.splitlines()[0].strip()
+                        if candidate and len(candidate) <= 64:
+                            return candidate
+                return None
+
+            buy = find_after([
+                r'buy\s+the\s+dip\s+range',
+                r'buy\s+dip\s+range',
+                r'buy\s+range'
+            ])
+            sell = find_after([
+                r'sell\s+the\s+rip\s+range',
+                r'sell\s+rip\s+range',
+                r'sell\s+range'
+            ])
+
+            if buy:
+                result['buy_dip_range'] = buy
+            if sell:
+                result['sell_rip_range'] = sell
+        except Exception as e:
+            logger.error(f"Error parsing trade ranges: {e}")
+
+        return result
+
+    @classmethod
     def validate_signal_strength(cls, signal_strength: Optional[str]) -> bool:
         """
         Validate that signal strength is one of the allowed levels.

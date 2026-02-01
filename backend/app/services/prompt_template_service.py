@@ -48,24 +48,76 @@ flip GEX negative, changing the market regime from mean-reverting to trend-follo
 flip GEX positive, changing the market regime from trend-following to mean-reverting."
 
 TRADING LEVELS RECOMMENDATION:
-You MUST provide actionable trading levels based on your analysis:
+You MUST provide actionable trading levels based on your analysis.
+Use the 30-Minute Price Bar data to identify key intraday support and resistance levels,
+VWAP clusters, and high-volume price zones from the last 5 trading days. These levels
+should be the primary basis for determining the price ranges below.
 
 1. **Buy the Dip Range**: If conditions support buying on weakness, specify:
    - Price range for buy entry (e.g., "$XXX - $YYY")
    - Percentage drop from current price
-   - Rationale based on technical levels (support, Bollinger Bands, key moving averages, GEX levels, etc.)
+   - Rationale based on intraday support levels identified from 30-minute bars (VWAP, high-volume zones, recurring intraday lows), combined with daily technical levels (Bollinger Bands, moving averages, GEX levels)
    - If NOT recommending buy the dip, explicitly state "Not Recommended" and explain why (e.g., bearish trend, no support, negative signals)
 
 2. **Sell the Rip Range**: If conditions support selling on strength, specify:
    - Price range for sell/short entry (e.g., "$XXX - $YYY")
    - Percentage gain from current price
-   - Rationale based on technical levels (resistance, Bollinger Bands, key moving averages, GEX levels, etc.)
+   - Rationale based on intraday resistance levels identified from 30-minute bars (VWAP, high-volume zones, recurring intraday highs), combined with daily technical levels (Bollinger Bands, moving averages, GEX levels)
    - If NOT recommending sell the rip, explicitly state "Not Recommended" and explain why (e.g., bullish trend, breakout potential, positive signals)
 
 Example format:
 "**Buy the Dip Range:** $XXX - $YYY (-X.X% to -Y.Y% from current). This range aligns with the lower Bollinger Band and previous support at the SMA50. Positive GEX suggests dealers will provide support at these levels."
 
 "**Sell the Rip Range:** Not Recommended. Current momentum is strongly bullish with Golden Setup active. Selling into strength would be counter-trend with high risk of missing further upside."
+
+LATE OPTION TRADE ANALYSIS:
+The "Latest Option Trades" data shows large option transactions (size > 300 contracts) for the observation date.
+Incorporate this data into your overall signal strength assessment:
+- Evaluate the put/call balance: heavy put buying suggests bearish institutional positioning; heavy call buying suggests bullish positioning
+- Look for strike clustering near the current price, which may indicate key levels where dealers will need to hedge
+- Unusually large individual trades may signal directional bets or hedging activity by institutions
+- Factor this institutional flow data into your signal strength classification alongside the GEX and technical indicators
+
+Place this JSON at the very end of your markdown response after all analysis.
+---
+
+"""
+
+    # System instruction for option insights signal strength classification (without GEX-specific instructions)
+    OPTION_SIGNAL_STRENGTH_PROMPT = """IMPORTANT: At the end of your analysis, you MUST provide a signal strength classification in the following JSON format:
+
+```json
+{
+  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH"
+}
+```
+
+Signal Strength Definitions:
+- STRONGLY_BULLISH: Multiple strong buy signals, positive trend alignment, high conviction upside
+- MILDLY_BULLISH: Some bullish indicators, positive bias but with caveats or mixed signals
+- NEUTRAL: Conflicting signals, unclear direction, or market in transition/consolidation
+- MILDLY_BEARISH: Some bearish indicators, negative bias but not overwhelming
+- STRONGLY_BEARISH: Multiple strong sell signals, negative trend alignment, high conviction downside
+
+CRITICAL: Your signal strength classification should reflect the tactical bias indicated by the option flow analysis for the next 1-10 trading days.
+
+TRADING LEVELS RECOMMENDATION:
+Based on your option flow analysis (gamma walls, support/resistance from option positioning), provide:
+
+1. **Buy the Dip Range**: If conditions support buying on weakness, specify:
+   - Price range for buy entry (e.g., "$XXX - $YYY")
+   - Rationale based on put wall (support) and option flow analysis
+   - If NOT recommending buy the dip, explicitly state "Not Recommended" and explain why
+
+2. **Sell the Rip Range**: If conditions support selling on strength, specify:
+   - Price range for sell/short entry (e.g., "$XXX - $YYY")
+   - Rationale based on call wall (resistance) and option flow analysis
+   - If NOT recommending sell the rip, explicitly state "Not Recommended" and explain why
+
+Example format:
+"**Buy the Dip Range:** $XXX - $YYY. This range aligns with the Put Wall (support) identified at $XXX where dealers will need to hedge aggressively."
+
+"**Sell the Rip Range:** Not Recommended. Current option flow shows heavy call buying suggesting bullish institutional positioning."
 
 Place this JSON at the very end of your markdown response after all analysis.
 ---
@@ -146,7 +198,9 @@ Place this JSON at the very end of your markdown response after all analysis.
         recent_data: str,
         stock_code: Optional[str] = None,
         observation_date: Optional[str] = None,
-        include_signal_strength_prompt: bool = True
+        include_signal_strength_prompt: bool = True,
+        option_trades: Optional[str] = None,
+        price_bars_30m: Optional[str] = None,
     ) -> str:
         """
         Replace template variables with actual values.
@@ -155,8 +209,10 @@ Place this JSON at the very end of your markdown response after all analysis.
         - {{ recent_data }} with tab-delimited data
         - {{ stock_code }} with base stock code (optional)
         - {{ observation_date }} with observation date (optional)
+        - {{ option_trades }} with option trade data (optional)
+        - {{ price_bars_30m }} with 30-minute price bar data (optional)
 
-        If {{ recent_data }} placeholder not found in template, appends recent_data to end.
+        If a placeholder is not found in the template, the data is appended to the end.
 
         Args:
             template: Template content with placeholders
@@ -164,6 +220,8 @@ Place this JSON at the very end of your markdown response after all analysis.
             stock_code: Base stock code (optional)
             observation_date: Observation date string (optional)
             include_signal_strength_prompt: Whether to prepend signal strength classification instructions
+            option_trades: Formatted option trade data (optional)
+            price_bars_30m: Formatted 30-minute price bar data (optional)
 
         Returns:
             Template with variables replaced
@@ -192,6 +250,24 @@ Place this JSON at the very end of your markdown response after all analysis.
         if observation_date is not None:
             result = result.replace("{{ observation_date }}", observation_date)
             result = result.replace("{{observation_date}}", observation_date)
+
+        # Inject option trades data
+        if option_trades is not None:
+            has_placeholder = "{{ option_trades }}" in result or "{{option_trades}}" in result
+            if has_placeholder:
+                result = result.replace("{{ option_trades }}", option_trades)
+                result = result.replace("{{option_trades}}", option_trades)
+            else:
+                result = result.rstrip() + "\n\n## Latest Option Trades (Size > 300)\n\n" + option_trades
+
+        # Inject 30-minute price bar data
+        if price_bars_30m is not None:
+            has_placeholder = "{{ price_bars_30m }}" in result or "{{price_bars_30m}}" in result
+            if has_placeholder:
+                result = result.replace("{{ price_bars_30m }}", price_bars_30m)
+                result = result.replace("{{price_bars_30m}}", price_bars_30m)
+            else:
+                result = result.rstrip() + "\n\n## 30-Minute Price Bars (Last 5 Days)\n\n" + price_bars_30m
 
         logger.info(f"Injected variables into template ({len(result)} characters after injection)")
 

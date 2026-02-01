@@ -61,6 +61,23 @@ def get_price_prediction(
             cached_prediction = cache_service.get_cached_prediction(base_code, observation_date)
 
         if cached_prediction is not None:
+            # On cache hit, extract and persist signal strength and ranges as needed (no extra LLM call)
+            try:
+                db_service = SignalStrengthDBService()
+                signal_strength = SignalStrengthParser.extract_signal_strength(cached_prediction)
+                ranges = SignalStrengthParser.extract_trade_ranges(cached_prediction)
+                if signal_strength:
+                    db_service.upsert_signal_strength(
+                        stock_code=base_code,
+                        observation_date=observation_date,
+                        signal_strength_level=signal_strength,
+                        source_type="GEX",
+                        buy_dip_range=ranges.get("buy_dip_range"),
+                        sell_rip_range=ranges.get("sell_rip_range"),
+                    )
+            except Exception as e:
+                logger.warning(f"Cache extraction/upsert failed for {base_code} on {observation_date}: {e}")
+
             # Return cached prediction
             logger.info(f"Returning cached prediction for {base_code}")
             return {
@@ -113,6 +130,24 @@ def get_price_prediction(
         # Step 2: Format data as JSON
         recent_data = gex_service.format_as_json(gex_rows)
 
+        # Step 2b: Fetch and format option trades
+        try:
+            option_rows = gex_service.get_option_trades(base_code, observation_date)
+            option_trades_data = gex_service.format_option_trades_as_pipe_delimited(option_rows)
+            logger.info(f"Retrieved {len(option_rows)} option trades for {base_code} on {observation_date}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch option trades for {base_code}: {e}")
+            option_trades_data = "Option trade data unavailable."
+
+        # Step 2c: Fetch and format 30-minute price bars
+        try:
+            bar_rows = gex_service.get_price_bars_30m(base_code, observation_date)
+            price_bars_data = gex_service.format_price_bars_as_pipe_delimited(bar_rows)
+            logger.info(f"Retrieved {len(bar_rows)} 30M bars for {base_code}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch 30M price bars for {base_code}: {e}")
+            price_bars_data = "30-minute bar data unavailable."
+
         # Step 3: Load and inject template
         try:
             template, used_fallback = template_service.get_template(base_code)
@@ -120,7 +155,9 @@ def get_price_prediction(
                 template=template,
                 recent_data=recent_data,
                 stock_code=base_code,
-                observation_date=observation_date.isoformat()
+                observation_date=observation_date.isoformat(),
+                option_trades=option_trades_data,
+                price_bars_30m=price_bars_data,
             )
         except FileNotFoundError as e:
             logger.error(f"Template loading failed: {e}")
@@ -150,26 +187,29 @@ def get_price_prediction(
             logger.error(f"Cache save failed: {e}")
             # Don't fail the request if cache save fails, just log it
 
-        # Step 6: Extract and save signal strength to database
+        # Step 6: Extract and save signal strength and trade ranges to database
         signal_strength = None
         try:
             logger.info(f"Attempting to extract signal strength from prediction (length: {len(prediction_text)} chars)")
             signal_strength = SignalStrengthParser.extract_signal_strength(prediction_text)
+            ranges = SignalStrengthParser.extract_trade_ranges(prediction_text)
 
             if signal_strength:
                 logger.info(f"✓ Extracted signal strength: {signal_strength} for {base_code}")
                 db_service = SignalStrengthDBService()
 
-                logger.info(f"Attempting to save signal strength to database: {base_code} on {observation_date} -> {signal_strength}")
+                logger.info(f"Attempting to save signal strength/ranges to database: {base_code} on {observation_date} -> {signal_strength}")
                 success = db_service.upsert_signal_strength(
                     stock_code=base_code,
                     observation_date=observation_date,
                     signal_strength_level=signal_strength,
-                    source_type="GEX"
+                    source_type="GEX",
+                    buy_dip_range=ranges.get("buy_dip_range"),
+                    sell_rip_range=ranges.get("sell_rip_range"),
                 )
 
                 if success:
-                    logger.info(f"✓ Successfully saved signal strength: {base_code} -> {signal_strength}")
+                    logger.info(f"✓ Successfully saved signal strength/ranges: {base_code} -> {signal_strength}")
                 else:
                     logger.error(f"✗ Database upsert returned False for {base_code}")
             else:
@@ -274,6 +314,24 @@ def get_price_prediction_prompt(
         # Format data as JSON
         recent_data = gex_service.format_as_json(gex_rows)
 
+        # Fetch and format option trades
+        try:
+            option_rows = gex_service.get_option_trades(base_code, observation_date)
+            option_trades_data = gex_service.format_option_trades_as_pipe_delimited(option_rows)
+            logger.info(f"Retrieved {len(option_rows)} option trades for {base_code} on {observation_date}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch option trades for {base_code}: {e}")
+            option_trades_data = "Option trade data unavailable."
+
+        # Fetch and format 30-minute price bars
+        try:
+            bar_rows = gex_service.get_price_bars_30m(base_code, observation_date)
+            price_bars_data = gex_service.format_price_bars_as_pipe_delimited(bar_rows)
+            logger.info(f"Retrieved {len(bar_rows)} 30M bars for {base_code}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch 30M price bars for {base_code}: {e}")
+            price_bars_data = "30-minute bar data unavailable."
+
         # Load and inject template
         try:
             template, used_fallback = template_service.get_template(base_code)
@@ -281,7 +339,9 @@ def get_price_prediction_prompt(
                 template=template,
                 recent_data=recent_data,
                 stock_code=base_code,
-                observation_date=observation_date.isoformat()
+                observation_date=observation_date.isoformat(),
+                option_trades=option_trades_data,
+                price_bars_30m=price_bars_data,
             )
         except FileNotFoundError as e:
             logger.error(f"Template loading failed: {e}")
@@ -293,6 +353,13 @@ def get_price_prediction_prompt(
         # Return prompt
         template_file = f"{base_code}.md" if not used_fallback else "SPXW.md"
 
+        # Estimate token count (rough estimate: 1 token ≈ 4 characters)
+        estimated_tokens = len(prompt) // 4
+
+        # Check if new data sections are included
+        has_option_trades = "option trade data unavailable" not in option_trades_data.lower()
+        has_price_bars = "30-minute bar data unavailable" not in price_bars_data.lower()
+
         return {
             "prompt": prompt,
             "stock_code": base_code,
@@ -300,6 +367,9 @@ def get_price_prediction_prompt(
             "used_fallback": used_fallback,
             "template_file": template_file,
             "prompt_length": len(prompt),
+            "estimated_tokens": estimated_tokens,
+            "has_option_trades": has_option_trades,
+            "has_price_bars_30m": has_price_bars,
             "generated_at": datetime.now().isoformat()
         }
 

@@ -26,6 +26,7 @@ export default function NavigationMenu() {
         <div className={`absolute top-full left-0 mt-2 w-64 bg-white border border-slate-200 rounded-md shadow-lg transition-all duration-200 z-50 ${open ? "opacity-100 visible" : "opacity-0 invisible"}`}>
           <div className="py-2" role="menu">
             <Link onClick={() => setOpen(false)} href="/order-book" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Order Book</Link>
+            <Link onClick={() => setOpen(false)} href="/broker-analysis" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Broker Analysis</Link>
             <Link onClick={() => setOpen(false)} href="/ta-scan" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">TA Scan</Link>
             <Link onClick={() => setOpen(false)} href="/breakout-watchlist" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Breakout Watch List</Link>
             <Link onClick={() => setOpen(false)} href="/breakout-consolidation-analysis" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Breakout Consolidation Analysis</Link>
@@ -43,6 +44,7 @@ export default function NavigationMenu() {
             <Link onClick={() => setOpen(false)} href="/range-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Price Range Orders</Link>
             <Link onClick={() => setOpen(false)} href="/integrated-charts" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Integrated Charts</Link>
             <Link onClick={() => setOpen(false)} href="/trading-halt" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Trading Halt</Link>
+            <Link onClick={() => setOpen(false)} href="/option-insights" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">US Option Insights</Link>
           </div>
         </div>
       </div>

@@ -45,14 +45,28 @@ def gex_auto_insight_job():
     Background job to process pending GEX insights.
 
     This job runs every 5 minutes and:
-    1. Checks which configured stocks have new GEX data available
-    2. Generates LLM predictions for stocks that haven't been processed today
+    1. Identifies the latest available SPXW observation date (<= today)
+    2. Checks which configured stocks have GEX data for that date
+    3. Generates LLM predictions for stocks that haven't been processed for that date
     3. Saves signal strength to the database
     """
     from app.services.gex_auto_insight_service import GEXAutoInsightService
+    from app.services.gex_data_service import GEXDataService
 
     job_start = datetime.now()
-    target_date = date.today()
+    # Determine the baseline processing date as the most recent SPXW date <= today
+    try:
+        gex_service = GEXDataService()
+        latest_spxw_date = gex_service.get_latest_observation_date("SPXW", date.today())
+    except Exception as e:
+        latest_spxw_date = None
+        logger.error(f"[GEX Auto Insight] Failed to resolve latest SPXW date: {e}")
+
+    if latest_spxw_date is None:
+        logger.info("[GEX Auto Insight] No SPXW data available up to today; skipping run")
+        return
+
+    target_date = latest_spxw_date
 
     logger.info(f"[GEX Auto Insight] Starting scheduled job for {target_date}")
 

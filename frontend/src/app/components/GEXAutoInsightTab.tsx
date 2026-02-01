@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 type StockConfig = {
@@ -53,6 +53,10 @@ export default function GEXAutoInsightTab() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string>("");
   const [info, setInfo] = useState<string>("");
+  const [targetDate, setTargetDate] = useState<string>(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  });
 
   // Add form
   const [newCode, setNewCode] = useState("");
@@ -73,23 +77,33 @@ export default function GEXAutoInsightTab() {
       if (res.ok) {
         const data = await res.json();
         setStocks(data.stocks || []);
+      } else {
+        console.error(`Failed to fetch stocks: HTTP ${res.status}`);
+        // Keep previous stocks on error
       }
     } catch (e) {
-      setError(`Failed to fetch stocks: ${e}`);
+      console.error("Failed to fetch stocks:", e);
+      // Keep previous stocks on error
     }
   }, [baseUrl]);
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await authenticatedFetch(`${baseUrl}/api/gex-auto-insight/status`);
+      const res = await authenticatedFetch(
+        `${baseUrl}/api/gex-auto-insight/status${targetDate ? `?target_date=${encodeURIComponent(targetDate)}` : ""}`
+      );
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
+      } else {
+        console.error(`Failed to fetch status: HTTP ${res.status}`);
+        // Keep previous status on error to avoid showing "no data"
       }
     } catch (e) {
-      setError(`Failed to fetch status: ${e}`);
+      console.error("Failed to fetch status:", e);
+      // Keep previous status on error to avoid showing "no data"
     }
-  }, [baseUrl]);
+  }, [baseUrl, targetDate]);
 
   const fetchSchedulerStatus = useCallback(async () => {
     try {
@@ -97,9 +111,13 @@ export default function GEXAutoInsightTab() {
       if (res.ok) {
         const data = await res.json();
         setSchedulerStatus(data);
+      } else {
+        console.error(`Failed to fetch scheduler status: HTTP ${res.status}`);
+        // Keep previous scheduler status on error rather than clearing it
       }
     } catch (e) {
       console.error("Failed to fetch scheduler status:", e);
+      // Keep previous scheduler status on error rather than clearing it
     }
   }, [baseUrl]);
 
@@ -110,11 +128,25 @@ export default function GEXAutoInsightTab() {
     setLoading(false);
   }, [fetchStocks, fetchStatus, fetchSchedulerStatus]);
 
+  // Use a ref to avoid recreating the interval when refreshAll changes
+  const refreshAllRef = useRef(refreshAll);
   useEffect(() => {
-    refreshAll();
-    const interval = setInterval(refreshAll, 30000);
-    return () => clearInterval(interval);
+    refreshAllRef.current = refreshAll;
   }, [refreshAll]);
+
+  useEffect(() => {
+    // Initial fetch
+    refreshAllRef.current();
+
+    // Set up interval that always calls the latest version
+    const interval = setInterval(() => {
+      refreshAllRef.current();
+    }, 30000);
+
+    return () => clearInterval(interval);
+    // Only recreate interval when targetDate changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetDate]);
 
   const addStock = async () => {
     setError("");
@@ -217,7 +249,8 @@ export default function GEXAutoInsightTab() {
     setInfo("");
 
     try {
-      const res = await authenticatedFetch(`${baseUrl}/api/gex-auto-insight/process`, {
+      const url = `${baseUrl}/api/gex-auto-insight/process${targetDate ? `?target_date=${encodeURIComponent(targetDate)}` : ""}`;
+      const res = await authenticatedFetch(url, {
         method: "POST",
       });
 
@@ -244,10 +277,10 @@ export default function GEXAutoInsightTab() {
     setError("");
 
     try {
-      const res = await authenticatedFetch(
-        `${baseUrl}/api/gex-auto-insight/process/${encodeURIComponent(code)}`,
-        { method: "POST" }
-      );
+      const url = `${baseUrl}/api/gex-auto-insight/process/${encodeURIComponent(code)}${
+        targetDate ? `?target_date=${encodeURIComponent(targetDate)}` : ""
+      }`;
+      const res = await authenticatedFetch(url, { method: "POST" });
 
       if (!res.ok) {
         const msg = await res.text().catch(() => "");
@@ -301,11 +334,21 @@ export default function GEXAutoInsightTab() {
         </div>
       )}
 
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 flex flex-col items-center gap-3">
+            <div className="w-12 h-12 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
+            <p className="text-sm font-medium text-slate-700">Loading data...</p>
+          </div>
+        </div>
+      )}
+
       {/* Scheduler Status */}
       <div className="p-4 rounded-lg border border-slate-200 bg-white">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-base font-medium">Scheduler Status</h3>
-          <button onClick={refreshAll} disabled={loading} className="text-sm text-emerald-600 hover:text-emerald-700">
+          <button onClick={refreshAll} disabled={loading} className="text-sm text-emerald-600 hover:text-emerald-700 disabled:opacity-50">
             {loading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
@@ -331,9 +374,46 @@ export default function GEXAutoInsightTab() {
       {/* Processing Status */}
       <div className="p-4 rounded-lg border border-slate-200 bg-white">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-medium">
-            Processing Status {status && <span className="text-sm font-normal text-slate-500">({status.target_date})</span>}
-          </h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-base font-medium">
+              Processing Status{" "}
+              {status && <span className="text-sm font-normal text-slate-500">({status.target_date})</span>}
+            </h3>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                aria-label="Previous business day"
+                onClick={() => {
+                  const d = new Date(targetDate);
+                  d.setDate(d.getDate() - 1);
+                  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+                  setTargetDate(d.toISOString().slice(0, 10));
+                }}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm hover:bg-emerald-50"
+              >
+                ←
+              </button>
+              <input
+                type="date"
+                value={targetDate}
+                onChange={(e) => setTargetDate(e.target.value)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+              />
+              <button
+                type="button"
+                aria-label="Next business day"
+                onClick={() => {
+                  const d = new Date(targetDate);
+                  d.setDate(d.getDate() + 1);
+                  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+                  setTargetDate(d.toISOString().slice(0, 10));
+                }}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm hover:bg-emerald-50"
+              >
+                →
+              </button>
+            </div>
+          </div>
           <button
             onClick={processAllPending}
             disabled={processing || !status?.pending_count}

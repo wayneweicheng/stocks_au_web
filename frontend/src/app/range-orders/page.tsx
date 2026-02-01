@@ -782,8 +782,11 @@ export default function RangeOrdersPage() {
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
               {quoteLast != null && startVsLast && (
-                <p className="text-xs text-slate-500 mt-1">
-                  Δ vs Last (${formatNA(quoteLast, 2)}): {startVsLast.abs >= 0 ? "+" : ""}{startVsLast.abs.toFixed(2)} ({startVsLast.pct >= 0 ? "+" : ""}{startVsLast.pct.toFixed(2)}%)
+                <p className="text-xs mt-1">
+                  <span className="text-slate-500">Δ vs Last (${formatNA(quoteLast, 2)}): </span>
+                  <span className={startVsLast.abs >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
+                    {startVsLast.abs >= 0 ? "+" : ""}{startVsLast.abs.toFixed(2)} ({startVsLast.pct >= 0 ? "+" : ""}{startVsLast.pct.toFixed(2)}%)
+                  </span>
                 </p>
               )}
             </div>
@@ -800,8 +803,11 @@ export default function RangeOrdersPage() {
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
               {quoteLast != null && endVsLast && (
-                <p className="text-xs text-slate-500 mt-1">
-                  Δ vs Last (${formatNA(quoteLast, 2)}): {endVsLast.abs >= 0 ? "+" : ""}{endVsLast.abs.toFixed(2)} ({endVsLast.pct >= 0 ? "+" : ""}{endVsLast.pct.toFixed(2)}%)
+                <p className="text-xs mt-1">
+                  <span className="text-slate-500">Δ vs Last (${formatNA(quoteLast, 2)}): </span>
+                  <span className={endVsLast.abs >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
+                    {endVsLast.abs >= 0 ? "+" : ""}{endVsLast.abs.toFixed(2)} ({endVsLast.pct >= 0 ? "+" : ""}{endVsLast.pct.toFixed(2)}%)
+                  </span>
                 </p>
               )}
             </div>

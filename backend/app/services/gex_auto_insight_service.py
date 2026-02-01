@@ -249,11 +249,9 @@ class GEXAutoInsightService:
             stock_code = stock["StockCode"]
             # Normalize for signal strength lookup (stored without .US suffix)
             base_code = self.cache_service.normalize_stock_code(stock_code)
-            effective_date = self._resolve_effective_observation_date(stock_code, target_date)
-            has_gex_data = effective_date is not None
-            has_signal = False
-            if has_gex_data:
-                has_signal = self.check_signal_strength_exists(stock_code, effective_date)  # base_code used inside
+            # For status view, only consider exact target_date; do not fall back to prior dates
+            has_gex_data = self.check_gex_data_available(stock_code, target_date)
+            has_signal = self.check_signal_strength_exists(stock_code, target_date) if has_gex_data else False
 
             stock_status = {
                 "stock_code": stock_code,
@@ -261,8 +259,7 @@ class GEXAutoInsightService:
                 "priority": stock.get("Priority", 0),
                 "has_gex_data": has_gex_data,
                 "has_signal_strength": has_signal,
-                "status": "no_data",
-                "effective_date": effective_date.isoformat() if effective_date else None
+                "status": "no_data"
             }
 
             if has_gex_data:
@@ -270,7 +267,7 @@ class GEXAutoInsightService:
                 if has_signal:
                     processed_count += 1
                     # Get the actual signal strength value (use normalized code)
-                    signal = self.signal_strength_db.get_signal_strength(base_code, effective_date, "GEX")
+                    signal = self.signal_strength_db.get_signal_strength(base_code, target_date, "GEX")
                     stock_status["signal_strength"] = signal
                     stock_status["status"] = "processed"
                 else:
@@ -342,16 +339,18 @@ class GEXAutoInsightService:
                 cached_text = self.cache_service.get_cached_prediction(base_code, effective_date) or ""
                 result["cached"] = True
                 # Try to extract and persist signal strength if missing
-                if not self.check_signal_strength_exists(base_code, effective_date):
-                    signal_from_cache = SignalStrengthParser.extract_signal_strength(cached_text)
-                    if signal_from_cache:
-                        self.signal_strength_db.upsert_signal_strength(
-                            stock_code=base_code,
-                            observation_date=effective_date,
-                            signal_strength_level=signal_from_cache,
-                            source_type="GEX"
-                        )
-                        result["signal_strength"] = signal_from_cache
+                signal_from_cache = SignalStrengthParser.extract_signal_strength(cached_text)
+                ranges = SignalStrengthParser.extract_trade_ranges(cached_text)
+                if signal_from_cache:
+                    self.signal_strength_db.upsert_signal_strength(
+                        stock_code=base_code,
+                        observation_date=effective_date,
+                        signal_strength_level=signal_from_cache,
+                        source_type="GEX",
+                        buy_dip_range=ranges.get("buy_dip_range"),
+                        sell_rip_range=ranges.get("sell_rip_range"),
+                    )
+                    result["signal_strength"] = signal_from_cache
                 result["success"] = True
                 result["message"] = "Cache hit; skipped LLM generation"
                 logger.info(f"Cache hit for {base_code} on {effective_date}; skipped LLM")
@@ -366,13 +365,33 @@ class GEXAutoInsightService:
             # Format data
             recent_data = self.gex_service.format_as_json(gex_rows)
 
+            # Fetch and format option trades
+            try:
+                option_rows = self.gex_service.get_option_trades(base_code, effective_date)
+                option_trades_data = self.gex_service.format_option_trades_as_pipe_delimited(option_rows)
+                logger.info(f"Retrieved {len(option_rows)} option trades for {base_code} on {effective_date}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch option trades for {base_code}: {e}")
+                option_trades_data = "Option trade data unavailable."
+
+            # Fetch and format 30-minute price bars
+            try:
+                bar_rows = self.gex_service.get_price_bars_30m(base_code, effective_date)
+                price_bars_data = self.gex_service.format_price_bars_as_pipe_delimited(bar_rows)
+                logger.info(f"Retrieved {len(bar_rows)} 30M bars for {base_code}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch 30M price bars for {base_code}: {e}")
+                price_bars_data = "30-minute bar data unavailable."
+
             # Load template
             template, used_fallback = self.template_service.get_template(base_code)
             prompt = self.template_service.inject_variables(
                 template=template,
                 recent_data=recent_data,
                 stock_code=base_code,
-                observation_date=effective_date.isoformat()
+                observation_date=effective_date.isoformat(),
+                option_trades=option_trades_data,
+                price_bars_30m=price_bars_data,
             )
 
             # Generate prediction
@@ -394,12 +413,15 @@ class GEXAutoInsightService:
 
             # Extract and save signal strength
             signal_strength = SignalStrengthParser.extract_signal_strength(prediction_text)
+            ranges = SignalStrengthParser.extract_trade_ranges(prediction_text)
             if signal_strength:
                 success = self.signal_strength_db.upsert_signal_strength(
                     stock_code=base_code,
                     observation_date=effective_date,
                     signal_strength_level=signal_strength,
-                    source_type="GEX"
+                    source_type="GEX",
+                    buy_dip_range=ranges.get("buy_dip_range"),
+                    sell_rip_range=ranges.get("sell_rip_range"),
                 )
                 if success:
                     result["signal_strength"] = signal_strength

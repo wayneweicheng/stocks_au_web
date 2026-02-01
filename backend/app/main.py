@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers.order_book import router as order_book_router
@@ -7,7 +7,7 @@ from app.routers.diagnostics import router as diagnostics_router
 from app.routers.monitor_stocks import router as monitor_stocks_router
 from app.routers.conditional_orders import router as conditional_orders_router
 from app.routers.pegasus_invest_opportunities import router as pegasus_invest_opportunities_router
-from app.routers.auth import router as auth_router
+from app.routers.auth import router as auth_router, verify_credentials
 from app.routers.pattern_predictions import router as pattern_predictions_router
 from app.routers.charts import router as charts_router
 from app.routers.pllrs_scanner import router as pllrs_scanner_router
@@ -31,6 +31,8 @@ from app.routers.subscription_types import router as subscription_types_router
 from app.routers.user_subscriptions import router as user_subscriptions_router
 from app.routers.announcement_analysis import router as announcement_analysis_router
 from app.routers.gex_auto_insight import router as gex_auto_insight_router
+from app.routers.broker_analysis import router as broker_analysis_router
+from app.routers.option_insights import router as option_insights_router
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 from contextlib import asynccontextmanager
 import logging
@@ -130,10 +132,12 @@ app.include_router(subscription_types_router)
 app.include_router(user_subscriptions_router)
 app.include_router(announcement_analysis_router)
 app.include_router(gex_auto_insight_router)
+app.include_router(broker_analysis_router)
+app.include_router(option_insights_router)
 
 
 @app.get("/api/scheduler/status")
-def scheduler_status():
+def scheduler_status(username: str = Depends(verify_credentials)):
     """Get the status of the background scheduler and its jobs."""
     return get_scheduler_status()
 

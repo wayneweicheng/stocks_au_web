@@ -48,7 +48,14 @@ def get_signal_strengths(
             f" (user: {username})"
         )
 
-        return results
+        # Ensure keys exist for frontend rendering (explicit None if missing)
+        normalized = []
+        for r in results:
+            r.setdefault("buy_dip_range", None)
+            r.setdefault("sell_rip_range", None)
+            normalized.append(r)
+
+        return normalized
 
     except Exception as e:
         logger.error(f"Error retrieving signal strengths for {observation_date}: {e}")

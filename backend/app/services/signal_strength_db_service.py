@@ -20,7 +20,9 @@ class SignalStrengthDBService:
         stock_code: str,
         observation_date: date,
         signal_strength_level: str,
-        source_type: str = "GEX"
+        source_type: str = "GEX",
+        buy_dip_range: Optional[str] = None,
+        sell_rip_range: Optional[str] = None,
     ) -> bool:
         """
         Insert or update signal strength record for a stock on a given date.
@@ -44,17 +46,43 @@ class SignalStrengthDBService:
             # Use MERGE for upsert (insert if not exists, update if exists)
             merge_query = f"""
                 MERGE INTO {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE} AS target
-                USING (SELECT ? AS ObservationDate, ? AS StockCode, ? AS SignalStrengthLevel, ? AS SourceType) AS source
+                USING (
+                    SELECT
+                        ? AS ObservationDate,
+                        ? AS StockCode,
+                        ? AS SignalStrengthLevel,
+                        ? AS SourceType,
+                        ? AS BuyDipRange,
+                        ? AS SellRipRange
+                ) AS source
                 ON (target.ObservationDate = source.ObservationDate AND target.StockCode = source.StockCode AND target.SourceType = source.SourceType)
                 WHEN MATCHED THEN
                     UPDATE SET SignalStrengthLevel = source.SignalStrengthLevel,
+                               BuyDipRange = source.BuyDipRange,
+                               SellRipRange = source.SellRipRange,
                                UpdatedAt = GETDATE()
                 WHEN NOT MATCHED THEN
-                    INSERT (ObservationDate, StockCode, SignalStrengthLevel, SourceType, CreatedAt, UpdatedAt)
-                    VALUES (source.ObservationDate, source.StockCode, source.SignalStrengthLevel, source.SourceType, GETDATE(), GETDATE());
+                    INSERT (ObservationDate, StockCode, SignalStrengthLevel, SourceType, BuyDipRange, SellRipRange, CreatedAt, UpdatedAt)
+                    VALUES (source.ObservationDate, source.StockCode, source.SignalStrengthLevel, source.SourceType, source.BuyDipRange, source.SellRipRange, GETDATE(), GETDATE());
             """
 
-            cursor.execute(merge_query, (observation_date, stock_code, signal_strength_level, source_type))
+            try:
+                cursor.execute(merge_query, (observation_date, stock_code, signal_strength_level, source_type, buy_dip_range, sell_rip_range))
+            except Exception as e:
+                # Fallback for legacy schema without Buy/Sell range columns
+                logger.warning(f"Upsert with ranges failed, falling back to legacy schema: {e}")
+                legacy_merge = f"""
+                    MERGE INTO {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE} AS target
+                    USING (SELECT ? AS ObservationDate, ? AS StockCode, ? AS SignalStrengthLevel, ? AS SourceType) AS source
+                    ON (target.ObservationDate = source.ObservationDate AND target.StockCode = source.StockCode AND target.SourceType = source.SourceType)
+                    WHEN MATCHED THEN
+                        UPDATE SET SignalStrengthLevel = source.SignalStrengthLevel,
+                                   UpdatedAt = GETDATE()
+                    WHEN NOT MATCHED THEN
+                        INSERT (ObservationDate, StockCode, SignalStrengthLevel, SourceType, CreatedAt, UpdatedAt)
+                        VALUES (source.ObservationDate, source.StockCode, source.SignalStrengthLevel, source.SourceType, GETDATE(), GETDATE());
+                """
+                cursor.execute(legacy_merge, (observation_date, stock_code, signal_strength_level, source_type))
             conn.commit()
 
             logger.info(
@@ -89,33 +117,72 @@ class SignalStrengthDBService:
             cursor = conn.cursor()
 
             if source_type:
-                query = f"""
-                    SELECT StockCode, SignalStrengthLevel, SourceType, CreatedAt, UpdatedAt
-                    FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
-                    WHERE ObservationDate = ? AND SourceType = ?
-                    ORDER BY StockCode
-                """
-                cursor.execute(query, (observation_date, source_type))
+                try:
+                    query = f"""
+                        SELECT StockCode, SignalStrengthLevel, SourceType, BuyDipRange, SellRipRange, CreatedAt, UpdatedAt
+                        FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
+                        WHERE ObservationDate = ? AND SourceType = ?
+                        ORDER BY StockCode
+                    """
+                    cursor.execute(query, (observation_date, source_type))
+                except Exception as e:
+                    logger.warning(f"Select with ranges failed, falling back to legacy schema: {e}")
+                    # Fallback without range columns
+                    cursor = conn.cursor()
+                    query = f"""
+                        SELECT StockCode, SignalStrengthLevel, SourceType, CreatedAt, UpdatedAt
+                        FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
+                        WHERE ObservationDate = ? AND SourceType = ?
+                        ORDER BY StockCode
+                    """
+                    cursor.execute(query, (observation_date, source_type))
             else:
-                query = f"""
-                    SELECT StockCode, SignalStrengthLevel, SourceType, CreatedAt, UpdatedAt
-                    FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
-                    WHERE ObservationDate = ?
-                    ORDER BY StockCode
-                """
-                cursor.execute(query, (observation_date,))
+                try:
+                    query = f"""
+                        SELECT StockCode, SignalStrengthLevel, SourceType, BuyDipRange, SellRipRange, CreatedAt, UpdatedAt
+                        FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
+                        WHERE ObservationDate = ?
+                        ORDER BY StockCode
+                    """
+                    cursor.execute(query, (observation_date,))
+                except Exception as e:
+                    logger.warning(f"Select with ranges failed, falling back to legacy schema: {e}")
+                    # Fallback without range columns
+                    cursor = conn.cursor()
+                    query = f"""
+                        SELECT StockCode, SignalStrengthLevel, SourceType, CreatedAt, UpdatedAt
+                        FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
+                        WHERE ObservationDate = ?
+                        ORDER BY StockCode
+                    """
+                    cursor.execute(query, (observation_date,))
 
             rows = cursor.fetchall()
 
             results = []
+            # Detect shape based on column count
             for row in rows:
-                results.append({
-                    "stock_code": row[0],
-                    "signal_strength_level": row[1],
-                    "source_type": row[2],
-                    "created_at": row[3].isoformat() if row[3] else None,
-                    "updated_at": row[4].isoformat() if row[4] else None
-                })
+                if len(row) >= 7:
+                    results.append({
+                        "stock_code": row[0],
+                        "signal_strength_level": row[1],
+                        "source_type": row[2],
+                        "buy_dip_range": row[3],
+                        "sell_rip_range": row[4],
+                        "created_at": row[5].isoformat() if row[5] else None,
+                        "updated_at": row[6].isoformat() if row[6] else None
+                    })
+                else:
+                    # Legacy schema without ranges
+                    results.append({
+                        "stock_code": row[0],
+                        "signal_strength_level": row[1],
+                        "source_type": row[2],
+                        "buy_dip_range": None,
+                        "sell_rip_range": None,
+                        "created_at": row[3].isoformat() if row[3] else None,
+                        "updated_at": row[4].isoformat() if row[4] else None
+                    })
 
             logger.info(f"Retrieved {len(results)} signal strength records for {observation_date}" +
                        (f" (source: {source_type})" if source_type else ""))

@@ -256,3 +256,264 @@ class GEXDataService:
         logger.info(f"Formatted {len(rows)} rows x {len(columns)} columns into JSON format ({len(result)} characters)")
 
         return result
+
+    def get_option_trades(
+        self,
+        stock_code: str,
+        observation_date: date
+    ) -> List[Dict[str, Any]]:
+        """
+        Query large option trades (size > 300) for a stock on an observation date.
+
+        Args:
+            stock_code: Stock code (with or without .US suffix)
+            observation_date: Observation date to query
+
+        Returns:
+            List of dictionaries containing option trade data, ordered by SaleTime
+        """
+        try:
+            base_code = self.normalize_stock_code(stock_code)
+            db_stock_code = f"{base_code}.US"
+            model = get_sql_model()
+
+            sql = """
+            SELECT Underlying, OptionSymbol, SaleTime, ExpiryDate, Strike,
+                   PorC AS PutOrCall, Price, Size, Exchange, SpecialConditions
+            FROM StockDB_US.[StockData].[v_OptionTrade]
+            WHERE ObservationDate = ?
+            AND ASXCode = ?
+            AND Size > 300
+            ORDER BY SaleTime
+            """
+
+            params = (observation_date.isoformat(), db_stock_code)
+            logger.info(f"Querying option trades for {db_stock_code} on {observation_date}")
+
+            rows = model.execute_read_query(sql, params) or []
+            logger.info(f"Retrieved {len(rows)} option trades for {db_stock_code}")
+
+            return rows
+
+        except Exception as e:
+            logger.error(f"Failed to query option trades for {stock_code}: {e}")
+            raise
+
+    def get_price_bars_30m(
+        self,
+        stock_code: str,
+        observation_date: date,
+        lookback_days: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Query 30-minute price bars for a stock over the last N days.
+
+        Args:
+            stock_code: Stock code (with or without .US suffix)
+            observation_date: End date for the lookback window
+            lookback_days: Number of days to look back (default: 5)
+
+        Returns:
+            List of dictionaries containing 30-min OHLCV bar data, ordered by TimeIntervalStart
+        """
+        try:
+            base_code = self.normalize_stock_code(stock_code)
+            db_stock_code = f"{base_code}.US"
+            model = get_sql_model()
+
+            sql = """
+            SELECT TimeIntervalStart, [Open], [High], [Low], [Close], Volume, NumOfSale, VWAP
+            FROM StockDB_US.[StockData].[PriceHistoryTimeFrame]
+            WHERE TimeIntervalStart >= DATEADD(day, -?, ?)
+            AND TimeIntervalStart <= DATEADD(hour, 23, CAST(? AS datetime))
+            AND ASXCode = ?
+            AND TimeFrame = '30M'
+            ORDER BY TimeIntervalStart
+            """
+
+            params = (lookback_days, observation_date.isoformat(), observation_date.isoformat(), db_stock_code)
+            logger.info(f"Querying 30M price bars for {db_stock_code} (last {lookback_days} days up to {observation_date})")
+
+            rows = model.execute_read_query(sql, params) or []
+            logger.info(f"Retrieved {len(rows)} 30M bars for {db_stock_code}")
+
+            return rows
+
+        except Exception as e:
+            logger.error(f"Failed to query 30M price bars for {stock_code}: {e}")
+            raise
+
+    def format_option_trades_as_pipe_delimited(self, rows: List[Dict[str, Any]]) -> str:
+        """
+        Format option trade data as pipe-delimited format for LLM consumption.
+
+        Args:
+            rows: List of option trade dictionaries
+
+        Returns:
+            Pipe-delimited string or descriptive message if no data
+        """
+        if not rows:
+            return "No large option trades (size > 300) recorded for this date."
+
+        # Get columns from first row
+        columns = list(rows[0].keys())
+
+        # Create header row
+        header = "|".join(columns)
+
+        # Create data rows
+        data_rows = []
+        for row in rows:
+            values = []
+            for col in columns:
+                val = row.get(col)
+                if val is None:
+                    values.append("")
+                elif isinstance(val, float):
+                    values.append(f"{val:.2f}")
+                else:
+                    values.append(str(val))
+            data_rows.append("|".join(values))
+
+        result = header + "\n" + "\n".join(data_rows)
+        logger.info(f"Formatted {len(rows)} option trades into pipe-delimited format ({len(result)} characters)")
+        return result
+
+    def format_price_bars_as_pipe_delimited(self, rows: List[Dict[str, Any]]) -> str:
+        """
+        Format 30-minute price bar data as pipe-delimited format for LLM consumption.
+
+        Args:
+            rows: List of price bar dictionaries
+
+        Returns:
+            Pipe-delimited string or descriptive message if no data
+        """
+        if not rows:
+            return "No 30-minute bar data available for the lookback period."
+
+        # Get columns from first row
+        columns = list(rows[0].keys())
+
+        # Create header row
+        header = "|".join(columns)
+
+        # Create data rows
+        data_rows = []
+        for row in rows:
+            values = []
+            for col in columns:
+                val = row.get(col)
+                if val is None:
+                    values.append("")
+                elif isinstance(val, float):
+                    values.append(f"{val:.2f}")
+                else:
+                    values.append(str(val))
+            data_rows.append("|".join(values))
+
+        result = header + "\n" + "\n".join(data_rows)
+        logger.info(f"Formatted {len(rows)} price bars into pipe-delimited format ({len(result)} characters)")
+        return result
+
+    def get_option_oi_changes(
+        self,
+        stock_code: str,
+        observation_date: date
+    ) -> List[Dict[str, Any]]:
+        """
+        Query option OI changes between observation_date and previous business day.
+        Returns options where OI changed by more than 300 contracts, ordered by absolute change descending.
+
+        Args:
+            stock_code: Stock code (with or without .US suffix)
+            observation_date: Current observation date
+
+        Returns:
+            List of dictionaries containing option OI change data
+        """
+        try:
+            base_code = self.normalize_stock_code(stock_code)
+            db_stock_code = f"{base_code}.US"
+            model = get_sql_model()
+
+            sql = """
+            SELECT
+                x.OpenInterest - y.OpenInterest as OIChanges,
+                x.*,
+                y.OpenInterest as PrevOpenInterest,
+                y.LastTradePrice as PrevLastTradePrice
+            FROM
+            (
+                SELECT *
+                FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
+                WHERE ObservationDate = ?
+                AND ASXCode = ?
+            ) as x
+            INNER JOIN
+            (
+                SELECT *
+                FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
+                WHERE ObservationDate = Common.DateAddBusinessDay_Plus(-1, ?)
+                AND ASXCode = ?
+            ) as y
+            ON x.OptionSymbol = y.OptionSymbol
+            WHERE x.OpenInterest != y.OpenInterest
+            AND ABS(x.OpenInterest - y.OpenInterest) > 300
+            ORDER BY ABS(x.OpenInterest - y.OpenInterest) DESC
+            """
+
+            params = (
+                observation_date.isoformat(),
+                db_stock_code,
+                observation_date.isoformat(),
+                db_stock_code
+            )
+            logger.info(f"Querying option OI changes for {db_stock_code} on {observation_date}")
+
+            rows = model.execute_read_query(sql, params) or []
+            logger.info(f"Retrieved {len(rows)} option OI changes for {db_stock_code}")
+
+            return rows
+
+        except Exception as e:
+            logger.error(f"Failed to query option OI changes for {stock_code}: {e}")
+            raise
+
+    def format_option_oi_changes_as_pipe_delimited(self, rows: List[Dict[str, Any]]) -> str:
+        """
+        Format option OI change data as pipe-delimited format for LLM consumption.
+
+        Args:
+            rows: List of option OI change dictionaries
+
+        Returns:
+            Pipe-delimited string or descriptive message if no data
+        """
+        if not rows:
+            return "No significant option OI changes (abs change > 300) for this date."
+
+        # Get columns from first row
+        columns = list(rows[0].keys())
+
+        # Create header row
+        header = "|".join(columns)
+
+        # Create data rows
+        data_rows = []
+        for row in rows:
+            values = []
+            for col in columns:
+                val = row.get(col)
+                if val is None:
+                    values.append("")
+                elif isinstance(val, float):
+                    values.append(f"{val:.2f}")
+                else:
+                    values.append(str(val))
+            data_rows.append("|".join(values))
+
+        result = header + "\n" + "\n".join(data_rows)
+        logger.info(f"Formatted {len(rows)} option OI changes into pipe-delimited format ({len(result)} characters)")
+        return result
