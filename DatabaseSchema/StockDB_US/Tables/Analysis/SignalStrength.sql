@@ -6,7 +6,9 @@ CREATE TABLE [Analysis].[SignalStrength] (
     [SignalStrengthLevel] [varchar](30) NOT NULL,
     [CreatedAt] [datetime] NOT NULL DEFAULT (getdate()),
     [UpdatedAt] [datetime] NOT NULL DEFAULT (getdate()),
-    [SourceType] [varchar](20) NOT NULL
+    [SourceType] [varchar](20) NOT NULL,
+    [BuyDipRange] [nvarchar](64) NULL,
+    [SellRipRange] [nvarchar](64) NULL
 ,
     CONSTRAINT [PK_SignalStrength] PRIMARY KEY (ObservationDate, StockCode, SourceType)
 );

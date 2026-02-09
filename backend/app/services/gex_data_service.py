@@ -343,6 +343,47 @@ class GEXDataService:
             logger.error(f"Failed to query 30M price bars for {stock_code}: {e}")
             raise
 
+    def get_price_bars_5m(
+        self,
+        stock_code: str,
+        observation_date: date
+    ) -> List[Dict[str, Any]]:
+        """
+        Query 5-minute price bars for a stock on the observation date.
+
+        Args:
+            stock_code: Stock code (with or without .US suffix)
+            observation_date: Observation date to query
+
+        Returns:
+            List of dictionaries containing 5-min OHLCV bar data, ordered by TimeIntervalStart
+        """
+        try:
+            base_code = self.normalize_stock_code(stock_code)
+            db_stock_code = f"{base_code}.US"
+            model = get_sql_model()
+
+            sql = """
+            SELECT TimeIntervalStart, [Open], [High], [Low], [Close], Volume, NumOfSale, VWAP
+            FROM StockDB_US.[StockData].[PriceHistoryTimeFrame]
+            WHERE ObservationDate = ?
+            AND ASXCode = ?
+            AND TimeFrame = '5M'
+            ORDER BY TimeIntervalStart
+            """
+
+            params = (observation_date.isoformat(), db_stock_code)
+            logger.info(f"Querying 5M price bars for {db_stock_code} on {observation_date}")
+
+            rows = model.execute_read_query(sql, params) or []
+            logger.info(f"Retrieved {len(rows)} 5M bars for {db_stock_code}")
+
+            return rows
+
+        except Exception as e:
+            logger.error(f"Failed to query 5M price bars for {stock_code}: {e}")
+            raise
+
     def format_option_trades_as_pipe_delimited(self, rows: List[Dict[str, Any]]) -> str:
         """
         Format option trade data as pipe-delimited format for LLM consumption.
@@ -516,4 +557,208 @@ class GEXDataService:
 
         result = header + "\n" + "\n".join(data_rows)
         logger.info(f"Formatted {len(rows)} option OI changes into pipe-delimited format ({len(result)} characters)")
+        return result
+
+    def get_top_options_by_oi(
+        self,
+        stock_code: str,
+        observation_date: date,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Query top N options by open interest, filtered to options expiring within 90 days.
+
+        Args:
+            stock_code: Stock code (with or without .US suffix)
+            observation_date: Observation date to query
+            limit: Number of top options to return (default: 50)
+
+        Returns:
+            List of dictionaries containing option data, ordered by OpenInterest descending
+        """
+        try:
+            base_code = self.normalize_stock_code(stock_code)
+            db_stock_code = f"{base_code}.US"
+            model = get_sql_model()
+
+            sql = f"""
+            SELECT TOP ({limit}) *
+            FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
+            WHERE ObservationDate = ?
+            AND ASXCode = ?
+            AND DATEADD(day, 90, ?) > ExpiryDate
+            ORDER BY OpenInterest DESC
+            """
+
+            params = (
+                observation_date.isoformat(),
+                db_stock_code,
+                observation_date.isoformat()
+            )
+            logger.info(f"Querying top {limit} options by OI for {db_stock_code} on {observation_date}")
+
+            rows = model.execute_read_query(sql, params) or []
+            logger.info(f"Retrieved {len(rows)} options by OI for {db_stock_code}")
+
+            return rows
+
+        except Exception as e:
+            logger.error(f"Failed to query top options by OI for {stock_code}: {e}")
+            raise
+
+    def format_top_options_by_oi_as_pipe_delimited(self, rows: List[Dict[str, Any]]) -> str:
+        """
+        Format top options by OI data as pipe-delimited format for LLM consumption.
+
+        Args:
+            rows: List of option dictionaries
+
+        Returns:
+            Pipe-delimited string or descriptive message if no data
+        """
+        if not rows:
+            return "No option data available for this date."
+
+        # Get columns from first row
+        columns = list(rows[0].keys())
+
+        # Create header row
+        header = "|".join(columns)
+
+        # Create data rows
+        data_rows = []
+        for row in rows:
+            values = []
+            for col in columns:
+                val = row.get(col)
+                if val is None:
+                    values.append("")
+                elif isinstance(val, float):
+                    values.append(f"{val:.2f}")
+                else:
+                    values.append(str(val))
+            data_rows.append("|".join(values))
+
+        result = header + "\n" + "\n".join(data_rows)
+        logger.info(f"Formatted {len(rows)} top options by OI into pipe-delimited format ({len(result)} characters)")
+        return result
+
+    def get_discord_messages(
+        self,
+        observation_date: date
+    ) -> List[Dict[str, Any]]:
+        """
+        Query Discord messages for a specific observation date.
+
+        Args:
+            observation_date: Date to query Discord messages for
+
+        Returns:
+            List of dictionaries containing Discord message data, ordered by TimeStamp descending
+        """
+        try:
+            model = get_sql_model()
+
+            sql = """
+            SELECT MessageId, ChannelId,
+                   CAST(TimeStamp AS datetime) as TimeStamp_Sydney,
+                   UserName, Content, CreateDate,
+                   CAST(TimeStamp_USEst AS datetime) as TimeStamp_USEst
+            FROM StockDB_US.Discord.v_DiscordMessages
+            WHERE CAST(TimeStamp AS date) = CAST(? AS date)
+            ORDER BY TimeStamp DESC
+            """
+
+            params = (observation_date.isoformat(),)
+            logger.info(f"Querying Discord messages for {observation_date}")
+
+            rows = model.execute_read_query(sql, params) or []
+            logger.info(f"Retrieved {len(rows)} Discord messages for {observation_date}")
+
+            return rows
+
+        except Exception as e:
+            logger.error(f"Failed to query Discord messages for {observation_date}: {e}")
+            raise
+
+    def get_discord_messages_by_users(
+        self,
+        observation_date: date,
+        usernames: List[str]
+    ) -> List[Dict[str, Any]]:
+        """
+        Query Discord messages for a specific observation date and a set of usernames.
+
+        Args:
+            observation_date: Date to query Discord messages for
+            usernames: List of Discord usernames to filter by
+
+        Returns:
+            List of dictionaries containing Discord message data, ordered by TimeStamp descending
+        """
+        if not usernames:
+            return []
+
+        try:
+            model = get_sql_model()
+
+            placeholders = ", ".join(["?"] * len(usernames))
+            sql = f"""
+            SELECT MessageId, ChannelId,
+                   CAST(TimeStamp AS datetime) as TimeStamp_Sydney,
+                   UserName, Content, CreateDate,
+                   CAST(TimeStamp_USEst AS datetime) as TimeStamp_USEst
+            FROM StockDB_US.Discord.v_DiscordMessages
+            WHERE CAST(TimeStamp AS date) = CAST(? AS date)
+              AND UserName IN ({placeholders})
+            ORDER BY TimeStamp DESC
+            """
+
+            params = [observation_date.isoformat(), *usernames]
+            logger.info(f"Querying Discord messages for {observation_date} (users: {len(usernames)})")
+
+            rows = model.execute_read_query(sql, params) or []
+            logger.info(f"Retrieved {len(rows)} Discord messages for {observation_date} (filtered)")
+
+            return rows
+
+        except Exception as e:
+            logger.error(f"Failed to query Discord messages by users for {observation_date}: {e}")
+            raise
+
+    def format_discord_messages_as_pipe_delimited(self, rows: List[Dict[str, Any]]) -> str:
+        """
+        Format Discord message data as pipe-delimited format for LLM consumption.
+
+        Args:
+            rows: List of Discord message dictionaries
+
+        Returns:
+            Pipe-delimited string or descriptive message if no data
+        """
+        if not rows:
+            return "No Discord messages found for this date."
+
+        # Get columns from first row
+        columns = list(rows[0].keys())
+
+        # Create header row
+        header = "|".join(columns)
+
+        # Create data rows
+        data_rows = []
+        for row in rows:
+            values = []
+            for col in columns:
+                val = row.get(col)
+                if val is None:
+                    values.append("")
+                elif isinstance(val, float):
+                    values.append(f"{val:.2f}")
+                else:
+                    values.append(str(val))
+            data_rows.append("|".join(values))
+
+        result = header + "\n" + "\n".join(data_rows)
+        logger.info(f"Formatted {len(rows)} Discord messages into pipe-delimited format ({len(result)} characters)")
         return result

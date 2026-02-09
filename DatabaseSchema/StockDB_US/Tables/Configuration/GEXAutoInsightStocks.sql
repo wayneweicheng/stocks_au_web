@@ -1,5 +1,4 @@
 -- Table: [Configuration].[GEXAutoInsightStocks]
--- Stores the list of stocks that should be automatically processed for GEX insights
 
 CREATE TABLE [Configuration].[GEXAutoInsightStocks] (
     [StockCode] [varchar](20) NOT NULL,
@@ -13,4 +12,4 @@ CREATE TABLE [Configuration].[GEXAutoInsightStocks] (
     CONSTRAINT [PK_Configuration_GEXAutoInsightStocks] PRIMARY KEY (StockCode)
 );
 
-CREATE INDEX [IX_GEXAutoInsightStocks_IsActive] ON [Configuration].[GEXAutoInsightStocks] (IsActive, Priority DESC);
+CREATE INDEX [IX_GEXAutoInsightStocks_IsActive] ON [Configuration].[GEXAutoInsightStocks] (IsActive, Priority);

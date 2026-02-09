@@ -428,63 +428,16 @@ BEGIN --Proc
 			--	'IBUS100' as StockCode
 			select 
 				ASXCode,
-				StockCode,
-				RunOrder
+				LEFT(ASXCode, CHARINDEX('.', ASXCode) - 1) as StockCode,
+				50 as RunOrder
 			from
 			(
-				select
-					'SPX.US' as ASXCode,
-					'SPX' as StockCode,
-					5 as RunOrder
-				union
-				select
-					'QQQ.US' as ASXCode,
-					'QQQ' as StockCode,
-					10 as RunOrder
-				union
-				select
-					'SPY.US' as ASXCode,
-					'SPY' as StockCode,
-					20 as RunOrder
-				union
-				select
-					'DIA.US' as ASXCode,
-					'DIA' as StockCode,
-					30 as RunOrder
-				union
-				select
-					'IWM.US' as ASXCode,
-					'IWM' as StockCode,
-					40 as RunOrder
-				union
-				select
-					'TQQQ.US' as ASXCode,
-					'TQQQ' as StockCode,
-					30 as RunOrder
-				union
-				select
-					'SQQQ.US' as ASXCode,
-					'SQQQ' as StockCode,
-					30 as RunOrder
-				union
-				select
-					'NVDA.US' as ASXCode,
-					'NVDA' as StockCode,
-					40 as RunOrder
-				--union
-				--select
-				--	'MES_20240920.US' as ASXCode,
-				--	'MES_20240920' as StockCode,
-				--	3 as RunOrder
-				--union
-				--select
-				--	'MNQ_20240920.US' as ASXCode,
-				--	'MNQ_20240920' as StockCode,
-				--	3 as RunOrder
+				select case when ASXCode = '_SPX.US' then 'SPX.US' else ASXCode end as ASXCode
+				from LookupRef.StocksToCheck
 			) as x
 			where 1 = 1 
-			--and x.ASXCode not in ('QQQ.US', 'AAPL.US', 'BABA.US')
-			order by x.RunOrder
+			--and x.ASXCode in ('QQQ.US', 'SPY.US', 'AMD.US', 'AVGO.US', 'GDX.US', 'IWM.US', 'META.US', 'MU.US', 'SLV.US', 'GLD.US', 'TSLA.US', 'TQQQ.US', 'SQQQ.US', 'AMZN.US', 'KWEB.US', 'META.US', 'OXY.US', 'DIA.US', 'SOXL.US')
+			order by RunOrder
 
 		end
 
@@ -496,7 +449,12 @@ BEGIN --Proc
 			--	800 as RunOrder
 			--from Stock.ETF as a
 
-			if datepart(hour, CONVERT(DATETIME,GETDATE() AT TIME ZONE 'AUS Eastern Standard Time' AT TIME ZONE 'Eastern Standard Time')) < 16
+			--select
+			--	'QQQ.US' as ASXCode,
+			--	'QQQ' as StockCode,
+			--	100 as RunOrder
+
+			if datepart(hour, CONVERT(DATETIME,GETDATE() AT TIME ZONE 'AUS Eastern Standard Time' AT TIME ZONE 'Eastern Standard Time')) <= 16
 			begin
 				select
 					ASXCode,
@@ -504,12 +462,18 @@ BEGIN --Proc
 					RunOrder
 				from
 				(
-					select 
+					--select 
+					--	a.[ASXCode] as ASXCode,
+					--	substring(a.ASXCode, 1, charindex('.', a.ASXCode, 0) - 1) as StockCode,
+					--	case when MarketCap = 'h. 300B+' then 700 when MarketCap = 'g. 10B+' then 750 else 990 end as RunOrder
+					--from Transform.MarketCLVTrendDetails as a
+					--where MarketCap in ('h. 300B+', 'g. 10B+')
+					--union
+					select
 						a.[ASXCode] as ASXCode,
 						substring(a.ASXCode, 1, charindex('.', a.ASXCode, 0) - 1) as StockCode,
-						case when MarketCap = 'h. 300B+' then 700 when MarketCap = 'g. 10B+' then 750 else 990 end as RunOrder
-					from Transform.MarketCLVTrendDetails as a
-					where MarketCap in ('h. 300B+', 'g. 10B+')
+						100 as RunOrder
+					from LookupRef.StocksToCheck as a
 				) as x
 				order by x.RunOrder
 			end
@@ -590,10 +554,8 @@ BEGIN --Proc
 					and TimeFrame = 'daily'
 				) as x
 				where 1 = 1 
-				--and ASXCode in ('NVDA.US', 'LABU.US', 'NKLA.US', 'TMF.US')
 				order by x.RunOrder
 			end
-
 		end
 
 		if @pvchMonitorStockTypeID = 'O'
@@ -960,31 +922,6 @@ BEGIN --Proc
 						null as LastUpdateDate
 					from
 					(
-						SELECT ASXCode
-						FROM 
-						(
-							VALUES 
-							-- From Previous List (Unique)
-							('_SPX.US'), ('DIA.US'), ('GOOG.US'), ('PLTR.US'),
-
-							-- From Image (Merged & Deduplicated)
-							('_VIX.US'), 
-							('AMAT.US'), ('AMD.US'), ('AMZN.US'), ('AVGO.US'), 
-							('BAC.US'), 
-							('DIS.US'), 
-							('FCX.US'), 
-							('GDX.US'), ('GLD.US'), 
-							('IBIT.US'), ('IWM.US'), 
-							('KWEB.US'), 
-							('MCD.US'), ('META.US'), ('MU.US'), 
-							('NVDA.US'), 
-							('ORCL.US'), ('OXY.US'), 
-							('QQQ.US'), 
-							('SLV.US'), ('SNOW.US'), ('SPXW.US'), ('SPY.US'), ('SQQQ.US'), 
-							('TLT.US'), ('TQQQ.US'), ('TSLA.US'), 
-							('XBI.US'), ('XLE.US')
-						) AS MyList(ASXCode)
-						union
 						select ASXCode
 						from LookupRef.StocksToCheck
 					) as a
@@ -1450,6 +1387,16 @@ BEGIN --Proc
 			order by datediff(minute, isnull(x.LastUpdateDate, '2010-01-12'), getdate()) desc, newid()
 		end
 
+		if @pvchMonitorStockTypeID in ('ETFCOM')
+		begin
+			select
+				m.ASXCode,
+				SUBSTRING(m.ASXCode, 1, CHARINDEX('.', m.ASXCode, 0) - 1) as StockCode,
+				100 as RunOrder
+			from [StockData].[MonitorStock] as m
+			where m.MonitorTypeID = 'ETFCOM'
+			and m.ASXCode like '%.US'
+		end
 
 	END TRY
 

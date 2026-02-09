@@ -357,7 +357,7 @@ def get_price_prediction_prompt(
         estimated_tokens = len(prompt) // 4
 
         # Check if new data sections are included
-        has_option_trades = "option trade data unavailable" not in option_trades_data.lower()
+        has_option_trades = "no large option trades" not in option_trades_data.lower()
         has_price_bars = "30-minute bar data unavailable" not in price_bars_data.lower()
 
         return {

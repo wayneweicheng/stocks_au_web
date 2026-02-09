@@ -1,5 +1,5 @@
--- Stored Procedure: [Configuration].[usp_UpsertGEXAutoInsightStock]
--- Inserts or updates a stock in the GEX auto insight configuration
+-- Stored procedure: [Configuration].[usp_UpsertGEXAutoInsightStock]
+
 
 CREATE PROCEDURE [Configuration].[usp_UpsertGEXAutoInsightStock]
     @pvchStockCode VARCHAR(20),

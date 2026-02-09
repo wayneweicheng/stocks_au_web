@@ -65,7 +65,7 @@ BEGIN --Proc
 		--Normal varible declarations
 
 		--Code goes here
-		--declare @pintPrevNumDay as int = 168
+		--declare @pintPrevNumDay as int = 2
 		declare @dtObservationDate as date = Common.DateAddBusinessDay(-1*@pintPrevNumDay, getdate()) 
 		declare @dtObservationDateMinusN as date = Common.DateAddBusinessDay(-1*2, @dtObservationDate) 
 		select @dtObservationDateMinusN
@@ -77,13 +77,13 @@ BEGIN --Proc
 		into #TempOptionDelayedQuote_V2
 		from [StockData].[v_OptionDelayedQuote_V2]
 		where ObservationDate >= @dtObservationDateMinusN
-		--and ASXCode = 'SPXW.US'
+		--and ASXCode = 'QQQ.US'
 
 		--declare @dtObservationDate as date = '2023-09-18'
 		if object_id(N'Tempdb.dbo.#TempOptionDelayedQuote_All_V2') is not null
 			drop table #TempOptionDelayedQuote_All_V2
 
-		select * 
+		select *, Gamma as OriginalGamma 
 		into #TempOptionDelayedQuote_All_V2
 		from (
 			select
@@ -95,13 +95,13 @@ BEGIN --Proc
 		) as x
 		where ObservationDate >= @dtObservationDate
 
-		update a
-		set a.OpenInterest = a.Prev1OpenInterest + case when a.OpenInterest > a.Prev1OpenInterest then 1 else -1 end*Volume
-		--set a.OpenInterest = a.Prev1OpenInterest
-		from #TempOptionDelayedQuote_All_V2 as a
-		where Volume < abs(OpenInterest - Prev1OpenInterest)
-		and Volume > 0
-		--and ObservationDate = '2023-11-30'
+		--update a
+		--set a.OpenInterest = a.Prev1OpenInterest + case when a.OpenInterest > a.Prev1OpenInterest then 1 else -1 end*Volume
+		----set a.OpenInterest = a.Prev1OpenInterest
+		--from #TempOptionDelayedQuote_All_V2 as a
+		--where Volume < abs(OpenInterest - Prev1OpenInterest)
+		--and Volume > 0
+		----and ObservationDate = '2023-11-30'
 		
 		update a
 		set Gamma = null
@@ -114,6 +114,11 @@ BEGIN --Proc
 		on a.ASXCode = b.ASXCode
 		and a.OptionSymbol = b.OptionSymbol
 		and a.ObservationDate = b.ObservationDate
+
+		update a
+		set Gamma = OriginalGamma
+		from #TempOptionDelayedQuote_All_V2 as a
+		where Gamma is null
 
 		delete a
 		from #TempOptionDelayedQuote_All_V2 as a

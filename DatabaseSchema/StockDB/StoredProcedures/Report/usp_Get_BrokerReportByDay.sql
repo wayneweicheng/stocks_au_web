@@ -65,7 +65,7 @@ BEGIN --Proc
 		--Code goes here 
 		--begin transaction
 		select a.ObservationDate, a.ASXCode, isnull(z.BrokerName, 'Unknown') as BrokerCode, NetValue, b.[Close], c.VWAP
-		from StockData.BrokerReport as a
+		from StockData.v_BrokerReport as a
 		left join StockData.PriceHistory as b
 		on a.ASXCode = b.ASXCode
 		and a.ObservationDate = b.ObservationDate

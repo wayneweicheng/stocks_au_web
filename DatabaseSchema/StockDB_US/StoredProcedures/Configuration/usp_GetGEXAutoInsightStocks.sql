@@ -1,5 +1,5 @@
--- Stored Procedure: [Configuration].[usp_GetGEXAutoInsightStocks]
--- Returns the list of stocks configured for automatic GEX insight processing
+-- Stored procedure: [Configuration].[usp_GetGEXAutoInsightStocks]
+
 
 CREATE PROCEDURE [Configuration].[usp_GetGEXAutoInsightStocks]
     @pbitActiveOnly BIT = 1

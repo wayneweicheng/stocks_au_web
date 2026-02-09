@@ -33,6 +33,7 @@ from app.routers.announcement_analysis import router as announcement_analysis_ro
 from app.routers.gex_auto_insight import router as gex_auto_insight_router
 from app.routers.broker_analysis import router as broker_analysis_router
 from app.routers.option_insights import router as option_insights_router
+from app.routers.discord_summary import router as discord_summary_router
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 from contextlib import asynccontextmanager
 import logging
@@ -134,6 +135,7 @@ app.include_router(announcement_analysis_router)
 app.include_router(gex_auto_insight_router)
 app.include_router(broker_analysis_router)
 app.include_router(option_insights_router)
+app.include_router(discord_summary_router)
 
 
 @app.get("/api/scheduler/status")

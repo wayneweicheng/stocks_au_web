@@ -39,12 +39,13 @@ export default function NavigationMenu() {
             <Link onClick={() => setOpen(false)} href="/conditional-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Conditional Orders</Link>
             <Link onClick={() => setOpen(false)} href="/strategy-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Strategy Orders</Link>
             <Link onClick={() => setOpen(false)} href="/pattern-predictions" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pattern Predictions</Link>
-            <Link onClick={() => setOpen(false)} href="/gex-signals" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Market Flow Signals</Link>
+            <Link onClick={() => setOpen(false)} href="/market-flow" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Market Flow Signals</Link>
             <Link onClick={() => setOpen(false)} href="/ib-gateway" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">IB Gateway</Link>
             <Link onClick={() => setOpen(false)} href="/range-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Price Range Orders</Link>
             <Link onClick={() => setOpen(false)} href="/integrated-charts" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Integrated Charts</Link>
             <Link onClick={() => setOpen(false)} href="/trading-halt" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Trading Halt</Link>
             <Link onClick={() => setOpen(false)} href="/option-insights" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">US Option Insights</Link>
+            <Link onClick={() => setOpen(false)} href="/discord-summary" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Discord Summary</Link>
           </div>
         </div>
       </div>

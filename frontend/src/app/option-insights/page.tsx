@@ -27,6 +27,7 @@ export default function OptionInsightsPage() {
   const [optionPromptCopied, setOptionPromptCopied] = useState(false);
   const [optionPromptMetadata, setOptionPromptMetadata] = useState<{
     estimatedTokens: number;
+    hasOptionTrades?: boolean;
   } | null>(null);
 
   // Stock codes state
@@ -178,6 +179,7 @@ export default function OptionInsightsPage() {
 
       setOptionPromptMetadata({
         estimatedTokens: data.estimated_tokens || 0,
+        hasOptionTrades: data.has_option_trades || false,
       });
     } catch (e: any) {
       setOptionPromptError(e.message);

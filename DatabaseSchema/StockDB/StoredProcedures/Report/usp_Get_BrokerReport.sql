@@ -75,28 +75,28 @@ BEGIN --Proc
 		if @dtObservationDate = '2050-12-12'
 		begin
 			select @dtObservationDate = max(ObservationDate)
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where ASXCode = @pvchASXCode
 		end
 
 		if @dtObservationDate = [Common].[DateAddBusinessDay](-1, '2050-12-12')
 		begin
 			select @dtObservationDate = [Common].[DateAddBusinessDay](-1, max(ObservationDate))
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where ASXCode = @pvchASXCode
 		end
 
 		if @dtObservationDate = [Common].[DateAddBusinessDay](-2, '2050-12-12')
 		begin
 			select @dtObservationDate = [Common].[DateAddBusinessDay](-2, max(ObservationDate))
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where ASXCode = @pvchASXCode
 		end
 
 		if @dtObservationDate = [Common].[DateAddBusinessDay](-3, '2050-12-12')
 		begin
 			select @dtObservationDate = [Common].[DateAddBusinessDay](-3, max(ObservationDate))
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where ASXCode = @pvchASXCode
 		end
 
@@ -105,7 +105,7 @@ BEGIN --Proc
 			@intBRVolume = sum(TotalVolume),
 			@intBRNetVolume = sum(NetVolume),
 			@decBRNetValue = sum(NetValue)
-		from StockData.BrokerReport
+		from StockData.v_BrokerReport
 		where ASXCode = @pvchASXCode
 		and ObservationDate = @dtObservationDate
 		and BrokerCode not in ('Others')
@@ -165,7 +165,7 @@ BEGIN --Proc
 				BuyPrice,
 				SellPrice,
 				null as ChiXVolOutOfTotal
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where ASXCode = @pvchASXCode
 			and ObservationDate = @dtObservationDate
 			and BrokerCode not in ('Others')

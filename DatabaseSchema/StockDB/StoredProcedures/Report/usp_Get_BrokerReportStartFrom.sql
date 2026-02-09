@@ -79,7 +79,7 @@ BEGIN --Proc
 			select 
 				@dtObservationStartDate = [Common].[DateAddBusinessDay](-5, max(ObservationDate)),
 				@dtObservationEndDate = max(ObservationDate)
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where (ASXCode = @pvchASXCode or @pvchASXCode is null)
 		end
 		
@@ -88,7 +88,7 @@ BEGIN --Proc
 			select 
 				@dtObservationStartDate = [Common].[DateAddBusinessDay](-10, max(ObservationDate)),
 				@dtObservationEndDate = max(ObservationDate)
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where (ASXCode = @pvchASXCode or @pvchASXCode is null)
 		end
 
@@ -97,7 +97,7 @@ BEGIN --Proc
 			select 
 				@dtObservationStartDate = [Common].[DateAddBusinessDay](-20, max(ObservationDate)),
 				@dtObservationEndDate = max(ObservationDate)
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where (ASXCode = @pvchASXCode or @pvchASXCode is null)
 		end
 
@@ -106,7 +106,7 @@ BEGIN --Proc
 			select 
 				@dtObservationStartDate = [Common].[DateAddBusinessDay](-60, max(ObservationDate)),
 				@dtObservationEndDate = max(ObservationDate)
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where (ASXCode = @pvchASXCode or @pvchASXCode is null)
 		end
 
@@ -115,7 +115,7 @@ BEGIN --Proc
 			select 
 				@dtObservationStartDate = [Common].[DateAddBusinessDay](-120, max(ObservationDate)),
 				@dtObservationEndDate = max(ObservationDate)
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where (ASXCode = @pvchASXCode or @pvchASXCode is null)
 		end
 
@@ -124,7 +124,7 @@ BEGIN --Proc
 			select 
 				@dtObservationStartDate = [Common].[DateAddBusinessDay](-240, max(ObservationDate)),
 				@dtObservationEndDate = max(ObservationDate)
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where (ASXCode = @pvchASXCode or @pvchASXCode is null)
 		end
 
@@ -134,7 +134,7 @@ BEGIN --Proc
 			sum(NetVolume) as NetVolume ,
 			sum(NetValue) as NetValue
 		into #TempBRVolume
-		from StockData.BrokerReport
+		from StockData.v_BrokerReport
 		where (ASXCode = @pvchASXCode or @pvchASXCode is null)
 		and ObservationDate >= @dtObservationStartDate
 		and BrokerCode not in ('Others')
@@ -193,7 +193,7 @@ BEGIN --Proc
 				sum(Trades) as Trades,
 				case when sum(BuyVolume) > 0 then cast(sum(BuyValue)*1.0/sum(BuyVolume) as decimal(20, 4)) else null end as BuyPrice,
 				case when sum(SellVolume) > 0 then cast(sum(SellValue)*1.0/sum(SellVolume) as decimal(20, 4)) else null end as SellPrice 
-			from StockData.BrokerReport as a
+			from StockData.v_BrokerReport as a
 			where (a.ASXCode = @pvchASXCode or @pvchASXCode is null)
 			and ObservationDate >= @dtObservationStartDate
 			and ObservationDate <= @dtObservationEndDate

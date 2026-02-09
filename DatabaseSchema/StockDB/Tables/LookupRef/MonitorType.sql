@@ -1,7 +1,7 @@
 -- Table: [LookupRef].[MonitorType]
 
 CREATE TABLE [LookupRef].[MonitorType] (
-    [MonitorTypeID] [char](1) NOT NULL,
+    [MonitorTypeID] [varchar](20) NOT NULL,
     [MonitorTypeDescr] [varchar](200) NOT NULL,
     [CreateDate] [smalldatetime] NOT NULL
 ,

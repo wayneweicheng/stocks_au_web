@@ -5,7 +5,7 @@ CREATE PROCEDURE [StockData].[usp_GetActiveOptionContract_Adhoc]
 @pbitDebug AS BIT = 0,
 @pintErrorNumber AS INT = 0 OUTPUT,
 @pintProcessID as int = 0,
-@pvchObservationDate varchar(20) = null
+@pvchObservationDate varchar(20)
 AS
 /******************************************************************************
 File: usp_GetActiveOptionContract_Adhoc.sql
@@ -23,6 +23,9 @@ Output Parameters
 @pintErrorNumber		-- Contains 0 if no error, or ERROR_NUMBER() on error
 
 Example of use
+exec [StockData].[usp_GetActiveOptionContract_Adhoc]
+@pvchObservationDate = '2026-02-05',
+@pintProcessID = 1
 -----------------
 *******************************************************************************
 Change History - (copy and repeat section below)
@@ -72,6 +75,11 @@ BEGIN --Proc
 			select @dtObservationDate = cast(@pvchObservationDate as date)
 		end
 
+		--select @dtObservationDate = '2026-02-05'
+
+		declare @dtPrevDate as date
+		select @dtPrevDate = Common.DateAddBusinessDay(-1*1, @dtObservationDate) 
+
 		select 
 			identity(int, 1, 1) as UniqueKey,
 			checksum(OptionSymbol) as HashKey,
@@ -85,32 +93,35 @@ BEGIN --Proc
 			Strike,
 			PorC,
 			Volume*isnull(LastTradePrice, Bid) as TradeValue,
-			ObservationDate as ObservationDate,
+			@dtObservationDate as ObservationDate,
 			'Intraday' as Mode
 		into #TempContract
 		from StockData.v_OptionDelayedQuote_Norm as a
 		where 1 = 1 
 		--and ASXCode in ('UBER.US')
 		--and OptionSymbol = 'UBER231215C00059000'
-		and ObservationDate = @dtObservationDate --'2023-12-07'
+		and ObservationDate >= @dtPrevDate
 		and ZScoreVolume > 2
 		--and NormVolume > 0.95
 		--and case when OpenInterest > 0 then Volume/OpenInterest end > 0.5
 		and Volume*Bid*100 > 100000
 		and abs(Delta) < 0.8 
-		and ASXCode not in ('SPXW.US', 'SPX.US', 'SPY.US', 'QQQ.US', 'GOOGL.US', 'NFLX.US')
-		and not exists
-		(
-			select 1
-			from Transform.MarketCLVTrendDetails
-			where MarketCap in ('h. 300B+')
-			and ASXCode = a.ASXCode
-		)
+		and ASXCode not in ('GOOGL.US', 'NFLX.US')
+		and ExpiryDate > @dtObservationDate
+		--and ASXCode in ('spy.US')
+		--and not exists
+		--(
+		--	select 1
+		--	from Transform.MarketCLVTrendDetails
+		--	where MarketCap in ('h. 300B+')
+		--	and ASXCode = a.ASXCode
+		--)
 		order by 
 			a.ExpiryDate,
 			a.ZScoreVolume desc,
 			TradeValue desc
-			
+		option (recompile)
+
 		select *
 		from #TempContract
 		where abs(HashKey)%3 = @pintProcessID

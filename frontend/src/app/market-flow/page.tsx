@@ -332,8 +332,24 @@ export default function GexSignalsPage() {
     estimatedTokens: number;
   } | null>(null);
 
+  // Option Trades Insights state (separate from option insights)
+  const [optionTradesPrediction, setOptionTradesPrediction] = useState<string>("");
+  const [optionTradesPredictionLoading, setOptionTradesPredictionLoading] = useState(false);
+  const [optionTradesPredictionError, setOptionTradesPredictionError] = useState<string>("");
+  const [optionTradesPredictionCached, setOptionTradesPredictionCached] = useState<boolean>(false);
+  const [optionTradesPredictionWarning, setOptionTradesPredictionWarning] = useState<string>("");
+  const [selectedOptionTradesModel, setSelectedOptionTradesModel] = useState<string>("google/gemini-2.5-flash");
+
+  const [optionTradesPromptText, setOptionTradesPromptText] = useState<string>("");
+  const [optionTradesPromptLoading, setOptionTradesPromptLoading] = useState(false);
+  const [optionTradesPromptError, setOptionTradesPromptError] = useState<string>("");
+  const [optionTradesPromptCopied, setOptionTradesPromptCopied] = useState(false);
+  const [optionTradesPromptMetadata, setOptionTradesPromptMetadata] = useState<{
+    estimatedTokens: number;
+  } | null>(null);
+
   // Tab state
-  const [activeTab, setActiveTab] = useState<"signals" | "optioninsight" | "autoinsight">("signals");
+  const [activeTab, setActiveTab] = useState<"overview" | "optionoverview" | "optiontradesinsights" | "autoinsight">("overview");
 
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const canonicalStock = (stockCode || "").toUpperCase().split(".")[0] || "SPXW";
@@ -370,11 +386,13 @@ export default function GexSignalsPage() {
     };
   }, [canonicalStock]);
 
-  // Fetch stock codes for the selected observation date (on mount and when date changes)
+  // Fetch stock codes for the selected observation date (on mount and when date/tab changes)
   useEffect(() => {
     setStockCodesLoading(true);
+    const sourceType = activeTab === "optiontradesinsights" ? "OPTION_TRADES" : "GEX";
     const params = new URLSearchParams();
     if (observationDate) params.set("observation_date", observationDate);
+    params.set("source_type", sourceType);
     const url = `${baseUrl}/api/stock-codes${params.toString() ? `?${params.toString()}` : ""}`;
     authenticatedFetch(url)
       .then(async (r) => {
@@ -393,7 +411,7 @@ export default function GexSignalsPage() {
       })
       .catch((e) => console.error("Failed to fetch stock codes:", e))
       .finally(() => setStockCodesLoading(false));
-  }, [baseUrl, observationDate]);
+  }, [baseUrl, observationDate, activeTab]);
 
   // Update latest date when stock code changes
   useEffect(() => {
@@ -689,6 +707,104 @@ export default function GexSignalsPage() {
     }
   }, [optionPromptText]);
 
+  // Fetch option trades insight prediction
+  const fetchOptionTradesPrediction = useCallback(async (forceRegenerate: boolean = false) => {
+    if (!observationDate || !stockCode) return;
+    setOptionTradesPredictionLoading(true);
+    setOptionTradesPredictionError("");
+
+    const params = new URLSearchParams({
+      observation_date: observationDate,
+      stock_code: stockCode.trim().toUpperCase(),
+      regenerate: String(forceRegenerate),
+      model: selectedOptionTradesModel
+    });
+
+    try {
+      const r = await authenticatedFetch(`${baseUrl}/api/option-trades-insight-prediction?${params}`);
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${r.status}`);
+      }
+      const data = await r.json();
+      setOptionTradesPrediction(data.prediction_markdown || "");
+      setOptionTradesPredictionCached(data.cached || false);
+      setOptionTradesPredictionWarning(data.warning || "");
+    } catch (e: any) {
+      setOptionTradesPredictionError(e.message);
+      setOptionTradesPredictionWarning("");
+    } finally {
+      setOptionTradesPredictionLoading(false);
+    }
+  }, [baseUrl, observationDate, stockCode, selectedOptionTradesModel]);
+
+  // Fetch option trades prompt from API
+  const fetchOptionTradesPrompt = useCallback(async () => {
+    if (!observationDate || !stockCode) return;
+
+    setOptionTradesPromptLoading(true);
+    setOptionTradesPromptError("");
+    setOptionTradesPromptCopied(false);
+
+    const params = new URLSearchParams({
+      observation_date: observationDate,
+      stock_code: stockCode.trim().toUpperCase(),
+    });
+
+    try {
+      const r = await authenticatedFetch(`${baseUrl}/api/option-trades-insight-prompt?${params}`);
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${r.status}`);
+      }
+      const data = await r.json();
+      setOptionTradesPromptText(data.prompt || "");
+
+      setOptionTradesPromptMetadata({
+        estimatedTokens: data.estimated_tokens || 0,
+      });
+    } catch (e: any) {
+      setOptionTradesPromptError(e.message);
+      setOptionTradesPromptText("");
+      setOptionTradesPromptMetadata(null);
+    } finally {
+      setOptionTradesPromptLoading(false);
+    }
+  }, [baseUrl, observationDate, stockCode]);
+
+  // Copy option trades prompt to clipboard
+  const copyOptionTradesPromptToClipboard = useCallback(() => {
+    if (!optionTradesPromptText) return;
+
+    setOptionTradesPromptError("");
+    setOptionTradesPromptCopied(false);
+
+    const textarea = document.createElement("textarea");
+    textarea.value = optionTradesPromptText;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    textarea.setAttribute("readonly", "");
+    document.body.appendChild(textarea);
+
+    try {
+      textarea.focus();
+      textarea.select();
+
+      const success = document.execCommand("copy");
+      if (!success) {
+        throw new Error("Copy command failed");
+      }
+
+      setOptionTradesPromptCopied(true);
+      setTimeout(() => setOptionTradesPromptCopied(false), 2000);
+    } catch (clipboardError) {
+      setOptionTradesPromptError("Failed to copy. Please select and copy manually.");
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }, [optionTradesPromptText]);
+
   const triggeredSignals = useMemo<TriggeredSignal[]>(() => {
     const row = rows?.[0];
     if (!row) return [];
@@ -727,25 +843,36 @@ export default function GexSignalsPage() {
         <div className="flex border-b border-slate-200 mb-6">
           <button
             type="button"
-            onClick={() => setActiveTab("signals")}
+            onClick={() => setActiveTab("overview")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === "signals"
+              activeTab === "overview"
                 ? "border-emerald-500 text-emerald-600"
                 : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}
           >
-            Signals
+            Overview
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab("optioninsight")}
+            onClick={() => setActiveTab("optionoverview")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === "optioninsight"
+              activeTab === "optionoverview"
                 ? "border-emerald-500 text-emerald-600"
                 : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}
           >
-            Option Insights
+            Option Overview
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("optiontradesinsights")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === "optiontradesinsights"
+                ? "border-emerald-500 text-emerald-600"
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+            }`}
+          >
+            Option Trades Insights
           </button>
           <button
             type="button"
@@ -762,9 +889,9 @@ export default function GexSignalsPage() {
 
         {activeTab === "autoinsight" ? (
           <GEXAutoInsightTab />
-        ) : activeTab === "optioninsight" ? (
+        ) : activeTab === "optionoverview" ? (
           <>
-            {/* Date and Stock filters for Option Insights */}
+            {/* Date and Stock filters for Option Overview */}
             <div className="grid gap-4 sm:grid-cols-3 mb-6">
               <div>
                 <label className="block text-sm mb-1 text-slate-600">Observation Date</label>
@@ -823,7 +950,7 @@ export default function GexSignalsPage() {
               </div>
             </div>
 
-            {/* Option Insights Tab */}
+            {/* Option Overview Tab */}
             <InsightTab
               title="Option Flow Insights"
               prediction={optionPrediction}
@@ -842,6 +969,93 @@ export default function GexSignalsPage() {
               promptError={optionPromptError}
               promptCopied={optionPromptCopied}
               promptMetadata={optionPromptMetadata}
+            />
+          </>
+        ) : activeTab === "optiontradesinsights" ? (
+          <>
+            {/* Date and Stock filters for Option Trades Insights */}
+            <div className="grid gap-4 sm:grid-cols-3 mb-6">
+              <div>
+                <label className="block text-sm mb-1 text-slate-600">Observation Date</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label="Previous business day"
+                    onClick={() => {
+                      const d = new Date(observationDate);
+                      d.setDate(d.getDate() - 1);
+                      while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+                      setObservationDate(d.toISOString().slice(0, 10));
+                    }}
+                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+                  >
+                    ←
+                  </button>
+                  <input
+                    type="date"
+                    value={observationDate}
+                    onChange={(e) => setObservationDate(e.target.value)}
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Next business day"
+                    onClick={() => {
+                      const d = new Date(observationDate);
+                      d.setDate(d.getDate() + 1);
+                      while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+                      setObservationDate(d.toISOString().slice(0, 10));
+                    }}
+                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm mb-1 text-slate-600">
+                  Stock Code
+                  {latestDate && <span className="ml-2 text-xs text-slate-500">(Latest: {latestDate})</span>}
+                </label>
+                <select
+                  value={stockCode}
+                  onChange={(e) => setStockCode(e.target.value)}
+                  disabled={stockCodesLoading}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                >
+                  {stockCodes.map((s) => (
+                    <option key={s.stock_code} value={s.stock_code}>
+                      {s.stock_code}
+                    </option>
+                  ))}
+                </select>
+                {!stockCodesLoading && stockCodes.length === 0 && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    No large option trades (size &gt; 300) found for this date. Try another date.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Option Trades Insights Tab */}
+            <InsightTab
+              title="Option Trades Flow Insights"
+              prediction={optionTradesPrediction}
+              predictionLoading={optionTradesPredictionLoading}
+              predictionError={optionTradesPredictionError}
+              predictionCached={optionTradesPredictionCached}
+              predictionWarning={optionTradesPredictionWarning}
+              selectedModel={selectedOptionTradesModel}
+              onModelChange={setSelectedOptionTradesModel}
+              onGenerate={() => fetchOptionTradesPrediction(false)}
+              onRegenerate={() => fetchOptionTradesPrediction(true)}
+              onGetPrompt={fetchOptionTradesPrompt}
+              onCopyPrompt={copyOptionTradesPromptToClipboard}
+              promptText={optionTradesPromptText}
+              promptLoading={optionTradesPromptLoading}
+              promptError={optionTradesPromptError}
+              promptCopied={optionTradesPromptCopied}
+              promptMetadata={optionTradesPromptMetadata}
             />
           </>
         ) : (

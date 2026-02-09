@@ -99,7 +99,7 @@ export default function Home() {
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">Market Flow Signals</h3>
             <p className="text-sm text-slate-600 mb-4">Daily composite signals from GEX, VIX, Dark Pool and swing regimes.</p>
-            <Link href="/gex-signals" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
+            <Link href="/market-flow" className="inline-block rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90">Open page</Link>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-6">
             <h3 className="font-medium text-lg mb-1">PLLRS Scanner</h3>

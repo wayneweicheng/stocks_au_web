@@ -99,25 +99,53 @@ Signal Strength Definitions:
 - MILDLY_BEARISH: Some bearish indicators, negative bias but not overwhelming
 - STRONGLY_BEARISH: Multiple strong sell signals, negative trend alignment, high conviction downside
 
-CRITICAL: Your signal strength classification should reflect the tactical bias indicated by the option flow analysis for the next 1-10 trading days.
+CRITICAL FOCUS - SHORT-TERM TACTICAL ANALYSIS (1-5 Days):
+Your signal strength classification should reflect the IMMEDIATE tactical bias indicated by option flow for the next 1-5 trading days.
+
+**NEAR-TERM EXPIRY PRIORITIZATION:**
+Option OI changes in NEAR-TERM expiries (0-7 DTE, Days To Expiration) have SIGNIFICANTLY MORE IMPACT than longer-dated options.
+When analyzing the data, you MUST weight near-term expiry options much more heavily because:
+
+1. **Dealer Gamma Exposure**: Near-term options have exponentially higher gamma, forcing dealers to hedge more aggressively
+2. **Immediate Price Impact**: OI changes in weekly/front-month options create immediate buying/selling pressure
+3. **Conviction Signal**: Large OI increases in near-term strikes indicate high-conviction directional positioning
+4. **Time-Sensitive**: Far-dated options (30+ DTE) have minimal immediate impact on price action
+
+**Analysis Priority (by DTE):**
+- **0-7 DTE (Weeklies/Front Week)**: HIGHEST priority - Maximum gamma exposure, immediate dealer hedging required
+- **8-14 DTE (Next Week)**: HIGH priority - Significant near-term impact
+- **15-30 DTE (Front Month)**: MODERATE priority - Some near-term relevance
+- **30+ DTE (Back Months)**: LOW priority - Minimal immediate impact, background positioning only
+
+When reporting top strikes and flow patterns, EXPLICITLY PRIORITIZE and CALL OUT near-term expiry option changes.
+If there are large OI changes in 0-7 DTE options, these should dominate your analysis and signal strength determination.
+
+Example prioritization:
+"The most significant flow is in THIS FRIDAY's (3 DTE) $150 calls with +5,000 OI. This near-term positioning
+suggests immediate bullish pressure through dealer gamma hedging, far outweighing the -2,000 OI decrease in
+the 45 DTE $155 calls."
 
 TRADING LEVELS RECOMMENDATION:
-Based on your option flow analysis (gamma walls, support/resistance from option positioning), provide:
+Based on your option flow analysis (gamma walls from NEAR-TERM options, support/resistance from front-week positioning), provide:
 
 1. **Buy the Dip Range**: If conditions support buying on weakness, specify:
    - Price range for buy entry (e.g., "$XXX - $YYY")
-   - Rationale based on put wall (support) and option flow analysis
+   - Rationale based on put wall (support) identified from NEAR-TERM put OI concentrations
+   - Reference specific strikes and expiries driving the support level
    - If NOT recommending buy the dip, explicitly state "Not Recommended" and explain why
 
 2. **Sell the Rip Range**: If conditions support selling on strength, specify:
    - Price range for sell/short entry (e.g., "$XXX - $YYY")
-   - Rationale based on call wall (resistance) and option flow analysis
+   - Rationale based on call wall (resistance) identified from NEAR-TERM call OI concentrations
+   - Reference specific strikes and expiries driving the resistance level
    - If NOT recommending sell the rip, explicitly state "Not Recommended" and explain why
 
 Example format:
-"**Buy the Dip Range:** $XXX - $YYY. This range aligns with the Put Wall (support) identified at $XXX where dealers will need to hedge aggressively."
+"**Buy the Dip Range:** $148 - $150. This range aligns with the Put Wall at $150 where THIS FRIDAY's expiry
+shows +8,500 put OI concentration. Dealers will aggressively buy stock to hedge as price approaches this level."
 
-"**Sell the Rip Range:** Not Recommended. Current option flow shows heavy call buying suggesting bullish institutional positioning."
+"**Sell the Rip Range:** Not Recommended. Current option flow shows heavy call buying in 0-7 DTE strikes,
+suggesting bullish institutional positioning with imminent gamma squeeze potential above $155."
 
 Place this JSON at the very end of your markdown response after all analysis.
 ---

@@ -119,8 +119,16 @@ export default function InsightTab({
                   {promptMetadata && (
                     <>
                       {" "}~{promptMetadata.estimatedTokens.toLocaleString()} tokens
-                      {promptMetadata.hasOptionTrades && " • Option trades ✓"}
-                      {promptMetadata.hasPriceBars && " • 30M bars ✓"}
+                      {promptMetadata.hasOptionTrades !== undefined && (
+                        promptMetadata.hasOptionTrades
+                          ? " • Option trades ✓"
+                          : <span className="text-red-600"> • Option trades ✗</span>
+                      )}
+                      {promptMetadata.hasPriceBars !== undefined && (
+                        promptMetadata.hasPriceBars
+                          ? " • 30M bars ✓"
+                          : <span className="text-red-600"> • 30M bars ✗</span>
+                      )}
                     </>
                   )}
                 </span>

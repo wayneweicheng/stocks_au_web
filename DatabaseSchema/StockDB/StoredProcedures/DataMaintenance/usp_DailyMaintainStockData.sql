@@ -800,6 +800,18 @@ BEGIN --Proc
 		)
 		and HighestIn60D = 1
 
+		update a
+		set a.CleansedMarketCap = b.MarketCapInMillion
+		from StockData.CompanyInfo as a
+		inner join
+		(
+			select ASXCode, MarketCapInMillion, row_number() over (partition by ASXCode order by ObservationDate desc) as RowNumber
+			from StockData.v_BrokerReport
+			where MarketCapInMillion is not null
+		) as b
+		on a.ASXCode = b.ASXCode
+		and b.RowNumber = 1
+
 		exec [Transform].[usp_RefreshPriceHistoryIntraDay]
 		@pvchTimeInterval = '1M'
 

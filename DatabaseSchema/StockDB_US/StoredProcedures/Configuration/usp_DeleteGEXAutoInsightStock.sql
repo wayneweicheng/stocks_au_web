@@ -1,5 +1,5 @@
--- Stored Procedure: [Configuration].[usp_DeleteGEXAutoInsightStock]
--- Deletes a stock from the GEX auto insight configuration
+-- Stored procedure: [Configuration].[usp_DeleteGEXAutoInsightStock]
+
 
 CREATE PROCEDURE [Configuration].[usp_DeleteGEXAutoInsightStock]
     @pvchStockCode VARCHAR(20)

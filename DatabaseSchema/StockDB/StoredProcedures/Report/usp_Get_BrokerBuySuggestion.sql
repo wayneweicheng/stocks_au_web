@@ -27,6 +27,8 @@ Output Parameters
 @pintErrorNumber		-- Contains 0 if no error, or ERROR_NUMBER() on error
 
 Example of use
+exec [Report].[usp_Get_BrokerBuySuggestion]
+@pvchBrokerCode = ''
 -----------------
 *******************************************************************************
 Change History - (copy and repeat section below)
@@ -104,11 +106,11 @@ BEGIN --Proc
 
 		declare @dtMaxDate as date
 		select @dtMaxDate = max(ObservationDate)
-		from StockData.BrokerReport
+		from StockData.v_BrokerReport
 		where ObservationDate not in
 		(
 			select ObservationDate
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 			where dateadd(day, -10, getdate()) < ObservationDate 
 			group by ObservationDate
 			having count(*) < 12000
@@ -121,7 +123,7 @@ BEGIN --Proc
 
 		select ASXCode, BrokerCode, sum(NetValue) as NetValue
 		into #TempBRAggregate
-		from StockData.BrokerReport
+		from StockData.v_BrokerReport
 		where ObservationDate >= @dtDate
 		group by ASXCode, BrokerCode
 
@@ -179,7 +181,7 @@ BEGIN --Proc
 				e.Nature,
 				min(a.ObservationDate) as DateStart,
 				max(a.ObservationDate) as DateEnd
-			from StockData.BrokerReport as a
+			from StockData.v_BrokerReport as a
 			inner join #TempCashVsMC as b
 			on a.ASXCode = b.ASXCode
 			left join StockData.PriceHistory as d	
@@ -246,7 +248,7 @@ BEGIN --Proc
 				e.Nature,
 				min(a.ObservationDate) as DateStart,
 				max(a.ObservationDate) as DateEnd
-			from StockData.BrokerReport as a
+			from StockData.v_BrokerReport as a
 			inner join #TempCashVsMC as b
 			on a.ASXCode = b.ASXCode
 			left join StockData.PriceHistory as d
@@ -308,7 +310,7 @@ BEGIN --Proc
 				e.Nature,
 				min(a.ObservationDate) as DateStart,
 				max(a.ObservationDate) as DateEnd
-			from StockData.BrokerReport as a
+			from StockData.v_BrokerReport as a
 			inner join #TempCashVsMC as b
 			on a.ASXCode = b.ASXCode
 			inner join StockData.PriceHistory as d
@@ -370,7 +372,7 @@ BEGIN --Proc
 				e.Nature,
 				min(a.ObservationDate) as DateStart,
 				max(a.ObservationDate) as DateEnd
-			from StockData.BrokerReport as a
+			from StockData.v_BrokerReport as a
 			inner join #TempCashVsMC as b
 			on a.ASXCode = b.ASXCode
 			inner join StockData.PriceHistory as d
@@ -432,7 +434,7 @@ BEGIN --Proc
 				e.Nature,
 				min(a.ObservationDate) as DateStart,
 				max(a.ObservationDate) as DateEnd
-			from StockData.BrokerReport as a
+			from StockData.v_BrokerReport as a
 			inner join #TempCashVsMC as b
 			on a.ASXCode = b.ASXCode
 			inner join StockData.PriceHistory as d
