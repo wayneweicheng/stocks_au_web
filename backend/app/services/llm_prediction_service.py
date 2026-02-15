@@ -4,11 +4,30 @@ from datetime import datetime
 import logging
 import os
 
+import httpx
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)
+
+# Models that use extended thinking / reasoning tokens.
+# These models split their output into a "reasoning" phase (thinking tokens)
+# and a "content" phase (the actual answer).  Without an explicit max_tokens
+# budget the reasoning phase can exhaust the entire limit, leaving content="".
+_REASONING_MODEL_PREFIXES = (
+    "deepseek/deepseek-r",   # DeepSeek-R1 family
+    "qwen/qwen3",            # Qwen3 thinking variants
+    "qwen/qwq",              # QwQ reasoning
+    "openai/o1",             # OpenAI o1 family
+    "openai/o3",             # OpenAI o3 family
+    "google/gemini-2.0-flash-thinking",
+    "google/gemini-2.5",     # Gemini 2.5 thinking
+)
+
+
+def _is_reasoning_model(model: str) -> bool:
+    m = model.lower()
+    return any(m.startswith(p) for p in _REASONING_MODEL_PREFIXES)
 
 
 class LLMPredictionService:
@@ -41,24 +60,87 @@ class LLMPredictionService:
             logger.error(f"Failed to create log directory: {e}")
             raise
 
-    def _create_llm_model(self, model: str, temperature: float = 0.3, request_timeout: int = 120):
+    # Only Gemini and GPT models are considered fast (2-minute timeout).
+    # Everything else (Qwen, DeepSeek, Grok, etc.) gets the slow timeout.
+    _FAST_MODEL_PREFIXES = (
+        "google/gemini",
+        "openai/gpt",
+    )
+    _FAST_TIMEOUT = 120
+    _SLOW_TIMEOUT = 600  # 10 minutes for reasoning/large/slow models
+
+    # Default max_tokens for generation.
+    # Reasoning models need a large budget because thinking tokens are counted
+    # inside max_tokens.  Without this, the model can exhaust the token budget
+    # during the thinking phase and produce empty content.
+    _DEFAULT_MAX_TOKENS = 8000
+    _REASONING_MAX_TOKENS = 20000
+
+    def _get_timeout_for_model(self, model: str) -> int:
+        """Return an appropriate request timeout (seconds) based on the model name."""
+        model_lower = model.lower()
+        if any(model_lower.startswith(p) for p in self._FAST_MODEL_PREFIXES):
+            return self._FAST_TIMEOUT
+        return self._SLOW_TIMEOUT
+
+    def _create_llm_model(self, model: str, temperature: float = 0.3, request_timeout: int | None = None):
         """
         Create LLM model instance.
 
         Args:
             model: Model name to use (e.g., qwen/qwen3-30b-a3b)
             temperature: Temperature parameter for generation
-            request_timeout: Request timeout in seconds
+            request_timeout: Request timeout in seconds. Defaults to a model-aware value.
 
         Returns:
             ChatOpenAI model instance
         """
+        if request_timeout is None:
+            request_timeout = self._get_timeout_for_model(model)
+
+        is_reasoning = _is_reasoning_model(model)
+        max_tokens = self._REASONING_MAX_TOKENS if is_reasoning else self._DEFAULT_MAX_TOKENS
+
+        logger.info(
+            "Creating LLM model '%s' with timeout=%ss max_tokens=%s reasoning_model=%s",
+            model, request_timeout, max_tokens, is_reasoning,
+        )
+
+        # Pass an explicit httpx.Timeout so connect, read, write, and pool
+        # timeouts are all set — a plain int only sets the connect timeout
+        # in some httpx/openai versions, leaving the read phase uncapped.
+        timeout = httpx.Timeout(request_timeout)
+        http_client = httpx.Client(timeout=timeout)
+
+        # Build OpenRouter-specific extra_body fields.
+        # These are passed directly into the JSON request body by the openai client
+        # (via the top-level extra_body param — NOT inside model_kwargs which would
+        # trigger a UserWarning).
+        extra_body: Dict[str, Any] = {}
+
+        # For reasoning models, suppress raw thinking tokens in the response body
+        # so they don't consume the output token budget and leave content="".
+        if is_reasoning:
+            extra_body["include_reasoning"] = False
+
+        # Friendli has a tighter context window than other providers for many models
+        # and rejects large prompts with a 422 "input is too long" error.  Tell
+        # OpenRouter to skip Friendli while still allowing fallback to any other
+        # available provider.
+        extra_body["provider"] = {
+            "ignore": ["Friendli"],
+            "allow_fallbacks": True,
+        }
+
         return ChatOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=self.api_key,
             model=model,
             temperature=temperature,
-            request_timeout=request_timeout
+            max_tokens=max_tokens,
+            request_timeout=request_timeout,
+            http_client=http_client,
+            extra_body=extra_body,
         )
 
     def generate_prediction(
@@ -88,57 +170,97 @@ class LLMPredictionService:
         """
         logger.info(f"Generating prediction for {stock_code} on {observation_date} using model: {model}")
 
-        # Track token usage
-        input_tokens = 0
-        output_tokens = 0
-
         try:
-            # Create LLM model
+            # Create LLM model and invoke directly (not via chain) so we can
+            # inspect the raw AIMessage and extract real token usage +
+            # finish_reason.
             llm_model = self._create_llm_model(model)
 
-            # Create prompt template
-            prompt_template = ChatPromptTemplate.from_messages([
-                ("system", "You are a quantitative trading analyst. Analyze the provided data and generate a detailed price action forecast."),
-                ("user", "{prompt}")
-            ])
+            messages = [
+                SystemMessage(content="You are a quantitative trading analyst. Analyze the provided data and generate a detailed price action forecast."),
+                HumanMessage(content=prompt),
+            ]
 
-            # Create chain
-            chain = prompt_template | llm_model | StrOutputParser()
+            ai_message = llm_model.invoke(messages)
 
-            # Invoke the chain
-            response = chain.invoke({"prompt": prompt})
+            # --- Extract response text -------------------------------------------
+            # Standard models put the answer in ai_message.content.
+            # Some reasoning models (Qwen3, DeepSeek-R1) put the thinking tokens
+            # in additional_kwargs["reasoning_content"] and the final answer in
+            # content.  If content is empty we fall back to reasoning_content so
+            # the result is never silently discarded.
+            response_text: str = ai_message.content or ""
+            if not response_text:
+                reasoning = ai_message.additional_kwargs.get("reasoning_content", "")
+                if reasoning:
+                    logger.warning(
+                        "Model '%s' returned empty content — reasoning_content present (%d chars). "
+                        "This usually means the token budget was exhausted during thinking. "
+                        "Using reasoning_content as fallback.",
+                        model, len(reasoning),
+                    )
+                    response_text = reasoning
+                else:
+                    logger.error(
+                        "Model '%s' returned empty content AND empty reasoning_content. "
+                        "full additional_kwargs: %s",
+                        model, ai_message.additional_kwargs,
+                    )
 
-            # Estimate token usage (rough approximation: ~4 chars per token)
-            input_tokens = len(prompt) // 4
-            output_tokens = len(response) // 4
-            total_tokens = input_tokens + output_tokens
+            # --- Extract real token usage from response metadata -----------------
+            usage_meta = ai_message.response_metadata.get("token_usage") or {}
+            input_tokens: int = (
+                usage_meta.get("prompt_tokens")
+                or usage_meta.get("input_tokens")
+                or len(prompt) // 4
+            )
+            output_tokens: int = (
+                usage_meta.get("completion_tokens")
+                or usage_meta.get("output_tokens")
+                or len(response_text) // 4
+            )
+            total_tokens: int = usage_meta.get("total_tokens") or (input_tokens + output_tokens)
+
+            # --- Check finish_reason ---------------------------------------------
+            finish_reason: str = ai_message.response_metadata.get("finish_reason", "unknown")
+            if finish_reason == "length":
+                logger.warning(
+                    "Model '%s' stopped due to token limit (finish_reason=length). "
+                    "Response may be truncated. Tokens used: %d in / %d out. "
+                    "Consider increasing max_tokens or reducing prompt size.",
+                    model, input_tokens, output_tokens,
+                )
+            else:
+                logger.info(
+                    "LLM generation complete. finish_reason=%s tokens: %d (in: %d, out: %d)",
+                    finish_reason, total_tokens, input_tokens, output_tokens,
+                )
 
             token_usage = {
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
-                "total_tokens": total_tokens
+                "total_tokens": total_tokens,
+                "finish_reason": finish_reason,
             }
-
-            logger.info(f"LLM generation complete. Tokens: {total_tokens} (in: {input_tokens}, out: {output_tokens})")
 
             # Log the interaction
             self._log_llm_interaction(
                 stock_code=stock_code,
                 observation_date=observation_date,
                 prompt=prompt,
-                response=response,
+                response=response_text,
                 token_usage=token_usage,
                 model=model
             )
 
             return {
-                "prediction_text": response,
+                "prediction_text": response_text,
                 "token_usage": token_usage,
                 "model_used": model
             }
 
         except Exception as e:
-            logger.error(f"LLM generation failed: {e}")
+            logger.error("LLM generation failed [%s]: %s", type(e).__name__, e, exc_info=True)
             raise
 
     def _log_llm_interaction(
@@ -173,8 +295,10 @@ class LLMPredictionService:
             filepath = self.log_dir / filename
 
             # Format log content
+            finish_reason = token_usage.get("finish_reason", "unknown")
             log_content = f"""=== TOKEN USAGE ===
 Input: {token_usage['input_tokens']} | Output: {token_usage['output_tokens']} | Total: {token_usage['total_tokens']}
+Finish reason: {finish_reason}
 Model: {model}
 
 === INPUT PROMPT ===

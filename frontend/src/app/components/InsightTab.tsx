@@ -64,10 +64,14 @@ export default function InsightTab({
               <option value="qwen/qwen3-30b-a3b">Qwen3 30B</option>
               <option value="openai/gpt-5.1">GPT-5.1</option>
               <option value="openai/gpt-4.1-mini">GPT-4.1 Mini</option>
+              <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
               <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
               <option value="deepseek/deepseek-v3.2">DeepSeek V3.2</option>
-              <option value="deepseek/deepseek-r1-0528-qwen3-8b">DeepSeek R1 Qwen3 8B</option>
+              <option value="deepseek/deepseek-r1-distill-qwen-32b">DeepSeek R1 Qwen3 32B</option>
               <option value="x-ai/grok-4.1-fast">Grok 4.1 Fast</option>
+              <option value="bytedance-seed/seed-1.6-flash">Seed 1.6 Flash</option>
+              <option value="moonshotai/kimi-k2-thinking">Kimi K2 Thinking</option>
+              <option value="z-ai/glm-4.7-flash">GLM-4.7 Flash</option>
             </select>
             <button
               type="button"

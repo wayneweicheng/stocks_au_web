@@ -34,19 +34,72 @@ from app.routers.gex_auto_insight import router as gex_auto_insight_router
 from app.routers.broker_analysis import router as broker_analysis_router
 from app.routers.option_insights import router as option_insights_router
 from app.routers.discord_summary import router as discord_summary_router
+from app.routers.trading_orders import router as trading_orders_router
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 from contextlib import asynccontextmanager
 import logging
+import sys
 import time
 from fastapi.responses import JSONResponse
 
+# ---------------------------------------------------------------------------
+# Logging setup
+#
+# The supervisor script (start-apps.ps1) launches uvicorn via:
+#   -RedirectStandardOutput  → backend-<ts>.log          (stdout)
+#   -RedirectStandardError   → backend-<ts>-error.log    (stderr)
+#
+# Python's default StreamHandler and uvicorn's loggers all write to *stderr*,
+# which causes INFO noise to flood the -error.log file.
+#
+# Strategy:
+#   • stdout handler  – level INFO+  (normal operational output)
+#   • stderr handler  – level WARNING+ only (true errors/warnings)
+#
+# This way -error.log stays clean (only real problems) and the normal .log
+# captures the full INFO stream.
+# ---------------------------------------------------------------------------
+_LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+
+# Reconfigure stdout/stderr to UTF-8 so Unicode characters in log messages
+# (e.g. checkmarks) don't cause UnicodeEncodeError on Windows cp1252 consoles.
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+_stdout_handler = logging.StreamHandler(sys.stdout)
+_stdout_handler.setLevel(logging.DEBUG)
+_stdout_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+
+_stderr_handler = logging.StreamHandler(sys.stderr)
+_stderr_handler.setLevel(logging.WARNING)
+_stderr_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+
+# Configure the root logger so all loggers (uvicorn, app, etc.) inherit this.
+_root_logger = logging.getLogger()
+if not _root_logger.handlers:
+    _root_logger.setLevel(logging.INFO)
+    _root_logger.addHandler(_stdout_handler)
+    _root_logger.addHandler(_stderr_handler)
+else:
+    # Handlers already present (e.g. uvicorn configured them) – replace them
+    # so we control where output goes.
+    _root_logger.handlers.clear()
+    _root_logger.setLevel(logging.INFO)
+    _root_logger.addHandler(_stdout_handler)
+    _root_logger.addHandler(_stderr_handler)
+
+# Suppress overly verbose third-party loggers that add noise at INFO level.
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 logger = logging.getLogger("app")
-if not logger.handlers:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    )
 
 
 @asynccontextmanager
@@ -87,15 +140,20 @@ async def request_logging_middleware(request: Request, call_next):
     client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")
     path = request.url.path
     query = request.url.query
-    logger.info(f"REQ {request.method} {path}{('?' + query) if query else ''} from {client_ip}")
+    logger.info("REQ %s %s%s from %s", request.method, path, ("?" + query) if query else "", client_ip)
     try:
         response = await call_next(request)
     except Exception as exc:
         duration_ms = (time.perf_counter() - start_time) * 1000.0
-        logger.exception(f"ERR {request.method} {path} after {duration_ms:.1f}ms: {exc}")
-        return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+        exc_type = type(exc).__name__
+        logger.error(
+            "ERR %s %s after %.1fms [%s]: %s",
+            request.method, path, duration_ms, exc_type, exc,
+            exc_info=True,
+        )
+        return JSONResponse(status_code=500, content={"detail": f"{exc_type}: {exc}"})
     duration_ms = (time.perf_counter() - start_time) * 1000.0
-    logger.info(f"RES {request.method} {path} {response.status_code} {duration_ms:.1f}ms")
+    logger.info("RES %s %s %s %.1fms", request.method, path, response.status_code, duration_ms)
     return response
 
 
@@ -136,6 +194,7 @@ app.include_router(gex_auto_insight_router)
 app.include_router(broker_analysis_router)
 app.include_router(option_insights_router)
 app.include_router(discord_summary_router)
+app.include_router(trading_orders_router)
 
 
 @app.get("/api/scheduler/status")
@@ -143,4 +202,15 @@ def scheduler_status(username: str = Depends(verify_credentials)):
     """Get the status of the background scheduler and its jobs."""
     return get_scheduler_status()
 
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host="127.0.0.1",
+        port=3101,
+        reload=True,
+        reload_dirs=["app"],
+        timeout_keep_alive=620,
+    )
 

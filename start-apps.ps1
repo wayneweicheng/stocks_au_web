@@ -645,7 +645,7 @@ Stop-ProcessOnPort -Port $BackendPort -ServiceName "Backend"
 $backendLogFile = Join-Path $AbsoluteLogPath "backend-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 Write-Log "Backend logs will be written to: $backendLogFile"
 
-$backendArgs = @("-m", "uvicorn", "app.main:app", "--reload", "--port", $BackendPort)
+$backendArgs = @("-m", "uvicorn", "app.main:app", "--reload", "--reload-dir", "app", "--port", $BackendPort, "--timeout-keep-alive", "620")
 $backendSuccess = Start-ServiceWithMonitoring -ServiceName "Backend" -WorkingDirectory $backendWD -Command $python -Arguments $backendArgs -Port $BackendPort -LogFile $backendLogFile
 
 if ($backendSuccess) {

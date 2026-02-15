@@ -97,11 +97,11 @@ def gex_auto_insight_job():
 
         # Log details for processed stocks
         for p in result.get("processed", []):
-            logger.info(f"  ✓ {p['stock_code']}: {p.get('signal_strength', 'N/A')}")
+            logger.info(f"  [OK] {p['stock_code']}: {p.get('signal_strength', 'N/A')}")
 
         # Log details for failed stocks
         for f in result.get("failed", []):
-            logger.warning(f"  ✗ {f['stock_code']}: {f.get('error', 'Unknown error')}")
+            logger.warning(f"  [FAIL] {f['stock_code']}: {f.get('error', 'Unknown error')}")
 
     except Exception as e:
         logger.error(f"[GEX Auto Insight] Job failed with error: {e}", exc_info=True)
