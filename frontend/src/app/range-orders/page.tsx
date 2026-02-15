@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
+import PageHeader from "../components/PageHeader";
 
 type Side = "Buy" | "Sell";
 type Distribution = "Pyramid" | "Even";
@@ -599,15 +600,14 @@ export default function RangeOrdersPage() {
   };
 
   return (
-    <div className="min-h-screen text-slate-800">
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl sm:text-4xl font-semibold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">
-            Price Range Orders
-          </h1>
-          {/* Cancel All buttons hidden - IB API requires same client ID to cancel orders,
-              but we now use random client IDs to avoid connection conflicts */}
-        </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Range Orders"
+        subtitle="Create laddered orders with value/volume allocation, preview, brackets and safe placement."
+      />
+
+      {/* Cancel All buttons hidden - IB API requires same client ID to cancel orders,
+          but we now use random client IDs to avoid connection conflicts */}
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">
           <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -1406,7 +1406,6 @@ export default function RangeOrdersPage() {
             </button>
           </div>
         )}
-      </div>
     </div>
   );
 }

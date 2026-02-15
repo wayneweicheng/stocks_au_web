@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import PageHeader from "../components/PageHeader";
 
 // Types
 type Commenter = {
@@ -692,15 +693,11 @@ export default function ResearchHubPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <header className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent">
-          Research Hub
-        </h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Track analyst ratings, manage commenters, and save research links for stocks.
-        </p>
-      </header>
+    <div className="space-y-6">
+      <PageHeader
+        title="Research Hub"
+        subtitle="Ratings, reports/links, commenters and announcement analysis."
+      />
 
       {/* Tab Navigation */}
       <div className="mb-6 border-b border-slate-200">
@@ -717,7 +714,7 @@ export default function ResearchHubPage() {
               onClick={() => setActiveTab(tab.key as any)}
               className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.key
-                  ? "border-emerald-600 text-emerald-700"
+                  ? "border-indigo-600 text-indigo-700"
                   : "border-transparent text-slate-600 hover:text-slate-900"
               }`}
             >
@@ -742,7 +739,7 @@ export default function ResearchHubPage() {
                   value={ratingStockCode}
                   onChange={(e) => setRatingStockCode(e.target.value)}
                   placeholder="PLS.AX or NVDA.US"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <div>
@@ -754,7 +751,7 @@ export default function ResearchHubPage() {
                   onChange={(e) =>
                     setRatingCommenterId(e.target.value ? parseInt(e.target.value) : "")
                   }
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="">Select commenter...</option>
                   {commenters.map((c) => (
@@ -775,7 +772,7 @@ export default function ResearchHubPage() {
                   onChange={(e) =>
                     setRatingValue(e.target.value as "Bullish" | "Neutral" | "Bearish")
                   }
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="Bullish">Bullish</option>
                   <option value="Neutral">Neutral</option>
@@ -790,7 +787,7 @@ export default function ResearchHubPage() {
                   type="date"
                   value={ratingDate}
                   onChange={(e) => setRatingDate(e.target.value)}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
             </div>
@@ -803,14 +800,14 @@ export default function ResearchHubPage() {
                 onChange={(e) => setRatingComment(e.target.value)}
                 rows={3}
                 placeholder="Any notes about this rating..."
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
             <div>
               <button
                 type="submit"
                 disabled={ratingLoading}
-                className="rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-2 text-sm hover:opacity-90 disabled:opacity-50"
+                className="rounded-md bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-2 text-sm hover:opacity-90 disabled:opacity-50"
               >
                 {ratingLoading ? "Adding..." : "Add Rating"}
               </button>
@@ -831,12 +828,12 @@ export default function ResearchHubPage() {
                 value={lookupStockCode}
                 onChange={(e) => setLookupStockCode(e.target.value)}
                 placeholder="Enter stock code (e.g., PLS.AX)"
-                className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <button
                 type="submit"
                 disabled={lookupLoading}
-                className="rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-2 text-sm hover:opacity-90 disabled:opacity-50"
+                className="rounded-md bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-2 text-sm hover:opacity-90 disabled:opacity-50"
               >
                 {lookupLoading ? "Loading..." : "Lookup"}
               </button>
@@ -911,9 +908,9 @@ export default function ResearchHubPage() {
                       <tr
                         key={stock.stock_code}
                         onClick={() => lookupStock(stock.stock_code)}
-                        className="border-b last:border-b-0 border-slate-100 cursor-pointer hover:bg-emerald-50 transition-colors"
+                        className="border-b last:border-b-0 border-slate-100 cursor-pointer hover:bg-indigo-50 transition-colors"
                       >
-                        <td className="py-2 pr-3 font-medium text-emerald-700">
+                        <td className="py-2 pr-3 font-medium text-indigo-700">
                           {stock.stock_code}
                         </td>
                         <td className="py-2 px-3 text-center">{stock.total_ratings}</td>
@@ -1111,7 +1108,7 @@ export default function ResearchHubPage() {
                           </p>
                         </div>
                         <button
-                          className="rounded-md border border-emerald-300 text-emerald-700 px-3 py-1 text-xs hover:bg-emerald-50 whitespace-nowrap"
+                          className="rounded-md border border-emerald-300 text-indigo-700 px-3 py-1 text-xs hover:bg-indigo-50 whitespace-nowrap"
                           onClick={() => setViewingReport(link)}
                         >
                           View Report
@@ -1152,13 +1149,13 @@ export default function ResearchHubPage() {
                     value={linkStockCode}
                     onChange={(e) => setLinkStockCode(e.target.value)}
                     placeholder="LIN.AX"
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
                 <div className="sm:col-span-9 flex items-end">
                   <button
                     type="submit"
-                    className="rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-2 text-sm hover:opacity-90"
+                    className="rounded-md bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-2 text-sm hover:opacity-90"
                   >
                     Save Report
                   </button>
@@ -1173,7 +1170,7 @@ export default function ResearchHubPage() {
                   onChange={(e) => setLinkContent(e.target.value)}
                   placeholder="Paste your research report in markdown format here..."
                   rows={12}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <p className="mt-1 text-xs text-slate-500">
                   Paste the research report content in markdown format. Supports headers, lists, tables, bold, italic, etc.
@@ -1195,7 +1192,7 @@ export default function ResearchHubPage() {
                     setLinkPage(1);
                   }}
                   placeholder="Search by stock code"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
             </div>
@@ -1237,7 +1234,7 @@ export default function ResearchHubPage() {
                         </td>
                         <td className="py-2 px-3 align-top text-right space-x-2">
                           <button
-                            className="rounded-md border border-emerald-300 text-emerald-700 px-3 py-1 text-xs hover:bg-emerald-50"
+                            className="rounded-md border border-emerald-300 text-indigo-700 px-3 py-1 text-xs hover:bg-indigo-50"
                             onClick={() => setViewingReport(r)}
                             title="View full report"
                           >
@@ -1379,7 +1376,7 @@ export default function ResearchHubPage() {
                   value={newCommenterName}
                   onChange={(e) => setNewCommenterName(e.target.value)}
                   placeholder="Analyst name"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <div className="sm:col-span-6">
@@ -1391,13 +1388,13 @@ export default function ResearchHubPage() {
                   value={newCommenterDesc}
                   onChange={(e) => setNewCommenterDesc(e.target.value)}
                   placeholder="e.g., Goldman Sachs analyst"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <div className="sm:col-span-2 flex items-end">
                 <button
                   type="submit"
-                  className="w-full rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90"
+                  className="w-full rounded-md bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 py-2 text-sm hover:opacity-90"
                 >
                   Add
                 </button>
@@ -1459,12 +1456,12 @@ export default function ResearchHubPage() {
                   value={announcementIdInput}
                   onChange={(e) => setAnnouncementIdInput(e.target.value)}
                   placeholder="ID"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <button
                 type="submit"
-                className="rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2 text-sm hover:opacity-90"
+                className="rounded-md bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 py-2 text-sm hover:opacity-90"
                 disabled={annLoading}
               >
                 {annLoading ? "Loading..." : "Load"}
@@ -1506,7 +1503,7 @@ export default function ResearchHubPage() {
               ) : (
                 <button
                   type="button"
-                  className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm hover:opacity-90"
+                  className="rounded-md bg-indigo-600 text-white px-4 py-2 text-sm hover:opacity-90"
                   onClick={copyAnnPrompt}
                 >
                   {annPromptCopied ? "Copied!" : "Copy"}
@@ -1526,12 +1523,12 @@ export default function ResearchHubPage() {
               value={annSearchCode}
               onChange={(e) => setAnnSearchCode(e.target.value)}
               placeholder="e.g., PLS"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
           <button
             type="button"
-            className="rounded-md bg-emerald-600 text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50"
+            className="rounded-md bg-indigo-600 text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50"
             onClick={() => searchAnnouncements(1)}
             disabled={annSearchLoading}
           >
@@ -1654,7 +1651,7 @@ export default function ResearchHubPage() {
                   </div>
                   <div className="bg-slate-50 rounded-lg p-3">
                     <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">ASXCode</div>
-                    <div className="text-sm font-semibold text-emerald-700">{annDetails.ASXCode}</div>
+                    <div className="text-sm font-semibold text-indigo-700">{annDetails.ASXCode}</div>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-3">
                     <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">AnnDateTime</div>
@@ -1742,7 +1739,7 @@ export default function ResearchHubPage() {
           <div className="w-full max-w-4xl max-h-[90vh] rounded-lg bg-white shadow-lg flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-slate-200">
               <h3 className="text-lg font-medium">
-                Research Report: <span className="text-emerald-700">{viewingReport.stock_code}</span>
+                Research Report: <span className="text-indigo-700">{viewingReport.stock_code}</span>
               </h3>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500">
