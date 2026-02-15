@@ -251,7 +251,7 @@ Place this JSON at the very end of your markdown response after all analysis.
             signal_strength = SignalStrengthParser.extract_signal_strength(analysis_text)
 
             if signal_strength:
-                logger.info(f"✓ Extracted signal strength: {signal_strength} for {normalized_code}")
+                logger.info(f"[OK] Extracted signal strength: {signal_strength} for {normalized_code}")
                 db_service = SignalStrengthDBService()
 
                 logger.info(
@@ -266,14 +266,14 @@ Place this JSON at the very end of your markdown response after all analysis.
                 )
 
                 if success:
-                    logger.info(f"✓ Successfully saved signal strength: {normalized_code} -> {signal_strength}")
+                    logger.info(f"[OK] Successfully saved signal strength: {normalized_code} -> {signal_strength}")
                 else:
-                    logger.error(f"✗ Database upsert returned False for {normalized_code}")
+                    logger.error(f"[FAIL] Database upsert returned False for {normalized_code}")
             else:
-                logger.warning(f"✗ No signal strength extracted from LLM output for {normalized_code}")
+                logger.warning(f"[WARN] No signal strength extracted from LLM output for {normalized_code}")
                 logger.debug(f"Last 500 chars of analysis: {analysis_text[-500:]}")
         except Exception as e:
-            logger.error(f"✗ Signal strength extraction/save failed for {normalized_code}: {e}", exc_info=True)
+            logger.error(f"[FAIL] Signal strength extraction/save failed for {normalized_code}: {e}", exc_info=True)
             # Don't fail the request if signal strength save fails
 
         # Return generated analysis

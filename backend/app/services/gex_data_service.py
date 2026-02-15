@@ -522,18 +522,35 @@ class GEXDataService:
             logger.error(f"Failed to query option OI changes for {stock_code}: {e}")
             raise
 
-    def format_option_oi_changes_as_pipe_delimited(self, rows: List[Dict[str, Any]]) -> str:
+    def format_option_oi_changes_as_pipe_delimited(
+        self,
+        rows: List[Dict[str, Any]],
+        max_rows: Optional[int] = None,
+    ) -> str:
         """
         Format option OI change data as pipe-delimited format for LLM consumption.
 
+        The SQL query that populates rows already orders by ABS(OIChanges) DESC,
+        so applying max_rows keeps the most significant OI changes and discards
+        the tail — the best subset for LLM analysis while staying within provider
+        context limits.
+
         Args:
-            rows: List of option OI change dictionaries
+            rows: List of option OI change dictionaries (pre-sorted by abs change desc)
+            max_rows: If set, truncate to this many rows (keeps highest-impact changes)
 
         Returns:
             Pipe-delimited string or descriptive message if no data
         """
         if not rows:
             return "No significant option OI changes (abs change > 300) for this date."
+
+        total = len(rows)
+        if max_rows is not None and total > max_rows:
+            rows = rows[:max_rows]
+            logger.info(
+                f"Truncated OI changes from {total} to {max_rows} rows (keeping largest abs changes)"
+            )
 
         # Get columns from first row
         columns = list(rows[0].keys())

@@ -195,7 +195,7 @@ def get_price_prediction(
             ranges = SignalStrengthParser.extract_trade_ranges(prediction_text)
 
             if signal_strength:
-                logger.info(f"✓ Extracted signal strength: {signal_strength} for {base_code}")
+                logger.info(f"[OK] Extracted signal strength: {signal_strength} for {base_code}")
                 db_service = SignalStrengthDBService()
 
                 logger.info(f"Attempting to save signal strength/ranges to database: {base_code} on {observation_date} -> {signal_strength}")
@@ -209,15 +209,15 @@ def get_price_prediction(
                 )
 
                 if success:
-                    logger.info(f"✓ Successfully saved signal strength/ranges: {base_code} -> {signal_strength}")
+                    logger.info(f"[OK] Successfully saved signal strength/ranges: {base_code} -> {signal_strength}")
                 else:
-                    logger.error(f"✗ Database upsert returned False for {base_code}")
+                    logger.error(f"[FAIL] Database upsert returned False for {base_code}")
             else:
-                logger.warning(f"✗ No signal strength extracted from LLM output for {base_code}")
+                logger.warning(f"[WARN] No signal strength extracted from LLM output for {base_code}")
                 # Log last 500 chars of prediction for debugging
                 logger.debug(f"Last 500 chars of prediction: {prediction_text[-500:]}")
         except Exception as e:
-            logger.error(f"✗ Signal strength extraction/save failed for {base_code}: {e}", exc_info=True)
+            logger.error(f"[FAIL] Signal strength extraction/save failed for {base_code}: {e}", exc_info=True)
             # Don't fail the request if signal strength save fails
 
         # Return generated prediction

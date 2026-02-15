@@ -115,7 +115,9 @@ def get_option_insight_prediction(
             top_options_rows = []
 
         # Step 2: Format data as pipe-delimited
-        option_oi_data = gex_service.format_option_oi_changes_as_pipe_delimited(option_oi_rows)
+        # Cap OI changes at 150 rows (already ranked by abs change desc from SQL)
+        # to stay within provider context limits for large-universe stocks like NVDA.
+        option_oi_data = gex_service.format_option_oi_changes_as_pipe_delimited(option_oi_rows, max_rows=150)
         top_options_data = gex_service.format_top_options_by_oi_as_pipe_delimited(top_options_rows)
 
         # Step 3: Load option insights template
@@ -179,7 +181,7 @@ def get_option_insight_prediction(
             ranges = SignalStrengthParser.extract_trade_ranges(prediction_text)
 
             if signal_strength:
-                logger.info(f"✓ Extracted signal strength: {signal_strength} for {base_code}")
+                logger.info(f"[OK] Extracted signal strength: {signal_strength} for {base_code}")
                 db_service = SignalStrengthDBService()
 
                 logger.info(f"Attempting to save signal strength to database: {base_code} on {observation_date} -> {signal_strength} (OPTION)")
@@ -193,14 +195,14 @@ def get_option_insight_prediction(
                 )
 
                 if success:
-                    logger.info(f"✓ Successfully saved signal strength: {base_code} -> {signal_strength} (OPTION)")
+                    logger.info(f"[OK] Successfully saved signal strength: {base_code} -> {signal_strength} (OPTION)")
                 else:
-                    logger.error(f"✗ Database upsert returned False for {base_code}")
+                    logger.error(f"[FAIL] Database upsert returned False for {base_code}")
             else:
-                logger.warning(f"✗ No signal strength extracted from LLM output for {base_code}")
+                logger.warning(f"[WARN] No signal strength extracted from LLM output for {base_code}")
                 logger.debug(f"Last 500 chars of prediction: {prediction_text[-500:]}")
         except Exception as e:
-            logger.error(f"✗ Signal strength extraction/save failed for {base_code}: {e}", exc_info=True)
+            logger.error(f"[FAIL] Signal strength extraction/save failed for {base_code}: {e}", exc_info=True)
             # Don't fail the request if signal strength save fails
 
         # Return generated prediction
@@ -276,8 +278,8 @@ def get_option_insight_prompt(
             logger.error(f"Failed to query top options by OI: {e}")
             top_options_rows = []
 
-        # Format data as pipe-delimited
-        option_oi_data = gex_service.format_option_oi_changes_as_pipe_delimited(option_oi_rows)
+        # Format data as pipe-delimited (cap OI changes at 150 rows, ranked by abs change desc)
+        option_oi_data = gex_service.format_option_oi_changes_as_pipe_delimited(option_oi_rows, max_rows=150)
         top_options_data = gex_service.format_top_options_by_oi_as_pipe_delimited(top_options_rows)
 
         # Query option trades data to validate availability
