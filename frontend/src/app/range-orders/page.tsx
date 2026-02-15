@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
+import PageHeader from "../components/PageHeader";
 
 type Side = "Buy" | "Sell";
 type Distribution = "Pyramid" | "Even";
@@ -599,15 +600,14 @@ export default function RangeOrdersPage() {
   };
 
   return (
-    <div className="min-h-screen text-slate-800">
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl sm:text-4xl font-semibold bg-gradient-to-r from-blue-500 to-indigo-600 bg-clip-text text-transparent">
-            Price Range Orders
-          </h1>
-          {/* Cancel All buttons hidden - IB API requires same client ID to cancel orders,
-              but we now use random client IDs to avoid connection conflicts */}
-        </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Range Orders"
+        subtitle="Create laddered orders with value/volume allocation, preview, brackets and safe placement."
+      />
+
+      {/* Cancel All buttons hidden - IB API requires same client ID to cancel orders,
+          but we now use random client IDs to avoid connection conflicts */}
 
         <div className="rounded-lg border border-slate-200 bg-white p-6 mb-6">
           <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -622,9 +622,9 @@ export default function RangeOrdersPage() {
                     value="open"
                     checked={positionMode === "open"}
                     onChange={() => setPositionMode("open")}
-                    className="w-4 h-4 text-blue-500 focus:ring-2 focus:ring-blue-400/40"
+                    className="w-4 h-4 text-indigo-600 focus:ring-2 focus:ring-indigo-500/40"
                   />
-                  <span className={positionMode === "open" ? "text-blue-600 font-medium" : "text-slate-600"}>
+                  <span className={positionMode === "open" ? "text-indigo-700 font-medium" : "text-slate-600"}>
                     Open Position
                   </span>
                 </label>
@@ -1059,7 +1059,7 @@ export default function RangeOrdersPage() {
               <button
                 type="submit"
                 disabled={!canGenerate}
-                className="rounded-md bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Generate Orders
               </button>
@@ -1100,7 +1100,7 @@ export default function RangeOrdersPage() {
                 </thead>
                 <tbody>
                   {generated.map((o) => (
-                    <tr key={o.index} className={`transition-colors ${o.index % 2 ? "bg-slate-50" : ""} hover:bg-blue-50/40`}>
+                    <tr key={o.index} className={`transition-colors ${o.index % 2 ? "bg-slate-50" : ""} hover:bg-indigo-50/60`}>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.index}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.side}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.price.toFixed(2)}</td>
@@ -1173,7 +1173,7 @@ export default function RangeOrdersPage() {
                             const clamped = Math.max(sliderBounds.min, Math.min(sliderBounds.max, v));
                             setWhatIfPrice(round2(clamped));
                           }}
-                          className="w-28 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                          className="w-28 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/40"
                         />
                       </div>
                       <div className="text-sm">
@@ -1406,7 +1406,6 @@ export default function RangeOrdersPage() {
             </button>
           </div>
         )}
-      </div>
     </div>
   );
 }

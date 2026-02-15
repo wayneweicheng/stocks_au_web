@@ -5,6 +5,7 @@ import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import GEXAutoInsightTab from "../components/GEXAutoInsightTab";
 import InsightTab from "../components/InsightTab";
+import PageHeader from "../components/PageHeader";
 
 type AnyRow = Record<string, any>;
 
@@ -73,7 +74,7 @@ const SIGNAL_DEFS: Record<
 > = {
   GOLDEN_SETUP: {
     name: "Golden Setup (VIX>20 & RSI<35)",
-    description: "High VIX + oversold RSI; strongest 5–10 day rally probability.",
+    description: "High VIX + oversold RSI; strongest 5-10 day rally probability.",
     bias: "long",
     bestHorizon: "5d"
   },
@@ -91,13 +92,13 @@ const SIGNAL_DEFS: Record<
   },
   NEG_GEX_HIGH_VIX: {
     name: "Negative GEX + High VIX (>20)",
-    description: "Capitulation/bottoming; volatile but powerful 10–20 day snapback.",
+    description: "Capitulation/bottoming; volatile but powerful 10-20 day snapback.",
     bias: "long",
     bestHorizon: "10d"
   },
   VIX_VERY_HIGH: {
     name: "VIX Very High (>20)",
-    description: "Volatility regime powerful across horizons; best at 10–20 days.",
+    description: "Volatility regime powerful across horizons; best at 10-20 days.",
     bias: "long",
     bestHorizon: "20d"
   },
@@ -121,7 +122,7 @@ const SIGNAL_DEFS: Record<
   },
   GEX_ZSCORE_HIGH: {
     name: "GEX Z-Score High (1.5 to 2.0)",
-    description: "High positive GEX; bullish across 1–5 days.",
+    description: "High positive GEX; bullish across 1-5 days.",
     bias: "long",
     bestHorizon: "5d"
   },
@@ -274,7 +275,7 @@ function BiasBadge({ bias }: { bias?: "long" | "short" }) {
 			className={`inline-block rounded-md px-2 py-0.5 text-xs font-medium ${
 				bias === "short"
 					? "bg-red-50 text-red-700 border border-red-200"
-					: "bg-emerald-50 text-emerald-700 border border-emerald-200"
+					: "bg-indigo-50 text-indigo-700 border border-emerald-200"
 			}`}
 		>
 			{bias === "short" ? "Short" : "Long"}
@@ -839,11 +840,11 @@ export default function GexSignalsPage() {
 	}, [triggeredSignals]);
 
   return (
-    <div className="min-h-screen text-slate-800">
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-emerald-500 to-green-600 bg-clip-text text-transparent">
-          Market Flow Signals
-        </h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Market Flow"
+        subtitle="Daily composite signals (GEX/VIX/Dark Pool) plus swing regime context."
+      />
 
         {/* Tab Navigation */}
         <div className="flex border-b border-slate-200 mb-6">
@@ -852,7 +853,7 @@ export default function GexSignalsPage() {
             onClick={() => setActiveTab("overview")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               activeTab === "overview"
-                ? "border-emerald-500 text-emerald-600"
+                ? "border-indigo-500 text-indigo-600"
                 : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}
           >
@@ -863,7 +864,7 @@ export default function GexSignalsPage() {
             onClick={() => setActiveTab("optionoverview")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               activeTab === "optionoverview"
-                ? "border-emerald-500 text-emerald-600"
+                ? "border-indigo-500 text-indigo-600"
                 : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}
           >
@@ -874,7 +875,7 @@ export default function GexSignalsPage() {
             onClick={() => setActiveTab("optiontradesinsights")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               activeTab === "optiontradesinsights"
-                ? "border-emerald-500 text-emerald-600"
+                ? "border-indigo-500 text-indigo-600"
                 : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}
           >
@@ -885,7 +886,7 @@ export default function GexSignalsPage() {
             onClick={() => setActiveTab("autoinsight")}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               activeTab === "autoinsight"
-                ? "border-emerald-500 text-emerald-600"
+                ? "border-indigo-500 text-indigo-600"
                 : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
             }`}
           >
@@ -911,7 +912,7 @@ export default function GexSignalsPage() {
                       while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
                       setObservationDate(d.toISOString().slice(0, 10));
                     }}
-                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-indigo-50"
                   >
                     ←
                   </button>
@@ -919,7 +920,7 @@ export default function GexSignalsPage() {
                     type="date"
                     value={observationDate}
                     onChange={(e) => setObservationDate(e.target.value)}
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400/40"
                   />
                   <button
                     type="button"
@@ -930,7 +931,7 @@ export default function GexSignalsPage() {
                       while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
                       setObservationDate(d.toISOString().slice(0, 10));
                     }}
-                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-indigo-50"
                   >
                     →
                   </button>
@@ -945,7 +946,7 @@ export default function GexSignalsPage() {
                   value={stockCode}
                   onChange={(e) => setStockCode(e.target.value)}
                   disabled={stockCodesLoading}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400/40"
                 >
                   {stockCodes.map((s) => (
                     <option key={s.stock_code} value={s.stock_code}>
@@ -993,7 +994,7 @@ export default function GexSignalsPage() {
                       while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
                       setObservationDate(d.toISOString().slice(0, 10));
                     }}
-                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-indigo-50"
                   >
                     ←
                   </button>
@@ -1001,7 +1002,7 @@ export default function GexSignalsPage() {
                     type="date"
                     value={observationDate}
                     onChange={(e) => setObservationDate(e.target.value)}
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400/40"
                   />
                   <button
                     type="button"
@@ -1012,7 +1013,7 @@ export default function GexSignalsPage() {
                       while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
                       setObservationDate(d.toISOString().slice(0, 10));
                     }}
-                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+                    className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-indigo-50"
                   >
                     →
                   </button>
@@ -1027,7 +1028,7 @@ export default function GexSignalsPage() {
                   value={stockCode}
                   onChange={(e) => setStockCode(e.target.value)}
                   disabled={stockCodesLoading}
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400/40"
                 >
                   {stockCodes.map((s) => (
                     <option key={s.stock_code} value={s.stock_code}>
@@ -1079,7 +1080,7 @@ export default function GexSignalsPage() {
                   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
                   setObservationDate(d.toISOString().slice(0, 10));
                 }}
-                className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+                className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-indigo-50"
               >
                 ←
               </button>
@@ -1087,7 +1088,7 @@ export default function GexSignalsPage() {
                 type="date"
                 value={observationDate}
                 onChange={(e) => setObservationDate(e.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400/40"
               />
               <button
                 type="button"
@@ -1098,7 +1099,7 @@ export default function GexSignalsPage() {
                   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
                   setObservationDate(d.toISOString().slice(0, 10));
                 }}
-                className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-emerald-50"
+                className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-indigo-50"
               >
                 →
               </button>
@@ -1113,7 +1114,7 @@ export default function GexSignalsPage() {
               value={stockCode}
               onChange={(e) => setStockCode(e.target.value)}
               disabled={stockCodesLoading}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/40 focus:border-indigo-400/40"
             >
               {stockCodes.map((s) => (
                 <option key={s.stock_code} value={s.stock_code}>
@@ -1166,7 +1167,7 @@ export default function GexSignalsPage() {
                   type="button"
                   onClick={() => fetchPrediction(true)}
                   disabled={predictionLoading}
-                  className="flex-1 sm:flex-none min-w-[100px] rounded-md border border-emerald-500 bg-white px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex-1 sm:flex-none min-w-[100px] rounded-md border border-indigo-500 bg-white px-3 py-1.5 text-sm text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {predictionLoading && prediction ? "Regenerating..." : "Regenerate"}
                 </button>
@@ -1197,7 +1198,7 @@ export default function GexSignalsPage() {
             {(promptCopied || promptError) && (
               <div className="mb-3">
                 {promptCopied && (
-                  <div className="text-sm text-emerald-600 flex items-center gap-2 animate-fade-in">
+                  <div className="text-sm text-indigo-600 flex items-center gap-2 animate-fade-in">
                     <span>✓</span>
                     <span>
                       Prompt copied!
@@ -1264,7 +1265,7 @@ export default function GexSignalsPage() {
                   {/* Header Row */}
                   <div className="grid grid-cols-8 gap-2 mb-3 pb-2 border-b border-slate-200">
                     <div className="text-xs font-semibold text-slate-600 uppercase">Stock</div>
-                    <div className="text-xs font-semibold text-center text-emerald-700">Strongly Bullish</div>
+                    <div className="text-xs font-semibold text-center text-indigo-700">Strongly Bullish</div>
                     <div className="text-xs font-semibold text-center text-emerald-500">Mildly Bullish</div>
                     <div className="text-xs font-semibold text-center text-amber-600">Neutral</div>
                     <div className="text-xs font-semibold text-center text-orange-500">Mildly Bearish</div>
@@ -1283,7 +1284,7 @@ export default function GexSignalsPage() {
                         {/* Strongly Bullish */}
                         <div className="flex justify-center items-center">
                           {level === "STRONGLY_BULLISH" && (
-                            <div className="w-6 h-6 rounded-full bg-emerald-600" title="Strongly Bullish"></div>
+                            <div className="w-6 h-6 rounded-full bg-indigo-600" title="Strongly Bullish"></div>
                           )}
                         </div>
 
@@ -1317,12 +1318,12 @@ export default function GexSignalsPage() {
 
                         {/* Buy Dip Range */}
                         <div className="flex justify-center items-center text-xs text-slate-700">
-                          {item.buy_dip_range || "—"}
+                          {item.buy_dip_range || "-"}
                         </div>
 
                         {/* Sell Rip Range */}
                         <div className="flex justify-center items-center text-xs text-slate-700">
-                          {item.sell_rip_range || "—"}
+                          {item.sell_rip_range || "-"}
                         </div>
                       </div>
                     );
@@ -1336,7 +1337,7 @@ export default function GexSignalsPage() {
                     const level = item.signal_strength_level;
                     const label = (level || "").replace(/_/g, " ");
                     const color =
-                      level === "STRONGLY_BULLISH" ? "bg-emerald-600" :
+                      level === "STRONGLY_BULLISH" ? "bg-indigo-600" :
                       level === "MILDLY_BULLISH" ? "bg-emerald-300" :
                       level === "NEUTRAL" ? "bg-amber-400" :
                       level === "MILDLY_BEARISH" ? "bg-orange-400" :
@@ -1353,11 +1354,11 @@ export default function GexSignalsPage() {
                         <div className="mt-2 grid grid-cols-2 gap-2">
                           <div className="text-xs text-slate-600">
                             <div className="font-medium text-slate-700">Buy Dip</div>
-                            <div>{item.buy_dip_range || "—"}</div>
+                            <div>{item.buy_dip_range || "-"}</div>
                           </div>
                           <div className="text-xs text-slate-600">
                             <div className="font-medium text-slate-700">Sell Rip</div>
-                            <div>{item.sell_rip_range || "—"}</div>
+                            <div>{item.sell_rip_range || "-"}</div>
                           </div>
                         </div>
                       </div>
@@ -1374,13 +1375,13 @@ export default function GexSignalsPage() {
             <h2 className="text-lg font-semibold mb-3 text-slate-700">Context</h2>
             <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
               <li>
-                <b>Best short-term signals (1–2d):</b> Potential swing up + negative GEXChange; Swing up.
+                <b>Best short-term signals (1-2d):</b> Potential swing up + negative GEXChange; Swing up.
               </li>
               <li>
-                <b>Best 5–20d signals:</b> Low/Very Low GEX Z-scores; combined swing + GEX.
+                <b>Best 5-20d signals:</b> Low/Very Low GEX Z-scores; combined swing + GEX.
               </li>
               <li>
-                <b>Note:</b> Very Low GEX Z (&lt;-2.0) tends to dip on day 1, then rally over 10–20 days.
+                <b>Note:</b> Very Low GEX Z (&lt;-2.0) tends to dip on day 1, then rally over 10-20 days.
               </li>
             </ul>
           </div>
@@ -1388,7 +1389,7 @@ export default function GexSignalsPage() {
 
 		<div className="grid gap-4 sm:grid-cols-3">
 			<div className="rounded-lg border border-slate-200 bg-white p-4">
-				<h2 className="text-lg font-semibold mb-1 text-slate-700">Short-term (1–2d)</h2>
+				<h2 className="text-lg font-semibold mb-1 text-slate-700">Short-term (1-2d)</h2>
 				<p className="text-xs text-slate-500 mb-3">Best for quick tactical trades (tomorrow/2 days).</p>
 				{loading ? (
 					<div className="text-sm text-slate-600">Loading…</div>
@@ -1451,8 +1452,8 @@ export default function GexSignalsPage() {
 			</div>
 
 			<div className="rounded-lg border border-slate-200 bg-white p-4">
-				<h2 className="text-lg font-semibold mb-1 text-slate-700">Long-term (10–20d)</h2>
-				<p className="text-xs text-slate-500 mb-3">Position trades over 2–4 weeks.</p>
+				<h2 className="text-lg font-semibold mb-1 text-slate-700">Long-term (10-20d)</h2>
+				<p className="text-xs text-slate-500 mb-3">Position trades over 2-4 weeks.</p>
 				{loading ? (
 					<div className="text-sm text-slate-600">Loading…</div>
 				) : !row ? (
@@ -1556,7 +1557,7 @@ export default function GexSignalsPage() {
                   {Object.keys(row)
                     .sort()
                     .map((k) => (
-                      <tr key={k} className="hover:bg-emerald-50/40">
+                      <tr key={k} className="hover:bg-indigo-50/40">
                         <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100 font-medium text-slate-600">
                           {k}
                         </td>
@@ -1572,7 +1573,6 @@ export default function GexSignalsPage() {
         </div>
         </>
         )}
-      </div>
     </div>
   );
 }

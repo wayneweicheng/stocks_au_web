@@ -87,9 +87,6 @@ export default function IBGatewayPage() {
             );
           })()}
           <span className="text-xs text-slate-500">Heartbeat Updated: {status?.db_heartbeat_updated ?? "n/a"}</span>
-          {status?.db_heartbeat_error && (
-            <span className="text-xs text-red-600">Heartbeat error: {status.db_heartbeat_error}</span>
-          )}
           {/* No ib_error now that active connectivity checks are removed */}
         </div>
 
