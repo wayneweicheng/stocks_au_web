@@ -319,9 +319,17 @@ export default function GexSignalsPage() {
   const [stockCodesLoading, setStockCodesLoading] = useState(false);
   const [latestDate, setLatestDate] = useState<string>("");
 
-  // Signal strength matrix state
+  // Signal strength matrix state (GEX - Overview tab)
   const [signalStrengths, setSignalStrengths] = useState<Array<{stock_code: string, signal_strength_level: string, buy_dip_range?: string | null, sell_rip_range?: string | null}>>([]);
   const [signalStrengthsLoading, setSignalStrengthsLoading] = useState(false);
+
+  // Signal strength matrix state (OPTION - Option Overview tab)
+  const [optionSignalStrengths, setOptionSignalStrengths] = useState<Array<{stock_code: string, signal_strength_level: string, buy_dip_range?: string | null, sell_rip_range?: string | null}>>([]);
+  const [optionSignalStrengthsLoading, setOptionSignalStrengthsLoading] = useState(false);
+
+  // Signal strength matrix state (OPTION_TRADES - Option Trades Insights tab)
+  const [optionTradesSignalStrengths, setOptionTradesSignalStrengths] = useState<Array<{stock_code: string, signal_strength_level: string, buy_dip_range?: string | null, sell_rip_range?: string | null}>>([]);
+  const [optionTradesSignalStrengthsLoading, setOptionTradesSignalStrengthsLoading] = useState(false);
 
   // Option insights state (separate from overall insights)
   const [optionPrediction, setOptionPrediction] = useState<string>("");
@@ -449,6 +457,48 @@ export default function GexSignalsPage() {
         setSignalStrengths([]);
       })
       .finally(() => setSignalStrengthsLoading(false));
+  }, [baseUrl, observationDate]);
+
+  // Fetch OPTION signal strengths for the selected observation date
+  useEffect(() => {
+    if (!observationDate) return;
+    setOptionSignalStrengthsLoading(true);
+    const url = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}&source_type=OPTION`;
+    authenticatedFetch(url)
+      .then(async (r) => {
+        if (r.ok) {
+          const data = await r.json();
+          setOptionSignalStrengths(Array.isArray(data) ? data : []);
+        } else {
+          setOptionSignalStrengths([]);
+        }
+      })
+      .catch((e) => {
+        console.error("Failed to fetch option signal strengths:", e);
+        setOptionSignalStrengths([]);
+      })
+      .finally(() => setOptionSignalStrengthsLoading(false));
+  }, [baseUrl, observationDate]);
+
+  // Fetch OPTION_TRADES signal strengths for the selected observation date
+  useEffect(() => {
+    if (!observationDate) return;
+    setOptionTradesSignalStrengthsLoading(true);
+    const url = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}&source_type=OPTION_TRADES`;
+    authenticatedFetch(url)
+      .then(async (r) => {
+        if (r.ok) {
+          const data = await r.json();
+          setOptionTradesSignalStrengths(Array.isArray(data) ? data : []);
+        } else {
+          setOptionTradesSignalStrengths([]);
+        }
+      })
+      .catch((e) => {
+        console.error("Failed to fetch option trades signal strengths:", e);
+        setOptionTradesSignalStrengths([]);
+      })
+      .finally(() => setOptionTradesSignalStrengthsLoading(false));
   }, [baseUrl, observationDate]);
 
   useEffect(() => {
@@ -627,17 +677,17 @@ export default function GexSignalsPage() {
       setOptionPredictionCached(data.cached || false);
       setOptionPredictionWarning(data.warning || "");
 
-      // Reload signal strengths for OPTION source type after generating/regenerating
+      // Reload OPTION signal strengths after generating/regenerating
       if (!data.cached || forceRegenerate) {
         const strengthUrl = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}&source_type=OPTION`;
         authenticatedFetch(strengthUrl)
           .then(async (sr) => {
             if (sr.ok) {
               const strengthData = await sr.json();
-              setSignalStrengths(Array.isArray(strengthData) ? strengthData : []);
+              setOptionSignalStrengths(Array.isArray(strengthData) ? strengthData : []);
             }
           })
-          .catch((e) => console.error("Failed to refresh signal strengths:", e));
+          .catch((e) => console.error("Failed to refresh option signal strengths:", e));
       }
     } catch (e: any) {
       setOptionPredictionError(e.message);
@@ -737,6 +787,19 @@ export default function GexSignalsPage() {
       setOptionTradesPrediction(data.prediction_markdown || "");
       setOptionTradesPredictionCached(data.cached || false);
       setOptionTradesPredictionWarning(data.warning || "");
+
+      // Reload OPTION_TRADES signal strengths after generating/regenerating
+      if (!data.cached || forceRegenerate) {
+        const strengthUrl = `${baseUrl}/api/signal-strength?observation_date=${encodeURIComponent(observationDate)}&source_type=OPTION_TRADES`;
+        authenticatedFetch(strengthUrl)
+          .then(async (sr) => {
+            if (sr.ok) {
+              const strengthData = await sr.json();
+              setOptionTradesSignalStrengths(Array.isArray(strengthData) ? strengthData : []);
+            }
+          })
+          .catch((e) => console.error("Failed to refresh option trades signal strengths:", e));
+      }
     } catch (e: any) {
       setOptionTradesPredictionError(e.message);
       setOptionTradesPredictionWarning("");
@@ -976,6 +1039,10 @@ export default function GexSignalsPage() {
               promptError={optionPromptError}
               promptCopied={optionPromptCopied}
               promptMetadata={optionPromptMetadata}
+              signalStrengths={optionSignalStrengths}
+              signalStrengthsLoading={optionSignalStrengthsLoading}
+              observationDate={observationDate}
+              signalStrengthMatrixTitle="Option Flow Signal Strength Matrix"
             />
           </>
         ) : activeTab === "optiontradesinsights" ? (
@@ -1063,6 +1130,10 @@ export default function GexSignalsPage() {
               promptError={optionTradesPromptError}
               promptCopied={optionTradesPromptCopied}
               promptMetadata={optionTradesPromptMetadata}
+              signalStrengths={optionTradesSignalStrengths}
+              signalStrengthsLoading={optionTradesSignalStrengthsLoading}
+              observationDate={observationDate}
+              signalStrengthMatrixTitle="Option Trades Signal Strength Matrix"
             />
           </>
         ) : (

@@ -2,6 +2,13 @@
 
 import MarkdownRenderer from "./MarkdownRenderer";
 
+type SignalStrengthItem = {
+  stock_code: string;
+  signal_strength_level: string;
+  buy_dip_range?: string | null;
+  sell_rip_range?: string | null;
+};
+
 type InsightTabProps = {
   title: string;
   prediction: string;
@@ -25,6 +32,10 @@ type InsightTabProps = {
     hasPriceBars?: boolean;
   } | null;
   disabled?: boolean;
+  signalStrengths?: SignalStrengthItem[];
+  signalStrengthsLoading?: boolean;
+  observationDate?: string;
+  signalStrengthMatrixTitle?: string;
 };
 
 export default function InsightTab({
@@ -46,6 +57,10 @@ export default function InsightTab({
   promptCopied,
   promptMetadata,
   disabled = false,
+  signalStrengths,
+  signalStrengthsLoading = false,
+  observationDate,
+  signalStrengthMatrixTitle = "Signal Strength Matrix",
 }: InsightTabProps) {
   return (
     <div className="mb-8">
@@ -170,6 +185,103 @@ export default function InsightTab({
           </div>
         )}
       </div>
+
+      {/* Signal Strength Matrix */}
+      {signalStrengths !== undefined && (
+        <div className="rounded-lg border border-slate-200 bg-white p-6 mt-4">
+          <h2 className="text-lg font-semibold mb-4 text-slate-700">{signalStrengthMatrixTitle}</h2>
+
+          {signalStrengthsLoading ? (
+            <div className="text-sm text-slate-600">Loading signal strengths...</div>
+          ) : signalStrengths.length === 0 ? (
+            <div className="text-sm text-slate-600">
+              No signal strength data available{observationDate ? ` for ${observationDate}` : ""}. Generate a prediction to populate this matrix.
+            </div>
+          ) : (
+            <div>
+              {/* Desktop/Tablet matrix */}
+              <div className="hidden sm:block overflow-x-auto">
+                <div className="inline-block min-w-full">
+                  <div className="grid grid-cols-8 gap-2 mb-3 pb-2 border-b border-slate-200">
+                    <div className="text-xs font-semibold text-slate-600 uppercase">Stock</div>
+                    <div className="text-xs font-semibold text-center text-indigo-700">Strongly Bullish</div>
+                    <div className="text-xs font-semibold text-center text-emerald-500">Mildly Bullish</div>
+                    <div className="text-xs font-semibold text-center text-amber-600">Neutral</div>
+                    <div className="text-xs font-semibold text-center text-orange-500">Mildly Bearish</div>
+                    <div className="text-xs font-semibold text-center text-red-600">Strongly Bearish</div>
+                    <div className="text-xs font-semibold text-center text-slate-600">Buy the Dip Range</div>
+                    <div className="text-xs font-semibold text-center text-slate-600">Sell the Rip Range</div>
+                  </div>
+                  {signalStrengths.map((item) => {
+                    const level = item.signal_strength_level;
+                    return (
+                      <div key={item.stock_code} className="grid grid-cols-8 gap-2 py-2 border-b border-slate-100 hover:bg-slate-50">
+                        <div className="text-sm font-medium text-slate-700">{item.stock_code}</div>
+                        <div className="flex justify-center items-center">
+                          {level === "STRONGLY_BULLISH" && <div className="w-6 h-6 rounded-full bg-indigo-600" title="Strongly Bullish" />}
+                        </div>
+                        <div className="flex justify-center items-center">
+                          {level === "MILDLY_BULLISH" && <div className="w-6 h-6 rounded-full bg-emerald-300" title="Mildly Bullish" />}
+                        </div>
+                        <div className="flex justify-center items-center">
+                          {level === "NEUTRAL" && <div className="w-6 h-6 rounded-full bg-amber-400" title="Neutral" />}
+                        </div>
+                        <div className="flex justify-center items-center">
+                          {level === "MILDLY_BEARISH" && <div className="w-6 h-6 rounded-full bg-orange-400" title="Mildly Bearish" />}
+                        </div>
+                        <div className="flex justify-center items-center">
+                          {level === "STRONGLY_BEARISH" && <div className="w-6 h-6 rounded-full bg-red-600" title="Strongly Bearish" />}
+                        </div>
+                        <div className="flex justify-center items-center text-xs text-slate-700">
+                          {item.buy_dip_range || "-"}
+                        </div>
+                        <div className="flex justify-center items-center text-xs text-slate-700">
+                          {item.sell_rip_range || "-"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="sm:hidden space-y-3">
+                {signalStrengths.map((item) => {
+                  const level = item.signal_strength_level;
+                  const label = (level || "").replace(/_/g, " ");
+                  const color =
+                    level === "STRONGLY_BULLISH" ? "bg-indigo-600" :
+                    level === "MILDLY_BULLISH" ? "bg-emerald-300" :
+                    level === "NEUTRAL" ? "bg-amber-400" :
+                    level === "MILDLY_BEARISH" ? "bg-orange-400" :
+                    level === "STRONGLY_BEARISH" ? "bg-red-600" : "bg-slate-300";
+                  return (
+                    <div key={item.stock_code} className="rounded-md border border-slate-200 p-3 bg-white">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold text-slate-800">{item.stock_code}</div>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-4 h-4 rounded-full ${color}`} aria-hidden />
+                          <div className="text-xs text-slate-700 uppercase">{label}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <div className="text-xs text-slate-600">
+                          <div className="font-medium text-slate-700">Buy Dip</div>
+                          <div>{item.buy_dip_range || "-"}</div>
+                        </div>
+                        <div className="text-xs text-slate-600">
+                          <div className="font-medium text-slate-700">Sell Rip</div>
+                          <div>{item.sell_rip_range || "-"}</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

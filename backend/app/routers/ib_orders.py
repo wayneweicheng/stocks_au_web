@@ -133,6 +133,8 @@ class PlaceOrderAtPriceRequest(BaseModel):
     limit_price: float
     place_day: bool = True
     place_overnight: bool = False
+    take_profit_offset: Optional[float] = None
+    stop_loss_offset: Optional[float] = None
 
     @field_validator("buy_sell")
     @classmethod
@@ -154,6 +156,15 @@ class PlaceOrderAtPriceRequest(BaseModel):
     def validate_limit_price(cls, v: float) -> float:
         if v is None or v <= 0:
             raise ValueError("limit_price must be > 0")
+        return float(v)
+
+    @field_validator("take_profit_offset", "stop_loss_offset")
+    @classmethod
+    def validate_optional_offsets(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        if v < 0:
+            raise ValueError("Offset must be >= 0")
         return float(v)
 
 
@@ -558,6 +569,17 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
     if not batch.place_day and not batch.place_overnight:
         raise HTTPException(status_code=400, detail="At least one of place_day or place_overnight must be true")
 
+    logger.info(
+        "IB place_orders_at_price request: count=%s place_day=%s place_overnight=%s bracket_enabled=%s tp_offset=%s sl_offset=%s per_order_bracket=%s",
+        len(batch.orders),
+        batch.place_day,
+        batch.place_overnight,
+        bool(batch.bracket_config and batch.bracket_config.enabled),
+        batch.bracket_config.take_profit_offset if batch.bracket_config else None,
+        batch.bracket_config.stop_loss_offset if batch.bracket_config else None,
+        any((o.take_profit_offset or 0) > 0 or (o.stop_loss_offset or 0) > 0 for o in batch.orders),
+    )
+
     try:
         for i, o in enumerate(batch.orders, start=1):
             code = _normalize_us_symbol(o.stock_code)
@@ -580,21 +602,27 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                     ib.qualifyContracts(contract)
 
                     # Check if bracket orders are enabled (at least one of TP or SL must be set)
-                    use_bracket = (
+                    per_tp = o.take_profit_offset if o.take_profit_offset is not None else 0.0
+                    per_sl = o.stop_loss_offset if o.stop_loss_offset is not None else 0.0
+                    has_per_order_bracket = (per_tp > 0 or per_sl > 0)
+                    has_batch_bracket = (
                         batch.bracket_config is not None
                         and batch.bracket_config.enabled
                         and (batch.bracket_config.take_profit_offset > 0 or batch.bracket_config.stop_loss_offset > 0)
                     )
+                    use_bracket = has_per_order_bracket or has_batch_bracket
 
                     if use_bracket:
+                        tp_offset = per_tp if has_per_order_bracket else batch.bracket_config.take_profit_offset
+                        sl_offset = per_sl if has_per_order_bracket else batch.bracket_config.stop_loss_offset
                         # Create and place bracket order (parent + optional TP + optional SL)
                         parent, tp_order, sl_order, tp_price, sl_price = _create_bracket_orders(
                             ib=ib,
                             action=o.buy_sell.upper(),
                             qty=qty,
                             entry_price=price,
-                            tp_offset=batch.bracket_config.take_profit_offset,
-                            sl_offset=batch.bracket_config.stop_loss_offset,
+                            tp_offset=tp_offset,
+                            sl_offset=sl_offset,
                             stock_code=code
                         )
 
@@ -643,6 +671,18 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                                 "stop_price": sl_price,
                             }
                         orders_placed.append(order_result)
+                        logger.info(
+                            "IB bracket placed: exchange=SMART stock=%s side=%s qty=%s entry=%s tp=%s sl=%s parent_id=%s tp_id=%s sl_id=%s",
+                            code,
+                            o.buy_sell.upper(),
+                            qty,
+                            price,
+                            tp_price,
+                            sl_price,
+                            order_result["parent"].get("ib_order_id"),
+                            order_result.get("take_profit", {}).get("ib_order_id") if "take_profit" in order_result else None,
+                            order_result.get("stop_loss", {}).get("ib_order_id") if "stop_loss" in order_result else None,
+                        )
                     else:
                         # Place simple limit order (existing behavior)
                         lo = LimitOrder(o.buy_sell.upper(), qty, lmtPrice=price)
@@ -662,6 +702,14 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                             "side": o.buy_sell.upper(),
                             "ib_order_id": getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
                         })
+                        logger.info(
+                            "IB order placed: exchange=SMART stock=%s side=%s qty=%s limit=%s order_id=%s",
+                            code,
+                            o.buy_sell.upper(),
+                            qty,
+                            price,
+                            getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
+                        )
                 except Exception as e:
                     logger.warning("Failed to place SMART order for %s: %s", code, e)
                     # Don't fail entire batch if day order fails, add error to this order
@@ -697,6 +745,14 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
                         "side": o.buy_sell.upper(),
                         "ib_order_id": getattr(trade_overnight, "order", None).orderId if getattr(trade_overnight, "order", None) else None,
                     })
+                    logger.info(
+                        "IB order placed: exchange=OVERNIGHT stock=%s side=%s qty=%s limit=%s order_id=%s",
+                        code,
+                        o.buy_sell.upper(),
+                        qty,
+                        price,
+                        getattr(trade_overnight, "order", None).orderId if getattr(trade_overnight, "order", None) else None,
+                    )
                 except Exception as e:
                     logger.warning("Failed to place OVERNIGHT order for %s: %s", code, e)
                     # Don't fail the entire operation if overnight order fails

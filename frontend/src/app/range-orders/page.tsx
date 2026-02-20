@@ -63,6 +63,11 @@ export default function RangeOrdersPage() {
   const [placing, setPlacing] = useState<boolean>(false);
   const [placeError, setPlaceError] = useState<string>("");
   const [placeResult, setPlaceResult] = useState<any | null>(null);
+  const [pegasusPlacing, setPegasusPlacing] = useState<boolean>(false);
+  const [pegasusPlaceError, setPegasusPlaceError] = useState<string>("");
+  const [pegasusPlaceResult, setPegasusPlaceResult] = useState<any | null>(null);
+  const [supportBounceStrategyId, setSupportBounceStrategyId] = useState<number | null>(null);
+  const [pegasusStrategyError, setPegasusStrategyError] = useState<string>("");
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const [quoteClose, setQuoteClose] = useState<number | null>(null);
   const [quoteLast, setQuoteLast] = useState<number | null>(null);
@@ -84,6 +89,7 @@ export default function RangeOrdersPage() {
   const [enableStopLoss, setEnableStopLoss] = useState<boolean>(true);
   const [stopLossOffset, setStopLossOffset] = useState<string>("3.00");
   const [bracketOffsetType, setBracketOffsetType] = useState<"dollar" | "percent">("dollar");
+  const [orderTargets, setOrderTargets] = useState<Record<number, { takeProfit: string; stopLoss: string }>>({});
 
   // Position mode: open (new position) or close (existing position)
   const [positionMode, setPositionMode] = useState<"open" | "close">("open");
@@ -226,6 +232,40 @@ export default function RangeOrdersPage() {
     if (up.includes(".")) return up;
     return `${up}.US`;
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadSupportBounceStrategy = async () => {
+      setPegasusStrategyError("");
+      if (!baseUrl) return;
+      try {
+        const res = await fetch(`${baseUrl}/api/trading-orders/strategies`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (cancelled) return;
+        const match = Array.isArray(data)
+          ? data.find((s: any) => String(s?.strategy_code || "").trim().toUpperCase() === "SUPPORT_BOUNCE")
+          : null;
+        const id = match?.strategy_id != null ? Number(match.strategy_id) : null;
+        if (Number.isFinite(id as number)) {
+          setSupportBounceStrategyId(id as number);
+        } else {
+          setSupportBounceStrategyId(null);
+          setPegasusStrategyError("Support Bounce strategy not found.");
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setPegasusStrategyError(err?.message || "Failed to load strategies");
+          setSupportBounceStrategyId(null);
+        }
+      }
+    };
+
+    loadSupportBounceStrategy();
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl]);
 
   // Load quote from DB only when stock code changes
   useEffect(() => {
@@ -409,6 +449,99 @@ export default function RangeOrdersPage() {
     }
   }, [generated, side, takeProfitOffset, stopLossOffset, bracketOffsetType, enableStopLoss]);
 
+  useEffect(() => {
+    if (!enableBracket || !generated || generated.length === 0) {
+      setOrderTargets({});
+      return;
+    }
+    const tpInput = toNumber(takeProfitOffset) ?? 0;
+    const slInput = enableStopLoss ? (toNumber(stopLossOffset) ?? 0) : 0;
+    if (tpInput <= 0 || slInput <= 0) {
+      setOrderTargets({});
+      return;
+    }
+    const next: Record<number, { takeProfit: string; stopLoss: string }> = {};
+    for (const o of generated) {
+      const targets = computePegasusTargets(o.price, side);
+      if (!targets) continue;
+      next[o.index] = {
+        takeProfit: targets.profitTarget.toFixed(2),
+        stopLoss: targets.stopLoss.toFixed(2),
+      };
+    }
+    setOrderTargets(next);
+  }, [enableBracket, generated, takeProfitOffset, stopLossOffset, bracketOffsetType, side, enableStopLoss]);
+
+  const computePegasusTargets = (entryPrice: number, orderSide: Side) => {
+    const tpInput = toNumber(takeProfitOffset) ?? 0;
+    const slInput = enableStopLoss ? (toNumber(stopLossOffset) ?? 0) : 0;
+    if (tpInput <= 0 || slInput <= 0 || entryPrice <= 0) return null;
+
+    let tpDollar: number;
+    let slDollar: number;
+    if (bracketOffsetType === "dollar") {
+      tpDollar = tpInput;
+      slDollar = slInput;
+    } else {
+      tpDollar = (tpInput / 100) * entryPrice;
+      slDollar = (slInput / 100) * entryPrice;
+    }
+
+    if (orderSide === "Buy") {
+      return {
+        profitTarget: round2(entryPrice + tpDollar),
+        stopLoss: round2(entryPrice - slDollar),
+      };
+    }
+    return {
+      profitTarget: round2(entryPrice - tpDollar),
+      stopLoss: round2(entryPrice + slDollar),
+    };
+  };
+
+  const computeTargetOffsets = (entryPrice: number, orderSide: Side, targetTp: number, targetSl: number) => {
+    if (entryPrice <= 0 || targetTp <= 0 || targetSl <= 0) return null;
+    if (orderSide === "Buy") {
+      return {
+        tpOffset: round2(targetTp - entryPrice),
+        slOffset: round2(entryPrice - targetSl),
+      };
+    }
+    return {
+      tpOffset: round2(entryPrice - targetTp),
+      slOffset: round2(targetSl - entryPrice),
+    };
+  };
+
+  const canPlacePegasusOrders = useMemo(() => {
+    if (!baseUrl || !generated || generated.length === 0) return false;
+    if (!supportBounceStrategyId || !Number.isFinite(supportBounceStrategyId)) return false;
+    if (positionMode !== "open") return false;
+    if (!enableBracket || !enableStopLoss) return false;
+    const tpInput = toNumber(takeProfitOffset) ?? 0;
+    const slInput = toNumber(stopLossOffset) ?? 0;
+    if (tpInput <= 0 || slInput <= 0) return false;
+    for (const o of generated) {
+      const t = orderTargets[o.index];
+      const tp = toNumber(t?.takeProfit ?? "");
+      const sl = toNumber(t?.stopLoss ?? "");
+      if (!tp || tp <= 0 || !sl || sl <= 0) return false;
+    }
+    if (pegasusPlacing) return false;
+    return true;
+  }, [
+    baseUrl,
+    generated,
+    supportBounceStrategyId,
+    enableBracket,
+    enableStopLoss,
+    takeProfitOffset,
+    stopLossOffset,
+    orderTargets,
+    pegasusPlacing,
+    positionMode,
+  ]);
+
   // Price slider bounds: 15% below start to 15% above end (using min/max of range)
   const sliderBounds = useMemo(() => {
     const low = Math.min(parsed.sp ?? 0, parsed.ep ?? 0);
@@ -495,10 +628,26 @@ export default function RangeOrdersPage() {
     // Validate bracket offsets if enabled (only in open position mode)
     // At least Take-Profit must be set; Stop-Loss is optional
     const tpOffsetInput = toNumber(takeProfitOffset) ?? 0;
-    const slOffsetInput = toNumber(stopLossOffset) ?? 0;
-    if (enableBracket && placeDayOrders && positionMode === "open" && tpOffsetInput <= 0) {
-      setPlaceError("Take-Profit offset must be greater than 0 for bracket orders");
-      return;
+    const slOffsetInput = enableStopLoss ? (toNumber(stopLossOffset) ?? 0) : 0;
+    if (enableBracket && placeDayOrders && positionMode === "open") {
+      if (tpOffsetInput <= 0 || slOffsetInput <= 0) {
+        setPlaceError("Take-Profit and Stop-Loss offsets must be greater than 0 for bracket orders");
+        return;
+      }
+      for (const o of generated) {
+        const t = orderTargets[o.index];
+        const tp = toNumber(t?.takeProfit ?? "");
+        const sl = toNumber(t?.stopLoss ?? "");
+        if (!tp || tp <= 0 || !sl || sl <= 0) {
+          setPlaceError("Each order must have take-profit and stop-loss values when bracket orders are enabled.");
+          return;
+        }
+        const offsets = computeTargetOffsets(o.price, side, tp, sl);
+        if (!offsets || offsets.tpOffset <= 0 || offsets.slOffset <= 0) {
+          setPlaceError("Take-profit and stop-loss must be on the correct side of entry for each order.");
+          return;
+        }
+      }
     }
 
     setPlacing(true);
@@ -506,29 +655,46 @@ export default function RangeOrdersPage() {
     setPlaceResult(null);
     try {
       const buySell = side === "Buy" ? "BUY" : "SELL";
-      const orders = generated.map(o => ({
-        stock_code: normalizeUsSymbol(stockCode),
-        // Use allocatedValue to match intended budget per order
-        stock_dollar_amount: Math.max(0.01, Math.round(o.allocatedValue * 100) / 100),
-        buy_sell: buySell,
-        limit_price: o.price,
-      }));
+      const orders = generated.map(o => {
+        const base = {
+          stock_code: normalizeUsSymbol(stockCode),
+          // Use allocatedValue to match intended budget per order
+          stock_dollar_amount: Math.max(0.01, Math.round(o.allocatedValue * 100) / 100),
+          buy_sell: buySell,
+          limit_price: o.price,
+        };
+
+        if (enableBracket && placeDayOrders && positionMode === "open") {
+          const t = orderTargets[o.index];
+          const tp = toNumber(t?.takeProfit ?? "");
+          const sl = toNumber(t?.stopLoss ?? "");
+          if (tp && sl) {
+            const offsets = computeTargetOffsets(o.price, side, tp, sl);
+            if (offsets && offsets.tpOffset > 0 && offsets.slOffset > 0) {
+              return {
+                ...base,
+                take_profit_offset: offsets.tpOffset,
+                stop_loss_offset: offsets.slOffset,
+              };
+            }
+          }
+        }
+        return base;
+      });
 
       // Build bracket config if enabled and using SMART exchange (not in close position mode)
       // Convert percent to dollar if needed (API always expects dollar amounts)
       // Stop-loss is optional - controlled by enableStopLoss checkbox
       let bracketConfig = null;
-      if (enableBracket && placeDayOrders && positionMode === "open" && tpOffsetInput > 0) {
+      if (enableBracket && placeDayOrders && positionMode === "open" && tpOffsetInput > 0 && slOffsetInput > 0) {
         // Use the first order's price as reference for percent conversion
         const refPrice = generated[0].price;
         const tpDollar = bracketOffsetType === "percent"
           ? round2((tpOffsetInput / 100) * refPrice)
           : tpOffsetInput;
-        const slDollar = enableStopLoss && slOffsetInput > 0
-          ? (bracketOffsetType === "percent"
-              ? round2((slOffsetInput / 100) * refPrice)
-              : slOffsetInput)
-          : 0;
+        const slDollar = bracketOffsetType === "percent"
+          ? round2((slOffsetInput / 100) * refPrice)
+          : slOffsetInput;
 
         bracketConfig = {
           enabled: true,
@@ -557,6 +723,94 @@ export default function RangeOrdersPage() {
       setPlaceError(e?.message || "Failed to place orders");
     } finally {
       setPlacing(false);
+    }
+  };
+
+  const onPlacePegasusOrders = async () => {
+    if (!generated || !baseUrl) return;
+    setPegasusPlaceError("");
+    setPegasusPlaceResult(null);
+
+    if (!supportBounceStrategyId || !Number.isFinite(supportBounceStrategyId)) {
+      setPegasusPlaceError("Support Bounce strategy is not available.");
+      return;
+    }
+    if (positionMode !== "open") {
+      setPegasusPlaceError("Pegasus orders can only be placed in Open Position mode.");
+      return;
+    }
+    if (!enableBracket || !enableStopLoss) {
+      setPegasusPlaceError("Enable bracket orders with both take-profit and stop-loss to place Pegasus orders.");
+      return;
+    }
+
+    const tpInput = toNumber(takeProfitOffset) ?? 0;
+    const slInput = toNumber(stopLossOffset) ?? 0;
+    if (tpInput <= 0 || slInput <= 0) {
+      setPegasusPlaceError("Take-profit and stop-loss offsets must be greater than 0.");
+      return;
+    }
+
+    const stock = normalizeUsSymbol(stockCode);
+    if (!stock) {
+      setPegasusPlaceError("Stock code is required.");
+      return;
+    }
+
+    const sideCode = side === "Buy" ? "B" : "S";
+    const payloads = generated.map((o) => {
+      const t = orderTargets[o.index];
+      const tp = toNumber(t?.takeProfit ?? "");
+      const sl = toNumber(t?.stopLoss ?? "");
+      const offsets = tp && sl ? computeTargetOffsets(o.price, side, tp, sl) : null;
+      if (!tp || tp <= 0 || !sl || sl <= 0 || !offsets || offsets.tpOffset <= 0 || offsets.slOffset <= 0) {
+        return null;
+      }
+      return {
+        strategy_id: supportBounceStrategyId,
+        stock_code: stock,
+        side: sideCode,
+        order_source_type: "MANUAL",
+        signal_type: null,
+        time_frame: "5M",
+        entry_type: "LIMIT",
+        entry_price: o.price,
+        quantity: o.volume,
+        profit_target_price: tp,
+        stop_loss_price: sl,
+        stop_loss_mode: "BAR_CLOSE",
+        status: "PENDING",
+        backtest_run_id: null,
+      };
+    });
+
+    if (payloads.some((p) => p == null)) {
+      setPegasusPlaceError("Invalid take-profit or stop-loss values for generated orders.");
+      return;
+    }
+
+    setPegasusPlacing(true);
+    try {
+      const results = await Promise.all(
+        payloads.map(async (payload) => {
+          const res = await fetch(`${baseUrl}/api/trading-orders`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const errDetail = typeof data?.detail === "string" ? data.detail : (data?.message || `HTTP ${res.status}`);
+            return { ok: false, error: errDetail, payload };
+          }
+          return { ok: true, message: data?.message || "Created", payload };
+        })
+      );
+      setPegasusPlaceResult({ results });
+    } catch (e: any) {
+      setPegasusPlaceError(e?.message || "Failed to create Pegasus orders");
+    } finally {
+      setPegasusPlacing(false);
     }
   };
 
@@ -1096,6 +1350,12 @@ export default function RangeOrdersPage() {
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Allocated {currency}</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Volume</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Order {currency}</th>
+                    {enableBracket && (
+                      <>
+                        <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Take Profit</th>
+                        <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Stop Loss</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -1114,6 +1374,43 @@ export default function RangeOrdersPage() {
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{round2(o.allocatedValue).toLocaleString()}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.volume}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{round2(o.computedValue).toLocaleString()}</td>
+                      {enableBracket && (
+                        <>
+                          <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={orderTargets[o.index]?.takeProfit ?? ""}
+                              onChange={(e) => setOrderTargets((prev) => ({
+                                ...prev,
+                                [o.index]: {
+                                  takeProfit: e.target.value,
+                                  stopLoss: prev[o.index]?.stopLoss ?? "",
+                                },
+                              }))}
+                              className="w-28 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                            />
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={orderTargets[o.index]?.stopLoss ?? ""}
+                              onChange={(e) => setOrderTargets((prev) => ({
+                                ...prev,
+                                [o.index]: {
+                                  takeProfit: prev[o.index]?.takeProfit ?? "",
+                                  stopLoss: e.target.value,
+                                },
+                              }))}
+                              disabled={!enableStopLoss}
+                              className={`w-28 rounded-md border border-slate-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/40 focus:border-red-400/40 ${
+                                !enableStopLoss ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"
+                              }`}
+                            />
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -1194,17 +1491,41 @@ export default function RangeOrdersPage() {
                     {placeError}
                   </div>
                 )}
-                <button
-                  type="button"
-                  disabled={placing || !baseUrl}
-                  onClick={onPlaceOrders}
-                  className="self-start rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {placing && (
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  )}
-                  {placing ? "Placing..." : "Place Orders"}
-                </button>
+                {pegasusStrategyError && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 text-amber-700 px-3 py-2 text-sm">
+                    {pegasusStrategyError}
+                  </div>
+                )}
+                {pegasusPlaceError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
+                    {pegasusPlaceError}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    disabled={placing || !baseUrl}
+                    onClick={onPlaceOrders}
+                    className="self-start rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {placing && (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    )}
+                    {placing ? "Placing..." : "Place Orders Directly"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canPlacePegasusOrders}
+                    onClick={onPlacePegasusOrders}
+                    className="self-start rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    title={!canPlacePegasusOrders ? "Enable bracket orders with take-profit and stop-loss to place Pegasus orders." : undefined}
+                  >
+                    {pegasusPlacing && (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    )}
+                    {pegasusPlacing ? "Creating..." : "Place Pegasus Orders"}
+                  </button>
+                </div>
                 {placing && (
                   <div className="w-64 h-1 bg-emerald-100 rounded overflow-hidden">
                     <div className="h-full w-1/3 bg-emerald-500 animate-[progress_1.2s_linear_infinite]" />
@@ -1294,6 +1615,18 @@ export default function RangeOrdersPage() {
                           </li>
                         );
                       })}
+                    </ul>
+                  </div>
+                )}
+                {pegasusPlaceResult && Array.isArray(pegasusPlaceResult.results) && (
+                  <div className="text-sm text-slate-700">
+                    <div className="font-semibold mb-1">Pegasus order results</div>
+                    <ul className="list-disc pl-5">
+                      {pegasusPlaceResult.results.map((r: any, idx: number) => (
+                        <li key={idx} className={r.ok ? "text-emerald-600" : "text-red-600"}>
+                          Order {idx + 1}: {r.ok ? "Created" : `Failed - ${r.error || "Unknown error"}`}
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 )}
@@ -1409,5 +1742,3 @@ export default function RangeOrdersPage() {
     </div>
   );
 }
-
-

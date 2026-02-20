@@ -130,6 +130,17 @@ export default function TradingOrdersPage() {
     status: "PENDING",
     backtest_run_id: "",
   });
+
+  const [validationErrors, setValidationErrors] = useState<{
+    profit_target?: string;
+    stop_loss?: string;
+  }>({});
+
+  const selectedStrategyCode = useMemo(() => {
+    const match = strategies.find((s) => String(s.strategy_id) === String(form.strategy_id));
+    return match?.strategy_code || "";
+  }, [strategies, form.strategy_id]);
+  const isTripleBeacon = selectedStrategyCode.trim().toUpperCase() === "TRIPLE_BEACON";
   useEffect(() => {
     const loadLookups = async () => {
       try {
@@ -211,6 +222,17 @@ export default function TradingOrdersPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, backtestRuns]);
+
+  useEffect(() => {
+    if (!isTripleBeacon) return;
+    setForm((prev) => ({
+      ...prev,
+      entry_type: "MARKET",
+      entry_price: "",
+      profit_target_price: "",
+      stop_loss_price: "",
+    }));
+  }, [isTripleBeacon]);
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -238,6 +260,12 @@ export default function TradingOrdersPage() {
       return;
     }
 
+    // Check for validation errors
+    if (validationErrors.profit_target || validationErrors.stop_loss) {
+      setError(validationErrors.profit_target || validationErrors.stop_loss || "Please fix validation errors.");
+      return;
+    }
+
     const payload = {
       strategy_id: Number(form.strategy_id),
       stock_code: normalizeStockCode(form.stock_code),
@@ -245,11 +273,11 @@ export default function TradingOrdersPage() {
       order_source_type: form.order_source_type,
       signal_type: form.order_source_type === "SIGNAL" ? form.signal_type.trim() : null,
       time_frame: form.time_frame,
-      entry_type: form.entry_type,
-      entry_price: form.entry_type === "MARKET" ? null : toOptionalFloat(form.entry_price),
+      entry_type: isTripleBeacon ? "MARKET" : form.entry_type,
+      entry_price: isTripleBeacon || form.entry_type === "MARKET" ? null : toOptionalFloat(form.entry_price),
       quantity: qty,
-      profit_target_price: toOptionalFloat(form.profit_target_price),
-      stop_loss_price: toOptionalFloat(form.stop_loss_price),
+      profit_target_price: isTripleBeacon ? null : toOptionalFloat(form.profit_target_price),
+      stop_loss_price: isTripleBeacon ? null : toOptionalFloat(form.stop_loss_price),
       stop_loss_mode: form.stop_loss_mode || "BAR_CLOSE",
       status: form.status,
       backtest_run_id: mode === "backtest" ? form.backtest_run_id : null,
@@ -341,16 +369,69 @@ export default function TradingOrdersPage() {
     }
   };
 
+  // Real-time validation effect
+  useEffect(() => {
+    if (isTripleBeacon || form.entry_type === "MARKET") {
+      setValidationErrors({});
+      return;
+    }
+
+    const entryNum = toOptionalFloat(form.entry_price);
+    const targetNum = toOptionalFloat(form.profit_target_price);
+    const stopNum = toOptionalFloat(form.stop_loss_price);
+    const errors: { profit_target?: string; stop_loss?: string } = {};
+
+    if (entryNum != null && form.side === "B") {
+      // Long order validation
+      if (targetNum != null && targetNum <= entryNum) {
+        errors.profit_target = "Profit Target must be above Entry Price for Long orders";
+      }
+      if (stopNum != null && stopNum >= entryNum) {
+        errors.stop_loss = "Stop Loss must be below Entry Price for Long orders";
+      }
+    }
+
+    if (entryNum != null && form.side === "S") {
+      // Short order validation
+      if (targetNum != null && targetNum >= entryNum) {
+        errors.profit_target = "Profit Target must be below Entry Price for Short orders";
+      }
+      if (stopNum != null && stopNum <= entryNum) {
+        errors.stop_loss = "Stop Loss must be above Entry Price for Short orders";
+      }
+    }
+
+    setValidationErrors(errors);
+  }, [form.entry_price, form.profit_target_price, form.stop_loss_price, form.side, form.entry_type, isTripleBeacon]);
+
   const profitStats = useMemo(() => {
     const qty = Number(form.quantity || 0);
     const entry = Number(form.entry_price || 0);
     const stop = Number(form.stop_loss_price || 0);
     const target = Number(form.profit_target_price || 0);
-    if (!qty || !entry || !stop || !target) return null;
-    const potentialLoss = Math.abs(entry - stop) * qty;
-    const potentialProfit = Math.abs(target - entry) * qty;
-    const ratio = potentialLoss > 0 ? potentialProfit / potentialLoss : null;
-    return { potentialLoss, potentialProfit, ratio };
+    if (!entry) return null;
+
+    let potentialLoss = null;
+    let potentialProfit = null;
+    let lossPercent = null;
+    let profitPercent = null;
+    let ratio = null;
+
+    if (stop > 0) {
+      potentialLoss = Math.abs(entry - stop) * (qty || 1);
+      lossPercent = ((Math.abs(entry - stop) / entry) * 100);
+    }
+
+    if (target > 0) {
+      potentialProfit = Math.abs(target - entry) * (qty || 1);
+      profitPercent = ((Math.abs(target - entry) / entry) * 100);
+    }
+
+    if (potentialLoss && potentialProfit && potentialLoss > 0) {
+      ratio = potentialProfit / potentialLoss;
+    }
+
+    return { potentialLoss, potentialProfit, lossPercent, profitPercent, ratio };
   }, [form.quantity, form.entry_price, form.stop_loss_price, form.profit_target_price]);
   return (
     <div className="min-h-screen text-slate-800">
@@ -486,10 +567,14 @@ export default function TradingOrdersPage() {
                 onChange={(e) => setForm({ ...form, side: e.target.value as "B" | "S" })}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               >
-                {SIDES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+                <option value="B">B – Long (Buy)</option>
+                <option value="S">S – Short (Sell)</option>
               </select>
+              {form.side === "S" && (
+                <p className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  Short orders require <code className="font-mono">ENABLE_SHORTING=true</code> in the engine config. Broker approval for short selling may also be required.
+                </p>
+              )}
             </div>
 
             <div>
@@ -542,14 +627,22 @@ export default function TradingOrdersPage() {
             <div>
               <label className="block text-sm mb-1 text-slate-600">Entry Type</label>
               <select
-                value={form.entry_type}
+                value={isTripleBeacon ? "MARKET" : form.entry_type}
                 onChange={(e) => setForm({ ...form, entry_type: e.target.value as any })}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                disabled={isTripleBeacon}
+                className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  isTripleBeacon
+                    ? "border-slate-200 bg-slate-100 text-slate-500"
+                    : "border-slate-300 bg-white focus:ring-blue-400/40 focus:border-blue-400/40"
+                }`}
               >
                 {ENTRY_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
+              {isTripleBeacon && (
+                <p className="mt-0.5 text-xs text-slate-500">Triple Beacon uses market orders only.</p>
+              )}
             </div>
 
             <div>
@@ -559,9 +652,9 @@ export default function TradingOrdersPage() {
                 step="0.01"
                 value={form.entry_price}
                 onChange={(e) => setForm({ ...form, entry_price: e.target.value })}
-                disabled={form.entry_type === "MARKET"}
+                disabled={isTripleBeacon || form.entry_type === "MARKET"}
                 className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                  form.entry_type === "MARKET"
+                  isTripleBeacon || form.entry_type === "MARKET"
                     ? "border-slate-200 bg-slate-100 text-slate-500"
                     : "border-slate-300 bg-white focus:ring-blue-400/40 focus:border-blue-400/40"
                 }`}
@@ -580,25 +673,73 @@ export default function TradingOrdersPage() {
             </div>
 
             <div>
-              <label className="block text-sm mb-1 text-slate-600">Profit Target</label>
+              <label className="block text-sm mb-1 text-slate-600">
+                Profit Target
+                {profitStats?.profitPercent != null && !validationErrors.profit_target && (
+                  <span className="ml-2 text-green-600 font-medium">
+                    (+{profitStats.profitPercent.toFixed(2)}%)
+                  </span>
+                )}
+              </label>
               <input
                 type="number"
                 step="0.01"
                 value={form.profit_target_price}
                 onChange={(e) => setForm({ ...form, profit_target_price: e.target.value })}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                disabled={isTripleBeacon}
+                className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  isTripleBeacon
+                    ? "border-slate-200 bg-slate-100 text-slate-500"
+                    : validationErrors.profit_target
+                    ? "border-red-400 bg-red-50/30 focus:ring-red-400/40 focus:border-red-400"
+                    : "border-slate-300 bg-white focus:ring-blue-400/40 focus:border-blue-400/40"
+                }`}
               />
+              {!isTripleBeacon && validationErrors.profit_target && (
+                <p className="mt-1 text-xs text-red-600">
+                  {validationErrors.profit_target}
+                </p>
+              )}
+              {!isTripleBeacon && !validationErrors.profit_target && (
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {form.side === "S" ? "Short: target must be below entry price" : "Long: target must be above entry price"}
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block text-sm mb-1 text-slate-600">Stop Loss</label>
+              <label className="block text-sm mb-1 text-slate-600">
+                Stop Loss
+                {profitStats?.lossPercent != null && !validationErrors.stop_loss && (
+                  <span className="ml-2 text-red-600 font-medium">
+                    (-{profitStats.lossPercent.toFixed(2)}%)
+                  </span>
+                )}
+              </label>
               <input
                 type="number"
                 step="0.01"
                 value={form.stop_loss_price}
                 onChange={(e) => setForm({ ...form, stop_loss_price: e.target.value })}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                disabled={isTripleBeacon}
+                className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  isTripleBeacon
+                    ? "border-slate-200 bg-slate-100 text-slate-500"
+                    : validationErrors.stop_loss
+                    ? "border-red-400 bg-red-50/30 focus:ring-red-400/40 focus:border-red-400"
+                    : "border-slate-300 bg-white focus:ring-blue-400/40 focus:border-blue-400/40"
+                }`}
               />
+              {!isTripleBeacon && validationErrors.stop_loss && (
+                <p className="mt-1 text-xs text-red-600">
+                  {validationErrors.stop_loss}
+                </p>
+              )}
+              {!isTripleBeacon && !validationErrors.stop_loss && (
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {form.side === "S" ? "Short: stop must be above entry price (bar-close trigger)" : "Long: stop must be below entry price (bar-close trigger)"}
+                </p>
+              )}
             </div>
 
             <div>
@@ -668,13 +809,30 @@ export default function TradingOrdersPage() {
             </div>
           </form>
         </div>
-        {profitStats && (
+        {profitStats && (profitStats.potentialLoss != null || profitStats.potentialProfit != null) && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 px-4 py-3 mb-6 text-sm">
-            <div className="font-medium mb-1">Risk/Reward (estimate)</div>
+            <div className="font-medium mb-1">
+              Risk/Reward (estimate) &mdash;{" "}
+              <span className={form.side === "S" ? "text-red-700" : "text-green-700"}>
+                {form.side === "S" ? "Short" : "Long"}
+              </span>
+            </div>
             <div className="flex flex-wrap gap-x-6 gap-y-1">
-              <div>Potential loss: {Math.round(profitStats.potentialLoss).toLocaleString()}</div>
-              <div>Potential profit: {Math.round(profitStats.potentialProfit).toLocaleString()}</div>
-              <div>Profit/Loss ratio: {profitStats.ratio != null ? profitStats.ratio.toFixed(2) : "-"}</div>
+              {profitStats.potentialLoss != null && (
+                <>
+                  <div>Potential loss: ${Math.round(profitStats.potentialLoss).toLocaleString()}</div>
+                  <div>Loss %: <span className="text-red-700 font-medium">{profitStats.lossPercent?.toFixed(2)}%</span></div>
+                </>
+              )}
+              {profitStats.potentialProfit != null && (
+                <>
+                  <div>Potential profit: ${Math.round(profitStats.potentialProfit).toLocaleString()}</div>
+                  <div>Profit %: <span className="text-green-700 font-medium">{profitStats.profitPercent?.toFixed(2)}%</span></div>
+                </>
+              )}
+              {profitStats.ratio != null && (
+                <div>Profit/Loss ratio: <span className="font-medium">{profitStats.ratio.toFixed(2)}</span></div>
+              )}
             </div>
           </div>
         )}
@@ -718,7 +876,15 @@ export default function TradingOrdersPage() {
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.order_id}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.strategy_code || o.strategy_id}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100 font-medium">{o.stock_code}</td>
-                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.side}</td>
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-semibold ${
+                          o.side === "S"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-green-100 text-green-700"
+                        }`}>
+                          {o.side === "S" ? "S Short" : "B Long"}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.order_source_type}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.signal_type || "-"}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">

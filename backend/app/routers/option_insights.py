@@ -10,6 +10,8 @@ from app.services.signal_strength_parser import SignalStrengthParser
 from app.services.signal_strength_db_service import SignalStrengthDBService
 import logging
 
+OPTION_TRADES_SOURCE_TYPE = "OPTION_TRADES"
+
 router = APIRouter(prefix="/api", tags=["option-insights"])
 logger = logging.getLogger("app.option_insights")
 
@@ -391,6 +393,23 @@ def get_option_trades_insight_prediction(
             cached_prediction = cache_service.get_cached_prediction(base_code, observation_date)
 
         if cached_prediction is not None:
+            # On cache hit, extract and persist signal strength
+            try:
+                db_service = SignalStrengthDBService()
+                signal_strength = SignalStrengthParser.extract_signal_strength(cached_prediction)
+                ranges = SignalStrengthParser.extract_trade_ranges(cached_prediction)
+                if signal_strength:
+                    db_service.upsert_signal_strength(
+                        stock_code=base_code,
+                        observation_date=observation_date,
+                        signal_strength_level=signal_strength,
+                        source_type=OPTION_TRADES_SOURCE_TYPE,
+                        buy_dip_range=ranges.get("buy_dip_range"),
+                        sell_rip_range=ranges.get("sell_rip_range"),
+                    )
+            except Exception as e:
+                logger.warning(f"Cache extraction/upsert failed for {base_code} on {observation_date}: {e}")
+
             # Return cached prediction
             logger.info(f"Returning cached option trades insight for {base_code}")
             return {
@@ -470,8 +489,9 @@ def get_option_trades_insight_prediction(
             prompt = prompt.replace("{{option_oi_data}}", "Not applicable for option trades analysis")
             prompt = prompt.replace("{{top_options_oi}}", "Not applicable for option trades analysis")
 
-            # Don't add signal strength prompt for option trades (it's focused on trade flow, not signals)
-            # Just use the template as is
+            # Prepend option trades signal strength system prompt
+            template_service = PromptTemplateService()
+            prompt = template_service.OPTION_TRADES_SIGNAL_STRENGTH_PROMPT + prompt
 
         except FileNotFoundError as e:
             logger.error(f"Template loading failed: {e}")
@@ -501,7 +521,39 @@ def get_option_trades_insight_prediction(
             logger.error(f"Cache save failed: {e}")
             # Don't fail the request if cache save fails
 
-        # Return generated prediction (no signal strength extraction for option trades)
+        # Step 6: Extract and save signal strength to database with source_type=OPTION_TRADES
+        signal_strength = None
+        try:
+            logger.info(f"Attempting to extract signal strength from option trades insight (length: {len(prediction_text)} chars)")
+            signal_strength = SignalStrengthParser.extract_signal_strength(prediction_text)
+            ranges = SignalStrengthParser.extract_trade_ranges(prediction_text)
+
+            if signal_strength:
+                logger.info(f"[OK] Extracted signal strength: {signal_strength} for {base_code}")
+                db_service = SignalStrengthDBService()
+
+                logger.info(f"Attempting to save signal strength: {base_code} on {observation_date} -> {signal_strength} ({OPTION_TRADES_SOURCE_TYPE})")
+                success = db_service.upsert_signal_strength(
+                    stock_code=base_code,
+                    observation_date=observation_date,
+                    signal_strength_level=signal_strength,
+                    source_type=OPTION_TRADES_SOURCE_TYPE,
+                    buy_dip_range=ranges.get("buy_dip_range"),
+                    sell_rip_range=ranges.get("sell_rip_range"),
+                )
+
+                if success:
+                    logger.info(f"[OK] Successfully saved signal strength: {base_code} -> {signal_strength} ({OPTION_TRADES_SOURCE_TYPE})")
+                else:
+                    logger.error(f"[FAIL] Database upsert returned False for {base_code}")
+            else:
+                logger.warning(f"[WARN] No signal strength extracted from LLM output for {base_code}")
+                logger.debug(f"Last 500 chars of prediction: {prediction_text[-500:]}")
+        except Exception as e:
+            logger.error(f"[FAIL] Signal strength extraction/save failed for {base_code}: {e}", exc_info=True)
+            # Don't fail the request if signal strength save fails
+
+        # Return generated prediction
         return {
             "prediction_markdown": prediction_text,
             "cached": False,
@@ -509,7 +561,8 @@ def get_option_trades_insight_prediction(
             "observation_date": observation_date.isoformat(),
             "stock_code": base_code,
             "token_usage": token_usage,
-            "generated_at": datetime.now().isoformat()
+            "generated_at": datetime.now().isoformat(),
+            "signal_strength": signal_strength
         }
 
     except HTTPException:
