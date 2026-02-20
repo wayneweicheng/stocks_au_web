@@ -16,14 +16,13 @@ const NAV: NavGroup[] = [
       { href: "/range-orders", label: "Range Orders" },
       { href: "/conditional-orders", label: "Conditional Orders" },
       { href: "/strategy-orders", label: "Strategy Orders" },
+      { href: "/trading-orders", label: "Pegasus Trading Orders" },
     ],
   },
   {
     label: "Market",
     items: [
       { href: "/market-flow", label: "Market Flow" },
-      { href: "/gex-auto-insight", label: "GEX Auto Insight" },
-      { href: "/option-insights", label: "US Option Insights" },
     ],
   },
   {

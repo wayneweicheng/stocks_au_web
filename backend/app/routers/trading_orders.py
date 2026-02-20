@@ -2,9 +2,11 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
+import logging
 
 
 router = APIRouter(prefix="/api", tags=["trading-orders"])
+logger = logging.getLogger("app.trading_orders")
 
 DB_NAME = "StockDB_US"
 
@@ -272,6 +274,20 @@ def get_trading_orders(
 @router.post("/trading-orders")
 def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
     normalized = _normalize_order_inputs(order)
+    logger.info(
+        "Pegasus order create request: strategy_id=%s stock_code=%s side=%s time_frame=%s entry_type=%s entry_price=%s qty=%s tp=%s sl=%s status=%s backtest_run_id=%s",
+        normalized["strategy_id"],
+        normalized["stock_code"],
+        normalized["side"],
+        normalized["time_frame"],
+        normalized["entry_type"],
+        normalized["entry_price"],
+        normalized["quantity"],
+        normalized["profit_target_price"],
+        normalized["stop_loss_price"],
+        normalized["status"],
+        normalized["backtest_run_id"],
+    )
     model = SQLServerModel(database=DB_NAME)
     params = (
         normalized["strategy_id"],
@@ -289,16 +305,25 @@ def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
         normalized["status"],
         normalized["backtest_run_id"],
     )
-    model.execute_update_usp(
-        """
-        INSERT INTO Trading.Orders
-            (StrategyId, StockCode, Side, OrderSourceType, SignalType, TimeFrame, EntryType, EntryPrice, Quantity,
-             ProfitTargetPrice, StopLossPrice, StopLossMode, Status, BacktestRunId, CreatedAt, UpdatedAt)
-        VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
-        """,
-        params,
-    )
+    try:
+        model.execute_update_usp(
+            """
+            INSERT INTO Trading.Orders
+                (StrategyId, StockCode, Side, OrderSourceType, SignalType, TimeFrame, EntryType, EntryPrice, Quantity,
+                 ProfitTargetPrice, StopLossPrice, StopLossMode, Status, BacktestRunId, CreatedAt, UpdatedAt)
+            VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
+            """,
+            params,
+        )
+    except Exception:
+        logger.exception(
+            "Pegasus order create failed: strategy_id=%s stock_code=%s side=%s",
+            normalized["strategy_id"],
+            normalized["stock_code"],
+            normalized["side"],
+        )
+        raise
     return {"message": f"Order for {normalized['stock_code']} created successfully."}
 
 

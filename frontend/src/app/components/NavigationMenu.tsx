@@ -45,7 +45,6 @@ export default function NavigationMenu() {
             <Link onClick={() => setOpen(false)} href="/range-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Price Range Orders</Link>
             <Link onClick={() => setOpen(false)} href="/integrated-charts" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Integrated Charts</Link>
             <Link onClick={() => setOpen(false)} href="/trading-halt" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Trading Halt</Link>
-            <Link onClick={() => setOpen(false)} href="/option-insights" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">US Option Insights</Link>
             <Link onClick={() => setOpen(false)} href="/discord-summary" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Discord Summary</Link>
           </div>
         </div>

@@ -152,6 +152,49 @@ Place this JSON at the very end of your markdown response after all analysis.
 
 """
 
+    # System instruction for option trades signal strength classification (trade flow focused)
+    OPTION_TRADES_SIGNAL_STRENGTH_PROMPT = """IMPORTANT: At the end of your analysis, you MUST provide a signal strength classification in the following JSON format:
+
+```json
+{
+  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH"
+}
+```
+
+Signal Strength Definitions:
+- STRONGLY_BULLISH: Multiple large bullish option trades (calls, aggressive buying), high conviction upside from institutional flow
+- MILDLY_BULLISH: Some bullish trade indicators, positive bias but with mixed or modest trade sizing
+- NEUTRAL: Conflicting call/put flow, unclear directional conviction, or balanced institutional positioning
+- MILDLY_BEARISH: Some bearish trade indicators, negative bias from put buying or call selling but not overwhelming
+- STRONGLY_BEARISH: Multiple large bearish option trades (puts, aggressive selling), high conviction downside from institutional flow
+
+CRITICAL FOCUS - SHORT-TERM TRADE FLOW ANALYSIS (1-3 Days):
+Your signal strength classification should reflect the IMMEDIATE directional bias from large option trades (size > 300 contracts) for the next 1-3 trading days.
+
+**TRADE FLOW ANALYSIS PRIORITY:**
+Evaluate the following in order of importance:
+1. **Put/Call Balance**: Heavy put buying indicates bearish institutional positioning; heavy call buying indicates bullish positioning
+2. **Trade Size**: Larger trades (1000+ contracts) carry more weight than smaller trades near the 300 threshold
+3. **Strike vs Price Relationship**: ATM or ITM trades reflect higher conviction than far OTM
+4. **Time of Day**: Late-day trades (after 3pm) often reflect informed positioning ahead of the close
+5. **Expiry Proximity**: Near-term expiries (0-7 DTE) indicate more urgent directional conviction than longer-dated trades
+
+TRADING LEVELS RECOMMENDATION:
+Based on the option trade strikes and clustering, provide:
+
+1. **Buy the Dip Range**: If trade flow supports buying on weakness, specify:
+   - Price range for buy entry based on put strike concentrations (support levels from hedging)
+   - If NOT recommending buy the dip, explicitly state "Not Recommended" and explain why
+
+2. **Sell the Rip Range**: If trade flow supports selling on strength, specify:
+   - Price range for sell/short entry based on call strike concentrations (resistance from hedging)
+   - If NOT recommending sell the rip, explicitly state "Not Recommended" and explain why
+
+Place this JSON at the very end of your markdown response after all analysis.
+---
+
+"""
+
     def __init__(self, template_dir: str = "signal_pattern"):
         """
         Initialize the template service.
