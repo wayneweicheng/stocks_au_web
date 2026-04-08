@@ -105,10 +105,67 @@ class SignalStrengthParser:
             return None
 
     @classmethod
+    def is_valid_price_range(cls, range_text: str, context: str = "") -> bool:
+        """
+        Validate that a range text represents a valid price range, not DTE or other values.
+
+        Args:
+            range_text: The extracted range text (e.g., "618.4–620.3" or "0–7")
+            context: The surrounding context text to check for DTE keywords
+
+        Returns:
+            True if valid price range, False otherwise
+        """
+        # Extract the numeric values from the range
+        parts = range_text.split('–')
+        if len(parts) != 2:
+            return False
+
+        try:
+            lower = float(parts[0].strip())
+            upper = float(parts[1].strip())
+
+            # Condition 1: Reject if lower bound is 0
+            # Price ranges should never start at 0
+            if lower == 0:
+                logger.warning(f"Rejected price range starting at 0: {range_text}")
+                return False
+
+            # Condition 2: Reject if context contains "DTE" VERY close to the numbers (within 20 chars)
+            # This indicates it's a Days To Expiration range, not a price range
+            # Find the range pattern in context to get precise positioning
+            range_pos = context.upper().find(range_text.replace('–', '-').upper())
+            if range_pos == -1:
+                # Try finding with original dash characters
+                range_pos = context.upper().find(parts[0].strip())
+
+            if range_pos != -1:
+                # Check within 20 characters before or after the range
+                window_start = max(0, range_pos - 20)
+                window_end = min(len(context), range_pos + len(range_text) + 20)
+                nearby_text = context[window_start:window_end].upper()
+
+                if "DTE" in nearby_text or "DAYS TO EXPIRATION" in nearby_text:
+                    logger.warning(f"Rejected range with DTE in close proximity: {range_text}")
+                    return False
+
+            # Condition 3: Reject unrealistic ranges (both numbers < 10)
+            # Most stock/ETF prices are above 10, so 0-7 or 3-5 are likely DTE values
+            if lower < 10 and upper < 10:
+                logger.warning(f"Rejected suspiciously low range (likely DTE): {range_text}")
+                return False
+
+            return True
+        except (ValueError, IndexError):
+            return False
+
+    @classmethod
     def extract_trade_ranges(cls, llm_output: str) -> dict:
         """
         Extract 'Buy the Dip Range' and 'Sell the Rip Range' as plain text strings.
         Returns dict with optional keys: buy_dip_range, sell_rip_range
+
+        Validates that extracted ranges are valid price ranges and not DTE values.
         """
         result: dict = {}
         try:
@@ -121,8 +178,9 @@ class SignalStrengthParser:
             # Patterns:
             # - Buy the Dip Range: "... 618.4 - 620.3" or "not recommend" (case-insensitive)
             # - Sell the Rip Range: same styles
-            # Number pattern: allows optional $ and commas
-            num = r'\$?\s*(?:-?\d{1,3}(?:,\d{3})*(?:\.\d+)?|-?\d+(?:\.\d+)?)'
+            # Number pattern: allows optional $ and commas, supports any positive number
+            # Pattern explanation: \d+ (any digits) optional comma-grouped thousands, optional decimal
+            num = r'\$?\s*\d+(?:,\d{3})*(?:\.\d+)?'
             range_pattern = rf'(?P<a>{num})\s*[-–—]\s*(?P<b>{num})'
             # Also support "a to b"
             range_to_pattern = rf'(?P<a2>{num})\s*(?:to|TO)\s*(?P<b2>{num})'
@@ -130,35 +188,89 @@ class SignalStrengthParser:
 
             def find_after(label_variants: list[str]) -> Optional[str]:
                 for label in label_variants:
-                    # capture after label up to EOL
-                    m = re.search(label + r'\s*[:\-]?\s*(.+)', text, re.IGNORECASE)
-                    if m:
+                    # Strategy 1: Find ALL occurrences of the label and try each one
+                    # This handles cases where the label appears multiple times (e.g., as header then in text)
+                    for m in re.finditer(label + r'\s*[:\-]?\s*(.+)', text, re.IGNORECASE):
                         tail = m.group(1).strip()
-                        # First try explicit range
+                        # Capture more context (up to 200 chars) for DTE validation
+                        context_start = max(0, m.start() - 100)
+                        context_end = min(len(text), m.end() + 200)
+                        context = text[context_start:context_end]
+
+                        # PRIORITY 1: Check for "not recommend" FIRST (before trying to extract ranges)
+                        # This prevents false positives from ranges mentioned in explanatory text
+                        mn = re.search(not_recommend_pattern, tail, re.IGNORECASE)
+                        if mn:
+                            return mn.group(1).lower()
+
+                        # PRIORITY 2: Try explicit range on same line
                         mr = re.search(range_pattern, tail, re.IGNORECASE)
                         if mr:
                             def clean(x: str) -> str:
                                 return x.replace("$", "").replace(",", "").strip()
                             a = clean(mr.group('a'))
                             b = clean(mr.group('b'))
-                            return f"{a}–{b}"
-                        # Alternate "a to b" phrasing
+                            candidate_range = f"{a}–{b}"
+
+                            # Validate the range before returning
+                            if cls.is_valid_price_range(candidate_range, context):
+                                return candidate_range
+                            else:
+                                logger.info(f"Skipping invalid price range: {candidate_range}")
+                                continue
+
+                        # PRIORITY 3: Alternate "a to b" phrasing on same line
                         mr2 = re.search(range_to_pattern, tail, re.IGNORECASE)
                         if mr2:
                             def clean2(x: str) -> str:
                                 return x.replace("$", "").replace(",", "").strip()
                             a = clean2(mr2.group('a2'))
                             b = clean2(mr2.group('b2'))
-                            return f"{a}–{b}"
-                        # Then try "not recommend"
-                        mn = re.search(not_recommend_pattern, tail, re.IGNORECASE)
-                        if mn:
-                            return mn.group(1).lower()
-                        # Otherwise return first tokenish phrase up to break
-                        # but keep it conservative: only return if short
-                        candidate = tail.splitlines()[0].strip()
-                        if candidate and len(candidate) <= 64:
-                            return candidate
+                            candidate_range = f"{a}–{b}"
+
+                            # Validate the range before returning
+                            if cls.is_valid_price_range(candidate_range, context):
+                                return candidate_range
+                            else:
+                                logger.info(f"Skipping invalid price range: {candidate_range}")
+                                continue
+
+                    # Strategy 2: If no match on same line, look in next few lines after FIRST occurrence
+                    # This handles multi-line format like:
+                    # "Sell the Rip Range:\n\nPrice Range for Sell Entry: $605 - $610"
+                    first_match = re.search(label + r'\s*[:\-]?\s*', text, re.IGNORECASE)
+                    if first_match:
+                        pos = first_match.end()
+                        # Look in next 500 characters for the range pattern
+                        next_chunk = text[pos:pos + 500]
+                        # Capture context for validation
+                        context_start = max(0, first_match.start() - 100)
+                        context_end = min(len(text), pos + 500)
+                        context = text[context_start:context_end]
+
+                        # Look for "Price Range" pattern (common in multi-line format)
+                        price_range_match = re.search(
+                            r'price\s+range[^\n]*[:\-]\s*(.+)',
+                            next_chunk,
+                            re.IGNORECASE
+                        )
+                        if price_range_match:
+                            tail = price_range_match.group(1).strip()
+                            # Try to extract range from this tail
+                            mr = re.search(range_pattern, tail, re.IGNORECASE)
+                            if mr:
+                                def clean(x: str) -> str:
+                                    return x.replace("$", "").replace(",", "").strip()
+                                a = clean(mr.group('a'))
+                                b = clean(mr.group('b'))
+                                candidate_range = f"{a}–{b}"
+
+                                # Validate the range before returning
+                                if cls.is_valid_price_range(candidate_range, context):
+                                    return candidate_range
+                                else:
+                                    logger.info(f"Skipping invalid price range in multi-line: {candidate_range}")
+
                 return None
 
             buy = find_after([

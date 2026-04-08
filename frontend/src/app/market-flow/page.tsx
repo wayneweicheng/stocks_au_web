@@ -312,6 +312,7 @@ export default function GexSignalsPage() {
     estimatedTokens: number;
     hasOptionTrades: boolean;
     hasPriceBars: boolean;
+    hasOptionOI: boolean;
   } | null>(null);
 
   // Stock codes state
@@ -605,6 +606,7 @@ export default function GexSignalsPage() {
         estimatedTokens: data.estimated_tokens || 0,
         hasOptionTrades: data.has_option_trades || false,
         hasPriceBars: data.has_price_bars_30m || false,
+        hasOptionOI: data.has_option_oi || false,
       });
     } catch (e: any) {
       setPromptError(e.message);
@@ -1276,6 +1278,7 @@ export default function GexSignalsPage() {
                       {promptMetadata && (
                         <>
                           {" "}~{promptMetadata.estimatedTokens.toLocaleString()} tokens
+                          {promptMetadata.hasOptionOI && " • Option OI ✓"}
                           {promptMetadata.hasOptionTrades && " • Option trades ✓"}
                           {promptMetadata.hasPriceBars && " • 30M bars ✓"}
                         </>

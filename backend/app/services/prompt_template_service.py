@@ -49,26 +49,80 @@ flip GEX positive, changing the market regime from trend-following to mean-rever
 
 TRADING LEVELS RECOMMENDATION:
 You MUST provide actionable trading levels based on your analysis.
-Use the 30-Minute Price Bar data to identify key intraday support and resistance levels,
-VWAP clusters, and high-volume price zones from the last 5 trading days. These levels
-should be the primary basis for determining the price ranges below.
+Use MULTIPLE DATA SOURCES to identify key support and resistance levels:
+
+**PRIMARY SOURCES (in order of importance):**
+1. **Option Open Interest Data (Part 1 & Part 2) - HIGHEST PRIORITY**:
+   - **Gamma Walls are the MOST IMPORTANT factor** for determining buy/sell ranges
+   - **Call Wall (Resistance)**: Strikes with HIGH call OI concentration (e.g., 10,000+ OI at a specific strike) create strong resistance
+     * Dealers hedging short calls must SELL stock as price approaches these strikes
+     * The higher the OI concentration, the stronger the resistance
+   - **Put Wall (Support)**: Strikes with HIGH put OI concentration (e.g., 10,000+ OI at a specific strike) create strong support
+     * Dealers hedging short puts must BUY stock as price approaches these strikes
+     * The higher the OI concentration, the stronger the support
+   - **FOCUS ON NEAR-TERM EXPIRIES (0-7 DTE)**: Options expiring this week or next week have exponentially higher gamma
+     * Near-term gamma walls have IMMEDIATE price impact through forced dealer hedging
+     * Far-dated options (30+ DTE) have minimal immediate impact
+   - **OI Changes (Part 1)**: Large increases in OI indicate NEW institutional positioning
+     * +5,000 OI in near-term puts = new put wall forming (support)
+     * +5,000 OI in near-term calls = new call wall forming (resistance)
+
+2. **30-Minute Price Bar Data** (Secondary confirmation):
+   - Intraday support/resistance from VWAP clusters
+   - High-volume price zones from recent days
+   - Recurring intraday lows (support) and highs (resistance)
+
+3. **Daily Technical Levels** (Tertiary confirmation):
+   - Bollinger Bands, moving averages (SMA20, SMA50)
+   - GEX levels and regime thresholds
+
+**CRITICAL INSTRUCTION:**
+Your trading ranges MUST be anchored to SPECIFIC STRIKES with STRONG OI CONCENTRATION from Part 2 data.
+DO NOT rely primarily on technical indicators or VWAP levels.
+Gamma Walls are CONCRETE, MEASURABLE dealer hedging obligations that create predictable price behavior.
+A strike with 50,000+ OI in 0-7 DTE options will have stronger support/resistance than any technical level.**
 
 1. **Buy the Dip Range**: If conditions support buying on weakness, specify:
    - Price range for buy entry (e.g., "$XXX - $YYY")
    - Percentage drop from current price
-   - Rationale based on intraday support levels identified from 30-minute bars (VWAP, high-volume zones, recurring intraday lows), combined with daily technical levels (Bollinger Bands, moving averages, GEX levels)
-   - If NOT recommending buy the dip, explicitly state "Not Recommended" and explain why (e.g., bearish trend, no support, negative signals)
+   - **MANDATORY GAMMA WALL ANALYSIS**:
+     * **YOU MUST identify the strongest Put Wall from Part 2 data**
+     * Look for strikes with the HIGHEST put OI concentration (typically 20,000+ OI)
+     * PRIORITIZE strikes in 0-7 DTE expiries (this week/next week)
+     * Example: "Part 2 shows 45,000 put OI at $600 strike expiring 2026-02-21 (2 DTE) - this is the primary Put Wall"
+     * State the EXACT strike, OI amount, and expiry date from the data
+   - Secondary confirmation (if applicable):
+     * Intraday support from 30M bars (VWAP at this level, high-volume zones)
+     * Daily technical levels (Bollinger Bands, moving averages)
+   - **If NO strong Put Wall exists** (no strikes with 15,000+ OI in 0-7 DTE), state "Not Recommended" and explain:
+     * "No significant Put Wall identified in near-term options to provide strong support"
+     * Specify what the data shows instead (e.g., "highest put OI is only 5,000 at $590")
 
 2. **Sell the Rip Range**: If conditions support selling on strength, specify:
    - Price range for sell/short entry (e.g., "$XXX - $YYY")
    - Percentage gain from current price
-   - Rationale based on intraday resistance levels identified from 30-minute bars (VWAP, high-volume zones, recurring intraday highs), combined with daily technical levels (Bollinger Bands, moving averages, GEX levels)
-   - If NOT recommending sell the rip, explicitly state "Not Recommended" and explain why (e.g., bullish trend, breakout potential, positive signals)
+   - **MANDATORY GAMMA WALL ANALYSIS**:
+     * **YOU MUST identify the strongest Call Wall from Part 2 data**
+     * Look for strikes with the HIGHEST call OI concentration (typically 20,000+ OI)
+     * PRIORITIZE strikes in 0-7 DTE expiries (this week/next week)
+     * Example: "Part 2 shows 52,000 call OI at $610 strike expiring 2026-02-21 (2 DTE) - this is the primary Call Wall"
+     * State the EXACT strike, OI amount, and expiry date from the data
+   - Secondary confirmation (if applicable):
+     * Intraday resistance from 30M bars (VWAP at this level, high-volume zones)
+     * Daily technical levels (Bollinger Bands, moving averages)
+   - **If NO strong Call Wall exists** (no strikes with 15,000+ OI in 0-7 DTE), state "Not Recommended" and explain:
+     * "No significant Call Wall identified in near-term options to provide strong resistance"
+     * Specify what the data shows instead (e.g., "highest call OI is only 8,000 at $615")
 
-Example format:
-"**Buy the Dip Range:** $XXX - $YYY (-X.X% to -Y.Y% from current). This range aligns with the lower Bollinger Band and previous support at the SMA50. Positive GEX suggests dealers will provide support at these levels."
+Example format (WITH gamma wall - recommended):
+"**Buy the Dip Range:** $598 - $600 (-1.2% to -2.0% from current). **PRIMARY SUPPORT: Put Wall at $600 strike** - Part 2 data shows 42,500 put OI expiring 2026-02-21 (2 DTE), the highest put OI concentration in near-term options. Dealers hedging these short puts MUST buy stock as price approaches $600, creating strong mechanical support. Secondary confirmation: 30M bars show VWAP cluster at $599 and high-volume zone at $598. Positive GEX regime reinforces mean-reversion at support."
 
-"**Sell the Rip Range:** Not Recommended. Current momentum is strongly bullish with Golden Setup active. Selling into strength would be counter-trend with high risk of missing further upside."
+"**Sell the Rip Range:** $610 - $615 (+1.5% to +2.5% from current). **PRIMARY RESISTANCE: Call Wall at $610 strike** - Part 2 data shows 38,200 call OI expiring 2026-02-21 (2 DTE), creating a strong gamma wall. Dealers hedging these short calls MUST sell stock as price approaches $610. Secondary resistance from 30M bars shows VWAP resistance at $612."
+
+Example format (WITHOUT gamma wall - not recommended):
+"**Buy the Dip Range:** Not Recommended. No significant Put Wall identified in near-term options (0-7 DTE). Part 2 data shows highest put OI is only 8,500 at $595 strike (14 DTE), insufficient to create strong support through dealer hedging. Without a gamma wall anchor, relying solely on technical levels ($598 Bollinger Band) is too speculative in current negative GEX environment."
+
+"**Sell the Rip Range:** Not Recommended. No Call Wall resistance in near-term options. Part 2 data shows scattered call OI with no concentration above 12,000 in 0-7 DTE expiries. Current heavy call buying (+15,000 OI at $615 in 3 DTE) suggests bullish positioning with gamma squeeze potential. Selling into strength without a gamma wall barrier would be counter-trend."
 
 LATE OPTION TRADE ANALYSIS:
 The "Latest Option Trades" data shows large option transactions (size > 300 contracts) for the observation date.
@@ -77,6 +131,25 @@ Incorporate this data into your overall signal strength assessment:
 - Look for strike clustering near the current price, which may indicate key levels where dealers will need to hedge
 - Unusually large individual trades may signal directional bets or hedging activity by institutions
 - Factor this institutional flow data into your signal strength classification alongside the GEX and technical indicators
+
+**CRITICAL - LOGICAL CONSISTENCY CHECK:**
+Your Buy the Dip Range and Sell the Rip Range recommendations MUST be logically consistent with your signal strength classification:
+
+- **If STRONGLY_BEARISH or MILDLY_BEARISH:**
+  - Sell the Rip Range SHOULD be recommended (with specific price levels based on Call Wall resistance)
+  - Buy the Dip Range should typically be "Not Recommended" UNLESS there's a very strong Put Wall providing exceptional tactical support
+  - Rationale: If you're bearish, you should recommend selling rallies, not avoiding them
+
+- **If STRONGLY_BULLISH or MILDLY_BULLISH:**
+  - Buy the Dip Range SHOULD be recommended (with specific price levels based on Put Wall support)
+  - Sell the Rip Range should typically be "Not Recommended" UNLESS there's a very strong Call Wall providing clear resistance
+  - Rationale: If you're bullish, you should recommend buying dips, not avoiding them
+
+- **If NEUTRAL:**
+  - Either provide BOTH ranges (range-bound trading strategy) OR recommend "Not Recommended" for both
+  - Rationale: Neutral means unclear direction, so either trade the range or stay flat
+
+**AVOID CONTRADICTIONS:** Do NOT say "overwhelming bearish flow" or "rallies will be short-lived" and then recommend "Sell the Rip: Not Recommended". This is logically inconsistent. If rallies will be short-lived, that is EXACTLY when you should sell the rip.
 
 Place this JSON at the very end of your markdown response after all analysis.
 ---
@@ -147,6 +220,25 @@ shows +8,500 put OI concentration. Dealers will aggressively buy stock to hedge 
 "**Sell the Rip Range:** Not Recommended. Current option flow shows heavy call buying in 0-7 DTE strikes,
 suggesting bullish institutional positioning with imminent gamma squeeze potential above $155."
 
+**CRITICAL - LOGICAL CONSISTENCY CHECK:**
+Your Buy the Dip Range and Sell the Rip Range recommendations MUST be logically consistent with your signal strength classification:
+
+- **If STRONGLY_BEARISH or MILDLY_BEARISH:**
+  - Sell the Rip Range SHOULD be recommended (with specific price levels based on Call Wall resistance)
+  - Buy the Dip Range should typically be "Not Recommended" UNLESS there's a very strong Put Wall providing exceptional tactical support
+  - Rationale: If you're bearish, you should recommend selling rallies, not avoiding them
+
+- **If STRONGLY_BULLISH or MILDLY_BULLISH:**
+  - Buy the Dip Range SHOULD be recommended (with specific price levels based on Put Wall support)
+  - Sell the Rip Range should typically be "Not Recommended" UNLESS there's a very strong Call Wall providing clear resistance
+  - Rationale: If you're bullish, you should recommend buying dips, not avoiding them
+
+- **If NEUTRAL:**
+  - Either provide BOTH ranges (range-bound trading strategy) OR recommend "Not Recommended" for both
+  - Rationale: Neutral means unclear direction, so either trade the range or stay flat
+
+**AVOID CONTRADICTIONS:** Do NOT say "overwhelming bearish flow" or "rallies will be short-lived" and then recommend "Sell the Rip: Not Recommended". This is logically inconsistent. If rallies will be short-lived, that is EXACTLY when you should sell the rip.
+
 Place this JSON at the very end of your markdown response after all analysis.
 ---
 
@@ -190,6 +282,25 @@ Based on the option trade strikes and clustering, provide:
    - Price range for sell/short entry based on call strike concentrations (resistance from hedging)
    - If NOT recommending sell the rip, explicitly state "Not Recommended" and explain why
 
+**CRITICAL - LOGICAL CONSISTENCY CHECK:**
+Your Buy the Dip Range and Sell the Rip Range recommendations MUST be logically consistent with your signal strength classification:
+
+- **If STRONGLY_BEARISH or MILDLY_BEARISH:**
+  - Sell the Rip Range SHOULD be recommended (with specific price levels)
+  - Buy the Dip Range should typically be "Not Recommended" UNLESS there's exceptional support
+  - Rationale: If you're bearish, you should recommend selling rallies, not avoiding them
+
+- **If STRONGLY_BULLISH or MILDLY_BULLISH:**
+  - Buy the Dip Range SHOULD be recommended (with specific price levels)
+  - Sell the Rip Range should typically be "Not Recommended" UNLESS there's clear resistance
+  - Rationale: If you're bullish, you should recommend buying dips, not avoiding them
+
+- **If NEUTRAL:**
+  - Either provide BOTH ranges (range-bound trading) OR recommend "Not Recommended" for both
+  - Rationale: Neutral means unclear direction, so either trade the range or stay flat
+
+**AVOID CONTRADICTIONS:** Do NOT say "overwhelming bearish flow" or "rallies will be short-lived" and then recommend "Sell the Rip: Not Recommended". This is logically inconsistent. If rallies will be short-lived, that is EXACTLY when you should sell the rip.
+
 Place this JSON at the very end of your markdown response after all analysis.
 ---
 
@@ -202,9 +313,18 @@ Place this JSON at the very end of your markdown response after all analysis.
         Args:
             template_dir: Directory containing signal pattern templates
         """
-        self.template_dir = Path(template_dir)
+        # If relative path, resolve it relative to the backend directory
+        template_path = Path(template_dir)
+        if not template_path.is_absolute():
+            # Get the backend directory (parent of app directory)
+            backend_dir = Path(__file__).parent.parent.parent
+            template_path = backend_dir / template_dir
+
+        self.template_dir = template_path
         if not self.template_dir.exists():
             logger.warning(f"Template directory does not exist: {self.template_dir}")
+        else:
+            logger.info(f"Template directory initialized: {self.template_dir}")
 
     def normalize_stock_code(self, stock_code: str) -> str:
         """
@@ -272,6 +392,8 @@ Place this JSON at the very end of your markdown response after all analysis.
         include_signal_strength_prompt: bool = True,
         option_trades: Optional[str] = None,
         price_bars_30m: Optional[str] = None,
+        option_oi_changes: Optional[str] = None,
+        top_options_oi: Optional[str] = None,
     ) -> str:
         """
         Replace template variables with actual values.
@@ -282,6 +404,8 @@ Place this JSON at the very end of your markdown response after all analysis.
         - {{ observation_date }} with observation date (optional)
         - {{ option_trades }} with option trade data (optional)
         - {{ price_bars_30m }} with 30-minute price bar data (optional)
+        - {{ option_oi_changes }} with option OI change data (optional)
+        - {{ top_options_oi }} with top options by OI data (optional)
 
         If a placeholder is not found in the template, the data is appended to the end.
 
@@ -293,6 +417,8 @@ Place this JSON at the very end of your markdown response after all analysis.
             include_signal_strength_prompt: Whether to prepend signal strength classification instructions
             option_trades: Formatted option trade data (optional)
             price_bars_30m: Formatted 30-minute price bar data (optional)
+            option_oi_changes: Formatted option OI change data (optional)
+            top_options_oi: Formatted top options by OI data (optional)
 
         Returns:
             Template with variables replaced
@@ -339,6 +465,24 @@ Place this JSON at the very end of your markdown response after all analysis.
                 result = result.replace("{{price_bars_30m}}", price_bars_30m)
             else:
                 result = result.rstrip() + "\n\n## 30-Minute Price Bars (Last 5 Days)\n\n" + price_bars_30m
+
+        # Inject option OI changes data
+        if option_oi_changes is not None:
+            has_placeholder = "{{ option_oi_changes }}" in result or "{{option_oi_changes}}" in result
+            if has_placeholder:
+                result = result.replace("{{ option_oi_changes }}", option_oi_changes)
+                result = result.replace("{{option_oi_changes}}", option_oi_changes)
+            else:
+                result = result.rstrip() + "\n\n## Part 1: Option OI Changes (Yesterday vs Today)\nThe data below shows option open interest (OI) changes between yesterday and today. Each row represents an option contract where OI changed by more than 300 contracts (top 50 by absolute change).\n\n" + option_oi_changes
+
+        # Inject top options by OI data
+        if top_options_oi is not None:
+            has_placeholder = "{{ top_options_oi }}" in result or "{{top_options_oi}}" in result
+            if has_placeholder:
+                result = result.replace("{{ top_options_oi }}", top_options_oi)
+                result = result.replace("{{top_options_oi}}", top_options_oi)
+            else:
+                result = result.rstrip() + "\n\n## Part 2: Top 50 Options by Current Open Interest\nThe data below shows the top 50 option contracts by current open interest, filtered to options expiring within 90 days.\n**CRITICAL: Use this data to identify Gamma Walls (Call Wall/Put Wall).** Analyze the concentration of open interest at specific strikes to determine key support and resistance levels.\n\n" + top_options_oi
 
         logger.info(f"Injected variables into template ({len(result)} characters after injection)")
 

@@ -148,6 +148,24 @@ def get_price_prediction(
             logger.warning(f"Failed to fetch 30M price bars for {base_code}: {e}")
             price_bars_data = "30-minute bar data unavailable."
 
+        # Step 2d: Fetch and format option OI changes (top 50 by absolute change)
+        try:
+            option_oi_rows = gex_service.get_option_oi_changes(base_code, observation_date)
+            option_oi_data = gex_service.format_option_oi_changes_as_pipe_delimited(option_oi_rows, max_rows=50)
+            logger.info(f"Retrieved {len(option_oi_rows)} option OI changes for {base_code}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch option OI changes for {base_code}: {e}")
+            option_oi_data = "No option OI change data available."
+
+        # Step 2e: Fetch and format top 50 options by current open interest
+        try:
+            top_options_rows = gex_service.get_top_options_by_oi(base_code, observation_date, limit=50)
+            top_options_oi_data = gex_service.format_top_options_by_oi_as_pipe_delimited(top_options_rows)
+            logger.info(f"Retrieved {len(top_options_rows)} top options by OI for {base_code}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch top options by OI for {base_code}: {e}")
+            top_options_oi_data = "No option OI data available."
+
         # Step 3: Load and inject template
         try:
             template, used_fallback = template_service.get_template(base_code)
@@ -158,6 +176,8 @@ def get_price_prediction(
                 observation_date=observation_date.isoformat(),
                 option_trades=option_trades_data,
                 price_bars_30m=price_bars_data,
+                option_oi_changes=option_oi_data,
+                top_options_oi=top_options_oi_data,
             )
         except FileNotFoundError as e:
             logger.error(f"Template loading failed: {e}")
@@ -332,6 +352,24 @@ def get_price_prediction_prompt(
             logger.warning(f"Failed to fetch 30M price bars for {base_code}: {e}")
             price_bars_data = "30-minute bar data unavailable."
 
+        # Fetch and format option OI changes (top 50 by absolute change)
+        try:
+            option_oi_rows = gex_service.get_option_oi_changes(base_code, observation_date)
+            option_oi_data = gex_service.format_option_oi_changes_as_pipe_delimited(option_oi_rows, max_rows=50)
+            logger.info(f"Retrieved {len(option_oi_rows)} option OI changes for {base_code}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch option OI changes for {base_code}: {e}")
+            option_oi_data = "No option OI change data available."
+
+        # Fetch and format top 50 options by current open interest
+        try:
+            top_options_rows = gex_service.get_top_options_by_oi(base_code, observation_date, limit=50)
+            top_options_oi_data = gex_service.format_top_options_by_oi_as_pipe_delimited(top_options_rows)
+            logger.info(f"Retrieved {len(top_options_rows)} top options by OI for {base_code}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch top options by OI for {base_code}: {e}")
+            top_options_oi_data = "No option OI data available."
+
         # Load and inject template
         try:
             template, used_fallback = template_service.get_template(base_code)
@@ -342,6 +380,8 @@ def get_price_prediction_prompt(
                 observation_date=observation_date.isoformat(),
                 option_trades=option_trades_data,
                 price_bars_30m=price_bars_data,
+                option_oi_changes=option_oi_data,
+                top_options_oi=top_options_oi_data,
             )
         except FileNotFoundError as e:
             logger.error(f"Template loading failed: {e}")
@@ -359,6 +399,7 @@ def get_price_prediction_prompt(
         # Check if new data sections are included
         has_option_trades = "no large option trades" not in option_trades_data.lower()
         has_price_bars = "30-minute bar data unavailable" not in price_bars_data.lower()
+        has_option_oi = "no option oi" not in option_oi_data.lower()
 
         return {
             "prompt": prompt,
@@ -370,6 +411,7 @@ def get_price_prediction_prompt(
             "estimated_tokens": estimated_tokens,
             "has_option_trades": has_option_trades,
             "has_price_bars_30m": has_price_bars,
+            "has_option_oi": has_option_oi,
             "generated_at": datetime.now().isoformat()
         }
 

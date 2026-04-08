@@ -13,6 +13,7 @@ const NAV: NavGroup[] = [
   {
     label: "Trading",
     items: [
+      { href: "/option-recommendations", label: "Option Recommendations" },
       { href: "/range-orders", label: "Range Orders" },
       { href: "/conditional-orders", label: "Conditional Orders" },
       { href: "/strategy-orders", label: "Strategy Orders" },
