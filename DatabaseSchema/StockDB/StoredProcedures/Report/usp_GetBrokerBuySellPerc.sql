@@ -72,10 +72,11 @@ BEGIN --Proc
 		if @pdtObservationDateEnd = '2050-12-12'
 		begin
 			select @pdtObservationDateEnd = max(ObservationDate)
-			from StockData.BrokerReport
+			from StockData.v_BrokerReport
 
-			select @dtDate = Common.DateAddBusinessDay(0, cast(getdate() as date))
 		end
+
+		select @dtDate = cast(@pdtObservationDateEnd as date)
 
 		declare @pdtObservationDateStart as date = Common.DateAddBusinessDay(-1 * @pintNumPrevDay, cast(@pdtObservationDateEnd as date))
 
@@ -97,7 +98,7 @@ BEGIN --Proc
 		from
 		(
 			select ASXCode, BrokerCode, sum(NetValue) as NetValue, sum(NetVolume) as NetVolume
-			from StockData.BrokerReport 
+			from StockData.v_BrokerReport 
 			where ObservationDate between @pdtObservationDateStart and @pdtObservationDateEnd
 			group by ASXCode, BrokerCode
 
@@ -105,7 +106,7 @@ BEGIN --Proc
 		inner join
 		(
 			select ASXCode, sum(NetVolume) as TotalVolume
-			from StockData.BrokerReport 
+			from StockData.v_BrokerReport 
 			where ObservationDate between @pdtObservationDateStart and @pdtObservationDateEnd
 			--and ASXCode = 'CAT.AX'
 			and NetVolume > 0
@@ -119,7 +120,7 @@ BEGIN --Proc
 
 		select ASXCode, b.DisplayBrokerCode as BrokerCode, sum(NetValue) as NetValue
 		into #TempBRAggregateLastNDay
-		from StockData.BrokerReport as a
+		from StockData.v_BrokerReport as a
 		inner join LookupRef.v_BrokerName as b
 		on a.BrokerCode = b.BrokerCode
 		where ObservationDate >= @pdtObservationDateStart
@@ -189,10 +190,7 @@ BEGIN --Proc
 			--and ASXCode = 'SYD.AX'
 			and a.BrokerCode = @pvchBrokerCode
 			and NetValue > 50000
-			and cast(c.CleansedMarketCap as int) > 0
-			and cast(c.CleansedMarketCap as int) < 2000
-			and cast(b.MedianPriceChangePerc as decimal(10, 2)) > 1.0
-			order by a.NetValue/cast(c.CleansedMarketCap as int) desc
+			order by a.NetValue/nullif(cast(c.CleansedMarketCap as int), 0) desc
 		end
 		
 		if @pvchSortBy = 'Sell Perc Desc'

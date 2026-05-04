@@ -1,6 +1,7 @@
 "use client";
 
 import MarkdownRenderer from "./MarkdownRenderer";
+import { SHARED_MARKET_FLOW_MODEL_OPTIONS } from "./llmModelOptions";
 
 type SignalStrengthItem = {
   stock_code: string;
@@ -74,24 +75,11 @@ export default function InsightTab({
               onChange={(e) => onModelChange(e.target.value)}
               className="w-full sm:w-auto rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="openai/gpt-5-mini">GPT-5 Mini</option>
-              <option value="qwen/qwen3-30b-a3b">Qwen3 30B</option>
-              <option value="qwen/qwen3.5-flash-02-23">Qwen3.5 Flash</option>
-              <option value="qwen/qwen3.6-plus">Qwen3.6 Plus</option>
-              <option value="openai/gpt-5.1">GPT-5.1</option>
-              <option value="openai/gpt-4.1-mini">GPT-4.1 Mini</option>
-              <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-              <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-              <option value="google/gemma-4-26b-a4b-it:free">Gemma 4 26B (Free)</option>
-              <option value="google/gemma-4-31b-it:free">Gemma 4 31B (Free)</option>
-              <option value="google/gemma-4-26b-a4b-it">Gemma 4 26B</option>
-              <option value="deepseek/deepseek-v3.2">DeepSeek V3.2</option>
-              <option value="deepseek/deepseek-r1-distill-qwen-32b">DeepSeek R1 Qwen3 32B</option>
-              <option value="x-ai/grok-4.1-fast">Grok 4.1 Fast</option>
-              <option value="bytedance-seed/seed-1.6-flash">Seed 1.6 Flash</option>
-              <option value="moonshotai/kimi-k2-thinking">Kimi K2 Thinking</option>
-              <option value="z-ai/glm-4.7-flash">GLM-4.7 Flash</option>
+              {SHARED_MARKET_FLOW_MODEL_OPTIONS.map((model) => (
+                <option key={model.value} value={model.value}>
+                  {model.label}
+                </option>
+              ))}
             </select>
             <button
               type="button"

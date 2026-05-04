@@ -9,7 +9,9 @@ CREATE PROCEDURE [Report].[usp_Get_BrokerBuySuggestion]
 @pintNumPrevDay as int = 0,
 @pintProLevel as smallint = 10,
 @pintRetailLevel as smallint = 20,
-@pvchBrokerCode as varchar(50) = 'All' 
+@pvchBrokerCode as varchar(50) = 'All',
+@pdtStartDate as date = null,
+@pdtEndDate as date = null
 AS
 /******************************************************************************
 File: usp_Get_BrokerBuySuggestion.sql
@@ -105,7 +107,8 @@ BEGIN --Proc
 		declare @dtMaxDate as date
 		select @dtMaxDate = max(ObservationDate)
 		from StockData.BrokerReport
-		where ObservationDate not in
+		where (@pdtEndDate is null or ObservationDate <= @pdtEndDate)
+		and ObservationDate not in
 		(
 			select ObservationDate
 			from StockData.BrokerReport
@@ -114,7 +117,7 @@ BEGIN --Proc
 			having count(*) < 12000
 		)
 
-		declare @dtDate as date = cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay, @dtMaxDate) as date)
+		declare @dtDate as date = coalesce(@pdtStartDate, cast(Common.DateAddBusinessDay(-1 * @pintNumPrevDay, @dtMaxDate) as date))
 		
 		if object_id(N'Tempdb.dbo.#TempBRAggregate') is not null
 			drop table #TempBRAggregate
@@ -123,6 +126,7 @@ BEGIN --Proc
 		into #TempBRAggregate
 		from StockData.BrokerReport
 		where ObservationDate >= @dtDate
+		and ObservationDate <= @dtMaxDate
 		group by ASXCode, BrokerCode
 
 		if object_id(N'Tempdb.dbo.#TempBrokerReportList') is not null
@@ -189,6 +193,7 @@ BEGIN --Proc
 			on a.BrokerCode = c.BrokerCode
 			--and (c.BrokerLevel <= @pintProLevel or c.BrokerLevel >= @pintRetailLevel)
 			and a.ObservationDate >= @dtDate
+			and a.ObservationDate <= @dtMaxDate
 			left join Transform.PosterList as f
 			on a.ASXCode = f.ASXCode
 			left join Transform.TempStockNature as e
@@ -256,6 +261,7 @@ BEGIN --Proc
 			on a.BrokerCode = c.BrokerCode
 			and (c.BrokerLevel <= @pintProLevel or c.BrokerLevel >= @pintRetailLevel)
 			and a.ObservationDate >= @dtDate
+			and a.ObservationDate <= @dtMaxDate
 			left join Transform.PosterList as f
 			on a.ASXCode = f.ASXCode
 			left join Transform.TempStockNature as e
@@ -318,6 +324,7 @@ BEGIN --Proc
 			on a.BrokerCode = c.BrokerCode
 			and (c.BrokerLevel <= @pintProLevel or c.BrokerLevel >= @pintRetailLevel)
 			and a.ObservationDate >= @dtDate
+			and a.ObservationDate <= @dtMaxDate
 			left join Transform.PosterList as f
 			on a.ASXCode = f.ASXCode
 			left join Transform.TempStockNature as e
@@ -380,6 +387,7 @@ BEGIN --Proc
 			on a.BrokerCode = c.BrokerCode
 			and (c.BrokerLevel <= @pintProLevel or c.BrokerLevel >= @pintRetailLevel)
 			and a.ObservationDate >= @dtDate
+			and a.ObservationDate <= @dtMaxDate
 			left join Transform.PosterList as f
 			on a.ASXCode = f.ASXCode
 			left join Transform.TempStockNature as e
@@ -442,6 +450,7 @@ BEGIN --Proc
 			on a.BrokerCode = c.BrokerCode
 			and (c.BrokerLevel <= @pintProLevel or c.BrokerLevel >= @pintRetailLevel)
 			and a.ObservationDate >= @dtDate
+			and a.ObservationDate <= @dtMaxDate
 			left join Transform.PosterList as f
 			on a.ASXCode = f.ASXCode
 			left join Transform.TempStockNature as e

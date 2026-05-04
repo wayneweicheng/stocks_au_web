@@ -36,6 +36,8 @@ from app.routers.option_insights import router as option_insights_router
 from app.routers.discord_summary import router as discord_summary_router
 from app.routers.trading_orders import router as trading_orders_router
 from app.routers.option_recommendations import router as option_recommendations_router
+from app.routers.stock_analysis import router as stock_analysis_router
+from app.routers.asx_data_refresh import router as asx_data_refresh_router
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 from contextlib import asynccontextmanager
 import logging
@@ -197,6 +199,8 @@ app.include_router(option_insights_router)
 app.include_router(discord_summary_router)
 app.include_router(trading_orders_router)
 app.include_router(option_recommendations_router)
+app.include_router(stock_analysis_router)
+app.include_router(asx_data_refresh_router)
 
 
 @app.get("/api/scheduler/status")

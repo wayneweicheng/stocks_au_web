@@ -6,6 +6,8 @@ param(
     [int]$BackendPort = 3101,
     [int]$FrontendPort = 3100,
     [string]$LogPath = ".\logs",
+    [switch]$FrontendBuild,
+    [switch]$FrontendDev,
     [switch]$NoNewWindows,
     [int]$MaxRestarts = 5,
     [int]$RestartCooldown = 60
@@ -35,6 +37,10 @@ if (Get-Command "npm.cmd" -ErrorAction SilentlyContinue) {
     $npm = "npm.exe"
 } elseif (Get-Command "npm" -ErrorAction SilentlyContinue) {
     $npm = "npm"
+}
+$node = "node"
+if (Get-Command "node.exe" -ErrorAction SilentlyContinue) {
+    $node = "node.exe"
 }
 
 function Write-Log {
@@ -409,6 +415,24 @@ function Stop-ProcessOnPort {
     }
 }
 
+function Invoke-FrontendBuild {
+    Write-Log "Building frontend for production"
+    $previousLocation = Get-Location
+    try {
+        Set-Location $frontendWD
+        & $npm run build 2>&1 | ForEach-Object { Write-Log $_.ToString() }
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            Write-Log "ERROR: Frontend build failed with code $exitCode"
+            exit 1
+        }
+    }
+    finally {
+        Set-Location $previousLocation
+    }
+    Write-Log "Frontend build completed"
+}
+
 function Restart-Service {
     param([string]$ServiceName)
 
@@ -633,6 +657,17 @@ if (!(Get-Command $npm -ErrorAction SilentlyContinue)) {
     Write-Log "Please ensure Node.js is installed and npm is in PATH"
     exit 1
 }
+if (!(Get-Command $node -ErrorAction SilentlyContinue)) {
+    Write-Log "ERROR: node executable not found: $node"
+    Write-Log "Please ensure Node.js is installed and node is in PATH"
+    exit 1
+}
+$nextBin = Join-Path $frontendWD "node_modules\next\dist\bin\next"
+if (!(Test-Path $nextBin)) {
+    Write-Log "ERROR: Next.js CLI not found at $nextBin"
+    Write-Log "Please ensure frontend dependencies are installed"
+    exit 1
+}
 
 # Initialize job object early so children are tracked
 Initialize-JobObject
@@ -677,15 +712,25 @@ Stop-ProcessOnPort -Port $FrontendPort -ServiceName "Frontend"
 $frontendLogFile = Join-Path $AbsoluteLogPath "frontend-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 Write-Log "Frontend logs will be written to: $frontendLogFile"
 
-# Use the standard npm run dev approach with port modification
-if ($FrontendPort -eq 3100) {
-    # Use default package.json script
-    $frontendArgs = @("run", "dev")
+$frontendCommand = $npm
+# Serve the public frontend with Next.js production mode.
+if ($FrontendDev) {
+    Write-Log "Using Next.js development server for frontend"
+    if ($FrontendPort -eq 3100) {
+        $frontendArgs = @("run", "dev")
+    } else {
+        $frontendArgs = @("run", "dev", "--", "--port", $FrontendPort)
+    }
 } else {
-    # Create a custom script command with different port
-    $frontendArgs = @("run", "dev", "--", "--port", $FrontendPort)
+    if ($FrontendBuild) {
+        Invoke-FrontendBuild
+    } else {
+        Write-Log "Using existing frontend production build"
+    }
+    $frontendCommand = $node
+    $frontendArgs = @($nextBin, "start", "-p", $FrontendPort)
 }
-$frontendSuccess = Start-ServiceWithMonitoring -ServiceName "Frontend" -WorkingDirectory $frontendWD -Command $npm -Arguments $frontendArgs -Port $FrontendPort -LogFile $frontendLogFile
+$frontendSuccess = Start-ServiceWithMonitoring -ServiceName "Frontend" -WorkingDirectory $frontendWD -Command $frontendCommand -Arguments $frontendArgs -Port $FrontendPort -LogFile $frontendLogFile
 
 if ($frontendSuccess) {
     # Wait a moment for frontend to initialize

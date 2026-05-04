@@ -23,6 +23,8 @@ logger = logging.getLogger("app.gex_auto_insight")
 DATABASE = "StockDB_US"
 CONFIG_SCHEMA = "Configuration"
 CONFIG_TABLE = "GEXAutoInsightStocks"
+DEFAULT_GEX_AUTO_INSIGHT_MODEL = "google/gemma-4-26b-a4b-it"
+LEGACY_GEX_AUTO_INSIGHT_MODEL = "google/gemini-2.5-flash"
 
 
 class GEXAutoInsightService:
@@ -45,6 +47,12 @@ class GEXAutoInsightService:
         except Exception as e:
             logger.error(f"Failed to resolve effective observation date for {stock_code}: {e}")
             return None
+
+    def _resolve_llm_model(self, model: Optional[str] = None) -> str:
+        configured_model = (model or "").strip()
+        if not configured_model or configured_model == LEGACY_GEX_AUTO_INSIGHT_MODEL:
+            return DEFAULT_GEX_AUTO_INSIGHT_MODEL
+        return configured_model
 
     def get_configured_stocks(self, active_only: bool = True) -> List[Dict[str, Any]]:
         """
@@ -302,8 +310,7 @@ class GEXAutoInsightService:
             Dictionary with processing result
         """
         base_code = self.cache_service.normalize_stock_code(stock_code)
-        default_model = "google/gemini-2.5-flash"
-        llm_model = model or default_model
+        llm_model = self._resolve_llm_model(model)
 
         result = {
             "stock_code": base_code,

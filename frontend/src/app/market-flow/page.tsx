@@ -5,6 +5,10 @@ import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import GEXAutoInsightTab from "../components/GEXAutoInsightTab";
 import InsightTab from "../components/InsightTab";
+import {
+  DEFAULT_MARKET_FLOW_MODEL,
+  SHARED_MARKET_FLOW_MODEL_OPTIONS,
+} from "../components/llmModelOptions";
 import PageHeader from "../components/PageHeader";
 
 type AnyRow = Record<string, any>;
@@ -301,7 +305,7 @@ export default function GexSignalsPage() {
   const [predictionError, setPredictionError] = useState<string>("");
   const [predictionCached, setPredictionCached] = useState<boolean>(false);
   const [predictionWarning, setPredictionWarning] = useState<string>("");
-  const [selectedModel, setSelectedModel] = useState<string>("google/gemini-2.5-flash");
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
 
   // Prompt state
   const [promptText, setPromptText] = useState<string>("");
@@ -338,7 +342,7 @@ export default function GexSignalsPage() {
   const [optionPredictionError, setOptionPredictionError] = useState<string>("");
   const [optionPredictionCached, setOptionPredictionCached] = useState<boolean>(false);
   const [optionPredictionWarning, setOptionPredictionWarning] = useState<string>("");
-  const [selectedOptionModel, setSelectedOptionModel] = useState<string>("google/gemini-2.5-flash");
+  const [selectedOptionModel, setSelectedOptionModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
 
   const [optionPromptText, setOptionPromptText] = useState<string>("");
   const [optionPromptLoading, setOptionPromptLoading] = useState(false);
@@ -354,7 +358,7 @@ export default function GexSignalsPage() {
   const [optionTradesPredictionError, setOptionTradesPredictionError] = useState<string>("");
   const [optionTradesPredictionCached, setOptionTradesPredictionCached] = useState<boolean>(false);
   const [optionTradesPredictionWarning, setOptionTradesPredictionWarning] = useState<string>("");
-  const [selectedOptionTradesModel, setSelectedOptionTradesModel] = useState<string>("google/gemini-2.5-flash");
+  const [selectedOptionTradesModel, setSelectedOptionTradesModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
 
   const [optionTradesPromptText, setOptionTradesPromptText] = useState<string>("");
   const [optionTradesPromptLoading, setOptionTradesPromptLoading] = useState(false);
@@ -1214,24 +1218,11 @@ export default function GexSignalsPage() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="w-full sm:w-auto rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-                  <option value="openai/gpt-5-mini">GPT-5 Mini</option>
-                  <option value="qwen/qwen3-30b-a3b">Qwen3 30B</option>
-                  <option value="qwen/qwen3.5-flash-02-23">Qwen3.5 Flash</option>
-                  <option value="qwen/qwen3.6-plus">Qwen3.6 Plus</option>
-                  <option value="openai/gpt-5.1">GPT-5.1</option>
-                  <option value="openai/gpt-4.1-mini">GPT-4.1 Mini</option>
-                  <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                  <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                  <option value="google/gemma-4-26b-a4b-it:free">Gemma 4 26B (Free)</option>
-                  <option value="google/gemma-4-31b-it:free">Gemma 4 31B (Free)</option>
-                  <option value="google/gemma-4-26b-a4b-it">Gemma 4 26B</option>
-                  <option value="deepseek/deepseek-v3.2">DeepSeek V3.2</option>
-                  <option value="deepseek/deepseek-r1-distill-qwen-32b">DeepSeek R1 Qwen3 32B</option>
-                  <option value="x-ai/grok-4.1-fast">Grok 4.1 Fast</option>
-                  <option value="bytedance-seed/seed-1.6-flash">Seed 1.6 Flash</option>
-                  <option value="moonshotai/kimi-k2-thinking">Kimi K2 Thinking</option>
-                  <option value="z-ai/glm-4.7-flash">GLM-4.7 Flash</option>
+                  {SHARED_MARKET_FLOW_MODEL_OPTIONS.map((model) => (
+                    <option key={model.value} value={model.value}>
+                      {model.label}
+                    </option>
+                  ))}
                 </select>
                 <button
                   type="button"
@@ -1655,5 +1646,4 @@ export default function GexSignalsPage() {
     </div>
   );
 }
-
 

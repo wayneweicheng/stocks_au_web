@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import PageHeader from "../components/PageHeader";
+import StockAnalysisTab from "../components/StockAnalysisTab";
+import AsxDataRefreshTab from "../components/AsxDataRefreshTab";
 
 // Types
 type Commenter = {
@@ -89,7 +91,7 @@ function getRatingColor(rating: string): string {
 
 export default function ResearchHubPage() {
   // Tab state
-  const [activeTab, setActiveTab] = useState<"ratings" | "links" | "commenters" | "lookup" | "announcement">("ratings");
+  const [activeTab, setActiveTab] = useState<"ratings" | "links" | "commenters" | "lookup" | "announcement" | "stock-analysis" | "asx-data-refresh">("ratings");
   const searchParams = useSearchParams();
 
   // Commenter state
@@ -295,14 +297,12 @@ export default function ResearchHubPage() {
       // Auto-load details
       void fetchAnnouncementDetails(annId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (activeTab === "lookup") {
       fetchTippedStocks(tippedPage, tippedSortBy, tippedSortDir);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, tippedPage, tippedSortBy, tippedSortDir]);
 
   useEffect(() => {
@@ -696,7 +696,7 @@ export default function ResearchHubPage() {
     <div className="space-y-6">
       <PageHeader
         title="Research Hub"
-        subtitle="Ratings, reports/links, commenters and announcement analysis."
+        subtitle="Ratings, reports/links, commenters, announcement analysis, AI stock analysis, and ASX data refresh."
       />
 
       {/* Tab Navigation */}
@@ -708,6 +708,8 @@ export default function ResearchHubPage() {
             { key: "links", label: "Research Reports" },
             { key: "commenters", label: "Manage Commenters" },
             { key: "announcement", label: "Announcement Analysis" },
+            { key: "stock-analysis", label: "Stock Analysis" },
+            { key: "asx-data-refresh", label: "ASX Data Refresh" },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -816,6 +818,10 @@ export default function ResearchHubPage() {
           </form>
         </section>
       )}
+
+      {activeTab === "stock-analysis" && <StockAnalysisTab />}
+
+      {activeTab === "asx-data-refresh" && <AsxDataRefreshTab />}
 
       {/* Stock Lookup Tab */}
       {activeTab === "lookup" && (

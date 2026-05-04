@@ -148,7 +148,8 @@ class LLMPredictionService:
         prompt: str,
         stock_code: str,
         observation_date: str,
-        model: str = "google/gemini-2.5-flash"
+        model: str = "google/gemini-2.5-flash",
+        request_timeout: int | None = None,
     ) -> Dict[str, Any]:
         """
         Generate prediction using LLM.
@@ -158,6 +159,7 @@ class LLMPredictionService:
             stock_code: Stock code for logging
             observation_date: Observation date for logging
             model: LLM model to use (e.g., qwen/qwen3-30b-a3b, openai/gpt-5-mini)
+            request_timeout: Optional timeout override in seconds for this call
 
         Returns:
             Dictionary containing:
@@ -174,7 +176,7 @@ class LLMPredictionService:
             # Create LLM model and invoke directly (not via chain) so we can
             # inspect the raw AIMessage and extract real token usage +
             # finish_reason.
-            llm_model = self._create_llm_model(model)
+            llm_model = self._create_llm_model(model, request_timeout=request_timeout)
 
             messages = [
                 SystemMessage(content="You are a quantitative trading analyst. Analyze the provided data and generate a detailed price action forecast."),

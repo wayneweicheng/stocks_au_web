@@ -4,6 +4,8 @@ param(
     [int]$Port = 3100,
     [string]$Repo = "C:\Repo\stocks_au_web",
     [string]$LogPath = ".\logs",
+    [switch]$Build,
+    [switch]$Dev,
     [switch]$NoNewWindows
 )
 
@@ -46,6 +48,24 @@ function Stop-ProcessOnPort { param([int]$Port)
     } catch {}
 }
 
+function Invoke-FrontendBuild {
+    Write-Log "Building frontend for production"
+    $previousLocation = Get-Location
+    try {
+        Set-Location $frontendWD
+        & $npm run build 2>&1 | ForEach-Object { Write-Log $_.ToString() }
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            Write-Log "ERROR: frontend build failed with code $exitCode"
+            exit 1
+        }
+    }
+    finally {
+        Set-Location $previousLocation
+    }
+    Write-Log "Frontend build completed"
+}
+
 # Job object interop
 $jobCSharp = @"
 using System; using System.Runtime.InteropServices;
@@ -71,7 +91,10 @@ $frontendWD = Join-Path $Repo "frontend"
 # Locate npm
 $npm = "npm"
 if (Get-Command "npm.cmd" -ErrorAction SilentlyContinue) { $npm = "npm.cmd" } elseif (Get-Command "npm.exe" -ErrorAction SilentlyContinue) { $npm = "npm.exe" }
-if (!(Test-Path $frontendWD) -or !(Get-Command $npm -ErrorAction SilentlyContinue)) { Write-Log "ERROR: paths invalid or npm missing"; exit 1 }
+$node = "node"
+if (Get-Command "node.exe" -ErrorAction SilentlyContinue) { $node = "node.exe" }
+$nextBin = Join-Path $frontendWD "node_modules\next\dist\bin\next"
+if (!(Test-Path $frontendWD) -or !(Get-Command $npm -ErrorAction SilentlyContinue) -or !(Get-Command $node -ErrorAction SilentlyContinue) -or !(Test-Path $nextBin)) { Write-Log "ERROR: paths invalid or npm/node/next missing"; exit 1 }
 
 # Singleton mutex
 try { $mutex = New-Object System.Threading.Mutex($true, "Global/StocksAUWebFrontend", [ref]$created); if (-not $created) { Write-Log "Already running"; exit 0 } } catch {}
@@ -81,10 +104,22 @@ Stop-ProcessOnPort -Port $Port
 
 $outLog = Join-Path $AbsoluteLogPath "frontend-out-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 $errLog = $outLog -replace '\.log$','-error.log'
-if ($Port -eq 3100) { $args = @("run","dev") } else { $args = @("run","dev","--","--port",$Port) }
+$command = $npm
+if ($Dev) {
+    Write-Log "Using Next.js development server"
+    if ($Port -eq 3100) { $args = @("run","dev") } else { $args = @("run","dev","--","--port",$Port) }
+} else {
+    if ($Build) {
+        Invoke-FrontendBuild
+    } else {
+        Write-Log "Using existing production build"
+    }
+    $command = $node
+    $args = @($nextBin, "start", "-p", $Port)
+}
 
 try {
-    $proc = Start-Process -FilePath $npm -ArgumentList $args -WorkingDirectory $frontendWD -PassThru -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+    $proc = Start-Process -FilePath $command -ArgumentList $args -WorkingDirectory $frontendWD -PassThru -RedirectStandardOutput $outLog -RedirectStandardError $errLog
     if ($Job -ne [IntPtr]::Zero) { [JobHelper]::AddPid($Job, $proc.Id) | Out-Null }
     Write-Log "Frontend PID $($proc.Id) started"
 } catch { Write-Log "ERROR: failed to start frontend: $($_.Exception.Message)"; exit 1 }
