@@ -305,8 +305,7 @@ def list_tipped_stocks_for_analysis(observation_date: Optional[date] = None) -> 
                 SELECT
                     StockCode,
                     COUNT(*) AS total_ratings,
-                    SUM(CASE WHEN Rating = 'Bullish' THEN 1 ELSE 0 END) AS bullish_count,
-                    MAX(RatingDate) AS latest_rating_date
+                    SUM(CASE WHEN Rating = 'Bullish' THEN 1 ELSE 0 END) AS bullish_count
                 FROM [Research].[StockRating]
                 GROUP BY StockCode
             )
@@ -314,8 +313,8 @@ def list_tipped_stocks_for_analysis(observation_date: Optional[date] = None) -> 
                 srs.StockCode AS stock_code,
                 srs.total_ratings,
                 srs.bullish_count,
-                CONVERT(varchar(10), srs.latest_rating_date, 23) AS latest_rating_date,
-                CAST(price_stats.avg_trade_value_5d AS decimal(20, 2)) AS avg_trade_value_5d,
+                CONVERT(varchar(10), price_latest.lastPriceDate, 23) AS lastPriceDate,
+                CAST(price_stats.avg_trade_value_20d AS decimal(20, 2)) AS avg_trade_value_20d,
                 CONVERT(varchar(10), rpt.ObservationDate, 23) AS latest_analysis_date,
                 rating.OverallScore AS overall_score,
                 rating.OverallRating AS overall_rating,
@@ -323,12 +322,18 @@ def list_tipped_stocks_for_analysis(observation_date: Optional[date] = None) -> 
                 processing.ProcessingID AS processing_id
             FROM StockRatingSummary srs
             OUTER APPLY (
-                SELECT AVG(CAST(recent_prices.[Value] AS decimal(20, 4))) AS avg_trade_value_5d
+                SELECT MAX(ph.ObservationDate) AS lastPriceDate
+                FROM [StockData].[PriceHistory] ph
+                WHERE UPPER(REPLACE(ph.ASXCode, '.AX', '')) = UPPER(REPLACE(srs.StockCode, '.AX', ''))
+                  AND ph.ObservationDate <= ?
+            ) price_latest
+            OUTER APPLY (
+                SELECT AVG(CAST(recent_prices.[Value] AS decimal(20, 4))) AS avg_trade_value_20d
                 FROM (
-                    SELECT TOP 5 ph.[Value]
+                    SELECT TOP 20 ph.[Value]
                     FROM [StockData].[PriceHistory] ph
-                    WHERE UPPER(ph.ASXCode) = UPPER(srs.StockCode)
-                      AND ph.ObservationDate < ?
+                    WHERE UPPER(REPLACE(ph.ASXCode, '.AX', '')) = UPPER(REPLACE(srs.StockCode, '.AX', ''))
+                      AND ph.ObservationDate <= ?
                       AND ph.[Value] IS NOT NULL
                     ORDER BY ph.ObservationDate DESC
                 ) recent_prices
@@ -344,7 +349,7 @@ def list_tipped_stocks_for_analysis(observation_date: Optional[date] = None) -> 
                 AND processing.Status IN ('Pending', 'Processing')
             ORDER BY srs.bullish_count DESC, srs.total_ratings DESC, srs.StockCode ASC
             """,
-            (observation_date, observation_date, observation_date),
+            (observation_date, observation_date, observation_date, observation_date),
         ) or []
     else:
         # Query for latest report regardless of date
@@ -354,8 +359,7 @@ def list_tipped_stocks_for_analysis(observation_date: Optional[date] = None) -> 
                 SELECT
                     StockCode,
                     COUNT(*) AS total_ratings,
-                    SUM(CASE WHEN Rating = 'Bullish' THEN 1 ELSE 0 END) AS bullish_count,
-                    MAX(RatingDate) AS latest_rating_date
+                    SUM(CASE WHEN Rating = 'Bullish' THEN 1 ELSE 0 END) AS bullish_count
                 FROM [Research].[StockRating]
                 GROUP BY StockCode
             ),
@@ -370,8 +374,8 @@ def list_tipped_stocks_for_analysis(observation_date: Optional[date] = None) -> 
                 srs.StockCode AS stock_code,
                 srs.total_ratings,
                 srs.bullish_count,
-                CONVERT(varchar(10), srs.latest_rating_date, 23) AS latest_rating_date,
-                CAST(price_stats.avg_trade_value_5d AS decimal(20, 2)) AS avg_trade_value_5d,
+                CONVERT(varchar(10), price_latest.lastPriceDate, 23) AS lastPriceDate,
+                CAST(price_stats.avg_trade_value_20d AS decimal(20, 2)) AS avg_trade_value_20d,
                 CONVERT(varchar(10), lr.MaxObservationDate, 23) AS latest_analysis_date,
                 rating.OverallScore AS overall_score,
                 rating.OverallRating AS overall_rating,
@@ -379,11 +383,16 @@ def list_tipped_stocks_for_analysis(observation_date: Optional[date] = None) -> 
                 NULL AS processing_id
             FROM StockRatingSummary srs
             OUTER APPLY (
-                SELECT AVG(CAST(recent_prices.[Value] AS decimal(20, 4))) AS avg_trade_value_5d
+                SELECT MAX(ph.ObservationDate) AS lastPriceDate
+                FROM [StockData].[PriceHistory] ph
+                WHERE UPPER(REPLACE(ph.ASXCode, '.AX', '')) = UPPER(REPLACE(srs.StockCode, '.AX', ''))
+            ) price_latest
+            OUTER APPLY (
+                SELECT AVG(CAST(recent_prices.[Value] AS decimal(20, 4))) AS avg_trade_value_20d
                 FROM (
-                    SELECT TOP 5 ph.[Value]
+                    SELECT TOP 20 ph.[Value]
                     FROM [StockData].[PriceHistory] ph
-                    WHERE UPPER(ph.ASXCode) = UPPER(srs.StockCode)
+                    WHERE UPPER(REPLACE(ph.ASXCode, '.AX', '')) = UPPER(REPLACE(srs.StockCode, '.AX', ''))
                       AND ph.[Value] IS NOT NULL
                     ORDER BY ph.ObservationDate DESC
                 ) recent_prices

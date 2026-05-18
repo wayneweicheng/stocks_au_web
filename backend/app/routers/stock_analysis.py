@@ -33,8 +33,8 @@ class StockAnalysisTippedStock(BaseModel):
     stock_code: str
     total_ratings: int
     bullish_count: int
-    latest_rating_date: Optional[str] = None
-    avg_trade_value_5d: Optional[float] = None
+    lastPriceDate: Optional[str] = None
+    avg_trade_value_20d: Optional[float] = None
     latest_analysis_date: Optional[str] = None
     overall_score: Optional[int] = None
     overall_rating: Optional[str] = None

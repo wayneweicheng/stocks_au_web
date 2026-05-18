@@ -50,6 +50,51 @@ def _weekday_span(start_date: date, end_date: date) -> int:
     return days
 
 
+@router.get("/defaults")
+async def get_broker_analysis_defaults() -> Dict[str, Any]:
+    """Get page defaults from broker trade dates."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            WITH TradeDates AS (
+                SELECT TOP (2) CAST(ObservationDate AS date) AS ObservationDate
+                FROM StockData.v_BrokerData
+                WHERE ObservationDate IS NOT NULL
+                GROUP BY CAST(ObservationDate AS date)
+                ORDER BY CAST(ObservationDate AS date) DESC
+            )
+            SELECT
+                MIN(ObservationDate) AS StartDate,
+                MAX(ObservationDate) AS EndDate
+            FROM TradeDates;
+        """)
+
+        results = _rows_to_dicts(cursor)
+
+        cursor.close()
+        conn.close()
+
+        defaults = results[0] if results else {}
+        return {
+            "BrokerCode": "Macqua",
+            "SortBy": "NetVolumevsTradeVolume",
+            "StartDate": defaults.get("StartDate"),
+            "EndDate": defaults.get("EndDate"),
+        }
+
+    except pyodbc.Error as e:
+        raise HTTPException(
+            status_code=500, detail=f"Database error: {str(e)}"
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching broker analysis defaults: {str(e)}",
+        ) from e
+
+
 @router.get("/broker-codes")
 async def get_broker_codes() -> List[Dict[str, Any]]:
     """
@@ -109,7 +154,7 @@ async def get_broker_codes() -> List[Dict[str, Any]]:
 @router.get("/analysis")
 async def get_broker_analysis(
     sort_by: str = Query(
-        "NetValuevsMC",
+        "NetVolumevsTradeVolume",
         description=(
             "Sort column: NetValuevsMC, NetVolumevsTradeVolume, "
             "MarketCap, NetValue, ASXCode"
@@ -122,7 +167,7 @@ async def get_broker_analysis(
         None, description="Inclusive broker observation end date"
     ),
     broker_code: str = Query(
-        "BelPot", description="Broker code to filter by"
+        "Macqua", description="Broker code to filter by"
     ),
 ) -> List[Dict[str, Any]]:
     """
@@ -190,7 +235,7 @@ async def get_broker_buy_sell_percentage(
         description="Number of previous business days before the end date",
     ),
     broker_code: str = Query(
-        "BelPot", description="Broker code to filter by"
+        "Macqua", description="Broker code to filter by"
     ),
     observation_end_date: date | None = Query(
         None,

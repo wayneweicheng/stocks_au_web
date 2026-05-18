@@ -5,6 +5,12 @@ import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 type TabKey = "buySuggestion" | "buySellPerc";
 type BrokerCode = { BrokerCode?: string; BrokerName?: string };
+type BrokerAnalysisDefaults = {
+  BrokerCode?: string;
+  SortBy?: string;
+  StartDate?: string;
+  EndDate?: string;
+};
 type Row = Record<string, unknown> & {
   ASXCode?: string;
   DateStart?: string;
@@ -78,13 +84,6 @@ const labels: Record<string, string> = {
 function inputDate(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
-}
-
-function previousWeekday(value: string) {
-  const date = new Date(`${value}T12:00:00`);
-  date.setDate(date.getDate() - 1);
-  while (date.getDay() === 0 || date.getDay() === 6) date.setDate(date.getDate() - 1);
-  return inputDate(date);
 }
 
 function weekdaySpan(startDate: string, endDate: string) {
@@ -166,13 +165,13 @@ function DataTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full border-separate border-spacing-0 text-sm">
+      <table className="min-w-max border-separate border-spacing-0 text-sm">
         <thead className="bg-slate-100 text-xs text-slate-600">
           <tr>
             {columns.map((column) => (
               <th
                 key={column}
-                className="border-b border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold"
+                className="whitespace-nowrap border-b border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold"
               >
                 {labels[column] || column}
               </th>
@@ -206,7 +205,7 @@ function DataTable({
                 return (
                   <td
                     key={column}
-                    className={`border-b border-slate-100 px-3 py-3 align-top ${column === "ASXCode" ? "font-semibold text-slate-950" : color}`}
+                    className={`whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top ${column === "ASXCode" ? "font-semibold text-slate-950" : color}`}
                   >
                     {isCode ? (
                       <button
@@ -248,21 +247,38 @@ export default function BrokerAnalysisPage() {
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const [activeTab, setActiveTab] = useState<TabKey>("buySuggestion");
   const [brokerCodes, setBrokerCodes] = useState<BrokerCode[]>([]);
-  const [brokerCode, setBrokerCode] = useState("BelPot");
+  const [brokerCode, setBrokerCode] = useState("Macqua");
   const [error, setError] = useState("");
 
-  const [suggestionSort, setSuggestionSort] = useState("NetValuevsMC");
+  const [suggestionSort, setSuggestionSort] = useState("NetVolumevsTradeVolume");
   const [suggestionStartDate, setSuggestionStartDate] = useState(defaultStartDate);
   const [suggestionEndDate, setSuggestionEndDate] = useState(defaultEndDate);
   const [suggestionRows, setSuggestionRows] = useState<Row[]>([]);
   const [suggestionLoading, setSuggestionLoading] = useState(false);
 
   const [percSort, setPercSort] = useState("Buy Perc Desc");
-  const [percStartDate, setPercStartDate] = useState("");
-  const [percEndDate, setPercEndDate] = useState("");
-  const [percPreviousDays, setPercPreviousDays] = useState(0);
+  const [percStartDate, setPercStartDate] = useState(defaultStartDate);
+  const [percEndDate, setPercEndDate] = useState(defaultEndDate);
   const [percRows, setPercRows] = useState<Row[]>([]);
   const [percLoading, setPercLoading] = useState(false);
+
+  useEffect(() => {
+    if (!baseUrl) return;
+    authenticatedFetch(`${baseUrl}/api/broker-analysis/defaults`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((data: BrokerAnalysisDefaults) => {
+        if (data.BrokerCode) setBrokerCode(data.BrokerCode);
+        if (data.SortBy) setSuggestionSort(data.SortBy);
+        if (data.StartDate) setSuggestionStartDate(data.StartDate.slice(0, 10));
+        if (data.EndDate) setSuggestionEndDate(data.EndDate.slice(0, 10));
+        if (data.StartDate) setPercStartDate(data.StartDate.slice(0, 10));
+        if (data.EndDate) setPercEndDate(data.EndDate.slice(0, 10));
+      })
+      .catch((e) => setError(e.message || "Failed to load broker analysis defaults"));
+  }, [baseUrl]);
 
   useEffect(() => {
     if (!baseUrl) return;
@@ -274,7 +290,7 @@ export default function BrokerAnalysisPage() {
       .then((data: BrokerCode[]) => {
         setBrokerCodes(data || []);
         const defaultBroker =
-          data?.find((item) => item.BrokerCode?.toLowerCase() === "belpot") ||
+          data?.find((item) => item.BrokerCode?.toLowerCase() === "macqua") ||
           data?.find((item) => item.BrokerCode !== "All") ||
           data?.[0];
         if (defaultBroker?.BrokerCode) setBrokerCode(defaultBroker.BrokerCode);
@@ -304,10 +320,10 @@ export default function BrokerAnalysisPage() {
 
   useEffect(() => {
     if (!baseUrl || !brokerCode) return;
-    if (percStartDate && !percEndDate) return;
+    if (!percStartDate || !percEndDate) return;
 
     const controller = new AbortController();
-    const effectivePreviousDays = weekdaySpan(percStartDate, percEndDate) ?? percPreviousDays;
+    const effectivePreviousDays = weekdaySpan(percStartDate, percEndDate) ?? 0;
 
     setPercLoading(true);
     setError("");
@@ -316,8 +332,8 @@ export default function BrokerAnalysisPage() {
       broker_code: brokerCode,
       num_prev_day: String(effectivePreviousDays),
     });
-    if (percEndDate) params.set("observation_end_date", percEndDate);
-    if (percStartDate && percEndDate) params.set("observation_start_date", percStartDate);
+    params.set("observation_end_date", percEndDate);
+    params.set("observation_start_date", percStartDate);
     authenticatedFetch(`${baseUrl}/api/broker-analysis/buy-sell-percentage?${params}`, {
       signal: controller.signal,
     })
@@ -339,7 +355,7 @@ export default function BrokerAnalysisPage() {
       });
 
     return () => controller.abort();
-  }, [baseUrl, brokerCode, percSort, percStartDate, percEndDate, percPreviousDays]);
+  }, [baseUrl, brokerCode, percSort, percStartDate, percEndDate]);
 
   const currentRows = activeTab === "buySuggestion" ? suggestionRows : percRows;
   const currentLoading = activeTab === "buySuggestion" ? suggestionLoading : percLoading;
@@ -365,7 +381,7 @@ export default function BrokerAnalysisPage() {
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1900px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm font-medium text-emerald-700">Broker reports</p>
@@ -507,31 +523,6 @@ export default function BrokerAnalysisPage() {
                     className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                   />
                 </label>
-                <label className="text-sm font-medium text-slate-700">
-                  Previous days
-                  <input
-                    type="number"
-                    min={0}
-                    max={260}
-                    value={percPreviousDays}
-                    onChange={(e) => setPercPreviousDays(Math.max(0, Number(e.target.value) || 0))}
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const end = percEndDate || defaultEndDate;
-                      setPercEndDate(end);
-                      setPercStartDate(previousWeekday(end));
-                      setPercPreviousDays(1);
-                    }}
-                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                  >
-                    1D Window
-                  </button>
-                </div>
               </>
             )}
           </div>

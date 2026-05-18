@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import MarkdownRenderer from "./MarkdownRenderer";
 import {
@@ -13,8 +13,8 @@ type TippedStock = {
   stock_code: string;
   total_ratings: number;
   bullish_count: number;
-  latest_rating_date?: string | null;
-  avg_trade_value_5d?: number | null;
+  lastPriceDate?: string | null;
+  avg_trade_value_20d?: number | null;
   latest_analysis_date?: string | null;
   overall_score?: number | null;
   overall_rating?: string | null;
@@ -70,6 +70,7 @@ type BulkProcessResponse = {
 
 const DEFAULT_MODEL = DEFAULT_MARKET_FLOW_MODEL;
 const BULK_ITEMS_PER_PAGE = 100;
+type TradeValueSortDir = "asc" | "desc" | null;
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
@@ -147,6 +148,7 @@ export default function StockAnalysisTab() {
   const [bulkMessage, setBulkMessage] = useState("");
   const [bulkExpanded, setBulkExpanded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [tradeValueSortDir, setTradeValueSortDir] = useState<TradeValueSortDir>(null);
 
   const pollingRef = useRef<number | null>(null);
 
@@ -406,13 +408,20 @@ export default function StockAnalysisTab() {
     setSelectedStocks(newSelection);
   }
 
-  function toggleSelectAll() {
-    const startIdx = (currentPage - 1) * BULK_ITEMS_PER_PAGE;
-    const endIdx = startIdx + BULK_ITEMS_PER_PAGE;
-    const pageStocks = stocks.slice(startIdx, endIdx);
-    const pageStockCodes = new Set(pageStocks.map((s) => s.stock_code));
+  function toggleTradeValueSort() {
+    setTradeValueSortDir((current) => {
+      if (current === "desc") {
+        return "asc";
+      }
+      return "desc";
+    });
+    setCurrentPage(1);
+  }
 
-    const allSelected = pageStocks.every((s) => selectedStocks.has(s.stock_code));
+  function toggleSelectAll() {
+    const pageStockCodes = new Set(paginatedStocks.map((s) => s.stock_code));
+
+    const allSelected = paginatedStocks.every((s) => selectedStocks.has(s.stock_code));
     const newSelection = new Set(selectedStocks);
 
     if (allSelected) {
@@ -427,10 +436,28 @@ export default function StockAnalysisTab() {
   const selectedStockSummary = stocks.find((item) => item.stock_code === selectedStock) || null;
   const isBusy = status === "processing";
 
-  const totalPages = Math.ceil(stocks.length / BULK_ITEMS_PER_PAGE);
+  const sortedStocks = useMemo(() => {
+    if (!tradeValueSortDir) {
+      return stocks;
+    }
+
+    return [...stocks].sort((a, b) => {
+      const aValue = a.avg_trade_value_20d ?? Number.NEGATIVE_INFINITY;
+      const bValue = b.avg_trade_value_20d ?? Number.NEGATIVE_INFINITY;
+      const comparison = aValue - bValue;
+
+      if (comparison === 0) {
+        return a.stock_code.localeCompare(b.stock_code);
+      }
+
+      return tradeValueSortDir === "asc" ? comparison : -comparison;
+    });
+  }, [stocks, tradeValueSortDir]);
+
+  const totalPages = Math.ceil(sortedStocks.length / BULK_ITEMS_PER_PAGE);
   const startIdx = (currentPage - 1) * BULK_ITEMS_PER_PAGE;
   const endIdx = startIdx + BULK_ITEMS_PER_PAGE;
-  const paginatedStocks = stocks.slice(startIdx, endIdx);
+  const paginatedStocks = sortedStocks.slice(startIdx, endIdx);
   const allPageSelected = paginatedStocks.length > 0 && paginatedStocks.every((s) => selectedStocks.has(s.stock_code));
 
   return (
@@ -516,9 +543,9 @@ export default function StockAnalysisTab() {
               </div>
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Latest Rating</div>
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">lastPriceDate</div>
               <div className="mt-1 text-sm font-semibold text-slate-800">
-                {selectedStockSummary.latest_rating_date || "N/A"}
+                {selectedStockSummary.lastPriceDate || "N/A"}
               </div>
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
@@ -641,10 +668,20 @@ export default function StockAnalysisTab() {
                         Bullish Count
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-600">
-                        Latest Rating
+                        lastPriceDate
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-600">
-                        Avg Trade Value 5D
+                        <button
+                          type="button"
+                          onClick={toggleTradeValueSort}
+                          className="inline-flex items-center gap-1 uppercase tracking-wide text-slate-600 hover:text-slate-900"
+                          title="Sort by average trade value"
+                        >
+                          Avg Trade Value 20D
+                          <span className="text-[10px] normal-case text-slate-400">
+                            {tradeValueSortDir === "desc" ? "Desc" : tradeValueSortDir === "asc" ? "Asc" : "Sort"}
+                          </span>
+                        </button>
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-600">
                         Overall Rating
@@ -694,8 +731,8 @@ export default function StockAnalysisTab() {
                             <td className="px-4 py-3 text-sm font-medium text-slate-900">{stock.stock_code}</td>
                             <td className="px-4 py-3 text-sm text-slate-600">{stock.total_ratings}</td>
                             <td className="px-4 py-3 text-sm text-slate-600">{stock.bullish_count}</td>
-                            <td className="px-4 py-3 text-sm text-slate-600">{stock.latest_rating_date || "N/A"}</td>
-                            <td className="px-4 py-3 text-sm text-slate-600">{formatTradeValue(stock.avg_trade_value_5d)}</td>
+                            <td className="px-4 py-3 text-sm text-slate-600">{stock.lastPriceDate || "N/A"}</td>
+                            <td className="px-4 py-3 text-sm text-slate-600">{formatTradeValue(stock.avg_trade_value_20d)}</td>
                             <td className="px-4 py-3 text-sm">
                               {stock.overall_rating ? (
                                 <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${ratingBadgeColor}`}>
@@ -729,7 +766,7 @@ export default function StockAnalysisTab() {
               {totalPages > 1 && (
                 <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3">
                   <div className="text-sm text-slate-600">
-                    Page {currentPage} of {totalPages} ({stocks.length} total stocks)
+                    Page {currentPage} of {totalPages} ({sortedStocks.length} total stocks)
                   </div>
                   <div className="flex gap-2">
                     <button
