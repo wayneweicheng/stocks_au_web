@@ -53,6 +53,8 @@ def get_signal_strengths(
         for r in results:
             r.setdefault("buy_dip_range", None)
             r.setdefault("sell_rip_range", None)
+            r.setdefault("intraday_sell_range", None)
+            r.setdefault("intraday_buy_range", None)
             normalized.append(r)
 
         return normalized

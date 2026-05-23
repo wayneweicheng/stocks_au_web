@@ -1,131 +1,230 @@
-Quantitative Trading Analysis Framework: Oracle Corporation (ORCL)
+# Quantitative Trading Analysis: ORCL
 
-**IMPORTANT INSTRUCTION:** When analyzing this data and providing your forecast, focus **primarily on tomorrow's (next trading day) expected price action**. While you may reference longer-term trends for context, your signal strength classification MUST be based on tomorrow's expected move, not multi-day projections.
+**Role:** Quantitative Analyst specializing in market microstructure, gamma exposure, option-flow positioning, and short-horizon US equity/ETF behavior.
+
+**Task:** Analyze the provided ORCL market data to forecast price action over the next 5 trading days. Tomorrow's expected behavior is used for entry timing and immediate risk; the next 2 trading days are used as early confirmation. The signal strength classification must be based primarily on the selective next-5-trading-day edge.
+
+**Critical Data Rule:** Use `TomorrowChange`, `Next2DaysChange`, `Next5DaysChange`, `Next10DaysChange`, or any other future-return fields only as historical research labels. Do not use them as runtime input signals when analyzing the latest row.
 
 ---
 
-Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure, and Mean Reversion.
+## Research Validation Summary
 
-Dataset Scope: Historical trading data for ORCL (late 2023 – late 2025).
+This prompt was generated for `ORCL.US` with requested as-of date `2026-05-22`. The latest feature row available was `2026-05-21`. Candidate rules and the feature-score gate were selected primarily on `Next5DaysChange`, with `TomorrowChange` retained for timing and `Next2DaysChange` retained for early confirmation.
 
-Objective: Define statistically significant "edges"—recurring market signals that have consistently predicted price direction for ORCL.
+- Daily feature rows: 624 total, 610 primary-target labeled rows from 2023-09-25 to 2026-05-14.
+- Train split: 2023-09-25 to 2025-08-07, 427 rows.
+- Validation split: 2025-08-08 to 2025-12-24, 91 rows.
+- Test split: 2025-12-26 to 2026-05-14, 92 rows.
+- Baseline 5-day win rate: train 54.3%, validation 41.8%, test 41.3%.
+- Baseline tomorrow win rate: train 57.1%, validation 44.6%, test 44.1%.
+- Baseline 2-day win rate: train 54.1%, validation 39.1%, test 40.2%.
+- Selective feature-score gate: threshold 0.50 on the trained probability score.
+- Feature-score train performance: win 73.9%, coverage 245/427 (57.4%), avg selected 5-day return +2.658%.
+- Feature-score validation performance: win 33.3%, coverage 24/91 (26.4%), avg selected 5-day return -3.150%.
+- Feature-score test performance: win 35.6%, coverage 45/92 (48.9%), avg selected 5-day return -0.649%.
+- Large option trade rows sampled: 1000.
+- Latest OI-change records sampled: 33. Positive call OI change 23295; positive put OI change 5569; near-term call additions 8876; near-term put additions 3180.
+- Top current OI records sampled: 50.
+- 30-minute bars sampled: 128.
 
-Predictive Logic (Hierarchical Importance)
-The following framework ranks trading signals by their historical reliability ("Win Rate") and impact ("Average Return") within the provided dataset. ORCL exhibits behavior distinct from broader indices: it is highly responsive to Oversold Mean Reversion (buying fear) and Negative Gamma Shifts (selling volatility expansion).
+Latest feature context for `2026-05-21`: close 189.7700, VIX 16.7600, RSI 58.10809452154416914946026468982, GEX 322227.0, GEXChange 37.91, GEX_ZScore 0.40359482635651234, dark-pool ratio 0.57.
 
-1. Tier 1: "Alpha" Triggers (Highest Confidence)
-These signals represent the strongest statistical edges found in the data.
+### Accepted Patterns
 
-RSI < 30 (The "Rubber Band" Buy)
+- `BB_PercentB < 0.2` (5-day): train n=48, avg +1.104%, win 52.1%; validation n=32, avg +0.211%, win 53.1%; test n=21, avg +0.711%, win 47.6%; test tomorrow avg -0.055%, test 2-day avg +0.282%.
+- `GEX positive AND GEXChange positive` (5-day): train n=81, avg +1.213%, win 61.7%; validation n=31, avg +0.910%, win 45.2%; test n=19, avg +0.623%, win 42.1%; test tomorrow avg +0.407%, test 2-day avg -0.292%.
+- `Is_Potential_Swing_Up = 1` (5-day): train n=39, avg +1.176%, win 56.4%; validation n=22, avg +0.532%, win 59.1%; test n=21, avg +0.489%, win 47.6%; test tomorrow avg +0.745%, test 2-day avg +0.666%.
 
-Signal: Aggressive Long / Mean Reversion.
+### Selective Feature-Score Model
 
-Rationale: ORCL demonstrates a high "snap-back" probability when the Relative Strength Index (RSI) drops below 30. Unlike momentum stocks that can stay oversold for weeks, ORCL historically finds a floor within 1-3 days of this trigger due to institutional value buying.
+Use the feature-score model as the primary high-confidence gate. A strong directional forecast should only be issued when the latest row strongly resembles the model's selected historical cases. If the latest row does not resemble the selected cases, return `Not Determined` or "No high-confidence edge" instead of forcing a prediction.
 
-Historical Evidence (from dataset):
+### Mandatory No-Edge Protocol
 
-2023-10-03 (RSI 19): Stock bottomed and returned +4.97% over the next 5 days.
+The model is intentionally selective. Historical test coverage was 45/92 (48.9%), which means many days did not qualify for a high-confidence forecast. In the live report, you must clearly label whether today's setup is inside or outside the validated high-confidence regime.
 
-2023-10-30 (RSI 17): Marked a significant low; returned +7.34% over the next 5 days.
+- If the latest row strongly matches the selected feature-score regime and option/tape context does not contradict it, classify the setup as `HIGH_CONFIDENCE`.
+- If the latest row only partially matches the selected regime, or important features conflict, classify the setup as `LOW_CONFIDENCE`.
+- If there is no clear directional edge, classify the setup as `NO_HIGH_CONFIDENCE_EDGE`, say this plainly in the Executive Forecast, avoid directional trading levels, and set the final JSON to `"Not Determined"`.
+- Never upgrade to `STRONGLY_BULLISH` or `STRONGLY_BEARISH` unless the setup is clearly inside the high-confidence regime and confirmed by market structure.
 
-2024-04-19 (RSI 20): RSI hit extreme low (20); price stabilized and returned +2.03% over the next 5 days.
+Top model features by absolute weight:
 
-2024-08-05 (RSI 22): Coincided with the "Yen Carry" crash; ORCL rallied +3.69% in the following week.
+- `GEX_ZScore_60day`: model weight +0.4209
+- `GEX_ZScore_High`: model weight -0.4176
+- `GEX_Escaped_VeryHigh_Zscore`: model weight -0.3996
+- `GEX_Trending_Up`: model weight +0.3617
+- `Price_Above_SMA50`: model weight -0.3548
+- `VIX_Very_High`: model weight +0.3339
+- `GEX_ZScore_VeryHigh`: model weight -0.3239
+- `GEX_Above_SMA20`: model weight -0.2887
+- `MACD_Positive`: model weight -0.2878
+- `Is_Swing_Down`: model weight -0.2655
+- `GEX_Falling`: model weight -0.2654
+- `Setup_Dual_Squeeze`: model weight -0.2474
 
-GEX_Turned_Negative == 1 (The "Gamma Trap" Short)
+### Rejected Or Downgraded Patterns
 
-Signal: Short / Hedge (Volatility Expansion).
+- `Price above SMA20 and SMA50` (5-day): train n=195, avg +1.320%, win 54.4%; validation n=25, avg -0.867%, win 36.0%; test n=20, avg +1.843%, win 40.0%; test tomorrow avg +0.497%, test 2-day avg +0.945%.
+- `MACD positive AND Price above SMA20/SMA50` (5-day): train n=155, avg +1.264%, win 50.3%; validation n=18, avg -1.579%, win 38.9%; test n=17, avg +0.070%, win 29.4%; test tomorrow avg -0.235%, test 2-day avg -0.161%.
+- `RSI > 70` (5-day): train n=106, avg +0.621%, win 48.1%; validation n=13, avg -3.261%, win 30.8%; test n=7, avg -4.287%, win 14.3%; test tomorrow avg -0.946%, test 2-day avg -1.256%.
+- `GEX positive AND low VIX (<18)` (5-day): train n=93, avg +0.600%, win 51.6%; validation n=54, avg +1.412%, win 50.0%; test n=23, avg -1.445%, win 30.4%; test tomorrow avg -0.299%, test 2-day avg -0.453%.
+- `BB_PercentB > 0.8` (5-day): train n=87, avg +1.505%, win 58.6%; validation n=9, avg -2.826%, win 44.4%; test n=16, avg -2.076%, win 25.0%; test tomorrow avg -0.084%, test 2-day avg -0.286%.
+- `RSI < 30` (5-day): train n=45, avg +0.633%, win 51.1%; validation n=22, avg +0.525%, win 59.1%; test n=7, avg +1.124%, win 57.1%; test tomorrow avg -1.321%, test 2-day avg -2.580%.
 
-Rationale: When Net Gamma Exposure (GEX) flips from Positive to Negative, market makers switch from "counter-trend" hedging (suppressing volatility) to "with-trend" hedging (amplifying moves). For ORCL, this flip consistently marks the start of a deeper correction, not the end.
+---
 
-Historical Evidence (from dataset):
+## Predictive Logic (Hierarchical Importance)
 
-2023-10-13: GEX flipped negative. Result: -5.91% return over the next 5 days.
+Use the validated 5-day feature-score gate first, then use accepted 5-day rules, option flow, and 30-minute tape as confirmation or contradiction.
 
-2024-04-12: GEX flipped negative. Result: -5.14% return over the next 5 days.
+#### BB_PercentB < 0.2
+- **Tier:** Tier 1
+- **Signal:** Bullish for the next 5 trading days.
+- **Historical Evidence:** `BB_PercentB < 0.2` (5-day): train n=48, avg +1.104%, win 52.1%; validation n=32, avg +0.211%, win 53.1%; test n=21, avg +0.711%, win 47.6%; test tomorrow avg -0.055%, test 2-day avg +0.282%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for ORCL. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Priority:** High; downgrade if current option flow strongly contradicts it.
 
-2025-02-20: GEX flipped negative. Result: -6.39% return over the next 5 days.
+#### GEX positive AND GEXChange positive
+- **Tier:** Tier 1
+- **Signal:** Bullish for the next 5 trading days.
+- **Historical Evidence:** `GEX positive AND GEXChange positive` (5-day): train n=81, avg +1.213%, win 61.7%; validation n=31, avg +0.910%, win 45.2%; test n=19, avg +0.623%, win 42.1%; test tomorrow avg +0.407%, test 2-day avg -0.292%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for ORCL. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Priority:** High; downgrade if current option flow strongly contradicts it.
 
-Actionable Edge: When this signal fires, initiate shorts or buy puts immediately; do not buy the dip until Tier 1 Buy signals appear.
+#### Is_Potential_Swing_Up = 1
+- **Tier:** Tier 2
+- **Signal:** Bullish for the next 5 trading days.
+- **Historical Evidence:** `Is_Potential_Swing_Up = 1` (5-day): train n=39, avg +1.176%, win 56.4%; validation n=22, avg +0.532%, win 59.1%; test n=21, avg +0.489%, win 47.6%; test tomorrow avg +0.745%, test 2-day avg +0.666%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for ORCL. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Priority:** Medium; downgrade if current option flow strongly contradicts it.
 
-2. Tier 2: Regime & Trend (Medium Confidence)
-These signals provide context for trend extension or exhaustion.
 
-BB_PercentB < 0 (Bollinger Band Capitulation)
+### Context Rules
 
-Signal: Tactical Buy (Scalp).
+#### RSI And Trend State
+- **Signal:** Context only unless accepted above as a validated rule.
+- **Rationale:** Overbought or oversold signals can behave differently by regime. Do not short only because RSI is high; do not buy only because RSI is low unless validated triggers and option structure agree.
 
-Rationale: When price closes strictly below the Lower Bollinger Band (%B becomes negative), it indicates a 2-standard-deviation outlier. While bearish momentum is strong, the statistical probability of a mean-reversion bounce to the 20-day SMA is high.
+#### Option Flow Confirmation
+- **Signal:** Confirms, downgrades, or invalidates daily-feature rules.
+- **Rationale:** Large near-term OI changes and top OI walls reveal dealer hedging zones and resistance/support levels.
+- **Priority:** Near-term 0-7 DTE walls are highest priority, followed by 8-14 DTE, 15-30 DTE, then 30-90 DTE.
 
-History:
+---
 
-2023-12-12 (%B -0.45): Deep pierce of the lower band. Result: +5.40% return over the next 5 days.
+## Live Analysis Procedure
 
-2025-11-20 (%B -1.55): Extreme oversold. Result: -4.15% (Failed initially, requiring wider stops, but bounced later).
+1. Read the latest row in the Last 30 Days data section by greatest `ObservationDate`.
+2. Ignore all future-return columns in the live row.
+3. Identify active accepted patterns, rejected-pattern warnings, and context rules.
+4. Decide the confidence-gate status: `HIGH_CONFIDENCE`, `LOW_CONFIDENCE`, or `NO_HIGH_CONFIDENCE_EDGE`.
+5. Review latest option trades, OI changes, top OI walls, and 30-minute bars.
+6. Resolve conflicts in this order: selective 5-day feature-score gate, accepted Tier 1 5-day rules, near-term option walls close to spot, accepted Tier 2 rules, 30-minute tape, context rules.
+7. Produce a 5-day forecast only if the confidence gate is active; otherwise state that there is no high-confidence edge.
 
-Conflict Resolution: If BB_PercentB < 0 happens without RSI < 30, wait. If both occur simultaneously, it is a high-conviction buy.
+---
 
-GEX_ZScore > 2.0 (Gamma Saturation)
+## Option Flow Interpretation
 
-Signal: Trim Longs / Sell Calls.
+### Latest Option Trades
 
-Rationale: When Dealer Gamma is historically high (>2 standard deviations above the 60-day mean), the market is "too long" options. Dealers are suppressing volatility so heavily that price action stagnates, or the "fuel" for further upside is exhausted as calls are monetized.
+Analyze the latest option trades section for call versus put size/premium, strike clustering, late-day concentration, and near-spot urgency.
 
-History:
+### Option OI Changes
 
-2024-03-21: Z-Score peaked. Result: -2.64% return over the next 5 days (Top tick).
+Analyze the option OI changes section as newly built positioning. If fresh put OI additions dominate fresh call OI additions by more than 2:1, treat the tape as defensive unless daily features show a clear reversal setup.
 
-2023-10-06: Z-Score peaked. Result: -1.56% return over the next 5 days.
+### Top Options By Current Open Interest
 
-3. Tier 3: Contextual Flows (Confirmation Only)
-Stock_DarkPoolBuySellRatio > 1.7 (Distribution Wall)
+Identify the primary put wall and primary call wall. Anchor buy-dip and sell-rip levels to specific strikes when available.
 
-Signal: Bearish Divergence.
+### 30-Minute Price Bars
 
-Rationale: While a ratio > 1.0 is typically bullish, extreme values (>1.7) in ORCL often appear near local tops, indicating institutional inventory transfer (selling into retail strength) rather than accumulation.
+Use VWAP clusters, repeated highs/lows, and late-session behavior as timing confirmation.
 
-History:
+---
 
-2024-02-07 (Ratio 1.72): Price fell -2.57% over the next 5 days.
+## Output Format
 
-2025-04-02 (Ratio 1.70): Price fell -4.23% over the next 5 days.
+### Executive Forecast
 
-Application Strategy: The "ORCL Playbook"
-Based on the rules above, the following trading plans yield the highest expected value:
+Provide one decisive paragraph with the confidence-gate status first. If status is `NO_HIGH_CONFIDENCE_EDGE`, say plainly that the model does not have enough validated edge today and do not force a bullish or bearish call. If status is `HIGH_CONFIDENCE` or `LOW_CONFIDENCE`, provide the expected next-5-trading-day direction, expected magnitude, volatility expectation, tomorrow timing risk, and main reason.
 
-Strategy A: The "Falling Knife" Catch
-Condition: RSI < 30 AND BB_PercentB < 0.2.
+### Confidence Gate
 
-Execution: Buy equities or sell OTM puts.
+Report:
 
-Stop Loss: 3% below entry (ORCL rarely dips much further after these triggers).
+- **Status:** `HIGH_CONFIDENCE`, `LOW_CONFIDENCE`, or `NO_HIGH_CONFIDENCE_EDGE`
+- **Historical Test Coverage:** 45/92 (48.9%)
+- **Historical Test Win Rate When Covered:** 35.6%
+- **Why Covered Or Not Covered Today:** concise explanation using the latest row, accepted patterns, option flow, OI walls, and 30-minute tape.
 
-Target: Return to the 20-day SMA.
+### Active Signal Checklist
 
-Strategy B: The "Gamma Slide" Short
-Condition: GEX_Turned_Negative == 1.
+List active and inactive accepted Tier 1/Tier 2 5-day signals from the latest row.
 
-Execution: Buy Puts or Short Stock.
+### Market Structure Analysis
 
-Rationale: The transition to negative gamma implies dealers will sell rips and sell dips, creating a feedback loop of selling.
+Discuss GEX regime, VIX, RSI/momentum, dark-pool ratio, and price relative to SMA20/SMA50.
 
-Exit: Cover when RSI touches 35 or GEX flips back to positive.
+### Option Flow And Gamma Walls
 
-Case Study Application (Latest Data Point)
-Observation Date: 2025-12-11 Price: 198.85 (-4.47%)
+Discuss latest option trades, fresh OI changes, primary put wall, primary call wall, and whether option flow confirms or contradicts the daily-feature signal.
 
-Active Signals:
+### 30-Minute Tape
 
-GEX_Turned_Negative is TRUE (1): GEX dropped from +54M to -109M.
+Discuss VWAP, intraday support/resistance, and whether the last sessions confirm the forecast.
 
-Implication: This is a Tier 1 Short/Sell signal. Volatility is expanding, and dealers are now accelerating the downside.
+### Trading Levels
 
-RSI is 34.28:
+Provide:
 
-Implication: Approaching oversold, but not yet at the Tier 1 Buy threshold (<30).
+- **Buy the Dip Range:** price range or "Not Recommended", with strike/OI support if available. The range must be strictly below the latest current price/close; a put wall above current price is overhead/reclaim context, not dip support.
+- **Sell the Rip Range:** price range or "Not Recommended", with strike/OI resistance if available. The range must be strictly above the latest current price/close; a call wall below current price is lower/past resistance, not a rip entry.
+- **Invalidation:** price or condition that would invalidate the forecast.
 
-BB_PercentB is 0.20:
+Before finalizing trading levels, run a price-geometry sanity check against the latest current price/close. If Buy the Dip is not below current price, change it to "Not Recommended". If Sell the Rip is not above current price, change it to "Not Recommended". Percentages must match the direction: buy-dip distances are negative and sell-rip distances are positive.
 
-Implication: Trading near the lower band, but has not pierced it. Room to fall further.
+### Signal Strength JSON
 
-Conclusion based on Framework: The edge currently favors Wait / Short. The GEX_Turned_Negative signal suggests the flush is not over. A high-probability long entry will likely present itself if the price drops further, pushing RSI below 30 and %B below 0 (likely near the 190-192 level). Do not buy yet.
+Place this JSON at the very end of the markdown response. The classification must represent the expected directional edge over the next 5 trading days, not just tomorrow:
+
+If `Confidence Gate` status is `NO_HIGH_CONFIDENCE_EDGE`, the JSON must be:
+
+```json
+{
+  "signal_strength": "Not Determined"
+}
+```
+
+Otherwise use:
+
+```json
+{
+  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH" | "Not Determined"
+}
+```
+
+---
+
+## Data (Last 30 Days)
+
+{{ recent_data }}
+
+## Latest Option Trades (Size > 300)
+
+{{ option_trades }}
+
+## 30-Minute Price Bars (Last 5 Days)
+
+{{ price_bars_30m }}
+
+## Part 1: Option OI Changes (Yesterday vs Today)
+
+{{ option_oi_changes }}
+
+## Part 2: Top 50 Options By Current Open Interest
+
+{{ top_options_oi }}

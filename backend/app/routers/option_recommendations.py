@@ -43,9 +43,18 @@ def get_option_recommendations(
     query = """
     SELECT
         *
-    FROM [Analysis].[v_CSPPriceLadder]
-    WHERE TradingDate = ?
-    ORDER BY Rank, Priority
+    FROM (
+        SELECT
+            *,
+            DENSE_RANK() OVER (
+                PARTITION BY Ticker
+                ORDER BY OptionSymbol
+            ) AS OptionRankForTicker
+        FROM [Analysis].[v_CSPPriceLadder]
+        WHERE TradingDate = ?
+    ) ranked
+    WHERE OptionRankForTicker <= 4
+    ORDER BY Ticker, OptionSymbol, STOLimitPrice
     """
 
     try:

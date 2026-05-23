@@ -14,7 +14,8 @@ class SignalStrengthParser:
         "MILDLY_BULLISH",
         "NEUTRAL",
         "MILDLY_BEARISH",
-        "STRONGLY_BEARISH"
+        "STRONGLY_BEARISH",
+        "NOT_DETERMINED",
     }
 
     @classmethod
@@ -31,7 +32,7 @@ class SignalStrengthParser:
             llm_output: Markdown text from LLM prediction
 
         Returns:
-            Signal strength level (e.g., "STRONGLY_BULLISH") or None if not found/invalid
+            Signal strength level (e.g., "STRONGLY_BULLISH" or "NOT_DETERMINED") or None if not found/invalid
         """
         if not llm_output:
             logger.warning("Empty LLM output provided to signal strength parser")

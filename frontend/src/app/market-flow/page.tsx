@@ -317,6 +317,10 @@ export default function GexSignalsPage() {
     hasOptionTrades: boolean;
     hasPriceBars: boolean;
     hasOptionOI: boolean;
+    templateFile?: string;
+    templatePath?: string;
+    usedFallback?: boolean;
+    databaseResults?: Record<string, number>;
   } | null>(null);
 
   // Stock codes state
@@ -325,7 +329,7 @@ export default function GexSignalsPage() {
   const [latestDate, setLatestDate] = useState<string>("");
 
   // Signal strength matrix state (GEX - Overview tab)
-  const [signalStrengths, setSignalStrengths] = useState<Array<{stock_code: string, signal_strength_level: string, buy_dip_range?: string | null, sell_rip_range?: string | null}>>([]);
+  const [signalStrengths, setSignalStrengths] = useState<Array<{stock_code: string, signal_strength_level: string, buy_dip_range?: string | null, sell_rip_range?: string | null, intraday_sell_range?: string | null, intraday_buy_range?: string | null}>>([]);
   const [signalStrengthsLoading, setSignalStrengthsLoading] = useState(false);
 
   // Signal strength matrix state (OPTION - Option Overview tab)
@@ -561,6 +565,22 @@ export default function GexSignalsPage() {
       setPrediction(data.prediction_markdown || "");
       setPredictionCached(data.cached || false);
       setPredictionWarning(data.warning || "");
+      if (data.prompt) {
+        setPromptText(data.prompt);
+        const metadata = data.prompt_metadata || {};
+        setPromptMetadata({
+          estimatedTokens: metadata.estimated_tokens || 0,
+          hasOptionTrades: metadata.has_option_trades || false,
+          hasPriceBars: metadata.has_price_bars_30m || false,
+          hasOptionOI: metadata.has_option_oi || false,
+          templateFile: metadata.template_file,
+          templatePath: metadata.template_path,
+          usedFallback: metadata.used_fallback,
+          databaseResults: metadata.database_results,
+        });
+        setPromptCopied(false);
+        setPromptError("");
+      }
 
       // Reload signal strengths after generating/regenerating prediction
       // This ensures the matrix is updated with the latest classification
@@ -611,6 +631,10 @@ export default function GexSignalsPage() {
         hasOptionTrades: data.has_option_trades || false,
         hasPriceBars: data.has_price_bars_30m || false,
         hasOptionOI: data.has_option_oi || false,
+        templateFile: data.template_file,
+        templatePath: data.template_path,
+        usedFallback: data.used_fallback,
+        databaseResults: data.database_results,
       });
     } catch (e: any) {
       setPromptError(e.message);
@@ -1263,6 +1287,31 @@ export default function GexSignalsPage() {
               </div>
             </div>
 
+            {promptMetadata && (
+              <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <div>
+                  <span className="font-medium">Prompt:</span>{" "}
+                  {promptMetadata.templatePath || promptMetadata.templateFile || "Unknown"}
+                  {promptMetadata.usedFallback ? " (fallback)" : ""}
+                </div>
+                <div className="mt-1">
+                  <span className="font-medium">Database rows:</span>{" "}
+                  {promptMetadata.databaseResults
+                    ? Object.entries(promptMetadata.databaseResults)
+                        .map(([key, value]) => `${key.replace(/_/g, " ")}: ${value}`)
+                        .join(" | ")
+                    : "Unavailable"}
+                </div>
+                <div className="mt-1">
+                  <span className="font-medium">Injected prompt:</span>{" "}
+                  ~{promptMetadata.estimatedTokens.toLocaleString()} tokens
+                  {promptMetadata.hasOptionOI && " | Option OI"}
+                  {promptMetadata.hasOptionTrades && " | Option trades"}
+                  {promptMetadata.hasPriceBars && " | 30M bars"}
+                </div>
+              </div>
+            )}
+
             {/* Prompt Feedback Messages */}
             {(promptCopied || promptError) && (
               <div className="mb-3">
@@ -1333,22 +1382,25 @@ export default function GexSignalsPage() {
                 <div className="hidden sm:block overflow-x-auto">
                   <div className="inline-block min-w-full">
                   {/* Header Row */}
-                  <div className="grid grid-cols-8 gap-2 mb-3 pb-2 border-b border-slate-200">
+                  <div className="grid grid-cols-11 gap-2 mb-3 pb-2 border-b border-slate-200">
                     <div className="text-xs font-semibold text-slate-600 uppercase">Stock</div>
                     <div className="text-xs font-semibold text-center text-indigo-700">Strongly Bullish</div>
                     <div className="text-xs font-semibold text-center text-emerald-500">Mildly Bullish</div>
                     <div className="text-xs font-semibold text-center text-amber-600">Neutral</div>
                     <div className="text-xs font-semibold text-center text-orange-500">Mildly Bearish</div>
                     <div className="text-xs font-semibold text-center text-red-600">Strongly Bearish</div>
+                    <div className="text-xs font-semibold text-center text-slate-500">Not Determined</div>
                     <div className="text-xs font-semibold text-center text-slate-600">Buy the Dip Range</div>
+                    <div className="text-xs font-semibold text-center text-slate-600">Intraday Sell Range</div>
                     <div className="text-xs font-semibold text-center text-slate-600">Sell the Rip Range</div>
+                    <div className="text-xs font-semibold text-center text-slate-600">Intraday Buy Range</div>
                   </div>
 
                   {/* Data Rows */}
                   {signalStrengths.map((item) => {
                     const level = item.signal_strength_level;
                     return (
-                      <div key={item.stock_code} className="grid grid-cols-8 gap-2 py-2 border-b border-slate-100 hover:bg-slate-50">
+                      <div key={item.stock_code} className="grid grid-cols-11 gap-2 py-2 border-b border-slate-100 hover:bg-slate-50">
                         <div className="text-sm font-medium text-slate-700">{item.stock_code}</div>
 
                         {/* Strongly Bullish */}
@@ -1386,14 +1438,31 @@ export default function GexSignalsPage() {
                           )}
                         </div>
 
+                        {/* Not Determined */}
+                        <div className="flex justify-center items-center">
+                          {level === "NOT_DETERMINED" && (
+                            <div className="w-6 h-6 rounded-full bg-slate-300" title="Not Determined"></div>
+                          )}
+                        </div>
+
                         {/* Buy Dip Range */}
                         <div className="flex justify-center items-center text-xs text-slate-700">
                           {item.buy_dip_range || "-"}
                         </div>
 
+                        {/* Intraday Sell Range */}
+                        <div className="flex justify-center items-center text-xs text-slate-700">
+                          {item.intraday_sell_range || "-"}
+                        </div>
+
                         {/* Sell Rip Range */}
                         <div className="flex justify-center items-center text-xs text-slate-700">
                           {item.sell_rip_range || "-"}
+                        </div>
+
+                        {/* Intraday Buy Range */}
+                        <div className="flex justify-center items-center text-xs text-slate-700">
+                          {item.intraday_buy_range || "-"}
                         </div>
                       </div>
                     );
@@ -1411,7 +1480,8 @@ export default function GexSignalsPage() {
                       level === "MILDLY_BULLISH" ? "bg-emerald-300" :
                       level === "NEUTRAL" ? "bg-amber-400" :
                       level === "MILDLY_BEARISH" ? "bg-orange-400" :
-                      level === "STRONGLY_BEARISH" ? "bg-red-600" : "bg-slate-300";
+                      level === "STRONGLY_BEARISH" ? "bg-red-600" :
+                      level === "NOT_DETERMINED" ? "bg-slate-300" : "bg-slate-300";
                     return (
                       <div key={item.stock_code} className="rounded-md border border-slate-200 p-3 bg-white">
                         <div className="flex items-center justify-between">
@@ -1427,8 +1497,16 @@ export default function GexSignalsPage() {
                             <div>{item.buy_dip_range || "-"}</div>
                           </div>
                           <div className="text-xs text-slate-600">
+                            <div className="font-medium text-slate-700">Intraday Sell</div>
+                            <div>{item.intraday_sell_range || "-"}</div>
+                          </div>
+                          <div className="text-xs text-slate-600">
                             <div className="font-medium text-slate-700">Sell Rip</div>
                             <div>{item.sell_rip_range || "-"}</div>
+                          </div>
+                          <div className="text-xs text-slate-600">
+                            <div className="font-medium text-slate-700">Intraday Buy</div>
+                            <div>{item.intraday_buy_range || "-"}</div>
                           </div>
                         </div>
                       </div>
@@ -1646,4 +1724,3 @@ export default function GexSignalsPage() {
     </div>
   );
 }
-

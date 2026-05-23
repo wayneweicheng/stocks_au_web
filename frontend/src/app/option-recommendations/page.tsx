@@ -1,10 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 type OptionRecommendationRow = Record<string, unknown>;
+
+const HIDDEN_GRID_COLUMNS = new Set([
+  "Allocation",
+  "NormalizedRank",
+  "OptionRankForTicker",
+  "IV_Pct",
+  "Optimistic",
+  "AnnualizedYield",
+  "BufferPct",
+  "PremiumMid",
+  "RecommendationID",
+  "ObservationDate",
+]);
 
 interface QuoteResult {
   ok: boolean;
@@ -21,6 +34,22 @@ interface QuoteResult {
 interface OrderResult {
   ok: boolean;
   message?: string;
+  ib_order_id?: number;
+  warnings?: string[];
+  parent?: {
+    ib_order_id: number | null;
+    action: string;
+    qty: number;
+    limit_price: number;
+    tif: string;
+  };
+  exit?: {
+    ib_order_id: number | null;
+    action: string;
+    qty: number;
+    limit_price: number;
+    tif: string;
+  };
   orders?: Array<{
     exchange: string;
     stock_code: string;
@@ -75,6 +104,30 @@ function normalizeUsSymbol(symbol: string): string {
   return `${s}.US`;
 }
 
+function roundCurrency(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function getStoLimitPriceRaw(row: OptionRecommendationRow): unknown {
+  return row["STOLimitPrice"] ?? row["STO_LimitPrice"] ?? row["LimitPrice"] ?? row["Price"] ?? row["STOPrice"];
+}
+
+function parsePriceInput(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim().replace(/[$,]/g, "");
+    if (!normalized) return null;
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function formatPriceInput(value: unknown): string {
+  const parsed = parsePriceInput(value);
+  return parsed == null ? "" : parsed.toFixed(2);
+}
+
 export default function OptionRecommendationsPage() {
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
@@ -90,6 +143,9 @@ export default function OptionRecommendationsPage() {
   const [quoteResults, setQuoteResults] = useState<Record<number, QuoteResult>>({});
   const [orderLoading, setOrderLoading] = useState<Record<number, boolean>>({});
   const [orderResults, setOrderResults] = useState<Record<number, OrderResult>>({});
+  const [stoPriceInputs, setStoPriceInputs] = useState<Record<number, string>>({});
+  const [collapsedStocks, setCollapsedStocks] = useState<Record<string, boolean>>({});
+  const [collapsedOptions, setCollapsedOptions] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -160,9 +216,21 @@ export default function OptionRecommendationsPage() {
     };
   }, [baseUrl, tradingDate]);
 
+  useEffect(() => {
+    const nextInputs: Record<number, string> = {};
+    rows.forEach((row, index) => {
+      nextInputs[index] = formatPriceInput(getStoLimitPriceRaw(row));
+    });
+    setStoPriceInputs(nextInputs);
+    setOrderResults({});
+    setQuoteResults({});
+    setCollapsedStocks({});
+    setCollapsedOptions({});
+  }, [rows]);
+
   const columns = useMemo(() => {
     if (!rows[0]) return [];
-    return Object.keys(rows[0]);
+    return Object.keys(rows[0]).filter((column) => !HIDDEN_GRID_COLUMNS.has(column));
   }, [rows]);
 
   const summary = useMemo(() => {
@@ -189,6 +257,42 @@ export default function OptionRecommendationsPage() {
       averageAnnualizedYield:
         annualizedYieldCount > 0 ? annualizedYieldTotal / annualizedYieldCount : null,
     };
+  }, [rows]);
+
+  const groupedRows = useMemo(() => {
+    const stockGroups: Array<{
+      ticker: string;
+      rowCount: number;
+      options: Array<{
+        optionSymbol: string;
+        rows: Array<{ row: OptionRecommendationRow; index: number }>;
+      }>;
+    }> = [];
+    const stockIndex = new Map<string, number>();
+
+    rows.forEach((row, index) => {
+      const ticker = typeof row["Ticker"] === "string" && row["Ticker"] ? row["Ticker"] : "Unknown";
+      const optionSymbol =
+        typeof row["OptionSymbol"] === "string" && row["OptionSymbol"] ? row["OptionSymbol"] : "Unknown option";
+
+      let stockGroup = stockGroups[stockIndex.get(ticker) ?? -1];
+      if (!stockGroup) {
+        stockGroup = { ticker, rowCount: 0, options: [] };
+        stockIndex.set(ticker, stockGroups.length);
+        stockGroups.push(stockGroup);
+      }
+
+      stockGroup.rowCount += 1;
+      let optionGroup = stockGroup.options.find((group) => group.optionSymbol === optionSymbol);
+      if (!optionGroup) {
+        optionGroup = { optionSymbol, rows: [] };
+        stockGroup.options.push(optionGroup);
+      }
+
+      optionGroup.rows.push({ row, index });
+    });
+
+    return stockGroups;
   }, [rows]);
 
   const minDate = availableDates.length > 0 ? availableDates[availableDates.length - 1] : undefined;
@@ -266,9 +370,9 @@ export default function OptionRecommendationsPage() {
     console.log("Available columns:", Object.keys(row));
 
     const optionSymbol = row["OptionSymbol"];
-    // Try various possible column names for the limit price and convert to number
-    const stolimitPriceRaw = row["STOLimitPrice"] || row["STO_LimitPrice"] || row["LimitPrice"] || row["Price"] || row["STOPrice"];
-    const stolimitPrice = typeof stolimitPriceRaw === "string" ? parseFloat(stolimitPriceRaw) : typeof stolimitPriceRaw === "number" ? stolimitPriceRaw : null;
+    const defaultStoLimitPriceRaw = getStoLimitPriceRaw(row);
+    const stoLimitPriceInput = stoPriceInputs[rowIndex] ?? formatPriceInput(defaultStoLimitPriceRaw);
+    const stolimitPrice = parsePriceInput(stoLimitPriceInput);
 
     if (!optionSymbol || typeof optionSymbol !== "string") {
       setOrderResults((prev) => ({
@@ -286,14 +390,16 @@ export default function OptionRecommendationsPage() {
         ...prev,
         [rowIndex]: {
           ok: false,
-          error: `Invalid STOLimitPrice: ${stolimitPriceRaw}. Found columns: ${Object.keys(row).filter(k => k.toLowerCase().includes('price') || k.toLowerCase().includes('limit')).join(", ")}`,
+          error: `Invalid STO price: ${stoLimitPriceInput || "blank"}. Default STOLimitPrice: ${String(defaultStoLimitPriceRaw ?? "N/A")}. Found columns: ${Object.keys(row).filter(k => k.toLowerCase().includes('price') || k.toLowerCase().includes('limit')).join(", ")}`,
         },
       }));
       return;
     }
 
-    // Always place 1 contract
+    // Always place 1 contract as a bracket: DAY sell-to-open entry and GTC
+    // buy-to-close exit at 70% of the entry credit.
     const quantity = 1;
+    const bracketExitPrice = roundCurrency(stolimitPrice * 0.7);
 
     setOrderLoading((prev) => ({ ...prev, [rowIndex]: true }));
     setOrderResults((prev) => {
@@ -303,7 +409,7 @@ export default function OptionRecommendationsPage() {
     });
 
     try {
-      console.log("Placing option order:", { optionSymbol, quantity, stolimitPrice });
+      console.log("Placing option bracket order:", { optionSymbol, quantity, stolimitPrice, bracketExitPrice });
       const response = await authenticatedFetch(`${baseUrl}/api/ib/place-option-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -312,6 +418,9 @@ export default function OptionRecommendationsPage() {
           quantity: quantity,
           action: "SELL",
           limit_price: stolimitPrice,
+          bracket_exit_price: bracketExitPrice,
+          parent_tif: "DAY",
+          bracket_exit_tif: "GTC",
         }),
       });
 
@@ -333,6 +442,10 @@ export default function OptionRecommendationsPage() {
           [rowIndex]: {
             ok: true,
             message: data.message,
+            ib_order_id: data.ib_order_id,
+            parent: data.parent,
+            exit: data.exit,
+            warnings: Array.isArray(data.warnings) ? data.warnings : undefined,
             orders: data.orders,
           },
         }));
@@ -352,13 +465,13 @@ export default function OptionRecommendationsPage() {
 
   return (
     <div className="min-h-screen text-slate-800">
-      <div className="mx-auto max-w-[96rem] px-6 py-10">
+      <div className="w-full max-w-none px-4 py-10 sm:px-6">
         <div className="mb-6">
           <h1 className="bg-gradient-to-r from-emerald-500 to-blue-600 bg-clip-text text-3xl font-semibold text-transparent sm:text-4xl">
             Option Recommendations
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Trading recommendations from <code>[Analysis].[v_CSPPriceLadder]</code>, filtered by selected trading date and ordered by rank.
+            Trading recommendations from <code>[Analysis].[v_CSPPriceLadder]</code>, filtered by selected trading date and capped at four options per ticker.
           </p>
         </div>
 
@@ -432,7 +545,7 @@ export default function OptionRecommendationsPage() {
           <div className="border-b border-slate-200 px-6 py-4">
             <div className="text-sm font-medium text-slate-900">Results</div>
             <div className="mt-1 text-xs text-slate-500">
-              Query: <code>SELECT * FROM [Analysis].[v_CSPPriceLadder] WHERE TradingDate = '{tradingDate || "YYYY-MM-DD"}' ORDER BY Rank, Priority</code>
+              Query: <code>SELECT * FROM [Analysis].[v_CSPPriceLadder] WHERE TradingDate = '{tradingDate || "YYYY-MM-DD"}' AND OptionRankForTicker &lt;= 4 ORDER BY Ticker, OptionSymbol, STOLimitPrice</code>
             </div>
           </div>
 
@@ -453,80 +566,180 @@ export default function OptionRecommendationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, index) => (
-                  <tr
-                    key={`${String(row["RecommendationID"] ?? index)}-${index}`}
-                    className={`${index % 2 ? "bg-slate-50" : ""} transition-colors hover:bg-emerald-50/40`}
-                  >
-                    {columns.map((column) => (
-                      <td key={column} className="whitespace-nowrap border-b border-slate-100 px-3 py-2">
-                        {formatCellValue(column, row[column])}
-                      </td>
-                    ))}
-                    <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2">
-                      <div className="flex flex-col gap-2 min-w-[200px]">
-                        <div className="flex gap-2">
+                {groupedRows.map((stockGroup) => {
+                  const stockCollapsed = Boolean(collapsedStocks[stockGroup.ticker]);
+                  return (
+                    <Fragment key={stockGroup.ticker}>
+                      <tr className="border-b border-slate-200 bg-slate-100">
+                        <td colSpan={columns.length + 1} className="px-3 py-2">
                           <button
                             type="button"
-                            onClick={() => handleCheckLivePrice(index, row)}
-                            disabled={quoteLoading[index]}
-                            className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                            aria-expanded={!stockCollapsed}
+                            onClick={() =>
+                              setCollapsedStocks((prev) => ({
+                                ...prev,
+                                [stockGroup.ticker]: !prev[stockGroup.ticker],
+                              }))
+                            }
+                            className="flex w-full items-center gap-2 text-left text-sm font-semibold text-slate-800"
                           >
-                            {quoteLoading[index] && (
-                              <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                            )}
-                            {quoteLoading[index] ? "Loading..." : "Check Live Price"}
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-xs">
+                              {stockCollapsed ? "+" : "-"}
+                            </span>
+                            <span>{stockGroup.ticker}</span>
+                            <span className="text-xs font-normal text-slate-500">
+                              {stockGroup.options.length} options, {stockGroup.rowCount} rows
+                            </span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handlePlaceSTOOrder(index, row)}
-                            disabled={orderLoading[index]}
-                            className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                          >
-                            {orderLoading[index] && (
-                              <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                            )}
-                            {orderLoading[index] ? "Placing..." : "Place STO Order"}
-                          </button>
-                        </div>
-                        {quoteResults[index] && (
-                          <div className={`text-xs ${quoteResults[index].ok ? "text-slate-700" : "text-red-600"}`}>
-                            {quoteResults[index].ok ? (
-                              <div className="flex flex-col gap-0.5">
-                                <div>
-                                  Bid: {quoteResults[index].bid != null ? `$${quoteResults[index].bid?.toFixed(2)}` : "N/A"} |
-                                  Ask: {quoteResults[index].ask != null ? `$${quoteResults[index].ask?.toFixed(2)}` : "N/A"} |
-                                  Mid: {quoteResults[index].mid != null ? `$${quoteResults[index].mid?.toFixed(2)}` : "N/A"}
-                                </div>
-                                {quoteResults[index].source && (
-                                  <div className="text-slate-500">Source: {quoteResults[index].source?.toUpperCase()}</div>
-                                )}
-                              </div>
-                            ) : (
-                              <div>Error: {quoteResults[index].error}</div>
-                            )}
-                          </div>
-                        )}
-                        {orderResults[index] && (
-                          <div className={`text-xs ${orderResults[index].ok ? "text-emerald-700" : "text-red-600"}`}>
-                            {orderResults[index].ok ? (
-                              <div className="flex flex-col gap-0.5">
-                                <div className="font-medium">{orderResults[index].message}</div>
-                                {orderResults[index].orders && orderResults[index].orders!.length > 0 && (
-                                  <div className="text-slate-600">
-                                    Order ID: {orderResults[index].orders![0].ib_order_id}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div>Error: {orderResults[index].error}</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                        </td>
+                      </tr>
+
+                      {!stockCollapsed &&
+                        stockGroup.options.map((optionGroup) => {
+                          const optionKey = `${stockGroup.ticker}|${optionGroup.optionSymbol}`;
+                          const optionCollapsed = Boolean(collapsedOptions[optionKey]);
+                          return (
+                            <Fragment key={optionKey}>
+                              <tr className="border-b border-slate-100 bg-slate-50">
+                                <td colSpan={columns.length + 1} className="px-3 py-2">
+                                  <button
+                                    type="button"
+                                    aria-expanded={!optionCollapsed}
+                                    onClick={() =>
+                                      setCollapsedOptions((prev) => ({
+                                        ...prev,
+                                        [optionKey]: !prev[optionKey],
+                                      }))
+                                    }
+                                    className="flex w-full items-center gap-2 pl-6 text-left text-xs font-semibold text-slate-700"
+                                  >
+                                    <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-xs">
+                                      {optionCollapsed ? "+" : "-"}
+                                    </span>
+                                    <span>{optionGroup.optionSymbol}</span>
+                                    <span className="text-xs font-normal text-slate-500">
+                                      {optionGroup.rows.length} row{optionGroup.rows.length === 1 ? "" : "s"}
+                                    </span>
+                                  </button>
+                                </td>
+                              </tr>
+
+                              {!optionCollapsed &&
+                                optionGroup.rows.map(({ row, index }) => (
+                                  <tr
+                                    key={`${String(row["RecommendationID"] ?? index)}-${index}`}
+                                    className={`${index % 2 ? "bg-slate-50" : ""} transition-colors hover:bg-emerald-50/40`}
+                                  >
+                                    {columns.map((column) => (
+                                      <td key={column} className="whitespace-nowrap border-b border-slate-100 px-3 py-2">
+                                        {formatCellValue(column, row[column])}
+                                      </td>
+                                    ))}
+                                    <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2">
+                                      <div className="flex min-w-[430px] flex-col gap-2">
+                                        <div className="flex flex-nowrap items-end gap-2">
+                                          <label className="flex shrink-0 flex-col gap-1 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                                            <span className="whitespace-nowrap">STO Price</span>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="0.01"
+                                              value={stoPriceInputs[index] ?? formatPriceInput(getStoLimitPriceRaw(row))}
+                                              onChange={(e) => {
+                                                const value = e.target.value;
+                                                setStoPriceInputs((prev) => ({ ...prev, [index]: value }));
+                                              }}
+                                              disabled={orderLoading[index]}
+                                              className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-normal text-slate-800 focus:border-emerald-400/40 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                            />
+                                          </label>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleCheckLivePrice(index, row)}
+                                            disabled={quoteLoading[index]}
+                                            className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            {quoteLoading[index] && (
+                                              <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                                            )}
+                                            {quoteLoading[index] ? "Loading..." : "Check Live Price"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handlePlaceSTOOrder(index, row)}
+                                            disabled={orderLoading[index]}
+                                            className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            {orderLoading[index] && (
+                                              <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                                            )}
+                                            {orderLoading[index] ? "Placing..." : "Place STO Order"}
+                                          </button>
+                                        </div>
+                                        {quoteResults[index] && (
+                                          <div className={`text-xs ${quoteResults[index].ok ? "text-slate-700" : "text-red-600"}`}>
+                                            {quoteResults[index].ok ? (
+                                              <div className="flex flex-col gap-0.5">
+                                                <div>
+                                                  Bid: {quoteResults[index].bid != null ? `$${quoteResults[index].bid?.toFixed(2)}` : "N/A"} |
+                                                  Ask: {quoteResults[index].ask != null ? `$${quoteResults[index].ask?.toFixed(2)}` : "N/A"} |
+                                                  Mid: {quoteResults[index].mid != null ? `$${quoteResults[index].mid?.toFixed(2)}` : "N/A"}
+                                                </div>
+                                                {quoteResults[index].source && (
+                                                  <div className="text-slate-500">Source: {quoteResults[index].source?.toUpperCase()}</div>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <div>Error: {quoteResults[index].error}</div>
+                                            )}
+                                          </div>
+                                        )}
+                                        {orderResults[index] && (
+                                          <div className={`text-xs ${orderResults[index].ok ? "text-emerald-700" : "text-red-600"}`}>
+                                            {orderResults[index].ok ? (
+                                              <div className="flex flex-col gap-0.5">
+                                                <div className="font-medium">{orderResults[index].message}</div>
+                                                {orderResults[index].parent && (
+                                                  <div className="text-slate-600">
+                                                    Parent ID: {orderResults[index].parent?.ib_order_id ?? "N/A"} ({orderResults[index].parent?.tif})
+                                                  </div>
+                                                )}
+                                                {orderResults[index].exit && (
+                                                  <div className="text-slate-600">
+                                                    Exit ID: {orderResults[index].exit?.ib_order_id ?? "N/A"} ({orderResults[index].exit?.tif} @ ${orderResults[index].exit?.limit_price.toFixed(2)})
+                                                  </div>
+                                                )}
+                                                {orderResults[index].ib_order_id != null && (
+                                                  <div className="text-slate-600">
+                                                    Order ID: {orderResults[index].ib_order_id}
+                                                  </div>
+                                                )}
+                                                {orderResults[index].warnings && orderResults[index].warnings!.length > 0 && (
+                                                  <div className="text-amber-700">
+                                                    IB warning: {orderResults[index].warnings!.join(" | ")}
+                                                  </div>
+                                                )}
+                                                {orderResults[index].orders && orderResults[index].orders!.length > 0 && (
+                                                  <div className="text-slate-600">
+                                                    Order ID: {orderResults[index].orders![0].ib_order_id}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <div>Error: {orderResults[index].error}</div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                            </Fragment>
+                          );
+                        })}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           )}

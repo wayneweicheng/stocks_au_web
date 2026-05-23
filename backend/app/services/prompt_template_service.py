@@ -14,7 +14,7 @@ class PromptTemplateService:
 
 ```json
 {
-  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH"
+  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH" | "Not Determined"
 }
 ```
 
@@ -24,11 +24,24 @@ Signal Strength Definitions:
 - NEUTRAL: Conflicting signals, unclear direction, or market in transition/consolidation
 - MILDLY_BEARISH: Some bearish indicators, negative bias but not overwhelming
 - STRONGLY_BEARISH: Multiple strong sell signals, negative trend alignment, high conviction downside
+- Not Determined: The setup is outside the validated high-confidence regime, or evidence is too conflicted to make a directional call
 
-CRITICAL: Your signal strength classification must be based PRIMARILY on tomorrow's (next trading day) expected price action.
-While you may reference longer-term trends (next 5 days) in your analysis, the signal strength rating should reflect
-your conviction about tomorrow's direction and magnitude. Tomorrow's forecast is the primary focus - do not give equal
-weight to multi-day projections when determining the signal strength.
+CRITICAL: Your signal strength classification must follow the primary horizon defined in the stock-specific prompt.
+If the stock prompt defines a selective multi-day model or confidence gate, use that model's horizon and no-edge
+protocol. Use "Not Determined" when the prompt says the setup is outside the validated high-confidence regime.
+
+CRITICAL DATA SOURCE RULE:
+When a stock-specific prompt includes a `Data (Last 30 Days)` section, the current market state MUST come only from
+the row with the greatest `ObservationDate` in that section. Research summaries, generated-at context, examples,
+or older rows must not be used to decide which live signals are active.
+
+CRITICAL LATEST-ROW AUDIT RULE:
+If the stock-specific prompt asks for a Latest Row Audit, complete that audit before the forecast and make all active
+signal claims match it exactly. Accepted historical patterns are conditional rules, not automatically active signals.
+Never claim `Is_Swing_Up` is active unless the audited latest row has `Is_Swing_Up = 1`. If the latest row says
+`Is_Swing_Down = 1` or `PotentialSwingIndicator` contains "down", do not claim swing-up or potential-swing-up is
+active. Feature fields not listed as accepted patterns in the stock prompt, such as `Golden_Setup`, are context only
+and must not justify HIGH_CONFIDENCE or a strong directional signal by themselves.
 
 GAMMA EXPOSURE (GEX) FLIP ANALYSIS:
 You MUST calculate and report the approximate price change that would cause GEX to flip regimes:
@@ -85,6 +98,11 @@ A strike with 50,000+ OI in 0-7 DTE options will have stronger support/resistanc
 1. **Buy the Dip Range**: If conditions support buying on weakness, specify:
    - Price range for buy entry (e.g., "$XXX - $YYY")
    - Percentage drop from current price
+   - **PRICE GEOMETRY CHECK - MANDATORY**:
+     * Buy the Dip must be STRICTLY BELOW the latest current price/close from the data
+     * The percentage from current price must be negative
+     * A put wall above the current price is NOT a buy-the-dip support level; treat it as overhead structure or a reclaim/magnet level, or state "Not Recommended"
+     * If the proposed range is at or above current price, you MUST output "Not Recommended" for Buy the Dip
    - **MANDATORY GAMMA WALL ANALYSIS**:
      * **YOU MUST identify the strongest Put Wall from Part 2 data**
      * Look for strikes with the HIGHEST put OI concentration (typically 20,000+ OI)
@@ -101,6 +119,11 @@ A strike with 50,000+ OI in 0-7 DTE options will have stronger support/resistanc
 2. **Sell the Rip Range**: If conditions support selling on strength, specify:
    - Price range for sell/short entry (e.g., "$XXX - $YYY")
    - Percentage gain from current price
+   - **PRICE GEOMETRY CHECK - MANDATORY**:
+     * Sell the Rip must be STRICTLY ABOVE the latest current price/close from the data
+     * The percentage from current price must be positive
+     * A call wall below the current price is NOT a sell-the-rip resistance level; treat it as lower support/past resistance, or state "Not Recommended"
+     * If the proposed range is at or below current price, you MUST output "Not Recommended" for Sell the Rip
    - **MANDATORY GAMMA WALL ANALYSIS**:
      * **YOU MUST identify the strongest Call Wall from Part 2 data**
      * Look for strikes with the HIGHEST call OI concentration (typically 20,000+ OI)
@@ -149,7 +172,13 @@ Your Buy the Dip Range and Sell the Rip Range recommendations MUST be logically 
   - Either provide BOTH ranges (range-bound trading strategy) OR recommend "Not Recommended" for both
   - Rationale: Neutral means unclear direction, so either trade the range or stay flat
 
+- **If Not Determined:**
+  - Recommend "Not Recommended" for directional Buy the Dip and Sell the Rip ranges unless explicitly presenting non-directional range context
+  - Rationale: Not Determined means the setup is outside the validated high-confidence regime, so do not manufacture a trade
+
 **AVOID CONTRADICTIONS:** Do NOT say "overwhelming bearish flow" or "rallies will be short-lived" and then recommend "Sell the Rip: Not Recommended". This is logically inconsistent. If rallies will be short-lived, that is EXACTLY when you should sell the rip.
+
+**FINAL TRADING LEVEL SANITY CHECK:** Before writing the final answer, compare every Buy the Dip and Sell the Rip price to the latest current price/close. If Buy the Dip is not below current price, change it to "Not Recommended". If Sell the Rip is not above current price, change it to "Not Recommended". Do not publish contradictory percentages such as a buy-dip range with positive distance from current price.
 
 Place this JSON at the very end of your markdown response after all analysis.
 ---
@@ -161,7 +190,7 @@ Place this JSON at the very end of your markdown response after all analysis.
 
 ```json
 {
-  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH"
+  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH" | "Not Determined"
 }
 ```
 
@@ -171,6 +200,7 @@ Signal Strength Definitions:
 - NEUTRAL: Conflicting signals, unclear direction, or market in transition/consolidation
 - MILDLY_BEARISH: Some bearish indicators, negative bias but not overwhelming
 - STRONGLY_BEARISH: Multiple strong sell signals, negative trend alignment, high conviction downside
+- Not Determined: The setup is outside the validated high-confidence regime, or evidence is too conflicted to make a directional call
 
 CRITICAL FOCUS - SHORT-TERM TACTICAL ANALYSIS (1-5 Days):
 Your signal strength classification should reflect the IMMEDIATE tactical bias indicated by option flow for the next 1-5 trading days.
@@ -205,12 +235,14 @@ Based on your option flow analysis (gamma walls from NEAR-TERM options, support/
    - Price range for buy entry (e.g., "$XXX - $YYY")
    - Rationale based on put wall (support) identified from NEAR-TERM put OI concentrations
    - Reference specific strikes and expiries driving the support level
+   - Buy the Dip must be strictly below the latest current price/close. If the put wall is above current price, it is not a dip entry; output "Not Recommended" or describe it only as overhead/reclaim context.
    - If NOT recommending buy the dip, explicitly state "Not Recommended" and explain why
 
 2. **Sell the Rip Range**: If conditions support selling on strength, specify:
    - Price range for sell/short entry (e.g., "$XXX - $YYY")
    - Rationale based on call wall (resistance) identified from NEAR-TERM call OI concentrations
    - Reference specific strikes and expiries driving the resistance level
+   - Sell the Rip must be strictly above the latest current price/close. If the call wall is below current price, it is not a rip entry; output "Not Recommended" or describe it only as lower/past resistance context.
    - If NOT recommending sell the rip, explicitly state "Not Recommended" and explain why
 
 Example format:
@@ -237,6 +269,10 @@ Your Buy the Dip Range and Sell the Rip Range recommendations MUST be logically 
   - Either provide BOTH ranges (range-bound trading strategy) OR recommend "Not Recommended" for both
   - Rationale: Neutral means unclear direction, so either trade the range or stay flat
 
+- **If Not Determined:**
+  - Recommend "Not Recommended" for directional Buy the Dip and Sell the Rip ranges unless explicitly presenting non-directional range context
+  - Rationale: Not Determined means the setup is outside the validated high-confidence regime, so do not manufacture a trade
+
 **AVOID CONTRADICTIONS:** Do NOT say "overwhelming bearish flow" or "rallies will be short-lived" and then recommend "Sell the Rip: Not Recommended". This is logically inconsistent. If rallies will be short-lived, that is EXACTLY when you should sell the rip.
 
 Place this JSON at the very end of your markdown response after all analysis.
@@ -249,7 +285,7 @@ Place this JSON at the very end of your markdown response after all analysis.
 
 ```json
 {
-  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH"
+  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH" | "Not Determined"
 }
 ```
 
@@ -259,6 +295,7 @@ Signal Strength Definitions:
 - NEUTRAL: Conflicting call/put flow, unclear directional conviction, or balanced institutional positioning
 - MILDLY_BEARISH: Some bearish trade indicators, negative bias from put buying or call selling but not overwhelming
 - STRONGLY_BEARISH: Multiple large bearish option trades (puts, aggressive selling), high conviction downside from institutional flow
+- Not Determined: Option flow is outside the validated high-confidence regime, or evidence is too conflicted to make a directional call
 
 CRITICAL FOCUS - SHORT-TERM TRADE FLOW ANALYSIS (1-3 Days):
 Your signal strength classification should reflect the IMMEDIATE directional bias from large option trades (size > 300 contracts) for the next 1-3 trading days.
@@ -276,10 +313,12 @@ Based on the option trade strikes and clustering, provide:
 
 1. **Buy the Dip Range**: If trade flow supports buying on weakness, specify:
    - Price range for buy entry based on put strike concentrations (support levels from hedging)
+   - Buy the Dip must be strictly below the latest current price/close. If the proposed level is above current price, output "Not Recommended" instead.
    - If NOT recommending buy the dip, explicitly state "Not Recommended" and explain why
 
 2. **Sell the Rip Range**: If trade flow supports selling on strength, specify:
    - Price range for sell/short entry based on call strike concentrations (resistance from hedging)
+   - Sell the Rip must be strictly above the latest current price/close. If the proposed level is below current price, output "Not Recommended" instead.
    - If NOT recommending sell the rip, explicitly state "Not Recommended" and explain why
 
 **CRITICAL - LOGICAL CONSISTENCY CHECK:**
@@ -298,6 +337,10 @@ Your Buy the Dip Range and Sell the Rip Range recommendations MUST be logically 
 - **If NEUTRAL:**
   - Either provide BOTH ranges (range-bound trading) OR recommend "Not Recommended" for both
   - Rationale: Neutral means unclear direction, so either trade the range or stay flat
+
+- **If Not Determined:**
+  - Recommend "Not Recommended" for directional Buy the Dip and Sell the Rip ranges unless explicitly presenting non-directional range context
+  - Rationale: Not Determined means the setup is outside the validated high-confidence regime, so do not manufacture a trade
 
 **AVOID CONTRADICTIONS:** Do NOT say "overwhelming bearish flow" or "rallies will be short-lived" and then recommend "Sell the Rip: Not Recommended". This is logically inconsistent. If rallies will be short-lived, that is EXACTLY when you should sell the rip.
 

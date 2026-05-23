@@ -1234,6 +1234,9 @@ class PlaceOptionOrderRequest(BaseModel):
     quantity: int  # Number of contracts
     action: str  # BUY or SELL
     limit_price: float
+    bracket_exit_price: Optional[float] = None
+    parent_tif: str = "DAY"
+    bracket_exit_tif: str = "GTC"
 
     @field_validator("quantity")
     @classmethod
@@ -1249,12 +1252,29 @@ class PlaceOptionOrderRequest(BaseModel):
             raise ValueError("limit_price must be > 0")
         return float(v)
 
+    @field_validator("bracket_exit_price")
+    @classmethod
+    def validate_bracket_exit_price(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        if v <= 0:
+            raise ValueError("bracket_exit_price must be > 0")
+        return float(v)
+
     @field_validator("action")
     @classmethod
     def validate_action(cls, v: str) -> str:
         vv = (v or "").strip().upper()
         if vv not in ("BUY", "SELL"):
             raise ValueError("action must be BUY or SELL")
+        return vv
+
+    @field_validator("parent_tif", "bracket_exit_tif")
+    @classmethod
+    def validate_tif(cls, v: str) -> str:
+        vv = (v or "").strip().upper()
+        if vv not in ("DAY", "GTC"):
+            raise ValueError("tif must be DAY or GTC")
         return vv
 
 
@@ -1280,36 +1300,130 @@ def place_option_order(request: PlaceOptionOrderRequest) -> Dict[str, Any]:
         # Use the quantity directly (number of contracts)
         qty = request.quantity
 
-        # Create limit order
-        lo = LimitOrder(action_upper, qty, lmtPrice=request.limit_price)
+        parent_tif = request.parent_tif.upper()
+        bracket_exit_tif = request.bracket_exit_tif.upper()
+        entry_price = round(float(request.limit_price), 2)
+
+        exit_action = "BUY" if action_upper == "SELL" else "SELL"
+        exit_price = None
+        if request.bracket_exit_price is not None:
+            exit_price = round(float(request.bracket_exit_price), 2)
+
+        # Create entry limit order. When an exit price is supplied, always send
+        # it as an attached bracket so the BUY exit is visible in IB immediately.
+        lo = LimitOrder(action_upper, qty, lmtPrice=entry_price)
+        if exit_price is not None:
+            lo.orderId = ib.client.getReqId()
+            lo.transmit = False
+        else:
+            lo.transmit = True
         lo.outsideRth = True
         try:
-            lo.tif = "DAY"
+            lo.tif = parent_tif
         except Exception:
             pass
         lo.eTradeOnly = None
         lo.firmQuoteOnly = None
 
-        # Place order
+        ib_errors: List[str] = []
+
+        def on_error(req_id, error_code, error_string, contract):
+            ib_errors.append(f"{error_code}: {error_string}")
+
+        ib.errorEvent += on_error
+
         trade = ib.placeOrder(contract, lo)
+        exit_trade = None
+        if exit_price is not None:
+            exit_order = LimitOrder(exit_action, qty, lmtPrice=exit_price)
+            exit_order.orderId = ib.client.getReqId()
+            exit_order.parentId = lo.orderId
+            exit_order.transmit = True
+            exit_order.outsideRth = True
+            try:
+                exit_order.tif = bracket_exit_tif
+            except Exception:
+                pass
+            exit_order.eTradeOnly = None
+            exit_order.firmQuoteOnly = None
+            exit_trade = ib.placeOrder(contract, exit_order)
+        ib.sleep(0.5)
+
+        try:
+            ib.errorEvent -= on_error
+        except Exception:
+            pass
 
         logger.info(
-            "Placed option order: symbol=%s action=%s qty=%d limit=%.2f order_id=%s",
+            "Placed option order: symbol=%s action=%s qty=%d limit=%.2f exit=%s parent_tif=%s exit_tif=%s entry_id=%s errors=%s",
             request.option_symbol,
             action_upper,
             request.quantity,
-            request.limit_price,
+            entry_price,
+            exit_price,
+            parent_tif,
+            bracket_exit_tif if exit_price is not None else None,
             getattr(trade.order, "orderId", None) if trade.order else None,
+            ib_errors,
         )
+
+        blocking_option_side_error = next(
+            (
+                err
+                for err in ib_errors
+                if "Cannot have open orders on both sides of the same US Option contract" in err
+            ),
+            None,
+        )
+        if blocking_option_side_error:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "IB rejected this option order because there is already an open opposite-side order "
+                    f"for {request.option_symbol}. IB does not allow open BUY and SELL orders on the same US option contract. "
+                    "Cancel the existing bracket/exit order first, or place additional entry orders without attached exits."
+                ),
+            )
+
+        rejecting_errors = [err for err in ib_errors if err.startswith("201:")]
+        if rejecting_errors:
+            raise HTTPException(status_code=409, detail="IB rejected the option order: " + " | ".join(rejecting_errors))
+
+        if exit_price is not None:
+            return {
+                "ok": True,
+                "message": (
+                    f"Placed bracket order: {action_upper} {request.quantity} contract(s) "
+                    f"{request.option_symbol} @ ${entry_price}; {exit_action} exit @ ${exit_price}."
+                ),
+                "option_symbol": request.option_symbol,
+                "order_type": "bracket",
+                "parent": {
+                    "ib_order_id": getattr(trade.order, "orderId", None) if trade.order else None,
+                    "action": action_upper,
+                    "qty": request.quantity,
+                    "limit_price": entry_price,
+                    "tif": parent_tif,
+                },
+                "exit": {
+                    "ib_order_id": getattr(exit_trade.order, "orderId", None) if exit_trade and exit_trade.order else None,
+                    "action": exit_action,
+                    "qty": request.quantity,
+                    "limit_price": exit_price,
+                    "tif": bracket_exit_tif,
+                },
+                "warnings": ib_errors,
+            }
 
         return {
             "ok": True,
-            "message": f"Placed {action_upper} {request.quantity} contract(s) {request.option_symbol} @ ${request.limit_price}",
+            "message": f"Placed {action_upper} {request.quantity} contract(s) {request.option_symbol} @ ${entry_price}",
             "option_symbol": request.option_symbol,
             "qty": request.quantity,
-            "limit_price": request.limit_price,
+            "limit_price": entry_price,
             "action": action_upper,
             "ib_order_id": getattr(trade.order, "orderId", None) if trade.order else None,
+            "warnings": ib_errors,
         }
     except HTTPException:
         raise
@@ -1450,5 +1564,3 @@ def cancel_all_orders_for_stock(stock_code: str, side: str = None) -> Dict[str, 
             ib.disconnect()
         except Exception:
             pass
-
-

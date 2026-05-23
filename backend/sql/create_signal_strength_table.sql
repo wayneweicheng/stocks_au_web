@@ -11,7 +11,8 @@ CREATE TABLE Analysis.SignalStrength (
         'MILDLY_BULLISH',
         'NEUTRAL',
         'MILDLY_BEARISH',
-        'STRONGLY_BEARISH'
+        'STRONGLY_BEARISH',
+        'NOT_DETERMINED'
     )),
     CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
     UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
