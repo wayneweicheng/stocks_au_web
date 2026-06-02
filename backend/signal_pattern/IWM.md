@@ -2,42 +2,53 @@
 
 **Role:** Quantitative Analyst specializing in market microstructure, gamma exposure, option-flow positioning, and short-horizon US equity/ETF behavior.
 
-**Task:** Analyze the provided IWM market data to forecast price action over the next 5 trading days. Tomorrow's expected behavior is used for entry timing and immediate risk; the next 2 trading days are used as early confirmation. The signal strength classification must be based primarily on the selective next-5-trading-day edge.
+**Task:** Analyze the provided IWM market data to forecast price action over the next 5 trading days. The 1-day, 2-day, and 5-day horizons were all researched during prompt generation; the signal strength classification must be based primarily on the selected horizon because it had the strongest held-out support for this ticker.
 
 **Critical Data Rule:** Use `TomorrowChange`, `Next2DaysChange`, `Next5DaysChange`, `Next10DaysChange`, or any other future-return fields only as historical research labels. Do not use them as runtime input signals when analyzing the latest row.
+
+**Runtime Source Of Truth:** For the live forecast, the only current market state is the latest row in the `Data (Last 30 Days)` section, identified by the greatest `ObservationDate`. Research validation metadata is training context only. Never use generated-at dates, research-summary rows, or any other non-data-section context to decide today's active signals.
+
+**Hard Audit Rule:** The latest-row audit is mandatory and must be completed before the forecast. Any forecast that claims a signal is active when the audited latest row shows the opposite is invalid. In particular, if `Is_Swing_Up = 0`, `Is_Swing_Up` is inactive; if `Is_Swing_Down = 1` or `PotentialSwingIndicator` contains "down", the setup must be described as swing-down/potential-swing-down, not swing-up.
 
 ---
 
 ## Research Validation Summary
 
-This prompt was generated for `IWM.US` with requested as-of date `2026-05-22`. The latest feature row available was `2026-05-21`. Candidate rules and the feature-score gate were selected primarily on `Next5DaysChange`, with `TomorrowChange` retained for timing and `Next2DaysChange` retained for early confirmation.
+This prompt was generated for `IWM.US` with requested as-of date `2026-05-22` from a fresh SQL Server extraction for this ticker. Candidate rules and the feature-score gate were evaluated separately on `TomorrowChange`, `Next2DaysChange`, and `Next5DaysChange`. The selected primary target for this ticker is `Next5DaysChange` (next 5 trading days). This section is research metadata only; do not use it as today's market state during live or historical replay analysis.
 
-- Daily feature rows: 847 total, 841 primary-target labeled rows from 2022-12-13 to 2026-05-14.
+The effective features below are stock-specific. They were discovered during this generation run by scanning the available ticker history, creating chronological train/validation/test splits for each candidate target, testing single-feature and two-feature rules, comparing target performance, and training the selective feature-score model. Do not copy accepted patterns, thresholds, or model weights from another stock prompt.
+
+- Daily feature rows: 847 total, 841 selected-target labeled rows from 2022-12-13 to 2026-05-14.
 - Train split: 2022-12-13 to 2025-05-05, 588 rows.
 - Validation split: 2025-05-06 to 2025-11-04, 126 rows.
 - Test split: 2025-11-05 to 2026-05-14, 127 rows.
-- Baseline 5-day win rate: train 51.4%, validation 65.1%, test 54.3%.
+- Selected target: `Next5DaysChange` (next 5 trading days).
+- Target selection summary:
+- 5-day: target-selection score 75.71; feature-score test win 60.3%, coverage 63/127 (49.6%), accepted robust patterns 6.
+- 1-day: target-selection score 30.42; feature-score test win 58.6%, coverage 70/127 (55.1%), accepted robust patterns 6.
+- 2-day: target-selection score 22.73; feature-score test win 54.5%, coverage 66/127 (52.0%), accepted robust patterns 6.
+- Baseline selected-target win rate: train 51.4%, validation 65.1%, test 54.3%.
 - Baseline tomorrow win rate: train 51.1%, validation 55.1%, test 56.7%.
 - Baseline 2-day win rate: train 51.0%, validation 50.4%, test 52.0%.
+- Baseline 5-day win rate: train 51.4%, validation 65.1%, test 54.3%.
 - Selective feature-score gate: threshold 0.51 on the trained probability score.
-- Feature-score train performance: win 67.1%, coverage 301/588 (51.2%), avg selected 5-day return +0.817%.
-- Feature-score validation performance: win 80.0%, coverage 45/126 (35.7%), avg selected 5-day return +1.535%.
-- Feature-score test performance: win 60.3%, coverage 63/127 (49.6%), avg selected 5-day return +1.152%.
+- Feature-score train performance on selected target: win 67.1%, coverage 301/588 (51.2%), avg selected return +0.817%.
+- Feature-score validation performance on selected target: win 80.0%, coverage 45/126 (35.7%), avg selected return +1.535%.
+- Feature-score test performance on selected target: win 60.3%, coverage 63/127 (49.6%), avg selected return +1.152%.
 - Large option trade rows sampled: 1000.
 - Latest OI-change records sampled: 100. Positive call OI change 98431; positive put OI change 426703; near-term call additions 56200; near-term put additions 57193.
 - Top current OI records sampled: 50.
 - 30-minute bars sampled: 128.
-
-Latest feature context for `2026-05-21`: close None, VIX 16.7600, RSI 44.83266921061618046778586469551, GEX -1211176.0, GEXChange -29.81, GEX_ZScore -0.30271449956303953, dark-pool ratio 2.03.
+- Broad feature audit rules tested: 298 single-feature rules and 392 two-feature combinations.
 
 ### Accepted Patterns
 
-- `Negative_GEX_AND_High_VIX = 1` (5-day): train n=66, avg +1.076%, win 71.2%; validation n=15, avg +2.619%, win 100.0%; test n=40, avg +1.158%, win 57.5%; test tomorrow avg +0.259%, test 2-day avg +0.435%.
-- `GEX < 0 AND VIX > 20` (5-day): train n=66, avg +1.076%, win 71.2%; validation n=15, avg +2.619%, win 100.0%; test n=40, avg +1.158%, win 57.5%; test tomorrow avg +0.259%, test 2-day avg +0.435%.
-- `Golden_Setup = 1` (5-day): train n=36, avg +1.109%, win 69.4%; validation n=1, avg +1.560%, win 100.0%; test n=14, avg +1.684%, win 57.1%; test tomorrow avg +0.271%, test 2-day avg +0.549%.
-- `Is_Potential_Swing_Down = 1` (5-day): train n=72, avg +0.197%, win 47.2%; validation n=26, avg +0.525%, win 50.0%; test n=24, avg +0.816%, win 62.5%; test tomorrow avg +0.112%, test 2-day avg +0.352%.
-- `Is_Swing_Down = 1` (5-day): train n=41, avg +0.685%, win 58.5%; validation n=10, avg +0.415%, win 50.0%; test n=21, avg +0.869%, win 61.9%; test tomorrow avg -0.161%, test 2-day avg +0.240%.
-- `DarkPool ratio > 2.0` (5-day): train n=78, avg +0.203%, win 44.9%; validation n=16, avg +0.621%, win 62.5%; test n=34, avg +0.219%, win 58.8%; test tomorrow avg +0.055%, test 2-day avg +0.127%.
+- `GEX_Percentile <= train_q20 (38.32) AND GEX_Volatility >= train_q60 (1.183e+06)` (5-day): train n=73, avg +0.558%, win 65.8%; validation n=12, avg +2.332%, win 100.0%; test n=5, avg +5.624%, win 100.0%; test 1-day avg +0.954%, test 2-day avg +1.642%, test 5-day avg +5.624%.
+- `GEX_Volatility >= train_q60 (1.183e+06) AND GEX_ZScore_60day <= train_q10 (-1.11)` (5-day): train n=46, avg +0.809%, win 65.2%; validation n=7, avg +2.329%, win 100.0%; test n=5, avg +4.928%, win 100.0%; test 1-day avg +0.448%, test 2-day avg +1.054%, test 5-day avg +4.928%.
+- `GEX_Volatility >= train_q70 (1.389e+06) AND GEX_ZScore_60day <= train_q30 (-0.06089)` (5-day): train n=75, avg +0.689%, win 62.7%; validation n=12, avg +2.771%, win 100.0%; test n=6, avg +4.853%, win 100.0%; test 1-day avg -0.067%, test 2-day avg +1.112%, test 5-day avg +4.853%.
+- `Prev2DaysChange <= train_q20 (-1.396) AND GEX_Volatility >= train_q60 (1.183e+06)` (5-day): train n=54, avg +0.006%, win 55.6%; validation n=6, avg +1.505%, win 100.0%; test n=7, avg +4.416%, win 100.0%; test 1-day avg +0.754%, test 2-day avg +1.333%, test 5-day avg +4.416%.
+- `Prev2DaysChange <= train_q20 (-1.396) AND GEX_Volatility >= train_q70 (1.389e+06)` (5-day): train n=44, avg +0.420%, win 56.8%; validation n=5, avg +1.622%, win 100.0%; test n=5, avg +4.458%, win 100.0%; test 1-day avg +0.294%, test 2-day avg +0.978%, test 5-day avg +4.458%.
+- `GEX_Volatility >= train_q70 (1.389e+06) AND Prev2DaysChange <= train_q30 (-0.83)` (5-day): train n=55, avg +0.519%, win 58.2%; validation n=7, avg +2.090%, win 100.0%; test n=5, avg +4.458%, win 100.0%; test 1-day avg +0.294%, test 2-day avg +0.978%, test 5-day avg +4.458%.
 
 ### Selective Feature-Score Model
 
@@ -69,12 +80,12 @@ Top model features by absolute weight:
 
 ### Rejected Or Downgraded Patterns
 
-- `Price above SMA20 and SMA50` (5-day): train n=247, avg -0.060%, win 48.6%; validation n=76, avg +0.645%, win 65.8%; test n=77, avg +0.385%, win 55.8%; test tomorrow avg +0.017%, test 2-day avg +0.086%.
-- `DarkPool ratio > 1.5` (5-day): train n=207, avg +0.204%, win 51.2%; validation n=46, avg +0.431%, win 58.7%; test n=78, avg +0.188%, win 52.6%; test tomorrow avg -0.019%, test 2-day avg +0.026%.
-- `MACD positive AND Price above SMA20/SMA50` (5-day): train n=207, avg +0.054%, win 50.7%; validation n=74, avg +0.710%, win 67.6%; test n=61, avg +0.320%, win 52.5%; test tomorrow avg +0.014%, test 2-day avg +0.083%.
-- `GEX positive AND low VIX (<18)` (5-day): train n=130, avg -0.307%, win 44.6%; validation n=46, avg +0.308%, win 58.7%; test n=18, avg +0.622%, win 61.1%; test tomorrow avg +0.198%, test 2-day avg +0.001%.
-- `BB_PercentB > 0.8` (5-day): train n=112, avg +0.213%, win 50.9%; validation n=32, avg -0.071%, win 46.9%; test n=38, avg +0.807%, win 60.5%; test tomorrow avg +0.128%, test 2-day avg +0.347%.
-- `BB_PercentB < 0.2` (5-day): train n=84, avg +0.202%, win 56.0%; validation n=3, avg +1.277%, win 100.0%; test n=24, avg +0.826%, win 50.0%; test tomorrow avg +0.325%, test 2-day avg +0.447%.
+- `Negative_GEX_AND_High_VIX = 1 AND BB_Bandwidth >= train_q70 (0.1079)` (5-day): train n=33, avg +2.117%, win 87.9%; validation n=5, avg +4.030%, win 100.0%; test n=5, avg -0.168%, win 40.0%; test 1-day avg +0.478%, test 2-day avg +0.466%, test 5-day avg -0.168%.
+- `VIX >= train_q80 (20) AND BB_Bandwidth >= train_q70 (0.1079)` (5-day): train n=50, avg +1.786%, win 86.0%; validation n=5, avg +4.030%, win 100.0%; test n=5, avg -0.168%, win 40.0%; test 1-day avg +0.478%, test 2-day avg +0.466%, test 5-day avg -0.168%.
+- `VIX_Very_High = 1 AND BB_Bandwidth >= train_q70 (0.1079)` (5-day): train n=50, avg +1.786%, win 86.0%; validation n=5, avg +4.030%, win 100.0%; test n=5, avg -0.168%, win 40.0%; test 1-day avg +0.478%, test 2-day avg +0.466%, test 5-day avg -0.168%.
+- `VIX >= train_q50 (16.13) AND GEX_Percentile <= train_q10 (26.08)` (5-day): train n=41, avg +1.444%, win 68.3%; validation n=12, avg +1.064%, win 66.7%; test n=23, avg -0.079%, win 30.4%; test 1-day avg -0.149%, test 2-day avg -0.230%, test 5-day avg -0.079%.
+- `VIX >= train_q60 (17.3) AND GEX_Percentile <= train_q10 (26.08)` (5-day): train n=38, avg +1.344%, win 68.4%; validation n=6, avg +1.200%, win 83.3%; test n=23, avg -0.079%, win 30.4%; test 1-day avg -0.149%, test 2-day avg -0.230%, test 5-day avg -0.079%.
+- `BB_PercentB <= train_q30 (0.3351) AND GEX_Percentile <= train_q10 (26.08)` (5-day): train n=30, avg +1.311%, win 70.0%; validation n=5, avg +2.070%, win 100.0%; test n=22, avg -0.063%, win 31.8%; test 1-day avg -0.075%, test 2-day avg -0.184%, test 5-day avg -0.063%.
 
 ---
 
@@ -82,32 +93,34 @@ Top model features by absolute weight:
 
 Use the validated 5-day feature-score gate first, then use accepted 5-day rules, option flow, and 30-minute tape as confirmation or contradiction.
 
-#### Negative_GEX_AND_High_VIX = 1
+Accepted patterns are conditional rules, not automatically active. A rule is active only when the audited latest row satisfies that exact condition. Do not infer activity from the research-summary list, from older rows, or from option-flow tone.
+
+#### GEX_Percentile <= train_q20 (38.32) AND GEX_Volatility >= train_q60 (1.183e+06)
 - **Tier:** Tier 1
 - **Signal:** Bullish for the next 5 trading days.
-- **Historical Evidence:** `Negative_GEX_AND_High_VIX = 1` (5-day): train n=66, avg +1.076%, win 71.2%; validation n=15, avg +2.619%, win 100.0%; test n=40, avg +1.158%, win 57.5%; test tomorrow avg +0.259%, test 2-day avg +0.435%.
-- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for IWM. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Historical Evidence:** `GEX_Percentile <= train_q20 (38.32) AND GEX_Volatility >= train_q60 (1.183e+06)` (5-day): train n=73, avg +0.558%, win 65.8%; validation n=12, avg +2.332%, win 100.0%; test n=5, avg +5.624%, win 100.0%; test 1-day avg +0.954%, test 2-day avg +1.642%, test 5-day avg +5.624%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for IWM. Cross-check the other horizons for timing, confirmation, or conflict.
 - **Priority:** High; downgrade if current option flow strongly contradicts it.
 
-#### GEX < 0 AND VIX > 20
+#### GEX_Volatility >= train_q60 (1.183e+06) AND GEX_ZScore_60day <= train_q10 (-1.11)
 - **Tier:** Tier 1
 - **Signal:** Bullish for the next 5 trading days.
-- **Historical Evidence:** `GEX < 0 AND VIX > 20` (5-day): train n=66, avg +1.076%, win 71.2%; validation n=15, avg +2.619%, win 100.0%; test n=40, avg +1.158%, win 57.5%; test tomorrow avg +0.259%, test 2-day avg +0.435%.
-- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for IWM. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Historical Evidence:** `GEX_Volatility >= train_q60 (1.183e+06) AND GEX_ZScore_60day <= train_q10 (-1.11)` (5-day): train n=46, avg +0.809%, win 65.2%; validation n=7, avg +2.329%, win 100.0%; test n=5, avg +4.928%, win 100.0%; test 1-day avg +0.448%, test 2-day avg +1.054%, test 5-day avg +4.928%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for IWM. Cross-check the other horizons for timing, confirmation, or conflict.
 - **Priority:** High; downgrade if current option flow strongly contradicts it.
 
-#### Golden_Setup = 1
+#### GEX_Volatility >= train_q70 (1.389e+06) AND GEX_ZScore_60day <= train_q30 (-0.06089)
 - **Tier:** Tier 2
 - **Signal:** Bullish for the next 5 trading days.
-- **Historical Evidence:** `Golden_Setup = 1` (5-day): train n=36, avg +1.109%, win 69.4%; validation n=1, avg +1.560%, win 100.0%; test n=14, avg +1.684%, win 57.1%; test tomorrow avg +0.271%, test 2-day avg +0.549%.
-- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for IWM. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Historical Evidence:** `GEX_Volatility >= train_q70 (1.389e+06) AND GEX_ZScore_60day <= train_q30 (-0.06089)` (5-day): train n=75, avg +0.689%, win 62.7%; validation n=12, avg +2.771%, win 100.0%; test n=6, avg +4.853%, win 100.0%; test 1-day avg -0.067%, test 2-day avg +1.112%, test 5-day avg +4.853%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for IWM. Cross-check the other horizons for timing, confirmation, or conflict.
 - **Priority:** Medium; downgrade if current option flow strongly contradicts it.
 
-#### Is_Potential_Swing_Down = 1
+#### Prev2DaysChange <= train_q20 (-1.396) AND GEX_Volatility >= train_q60 (1.183e+06)
 - **Tier:** Tier 2
 - **Signal:** Bullish for the next 5 trading days.
-- **Historical Evidence:** `Is_Potential_Swing_Down = 1` (5-day): train n=72, avg +0.197%, win 47.2%; validation n=26, avg +0.525%, win 50.0%; test n=24, avg +0.816%, win 62.5%; test tomorrow avg +0.112%, test 2-day avg +0.352%.
-- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for IWM. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Historical Evidence:** `Prev2DaysChange <= train_q20 (-1.396) AND GEX_Volatility >= train_q60 (1.183e+06)` (5-day): train n=54, avg +0.006%, win 55.6%; validation n=6, avg +1.505%, win 100.0%; test n=7, avg +4.416%, win 100.0%; test 1-day avg +0.754%, test 2-day avg +1.333%, test 5-day avg +4.416%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for IWM. Cross-check the other horizons for timing, confirmation, or conflict.
 - **Priority:** Medium; downgrade if current option flow strongly contradicts it.
 
 
@@ -122,17 +135,23 @@ Use the validated 5-day feature-score gate first, then use accepted 5-day rules,
 - **Rationale:** Large near-term OI changes and top OI walls reveal dealer hedging zones and resistance/support levels.
 - **Priority:** Near-term 0-7 DTE walls are highest priority, followed by 8-14 DTE, 15-30 DTE, then 30-90 DTE.
 
+#### Non-Accepted Feature Fields
+- **Signal:** Context only.
+- **Rationale:** Feature fields that appear in the data but are not listed under Accepted Patterns are not validated alpha triggers for this prompt. They may explain context, but they must not justify `HIGH_CONFIDENCE` or a strong directional signal by themselves.
+
 ---
 
 ## Live Analysis Procedure
 
 1. Read the latest row in the Last 30 Days data section by greatest `ObservationDate`.
-2. Ignore all future-return columns in the live row.
-3. Identify active accepted patterns, rejected-pattern warnings, and context rules.
-4. Decide the confidence-gate status: `HIGH_CONFIDENCE`, `LOW_CONFIDENCE`, or `NO_HIGH_CONFIDENCE_EDGE`.
-5. Review latest option trades, OI changes, top OI walls, and 30-minute bars.
-6. Resolve conflicts in this order: selective 5-day feature-score gate, accepted Tier 1 5-day rules, near-term option walls close to spot, accepted Tier 2 rules, 30-minute tape, context rules.
-7. Produce a 5-day forecast only if the confidence gate is active; otherwise state that there is no high-confidence edge.
+2. Begin by creating a Latest Row Audit using only that row. Echo `ObservationDate`, `Close`, `GEX`, `GEX_ZScore`, `VIX`, `RSI`, `Is_Swing_Up`, `Is_Swing_Down`, `PotentialSwingIndicator`, `SwingIndicator`, `GEX_Turned_Positive`, and `GEX_Turned_Negative`.
+3. Ignore all future-return columns in the live row.
+4. Identify active accepted patterns, rejected-pattern warnings, and context rules from the audited latest row only.
+5. If the latest row has `Is_Swing_Up = 0`, you must mark `Is_Swing_Up` inactive. If the latest row has `Is_Swing_Down = 1` or `PotentialSwingIndicator` contains "down", you must not claim a swing-up/potential-swing-up pattern is active.
+6. Decide the confidence-gate status: `HIGH_CONFIDENCE`, `LOW_CONFIDENCE`, or `NO_HIGH_CONFIDENCE_EDGE`.
+7. Review latest option trades, OI changes, top OI walls, and 30-minute bars.
+8. Resolve conflicts in this order: audited latest row, selective 5-day feature-score gate, accepted Tier 1 5-day rules, near-term option walls close to spot, accepted Tier 2 rules, 30-minute tape, context rules.
+9. Produce a 5-day forecast only if the confidence gate is active; otherwise state that there is no high-confidence edge.
 
 ---
 
@@ -158,9 +177,29 @@ Use VWAP clusters, repeated highs/lows, and late-session behavior as timing conf
 
 ## Output Format
 
+### Latest Row Audit
+
+This must be the first output section. Report the exact latest-row values used for the forecast:
+
+- `ObservationDate`
+- `Close`
+- `GEX`
+- `GEX_ZScore`
+- `VIX`
+- `RSI`
+- `Is_Swing_Up`
+- `Is_Swing_Down`
+- `PotentialSwingIndicator`
+- `SwingIndicator`
+- `Golden_Setup`
+- `GEX_Turned_Positive`
+- `GEX_Turned_Negative`
+
+This section must be internally consistent with the `Data (Last 30 Days)` row with the greatest `ObservationDate`. If the latest row shows `Is_Swing_Down = 1` or `PotentialSwingIndicator = "Potential swing down"`, say so plainly and do not describe swing-up patterns as active. If `Is_Swing_Up = 0`, explicitly mark `Is_Swing_Up` inactive.
+
 ### Executive Forecast
 
-Provide one decisive paragraph with the confidence-gate status first. If status is `NO_HIGH_CONFIDENCE_EDGE`, say plainly that the model does not have enough validated edge today and do not force a bullish or bearish call. If status is `HIGH_CONFIDENCE` or `LOW_CONFIDENCE`, provide the expected next-5-trading-day direction, expected magnitude, volatility expectation, tomorrow timing risk, and main reason.
+Provide one decisive paragraph with the confidence-gate status first, based on the Latest Row Audit. If status is `NO_HIGH_CONFIDENCE_EDGE`, say plainly that the model does not have enough validated edge today and do not force a bullish or bearish call. If status is `HIGH_CONFIDENCE` or `LOW_CONFIDENCE`, provide the expected 5-day direction, expected magnitude, volatility expectation, cross-horizon risk, and main reason.
 
 ### Confidence Gate
 
@@ -173,7 +212,13 @@ Report:
 
 ### Active Signal Checklist
 
-List active and inactive accepted Tier 1/Tier 2 5-day signals from the latest row.
+List active and inactive accepted Tier 1/Tier 2 5-day signals from the audited latest row. Do not infer active signals from the research summary, from older rows, or from option flow. For each accepted signal, include the audited row value that made it active or inactive.
+
+Mandatory examples:
+
+- If the accepted signal is `Is_Swing_Up = 1` and the audited row has `Is_Swing_Up = 0`, write `Is_Swing_Up = 1: INACTIVE (latest row Is_Swing_Up = 0)`.
+- If the audited row has `Is_Swing_Down = 1`, write `Is_Swing_Down: ACTIVE bearish/timing-risk context` even if it is not an accepted bullish rule.
+- If `Golden_Setup = 1` but `Golden_Setup` is not listed under Accepted Patterns, write `Golden_Setup: CONTEXT ONLY, not a validated accepted trigger in this prompt`.
 
 ### Market Structure Analysis
 
@@ -199,7 +244,7 @@ Before finalizing trading levels, run a price-geometry sanity check against the 
 
 ### Signal Strength JSON
 
-Place this JSON at the very end of the markdown response. The classification must represent the expected directional edge over the next 5 trading days, not just tomorrow:
+Place this JSON at the very end of the markdown response. The classification must represent the expected directional edge over the selected target horizon, `Next5DaysChange` (next 5 trading days):
 
 If `Confidence Gate` status is `NO_HIGH_CONFIDENCE_EDGE`, the JSON must be:
 

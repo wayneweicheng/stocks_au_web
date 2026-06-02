@@ -2,7 +2,7 @@
 
 **Role:** Quantitative Analyst specializing in market microstructure, gamma exposure, option-flow positioning, and short-horizon US equity/ETF behavior.
 
-**Task:** Analyze the provided SPXW market data to forecast price action over the next 5 trading days. Tomorrow's expected behavior is used for entry timing and immediate risk; the next 2 trading days are used as early confirmation. The signal strength classification must be based primarily on the selective next-5-trading-day edge.
+**Task:** Analyze the provided SPXW market data to forecast price action over the next 5 trading days. The 1-day, 2-day, and 5-day horizons were all researched during prompt generation; the signal strength classification must be based primarily on the selected horizon because it had the strongest held-out support for this ticker.
 
 **Critical Data Rule:** Use `TomorrowChange`, `Next2DaysChange`, `Next5DaysChange`, `Next10DaysChange`, or any other future-return fields only as historical research labels. Do not use them as runtime input signals when analyzing the latest row.
 
@@ -14,19 +14,27 @@
 
 ## Research Validation Summary
 
-This prompt was generated for `SPXW.US` with requested as-of date `2026-05-22`. Candidate rules and the feature-score gate were selected primarily on `Next5DaysChange`, with `TomorrowChange` retained for timing and `Next2DaysChange` retained for early confirmation. This section is research metadata only; do not use it as today's market state during live or historical replay analysis.
+This prompt was generated for `SPXW.US` with requested as-of date `2026-05-22` from a fresh SQL Server extraction for this ticker. Candidate rules and the feature-score gate were evaluated separately on `TomorrowChange`, `Next2DaysChange`, and `Next5DaysChange`. The selected primary target for this ticker is `Next5DaysChange` (next 5 trading days). This section is research metadata only; do not use it as today's market state during live or historical replay analysis.
 
-- Daily feature rows: 848 total, 843 primary-target labeled rows from 2022-12-09 to 2026-05-14.
+The effective features below are stock-specific. They were discovered during this generation run by scanning the available ticker history, creating chronological train/validation/test splits for each candidate target, testing single-feature and two-feature rules, comparing target performance, and training the selective feature-score model. Do not copy accepted patterns, thresholds, or model weights from another stock prompt.
+
+- Daily feature rows: 848 total, 843 selected-target labeled rows from 2022-12-09 to 2026-05-14.
 - Train split: 2022-12-09 to 2025-05-07, 590 rows.
 - Validation split: 2025-05-08 to 2025-11-05, 126 rows.
 - Test split: 2025-11-06 to 2026-05-14, 127 rows.
-- Baseline 5-day win rate: train 60.3%, validation 70.6%, test 56.7%.
+- Selected target: `Next5DaysChange` (next 5 trading days).
+- Target selection summary:
+- 5-day: target-selection score 63.13; feature-score test win 67.7%, coverage 62/127 (48.8%), accepted robust patterns 6.
+- 2-day: target-selection score 41.81; feature-score test win 60.9%, coverage 64/127 (50.4%), accepted robust patterns 6.
+- 1-day: target-selection score 35.08; feature-score test win 55.6%, coverage 54/128 (42.2%), accepted robust patterns 6.
+- Baseline selected-target win rate: train 60.3%, validation 70.6%, test 56.7%.
 - Baseline tomorrow win rate: train 54.9%, validation 59.1%, test 53.1%.
 - Baseline 2-day win rate: train 57.8%, validation 63.8%, test 53.5%.
+- Baseline 5-day win rate: train 60.3%, validation 70.6%, test 56.7%.
 - Selective feature-score gate: threshold 0.53 on the trained probability score.
-- Feature-score train performance: win 73.7%, coverage 388/590 (65.8%), avg selected 5-day return +0.850%.
-- Feature-score validation performance: win 70.8%, coverage 65/126 (51.6%), avg selected 5-day return +0.609%.
-- Feature-score test performance: win 67.7%, coverage 62/127 (48.8%), avg selected 5-day return +0.816%.
+- Feature-score train performance on selected target: win 73.7%, coverage 388/590 (65.8%), avg selected return +0.850%.
+- Feature-score validation performance on selected target: win 70.8%, coverage 65/126 (51.6%), avg selected return +0.609%.
+- Feature-score test performance on selected target: win 67.7%, coverage 62/127 (48.8%), avg selected return +0.816%.
 - Large option trade rows sampled: 1000.
 - Latest OI-change records sampled: 100. Positive call OI change 123742; positive put OI change 141612; near-term call additions 111030; near-term put additions 116160.
 - Top current OI records sampled: 50.
@@ -35,12 +43,12 @@ This prompt was generated for `SPXW.US` with requested as-of date `2026-05-22`. 
 
 ### Accepted Patterns
 
-- `BB_Bandwidth >= train_q60 (0.0599) AND GEXChange <= train_q20 (-113.1)` (5-day): train n=23, avg +1.555%, win 78.3%; validation n=5, avg +1.034%, win 80.0%; test n=7, avg +2.694%, win 100.0%; test tomorrow avg +0.280%, test 2-day avg +0.534%.
-- `BB_Bandwidth >= train_q50 (0.0537) AND GEXChange <= train_q20 (-113.1)` (5-day): train n=31, avg +1.328%, win 74.2%; validation n=6, avg +0.813%, win 66.7%; test n=12, avg +2.487%, win 100.0%; test tomorrow avg +0.361%, test 2-day avg +0.812%.
-- `BB_Bandwidth >= train_q70 (0.06827) AND BuyCall_GEXDeltaPerc <= train_q40 (43.47)` (5-day): train n=56, avg +0.929%, win 67.9%; validation n=10, avg +1.332%, win 100.0%; test n=9, avg +2.187%, win 88.9%; test tomorrow avg +0.298%, test 2-day avg +0.807%.
-- `BB_Bandwidth >= train_q70 (0.06827) AND BuyPut_GEXDeltaPerc >= train_q60 (50.57)` (5-day): train n=56, avg +0.665%, win 64.3%; validation n=13, avg +1.338%, win 92.3%; test n=9, avg +2.187%, win 88.9%; test tomorrow avg +0.298%, test 2-day avg +0.807%.
-- `BB_Bandwidth >= train_q60 (0.0599) AND BuyCall_GEXDeltaPerc <= train_q40 (43.47)` (5-day): train n=83, avg +1.044%, win 74.7%; validation n=13, avg +1.160%, win 92.3%; test n=10, avg +1.978%, win 90.0%; test tomorrow avg +0.252%, test 2-day avg +0.686%.
-- `BB_Bandwidth >= train_q50 (0.0537) AND BuyCall_GEXDeltaPerc <= train_q40 (43.47)` (5-day): train n=104, avg +0.880%, win 71.2%; validation n=13, avg +1.160%, win 92.3%; test n=14, avg +1.976%, win 85.7%; test tomorrow avg +0.305%, test 2-day avg +0.703%.
+- `BB_Bandwidth >= train_q60 (0.0599) AND GEXChange <= train_q20 (-113.1)` (5-day): train n=23, avg +1.555%, win 78.3%; validation n=5, avg +1.034%, win 80.0%; test n=7, avg +2.694%, win 100.0%; test 1-day avg +0.280%, test 2-day avg +0.534%, test 5-day avg +2.694%.
+- `BB_Bandwidth >= train_q50 (0.0537) AND GEXChange <= train_q20 (-113.1)` (5-day): train n=31, avg +1.328%, win 74.2%; validation n=6, avg +0.813%, win 66.7%; test n=12, avg +2.487%, win 100.0%; test 1-day avg +0.361%, test 2-day avg +0.812%, test 5-day avg +2.487%.
+- `BB_Bandwidth >= train_q70 (0.06827) AND BuyCall_GEXDeltaPerc <= train_q40 (43.47)` (5-day): train n=56, avg +0.929%, win 67.9%; validation n=10, avg +1.332%, win 100.0%; test n=9, avg +2.187%, win 88.9%; test 1-day avg +0.298%, test 2-day avg +0.807%, test 5-day avg +2.187%.
+- `BB_Bandwidth >= train_q70 (0.06827) AND BuyPut_GEXDeltaPerc >= train_q60 (50.57)` (5-day): train n=56, avg +0.665%, win 64.3%; validation n=13, avg +1.338%, win 92.3%; test n=9, avg +2.187%, win 88.9%; test 1-day avg +0.298%, test 2-day avg +0.807%, test 5-day avg +2.187%.
+- `BB_Bandwidth >= train_q60 (0.0599) AND BuyCall_GEXDeltaPerc <= train_q40 (43.47)` (5-day): train n=83, avg +1.044%, win 74.7%; validation n=13, avg +1.160%, win 92.3%; test n=10, avg +1.978%, win 90.0%; test 1-day avg +0.252%, test 2-day avg +0.686%, test 5-day avg +1.978%.
+- `BB_Bandwidth >= train_q50 (0.0537) AND BuyCall_GEXDeltaPerc <= train_q40 (43.47)` (5-day): train n=104, avg +0.880%, win 71.2%; validation n=13, avg +1.160%, win 92.3%; test n=14, avg +1.976%, win 85.7%; test 1-day avg +0.305%, test 2-day avg +0.703%, test 5-day avg +1.976%.
 
 ### Selective Feature-Score Model
 
@@ -72,12 +80,12 @@ Top model features by absolute weight:
 
 ### Rejected Or Downgraded Patterns
 
-- `VIX >= train_q60 (17.42) AND BB_Bandwidth <= train_q10 (0.03426)` (5-day): train n=21, avg +1.375%, win 76.2%; validation n=11, avg +1.685%, win 100.0%; test n=26, avg -0.505%, win 34.6%; test tomorrow avg -0.078%, test 2-day avg -0.219%.
-- `Negative_GEX_AND_High_VIX = 1 AND GEX_Trending_Up = 0` (5-day): train n=41, avg +1.113%, win 68.3%; validation n=8, avg +1.834%, win 100.0%; test n=29, avg -0.043%, win 41.4%; test tomorrow avg +0.077%, test 2-day avg +0.095%.
-- `Prev10DaysChange <= train_q10 (-3.23)` (5-day): train n=60, avg +1.004%, win 65.0%; validation n=0, avg n/a, win n/a; test n=9, avg -0.424%, win 22.2%; test tomorrow avg +0.329%, test 2-day avg +0.067%.
-- `Prev2DaysChange <= train_q10 (-1.49)` (5-day): train n=60, avg +0.856%, win 56.7%; validation n=4, avg +1.345%, win 100.0%; test n=14, avg -0.050%, win 50.0%; test tomorrow avg +0.274%, test 2-day avg +0.297%.
-- `BB_Bandwidth <= train_q10 (0.03426) AND TodayChange <= train_q40 (-0.09)` (5-day): train n=21, avg +0.801%, win 66.7%; validation n=11, avg +1.053%, win 81.8%; test n=20, avg -0.151%, win 55.0%; test tomorrow avg +0.107%, test 2-day avg +0.013%.
-- `BB_Bandwidth <= train_q10 (0.03426) AND VIX >= train_q50 (16.23)` (5-day): train n=35, avg +0.765%, win 62.9%; validation n=22, avg +1.119%, win 86.4%; test n=32, avg -0.570%, win 31.2%; test tomorrow avg -0.101%, test 2-day avg -0.231%.
+- `VIX >= train_q60 (17.42) AND BB_Bandwidth <= train_q10 (0.03426)` (5-day): train n=21, avg +1.375%, win 76.2%; validation n=11, avg +1.685%, win 100.0%; test n=26, avg -0.505%, win 34.6%; test 1-day avg -0.078%, test 2-day avg -0.219%, test 5-day avg -0.505%.
+- `Negative_GEX_AND_High_VIX = 1 AND GEX_Trending_Up = 0` (5-day): train n=41, avg +1.113%, win 68.3%; validation n=8, avg +1.834%, win 100.0%; test n=29, avg -0.043%, win 41.4%; test 1-day avg +0.077%, test 2-day avg +0.095%, test 5-day avg -0.043%.
+- `Prev10DaysChange <= train_q10 (-3.23)` (5-day): train n=60, avg +1.004%, win 65.0%; validation n=0, avg n/a, win n/a; test n=9, avg -0.424%, win 22.2%; test 1-day avg +0.329%, test 2-day avg +0.067%, test 5-day avg -0.424%.
+- `Prev2DaysChange <= train_q10 (-1.49)` (5-day): train n=60, avg +0.856%, win 56.7%; validation n=4, avg +1.345%, win 100.0%; test n=14, avg -0.050%, win 50.0%; test 1-day avg +0.274%, test 2-day avg +0.297%, test 5-day avg -0.050%.
+- `BB_Bandwidth <= train_q10 (0.03426) AND TodayChange <= train_q40 (-0.09)` (5-day): train n=21, avg +0.801%, win 66.7%; validation n=11, avg +1.053%, win 81.8%; test n=20, avg -0.151%, win 55.0%; test 1-day avg +0.107%, test 2-day avg +0.013%, test 5-day avg -0.151%.
+- `BB_Bandwidth <= train_q10 (0.03426) AND VIX >= train_q50 (16.23)` (5-day): train n=35, avg +0.765%, win 62.9%; validation n=22, avg +1.119%, win 86.4%; test n=32, avg -0.570%, win 31.2%; test 1-day avg -0.101%, test 2-day avg -0.231%, test 5-day avg -0.570%.
 
 ---
 
@@ -90,29 +98,29 @@ Accepted patterns are conditional rules, not automatically active. A rule is act
 #### BB_Bandwidth >= train_q60 (0.0599) AND GEXChange <= train_q20 (-113.1)
 - **Tier:** Tier 1
 - **Signal:** Bullish for the next 5 trading days.
-- **Historical Evidence:** `BB_Bandwidth >= train_q60 (0.0599) AND GEXChange <= train_q20 (-113.1)` (5-day): train n=23, avg +1.555%, win 78.3%; validation n=5, avg +1.034%, win 80.0%; test n=7, avg +2.694%, win 100.0%; test tomorrow avg +0.280%, test 2-day avg +0.534%.
-- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for SPXW. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Historical Evidence:** `BB_Bandwidth >= train_q60 (0.0599) AND GEXChange <= train_q20 (-113.1)` (5-day): train n=23, avg +1.555%, win 78.3%; validation n=5, avg +1.034%, win 80.0%; test n=7, avg +2.694%, win 100.0%; test 1-day avg +0.280%, test 2-day avg +0.534%, test 5-day avg +2.694%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for SPXW. Cross-check the other horizons for timing, confirmation, or conflict.
 - **Priority:** High; downgrade if current option flow strongly contradicts it.
 
 #### BB_Bandwidth >= train_q50 (0.0537) AND GEXChange <= train_q20 (-113.1)
 - **Tier:** Tier 1
 - **Signal:** Bullish for the next 5 trading days.
-- **Historical Evidence:** `BB_Bandwidth >= train_q50 (0.0537) AND GEXChange <= train_q20 (-113.1)` (5-day): train n=31, avg +1.328%, win 74.2%; validation n=6, avg +0.813%, win 66.7%; test n=12, avg +2.487%, win 100.0%; test tomorrow avg +0.361%, test 2-day avg +0.812%.
-- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for SPXW. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Historical Evidence:** `BB_Bandwidth >= train_q50 (0.0537) AND GEXChange <= train_q20 (-113.1)` (5-day): train n=31, avg +1.328%, win 74.2%; validation n=6, avg +0.813%, win 66.7%; test n=12, avg +2.487%, win 100.0%; test 1-day avg +0.361%, test 2-day avg +0.812%, test 5-day avg +2.487%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for SPXW. Cross-check the other horizons for timing, confirmation, or conflict.
 - **Priority:** High; downgrade if current option flow strongly contradicts it.
 
 #### BB_Bandwidth >= train_q70 (0.06827) AND BuyCall_GEXDeltaPerc <= train_q40 (43.47)
 - **Tier:** Tier 2
 - **Signal:** Bullish for the next 5 trading days.
-- **Historical Evidence:** `BB_Bandwidth >= train_q70 (0.06827) AND BuyCall_GEXDeltaPerc <= train_q40 (43.47)` (5-day): train n=56, avg +0.929%, win 67.9%; validation n=10, avg +1.332%, win 100.0%; test n=9, avg +2.187%, win 88.9%; test tomorrow avg +0.298%, test 2-day avg +0.807%.
-- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for SPXW. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Historical Evidence:** `BB_Bandwidth >= train_q70 (0.06827) AND BuyCall_GEXDeltaPerc <= train_q40 (43.47)` (5-day): train n=56, avg +0.929%, win 67.9%; validation n=10, avg +1.332%, win 100.0%; test n=9, avg +2.187%, win 88.9%; test 1-day avg +0.298%, test 2-day avg +0.807%, test 5-day avg +2.187%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for SPXW. Cross-check the other horizons for timing, confirmation, or conflict.
 - **Priority:** Medium; downgrade if current option flow strongly contradicts it.
 
 #### BB_Bandwidth >= train_q70 (0.06827) AND BuyPut_GEXDeltaPerc >= train_q60 (50.57)
 - **Tier:** Tier 2
 - **Signal:** Bullish for the next 5 trading days.
-- **Historical Evidence:** `BB_Bandwidth >= train_q70 (0.06827) AND BuyPut_GEXDeltaPerc >= train_q60 (50.57)` (5-day): train n=56, avg +0.665%, win 64.3%; validation n=13, avg +1.338%, win 92.3%; test n=9, avg +2.187%, win 88.9%; test tomorrow avg +0.298%, test 2-day avg +0.807%.
-- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for SPXW. Use tomorrow behavior as timing risk and 2-day behavior as early confirmation.
+- **Historical Evidence:** `BB_Bandwidth >= train_q70 (0.06827) AND BuyPut_GEXDeltaPerc >= train_q60 (50.57)` (5-day): train n=56, avg +0.665%, win 64.3%; validation n=13, avg +1.338%, win 92.3%; test n=9, avg +2.187%, win 88.9%; test 1-day avg +0.298%, test 2-day avg +0.807%, test 5-day avg +2.187%.
+- **Rationale:** Use this as an explainable stock-specific 5-day market-flow rule for SPXW. Cross-check the other horizons for timing, confirmation, or conflict.
 - **Priority:** Medium; downgrade if current option flow strongly contradicts it.
 
 
@@ -191,7 +199,7 @@ This section must be internally consistent with the `Data (Last 30 Days)` row wi
 
 ### Executive Forecast
 
-Provide one decisive paragraph with the confidence-gate status first, based on the Latest Row Audit. If status is `NO_HIGH_CONFIDENCE_EDGE`, say plainly that the model does not have enough validated edge today and do not force a bullish or bearish call. If status is `HIGH_CONFIDENCE` or `LOW_CONFIDENCE`, provide the expected next-5-trading-day direction, expected magnitude, volatility expectation, tomorrow timing risk, and main reason.
+Provide one decisive paragraph with the confidence-gate status first, based on the Latest Row Audit. If status is `NO_HIGH_CONFIDENCE_EDGE`, say plainly that the model does not have enough validated edge today and do not force a bullish or bearish call. If status is `HIGH_CONFIDENCE` or `LOW_CONFIDENCE`, provide the expected 5-day direction, expected magnitude, volatility expectation, cross-horizon risk, and main reason.
 
 ### Confidence Gate
 
@@ -236,7 +244,7 @@ Before finalizing trading levels, run a price-geometry sanity check against the 
 
 ### Signal Strength JSON
 
-Place this JSON at the very end of the markdown response. The classification must represent the expected directional edge over the next 5 trading days, not just tomorrow:
+Place this JSON at the very end of the markdown response. The classification must represent the expected directional edge over the selected target horizon, `Next5DaysChange` (next 5 trading days):
 
 If `Confidence Gate` status is `NO_HIGH_CONFIDENCE_EDGE`, the JSON must be:
 
