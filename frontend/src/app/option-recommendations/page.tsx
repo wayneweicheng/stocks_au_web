@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
@@ -61,6 +61,13 @@ interface OrderResult {
   error?: string;
 }
 
+interface RepriceSTOResult {
+  ok: boolean;
+  sto_limit_price: number;
+  adjusted_iv?: number;
+  error?: string;
+}
+
 function formatCellValue(key: string, value: unknown): string {
   if (value === null || value === undefined) return "";
 
@@ -108,6 +115,10 @@ function roundCurrency(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+function getTargetPriceRaw(row: OptionRecommendationRow): unknown {
+  return row["TargetPrice"] ?? row["Target_Price"] ?? row["TargetUnderlying"] ?? row["target_underlying"];
+}
+
 function getStoLimitPriceRaw(row: OptionRecommendationRow): unknown {
   return row["STOLimitPrice"] ?? row["STO_LimitPrice"] ?? row["LimitPrice"] ?? row["Price"] ?? row["STOPrice"];
 }
@@ -144,8 +155,13 @@ export default function OptionRecommendationsPage() {
   const [orderLoading, setOrderLoading] = useState<Record<number, boolean>>({});
   const [orderResults, setOrderResults] = useState<Record<number, OrderResult>>({});
   const [stoPriceInputs, setStoPriceInputs] = useState<Record<number, string>>({});
+  const [targetPriceInputs, setTargetPriceInputs] = useState<Record<number, string>>({});
+  const [repriceLoading, setRepriceLoading] = useState<Record<number, boolean>>({});
+  const [repriceErrors, setRepriceErrors] = useState<Record<number, string>>({});
   const [collapsedStocks, setCollapsedStocks] = useState<Record<string, boolean>>({});
   const [collapsedOptions, setCollapsedOptions] = useState<Record<string, boolean>>({});
+  const repriceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const repriceSequence = useRef<Record<number, number>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -218,15 +234,30 @@ export default function OptionRecommendationsPage() {
 
   useEffect(() => {
     const nextInputs: Record<number, string> = {};
+    const nextTargetInputs: Record<number, string> = {};
     rows.forEach((row, index) => {
+      const targetPrice = formatPriceInput(getTargetPriceRaw(row));
+      nextTargetInputs[index] = targetPrice;
       nextInputs[index] = formatPriceInput(getStoLimitPriceRaw(row));
     });
+    Object.values(repriceTimers.current).forEach((timer) => clearTimeout(timer));
+    repriceTimers.current = {};
+    repriceSequence.current = {};
+    setTargetPriceInputs(nextTargetInputs);
     setStoPriceInputs(nextInputs);
+    setRepriceLoading({});
+    setRepriceErrors({});
     setOrderResults({});
     setQuoteResults({});
     setCollapsedStocks({});
     setCollapsedOptions({});
   }, [rows]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(repriceTimers.current).forEach((timer) => clearTimeout(timer));
+    };
+  }, []);
 
   const columns = useMemo(() => {
     if (!rows[0]) return [];
@@ -297,6 +328,80 @@ export default function OptionRecommendationsPage() {
 
   const minDate = availableDates.length > 0 ? availableDates[availableDates.length - 1] : undefined;
   const maxDate = availableDates.length > 0 ? availableDates[0] : undefined;
+
+  const requestRepriceSTO = async (rowIndex: number, row: OptionRecommendationRow, targetPriceInput: string) => {
+    if (!baseUrl) return;
+
+    const recommendationId = parsePriceInput(row["RecommendationID"]);
+    const targetPrice = parsePriceInput(targetPriceInput);
+    if (!recommendationId || !targetPrice || targetPrice <= 0) {
+      setStoPriceInputs((prev) => ({ ...prev, [rowIndex]: "" }));
+      setRepriceLoading((prev) => ({ ...prev, [rowIndex]: false }));
+      return;
+    }
+
+    const sequence = (repriceSequence.current[rowIndex] ?? 0) + 1;
+    repriceSequence.current[rowIndex] = sequence;
+    setRepriceLoading((prev) => ({ ...prev, [rowIndex]: true }));
+    setRepriceErrors((prev) => {
+      const next = { ...prev };
+      delete next[rowIndex];
+      return next;
+    });
+
+    try {
+      const response = await authenticatedFetch(`${baseUrl}/api/option-recommendations/reprice-sto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recommendation_id: Math.trunc(recommendationId),
+          target_price: targetPrice,
+        }),
+      });
+      const data: RepriceSTOResult & { detail?: string } = await response.json();
+      if (repriceSequence.current[rowIndex] !== sequence) return;
+
+      if (!response.ok || typeof data.sto_limit_price !== "number") {
+        throw new Error(data.detail || data.error || "Failed to reprice STO limit");
+      }
+
+      setStoPriceInputs((prev) => ({ ...prev, [rowIndex]: data.sto_limit_price.toFixed(2) }));
+    } catch (err: unknown) {
+      if (repriceSequence.current[rowIndex] !== sequence) return;
+      setRepriceErrors((prev) => ({
+        ...prev,
+        [rowIndex]: err instanceof Error ? err.message : "Failed to reprice STO limit",
+      }));
+    } finally {
+      if (repriceSequence.current[rowIndex] === sequence) {
+        setRepriceLoading((prev) => ({ ...prev, [rowIndex]: false }));
+      }
+    }
+  };
+
+  const handleTargetPriceChange = (rowIndex: number, row: OptionRecommendationRow, value: string) => {
+    setTargetPriceInputs((prev) => ({ ...prev, [rowIndex]: value }));
+    setRepriceErrors((prev) => {
+      const next = { ...prev };
+      delete next[rowIndex];
+      return next;
+    });
+
+    if (repriceTimers.current[rowIndex]) {
+      clearTimeout(repriceTimers.current[rowIndex]);
+    }
+
+    if (!parsePriceInput(value)) {
+      setStoPriceInputs((prev) => ({ ...prev, [rowIndex]: "" }));
+      setRepriceLoading((prev) => ({ ...prev, [rowIndex]: false }));
+      return;
+    }
+
+    setRepriceLoading((prev) => ({ ...prev, [rowIndex]: true }));
+    repriceTimers.current[rowIndex] = setTimeout(() => {
+      void requestRepriceSTO(rowIndex, row, value);
+    }, 350);
+  };
 
   const handleCheckLivePrice = async (rowIndex: number, row: OptionRecommendationRow) => {
     if (!baseUrl) return;
@@ -630,11 +735,26 @@ export default function OptionRecommendationsPage() {
                                     key={`${String(row["RecommendationID"] ?? index)}-${index}`}
                                     className={`${index % 2 ? "bg-slate-50" : ""} transition-colors hover:bg-emerald-50/40`}
                                   >
-                                    {columns.map((column) => (
-                                      <td key={column} className="whitespace-nowrap border-b border-slate-100 px-3 py-2">
-                                        {formatCellValue(column, row[column])}
-                                      </td>
-                                    ))}
+                                    {columns.map((column) => {
+                                      const isTargetPriceColumn = column === "TargetPrice";
+                                      return (
+                                        <td key={column} className="whitespace-nowrap border-b border-slate-100 px-3 py-2">
+                                          {isTargetPriceColumn ? (
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="0.01"
+                                              value={targetPriceInputs[index] ?? formatPriceInput(getTargetPriceRaw(row))}
+                                              onChange={(e) => handleTargetPriceChange(index, row, e.target.value)}
+                                              disabled={orderLoading[index]}
+                                              className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-normal text-slate-800 focus:border-emerald-400/40 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                            />
+                                          ) : (
+                                            formatCellValue(column, row[column])
+                                          )}
+                                        </td>
+                                      );
+                                    })}
                                     <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2">
                                       <div className="flex min-w-[430px] flex-col gap-2">
                                         <div className="flex flex-nowrap items-end gap-2">
@@ -645,12 +765,9 @@ export default function OptionRecommendationsPage() {
                                               min="0"
                                               step="0.01"
                                               value={stoPriceInputs[index] ?? formatPriceInput(getStoLimitPriceRaw(row))}
-                                              onChange={(e) => {
-                                                const value = e.target.value;
-                                                setStoPriceInputs((prev) => ({ ...prev, [index]: value }));
-                                              }}
-                                              disabled={orderLoading[index]}
-                                              className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-normal text-slate-800 focus:border-emerald-400/40 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:cursor-not-allowed disabled:opacity-50"
+                                              readOnly
+                                              disabled={orderLoading[index] || repriceLoading[index]}
+                                              className="w-24 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-normal text-slate-800 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                                             />
                                           </label>
                                           <button
@@ -667,15 +784,20 @@ export default function OptionRecommendationsPage() {
                                           <button
                                             type="button"
                                             onClick={() => handlePlaceSTOOrder(index, row)}
-                                            disabled={orderLoading[index]}
+                                            disabled={orderLoading[index] || repriceLoading[index]}
                                             className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:cursor-not-allowed disabled:opacity-50"
                                           >
                                             {orderLoading[index] && (
                                               <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                                             )}
-                                            {orderLoading[index] ? "Placing..." : "Place STO Order"}
+                                            {orderLoading[index] ? "Placing..." : repriceLoading[index] ? "Repricing..." : "Place STO Order"}
                                           </button>
                                         </div>
+                                        {repriceErrors[index] && (
+                                          <div className="text-xs text-red-600">
+                                            Reprice error: {repriceErrors[index]}
+                                          </div>
+                                        )}
                                         {quoteResults[index] && (
                                           <div className={`text-xs ${quoteResults[index].ok ? "text-slate-700" : "text-red-600"}`}>
                                             {quoteResults[index].ok ? (

@@ -108,7 +108,12 @@ while ($true) {
         Stop-ProcessOnPort -Port $Port
     }
 
-    if ($MaxRestarts -gt 0 -and $restartCount -ge $MaxRestarts) {
+    if ($MaxRestarts -le 0) {
+        Write-Log "Auto-restart disabled (MaxRestarts=$MaxRestarts). Exiting supervisor."
+        break
+    }
+
+    if ($restartCount -ge $MaxRestarts) {
         Write-Log "Max restarts reached ($MaxRestarts). Exiting supervisor."
         break
     }

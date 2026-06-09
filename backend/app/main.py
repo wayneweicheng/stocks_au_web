@@ -14,6 +14,7 @@ from app.routers.pllrs_scanner import router as pllrs_scanner_router
 from app.routers.ib_gateway import router as ib_gateway_router
 from app.routers.strategy_orders import router as strategy_orders_router
 from app.routers.ib_orders import router as ib_orders_router
+from app.routers.ib_account import router as ib_account_router
 from app.routers.research_links import router as research_links_router
 from app.routers.commenters import router as commenters_router
 from app.routers.stock_ratings import router as stock_ratings_router
@@ -36,6 +37,8 @@ from app.routers.option_insights import router as option_insights_router
 from app.routers.discord_summary import router as discord_summary_router
 from app.routers.trading_orders import router as trading_orders_router
 from app.routers.option_recommendations import router as option_recommendations_router
+from app.routers.option_orders import router as option_orders_router
+from app.routers.price_levels_30m import router as price_levels_30m_router
 from app.routers.stock_analysis import router as stock_analysis_router
 from app.routers.asx_data_refresh import router as asx_data_refresh_router
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
@@ -177,6 +180,7 @@ app.include_router(pllrs_scanner_router)
 app.include_router(ib_gateway_router)
 app.include_router(strategy_orders_router)
 app.include_router(ib_orders_router)
+app.include_router(ib_account_router)
 app.include_router(research_links_router)
 app.include_router(commenters_router)
 app.include_router(stock_ratings_router)
@@ -199,6 +203,8 @@ app.include_router(option_insights_router)
 app.include_router(discord_summary_router)
 app.include_router(trading_orders_router)
 app.include_router(option_recommendations_router)
+app.include_router(option_orders_router)
+app.include_router(price_levels_30m_router)
 app.include_router(stock_analysis_router)
 app.include_router(asx_data_refresh_router)
 
