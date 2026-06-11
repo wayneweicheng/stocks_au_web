@@ -160,7 +160,9 @@ def _position_rows(portfolio_items: List[Any], account: Optional[str]) -> List[D
         rows.append(
             {
                 "account": item_account or None,
+                "con_id": getattr(contract, "conId", None),
                 "symbol": symbol,
+                "local_symbol": getattr(contract, "localSymbol", None) or None,
                 "sec_type": sec_type,
                 "currency": currency,
                 "exchange": exchange,
@@ -175,7 +177,43 @@ def _position_rows(portfolio_items: List[Any], account: Optional[str]) -> List[D
     return sorted(rows, key=lambda row: abs(row.get("market_value") or 0), reverse=True)
 
 
-def _open_order_rows(ib: "IB", account: Optional[str]) -> List[Dict[str, Any]]:
+def _contract_key(contract: Any) -> str:
+    con_id = getattr(contract, "conId", None)
+    if con_id:
+        return f"conid:{con_id}"
+    local_symbol = str(getattr(contract, "localSymbol", None) or "").strip().upper()
+    if local_symbol:
+        return f"local:{local_symbol}"
+    symbol = str(getattr(contract, "symbol", None) or "").strip().upper()
+    sec_type = str(getattr(contract, "secType", None) or "").strip().upper()
+    return f"symbol:{sec_type}:{symbol}"
+
+
+def _position_quantities(portfolio_items: List[Any], account: Optional[str]) -> Dict[str, float]:
+    quantities: Dict[str, float] = {}
+    for item in portfolio_items:
+        item_account = str(getattr(item, "account", "") or "")
+        if account and item_account and item_account != account:
+            continue
+        contract = getattr(item, "contract", None)
+        position = _to_float(getattr(item, "position", None))
+        if contract is None or position is None:
+            continue
+        quantities[_contract_key(contract)] = position
+    return quantities
+
+
+def _gross_exposure_change(
+    position: float,
+    order_delta: float,
+    unit_exposure: float,
+) -> tuple[float, float]:
+    post_position = position + order_delta
+    change = (abs(post_position) - abs(position)) * unit_exposure
+    return change, post_position
+
+
+def _open_order_rows(ib: "IB", account: Optional[str], portfolio_items: List[Any]) -> List[Dict[str, Any]]:
     try:
         ib.reqAllOpenOrders()
         ib.sleep(0.5)
@@ -187,7 +225,12 @@ def _open_order_rows(ib: "IB", account: Optional[str]) -> List[Dict[str, Any]]:
             pass
 
     rows: List[Dict[str, Any]] = []
-    for trade in ib.openTrades():
+    projected_positions = _position_quantities(portfolio_items, account)
+    trades = sorted(
+        ib.openTrades(),
+        key=lambda trade: int(getattr(getattr(trade, "order", None), "orderId", 0) or 0),
+    )
+    for trade in trades:
         order = getattr(trade, "order", None)
         contract = getattr(trade, "contract", None)
         order_status = getattr(trade, "orderStatus", None)
@@ -196,21 +239,80 @@ def _open_order_rows(ib: "IB", account: Optional[str]) -> List[Dict[str, Any]]:
         item_account = str(getattr(order, "account", "") or "")
         if account and item_account and item_account != account:
             continue
-        qty = _to_float(getattr(order, "totalQuantity", None)) or 0.0
+        total_qty = _to_float(getattr(order, "totalQuantity", None)) or 0.0
+        remaining_qty = _to_float(getattr(order_status, "remaining", None))
+        qty = remaining_qty if remaining_qty is not None and remaining_qty >= 0 else total_qty
         limit_price = _to_float(getattr(order, "lmtPrice", None))
-        notional = abs(qty * limit_price) if limit_price is not None else None
+        action = str(getattr(order, "action", None) or "").upper()
+        sec_type = str(getattr(contract, "secType", None) or "").upper()
+        right = str(getattr(contract, "right", None) or "").upper()
+        strike = _to_float(getattr(contract, "strike", None))
+        multiplier = _to_float(getattr(contract, "multiplier", None)) or (100.0 if sec_type == "OPT" else 1.0)
+        contract_key = _contract_key(contract)
+        current_position = projected_positions.get(contract_key, 0.0)
+        order_delta = qty if action == "BUY" else -qty
+        post_position = current_position + order_delta
+
+        premium_notional = abs(qty * limit_price * multiplier) if limit_price is not None else None
+        exposure_if_filled: Optional[float] = None
+        exposure_basis = "Notional unavailable"
+        if sec_type in {"STK", "ETF"} and limit_price is not None:
+            exposure_if_filled, post_position = _gross_exposure_change(
+                current_position,
+                order_delta,
+                limit_price,
+            )
+            exposure_basis = "Closes stock exposure" if exposure_if_filled < 0 else "Adds stock exposure"
+        elif sec_type == "OPT" and right in {"P", "C"} and strike is not None:
+            assignment_unit = strike * multiplier
+            before_short = max(-current_position, 0.0)
+            after_short = max(-post_position, 0.0)
+            assignment_change = (after_short - before_short) * assignment_unit
+            if assignment_change != 0:
+                exposure_if_filled = assignment_change
+                exposure_basis = (
+                    f"Closes short {'put' if right == 'P' else 'call'} assignment exposure"
+                    if assignment_change < 0
+                    else f"Adds short {'put' if right == 'P' else 'call'} assignment exposure"
+                )
+            elif premium_notional is not None:
+                exposure_if_filled, post_position = _gross_exposure_change(
+                    current_position,
+                    order_delta,
+                    limit_price * multiplier,
+                )
+                exposure_basis = "Closes option premium exposure" if exposure_if_filled < 0 else "Adds option premium exposure"
+        elif premium_notional is not None:
+            exposure_if_filled, post_position = _gross_exposure_change(
+                current_position,
+                order_delta,
+                limit_price * multiplier,
+            )
+            exposure_basis = "Closes option premium exposure" if exposure_if_filled < 0 else "Adds option premium exposure"
+
+        projected_positions[contract_key] = post_position
+
         rows.append(
             {
                 "account": item_account or None,
                 "symbol": getattr(contract, "symbol", None) or getattr(contract, "localSymbol", None) or "",
+                "local_symbol": getattr(contract, "localSymbol", None) or None,
                 "sec_type": getattr(contract, "secType", None) or "",
-                "action": getattr(order, "action", None),
+                "right": right or None,
+                "strike": _round_money(strike),
+                "multiplier": _round_ratio(multiplier),
+                "action": action,
                 "order_type": getattr(order, "orderType", None),
                 "status": getattr(order_status, "status", None),
                 "quantity": qty,
+                "position_before": _round_ratio(current_position),
+                "position_after": _round_ratio(post_position),
                 "limit_price": _round_money(limit_price),
-                "estimated_notional": _round_money(notional),
+                "estimated_notional": _round_money(premium_notional),
+                "exposure_if_filled": _round_money(exposure_if_filled),
+                "exposure_basis": exposure_basis,
                 "order_id": getattr(order, "orderId", None),
+                "parent_id": getattr(order, "parentId", None),
             }
         )
     return rows
@@ -241,7 +343,7 @@ def get_account_risk(account: Optional[str] = None) -> Dict[str, Any]:
 
         portfolio_items = ib.portfolio()
         positions = _position_rows(portfolio_items, selected_account)
-        open_orders = _open_order_rows(ib, selected_account)
+        open_orders = _open_order_rows(ib, selected_account, portfolio_items)
         buy_order_notional = sum(
             row.get("estimated_notional") or 0
             for row in open_orders

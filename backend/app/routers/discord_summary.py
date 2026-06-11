@@ -31,7 +31,7 @@ FOLLOWER_USERNAMES = [
 def get_discord_summary(
     observation_date: date,
     regenerate: bool = False,
-    model: str = "google/gemini-2.5-flash",
+    model: str = "deepseek/deepseek-v4-flash",
     username: str = Depends(verify_credentials)
 ) -> Dict:
     """
@@ -236,7 +236,7 @@ def get_discord_summary_for_user(
     observation_date: date,
     username_filter: str,
     regenerate: bool = False,
-    model: str = "google/gemini-2.5-flash",
+    model: str = "deepseek/deepseek-v4-flash",
     username: str = Depends(verify_credentials)
 ) -> Dict:
     """
@@ -452,7 +452,7 @@ def get_discord_summary_user_prompt(
 def get_discord_summary_followers(
     observation_date: date,
     regenerate: bool = False,
-    model: str = "google/gemini-2.5-flash",
+    model: str = "deepseek/deepseek-v4-flash",
     username: str = Depends(verify_credentials)
 ) -> Dict:
     """

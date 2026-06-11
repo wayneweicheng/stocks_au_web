@@ -26,6 +26,7 @@ const NAV: NavGroup[] = [
     label: "Market",
     items: [
       { href: "/market-flow", label: "Market Flow" },
+      { href: "/price-levels-30m", label: "30M Price Levels" },
       { href: "/broker-analysis", label: "Broker Analysis" },
     ],
   },

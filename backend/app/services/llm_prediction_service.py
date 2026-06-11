@@ -148,7 +148,7 @@ class LLMPredictionService:
         prompt: str,
         stock_code: str,
         observation_date: str,
-        model: str = "google/gemini-2.5-flash",
+        model: str = "deepseek/deepseek-v4-flash",
         request_timeout: int | None = None,
     ) -> Dict[str, Any]:
         """

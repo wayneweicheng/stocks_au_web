@@ -1235,8 +1235,6 @@ class PlaceOptionOrderRequest(BaseModel):
     action: str  # BUY or SELL
     limit_price: float
     bracket_exit_price: Optional[float] = None
-    parent_tif: str = "DAY"
-    bracket_exit_tif: str = "GTC"
 
     @field_validator("quantity")
     @classmethod
@@ -1269,15 +1267,6 @@ class PlaceOptionOrderRequest(BaseModel):
             raise ValueError("action must be BUY or SELL")
         return vv
 
-    @field_validator("parent_tif", "bracket_exit_tif")
-    @classmethod
-    def validate_tif(cls, v: str) -> str:
-        vv = (v or "").strip().upper()
-        if vv not in ("DAY", "GTC"):
-            raise ValueError("tif must be DAY or GTC")
-        return vv
-
-
 @router.post("/place-option-order")
 def place_option_order(request: PlaceOptionOrderRequest) -> Dict[str, Any]:
     """
@@ -1300,8 +1289,10 @@ def place_option_order(request: PlaceOptionOrderRequest) -> Dict[str, Any]:
         # Use the quantity directly (number of contracts)
         qty = request.quantity
 
-        parent_tif = request.parent_tif.upper()
-        bracket_exit_tif = request.bracket_exit_tif.upper()
+        # Option entries expire at the end of the session. Attached exits stay
+        # active across sessions after the parent fills.
+        parent_tif = "DAY"
+        bracket_exit_tif = "GTC"
         entry_price = round(float(request.limit_price), 2)
 
         exit_action = "BUY" if action_upper == "SELL" else "SELL"

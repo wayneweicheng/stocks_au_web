@@ -294,8 +294,6 @@ export default function OptionOrdersPage() {
           action,
           limit_price: price,
           bracket_exit_price: bracketExitPrice,
-          parent_tif: "DAY",
-          bracket_exit_tif: "GTC",
         }),
       });
       const data = await response.json();
@@ -559,6 +557,9 @@ export default function OptionOrdersPage() {
             <div className="mt-4 rounded-md bg-slate-50 p-4 font-mono text-sm">
               {orderSummary(action, selectedRow, quantity, limitPrice)}
               <div className="mt-2">
+                Entry: {action} {quantity || "?"} @ {money(parsePositive(limitPrice))} DAY
+              </div>
+              <div className="mt-1 text-sm text-slate-600">
                 Bracket exit: {action === "BUY" ? "SELL" : "BUY"} {quantity || "?"} @ {money(bracketExitPrice)} GTC
                 ({bracketExitPct}% {action === "BUY" ? "above" : "below"} entry)
               </div>

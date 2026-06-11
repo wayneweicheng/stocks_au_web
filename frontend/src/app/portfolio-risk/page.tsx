@@ -30,14 +30,23 @@ interface PositionRow {
 
 interface OpenOrderRow {
   symbol: string;
+  local_symbol: string | null;
   sec_type: string;
+  right: string | null;
+  strike: MetricValue;
+  multiplier: MetricValue;
   action: string;
   order_type: string;
   status: string;
   quantity: MetricValue;
+  position_before: MetricValue;
+  position_after: MetricValue;
   limit_price: MetricValue;
   estimated_notional: MetricValue;
+  exposure_if_filled: MetricValue;
+  exposure_basis: string;
   order_id: number | null;
+  parent_id: number | null;
 }
 
 interface AccountRiskResponse {
@@ -76,6 +85,20 @@ function formatRatio(value: MetricValue, suffix = "x") {
 function formatPercent(value: MetricValue) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return "n/a";
   return `${(Number(value) * 100).toFixed(1)}%`;
+}
+
+function formatSignedCapacityPercent(exposure: MetricValue, netLiquidation: MetricValue, leverage: number) {
+  const exposureValue = Number(exposure);
+  const netLiqValue = Number(netLiquidation);
+  if (!Number.isFinite(exposureValue) || !Number.isFinite(netLiqValue) || netLiqValue <= 0) return "n/a";
+  const value = exposureValue / (netLiqValue * leverage) * 100;
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function exposureClass(value: MetricValue) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number === 0) return "text-slate-600";
+  return number > 0 ? "text-amber-700" : "text-emerald-700";
 }
 
 function leverageClass(leverage: MetricValue) {
@@ -124,6 +147,7 @@ export default function PortfolioRiskPage() {
   const [data, setData] = useState<AccountRiskResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [excludedOrderKeys, setExcludedOrderKeys] = useState<Set<string>>(new Set());
 
   const currency = data?.currency || "USD";
   const metrics = data?.metrics || {};
@@ -154,13 +178,40 @@ export default function PortfolioRiskPage() {
         }
         throw new Error(detail);
       }
-      setData(await response.json());
+      const body: AccountRiskResponse = await response.json();
+      setData(body);
+      setExcludedOrderKeys((current) => {
+        const availableKeys = body.open_orders.map((row, index) => `${row.order_id ?? "none"}-${row.symbol}-${index}`);
+        return new Set(availableKeys.filter((key) => current.has(key)));
+      });
     } catch (exc: any) {
       setError(exc?.message || String(exc));
     } finally {
       setLoading(false);
     }
   }, [baseUrl]);
+
+  const orderRows = data?.open_orders || [];
+  const orderKeys = useMemo(
+    () => orderRows.map((row, index) => `${row.order_id ?? "none"}-${row.symbol}-${index}`),
+    [orderRows],
+  );
+  const includedExposure = useMemo(
+    () => orderRows.reduce(
+      (total, row, index) => total + (!excludedOrderKeys.has(orderKeys[index]) ? Number(row.exposure_if_filled) || 0 : 0),
+      0,
+    ),
+    [excludedOrderKeys, orderKeys, orderRows],
+  );
+
+  const toggleOrder = (key: string) => {
+    setExcludedOrderKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   useEffect(() => {
     refresh();
@@ -284,6 +335,10 @@ export default function PortfolioRiskPage() {
           <p className="mt-1 text-sm text-slate-600">
             Pending buy order notional: {formatMoney(metrics.open_buy_order_notional, currency)}
           </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Percentages show signed exposure if filled as a share of account capacity at each leverage target.
+            Positive values add exposure; negative values close existing exposure. Short options use assignment value.
+          </p>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -291,29 +346,73 @@ export default function PortfolioRiskPage() {
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="py-2 pr-4">Symbol</th>
+                  <th className="py-2 pr-4 text-center">Include</th>
                   <th className="py-2 pr-4">Action</th>
                   <th className="py-2 pr-4">Type</th>
                   <th className="py-2 pr-4">Status</th>
                   <th className="py-2 pr-4 text-right">Qty</th>
                   <th className="py-2 pr-4 text-right">Limit</th>
                   <th className="py-2 pr-4 text-right">Notional</th>
+                  <th className="py-2 pr-4 text-right">Exposure If Filled</th>
+                  <th className="py-2 pr-4 text-right">1.00x</th>
+                  <th className="py-2 pr-4 text-right">1.25x</th>
+                  <th className="py-2 pr-4 text-right">1.50x</th>
+                  <th className="py-2 pr-4 text-right">2.00x</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {(data?.open_orders || []).map((row) => (
+                {orderRows.map((row, index) => (
                   <tr key={`${row.order_id}-${row.symbol}`}>
-                    <td className="py-3 pr-4 font-medium">{row.symbol}</td>
+                    <td className="py-3 pr-4">
+                      <div className="font-medium">{row.local_symbol || row.symbol}</div>
+                      <div className="text-xs text-slate-500">{row.exposure_basis}</div>
+                      <div className="text-xs text-slate-400">
+                        Position {formatNumber(row.position_before, 2)} to {formatNumber(row.position_after, 2)}
+                      </div>
+                    </td>
+                    <td className="py-3 pr-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={!excludedOrderKeys.has(orderKeys[index])}
+                        onChange={() => toggleOrder(orderKeys[index])}
+                        aria-label={`Include ${row.local_symbol || row.symbol} in subtotal`}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                      />
+                    </td>
                     <td className="py-3 pr-4">{row.action}</td>
                     <td className="py-3 pr-4">{row.order_type}</td>
                     <td className="py-3 pr-4">{row.status}</td>
                     <td className="py-3 pr-4 text-right">{formatNumber(row.quantity, 0)}</td>
                     <td className="py-3 pr-4 text-right">{formatMoney(row.limit_price, currency)}</td>
                     <td className="py-3 pr-4 text-right">{formatMoney(row.estimated_notional, currency)}</td>
+                    <td className={`py-3 pr-4 text-right font-medium ${exposureClass(row.exposure_if_filled)}`}>
+                      {formatMoney(row.exposure_if_filled, currency)}
+                    </td>
+                    {[1, 1.25, 1.5, 2].map((target) => (
+                      <td key={target} className={`py-3 pr-4 text-right ${exposureClass(row.exposure_if_filled)}`}>
+                        {formatSignedCapacityPercent(row.exposure_if_filled, metrics.net_liquidation, target)}
+                      </td>
+                    ))}
                   </tr>
                 ))}
-                {!data?.open_orders?.length ? (
+                {orderRows.length ? (
+                  <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+                    <td className="py-3 pr-4">Selected subtotal</td>
+                    <td className="py-3 pr-4 text-center">{orderRows.length - excludedOrderKeys.size}/{orderRows.length}</td>
+                    <td className="py-3 pr-4" colSpan={6} />
+                    <td className={`py-3 pr-4 text-right ${exposureClass(includedExposure)}`}>
+                      {formatMoney(includedExposure, currency)}
+                    </td>
+                    {[1, 1.25, 1.5, 2].map((target) => (
+                      <td key={target} className={`py-3 pr-4 text-right ${exposureClass(includedExposure)}`}>
+                        {formatSignedCapacityPercent(includedExposure, metrics.net_liquidation, target)}
+                      </td>
+                    ))}
+                  </tr>
+                ) : null}
+                {!orderRows.length ? (
                   <tr>
-                    <td className="py-4 text-slate-500" colSpan={7}>
+                    <td className="py-4 text-slate-500" colSpan={13}>
                       No open orders reported by IB.
                     </td>
                   </tr>

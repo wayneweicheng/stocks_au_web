@@ -18,7 +18,7 @@ from app.services.stock_analysis.report_generator import generate_report
 
 logger = logging.getLogger("app.stock_analysis")
 
-DEFAULT_STOCK_ANALYSIS_MODEL = "google/gemma-4-26b-a4b-it"
+DEFAULT_STOCK_ANALYSIS_MODEL = "deepseek/deepseek-v4-flash"
 SKILL_ROOT = Path(r"C:\Repo\midas-touch\ASX-spec-analyzer")
 SKILL_CONTEXT_PACK_SCRIPT = SKILL_ROOT / "scripts" / "run_asx_context_pack.py"
 

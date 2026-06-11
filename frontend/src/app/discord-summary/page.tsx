@@ -3,6 +3,10 @@
 import { useState, useCallback } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import {
+  DEFAULT_MARKET_FLOW_MODEL,
+  SHARED_MARKET_FLOW_MODEL_OPTIONS,
+} from "../components/llmModelOptions";
 
 export default function DiscordSummaryPage() {
   const [observationDate, setObservationDate] = useState<string>(() => {
@@ -14,7 +18,7 @@ export default function DiscordSummaryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [cached, setCached] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<string>("google/gemini-2.5-flash");
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
 
   const [promptText, setPromptText] = useState<string>("");
   const [promptLoading, setPromptLoading] = useState(false);
@@ -27,7 +31,7 @@ export default function DiscordSummaryPage() {
 
   const [activeTab, setActiveTab] = useState<"overview" | "followers">("overview");
 
-  const [followersModel, setFollowersModel] = useState<string>("google/gemini-2.5-flash");
+  const [followersModel, setFollowersModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
   const [followersLoading, setFollowersLoading] = useState(false);
   const [followersError, setFollowersError] = useState("");
   const [followersCached, setFollowersCached] = useState(false);
@@ -327,12 +331,11 @@ export default function DiscordSummaryPage() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/40"
                 >
-                  <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-                  <option value="google/gemini-2.0-flash-thinking-exp:free">Gemini 2.0 Flash Thinking</option>
-                  <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                  <option value="qwen/qwen-2.5-72b-instruct">Qwen 2.5 72B</option>
-                  <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
-                  <option value="x-ai/grok-2-1212">Grok 2</option>
+                  {SHARED_MARKET_FLOW_MODEL_OPTIONS.map((model) => (
+                    <option key={model.value} value={model.value}>
+                      {model.label}
+                    </option>
+                  ))}
                 </select>
 
                 <button
@@ -416,12 +419,11 @@ export default function DiscordSummaryPage() {
                   onChange={(e) => setFollowersModel(e.target.value)}
                   className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/40"
                 >
-                  <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-                  <option value="google/gemini-2.0-flash-thinking-exp:free">Gemini 2.0 Flash Thinking</option>
-                  <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                  <option value="qwen/qwen-2.5-72b-instruct">Qwen 2.5 72B</option>
-                  <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
-                  <option value="x-ai/grok-2-1212">Grok 2</option>
+                  {SHARED_MARKET_FLOW_MODEL_OPTIONS.map((model) => (
+                    <option key={model.value} value={model.value}>
+                      {model.label}
+                    </option>
+                  ))}
                 </select>
 
                 <button

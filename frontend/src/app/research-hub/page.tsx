@@ -7,6 +7,10 @@ import MarkdownRenderer from "../components/MarkdownRenderer";
 import PageHeader from "../components/PageHeader";
 import StockAnalysisTab from "../components/StockAnalysisTab";
 import AsxDataRefreshTab from "../components/AsxDataRefreshTab";
+import {
+  DEFAULT_MARKET_FLOW_MODEL,
+  SHARED_MARKET_FLOW_MODEL_OPTIONS,
+} from "../components/llmModelOptions";
 
 // Types
 type Commenter = {
@@ -161,11 +165,11 @@ export default function ResearchHubPage() {
   const [annLoading, setAnnLoading] = useState(false);
   const [annError, setAnnError] = useState<string>("");
 
-  // LLM generation (same model default as breakout-consolidation)
+  // LLM generation
   const [annAnalysis, setAnnAnalysis] = useState<string>("");
   const [annAnalysisLoading, setAnnAnalysisLoading] = useState(false);
   const [annAnalysisError, setAnnAnalysisError] = useState<string>("");
-  const [annSelectedModel, setAnnSelectedModel] = useState<string>("google/gemini-3-flash-preview");
+  const [annSelectedModel, setAnnSelectedModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
   const [annAnalysisCached, setAnnAnalysisCached] = useState<boolean>(false);
   const [annAnalysisCachedAt, setAnnAnalysisCachedAt] = useState<string | null>(null);
 
@@ -1478,7 +1482,11 @@ export default function ResearchHubPage() {
                 className="rounded-md border border-slate-300 px-3 py-2 text-sm"
                 title="LLM Model"
               >
-                <option value="google/gemini-3-flash-preview">google/gemini-3-flash-preview</option>
+                {SHARED_MARKET_FLOW_MODEL_OPTIONS.map((model) => (
+                  <option key={model.value} value={model.value}>
+                    {model.label}
+                  </option>
+                ))}
               </select>
               <button
                 type="button"

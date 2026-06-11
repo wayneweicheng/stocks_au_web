@@ -24,7 +24,10 @@ DATABASE = "StockDB_US"
 CONFIG_SCHEMA = "Configuration"
 CONFIG_TABLE = "GEXAutoInsightStocks"
 DEFAULT_GEX_AUTO_INSIGHT_MODEL = "google/gemma-4-26b-a4b-it"
-LEGACY_GEX_AUTO_INSIGHT_MODEL = "google/gemini-2.5-flash"
+LEGACY_GEX_AUTO_INSIGHT_MODELS = {
+    "google/gemini-2.5-flash",
+    "deepseek/deepseek-v4-flash",
+}
 
 
 class GEXAutoInsightService:
@@ -50,7 +53,7 @@ class GEXAutoInsightService:
 
     def _resolve_llm_model(self, model: Optional[str] = None) -> str:
         configured_model = (model or "").strip()
-        if not configured_model or configured_model == LEGACY_GEX_AUTO_INSIGHT_MODEL:
+        if not configured_model or configured_model in LEGACY_GEX_AUTO_INSIGHT_MODELS:
             return DEFAULT_GEX_AUTO_INSIGHT_MODEL
         return configured_model
 
@@ -78,7 +81,9 @@ class GEXAutoInsightService:
 
             result = []
             for row in rows:
-                result.append(dict(zip(columns, row)))
+                item = dict(zip(columns, row))
+                item["LLMModel"] = self._resolve_llm_model(item.get("LLMModel"))
+                result.append(item)
 
             logger.info(f"Retrieved {len(result)} configured stocks (active_only={active_only})")
             return result
@@ -122,7 +127,13 @@ class GEXAutoInsightService:
                     @pbitIsActive = ?,
                     @pintPriority = ?,
                     @pvchLLMModel = ?""",
-                (normalized_code, display_name, is_active, priority, llm_model)
+                (
+                    normalized_code,
+                    display_name,
+                    is_active,
+                    priority,
+                    self._resolve_llm_model(llm_model),
+                )
             )
 
             columns = [column[0] for column in cursor.description]

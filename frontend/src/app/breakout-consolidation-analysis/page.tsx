@@ -3,6 +3,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import {
+  DEFAULT_MARKET_FLOW_MODEL,
+  SHARED_MARKET_FLOW_MODEL_OPTIONS,
+} from "../components/llmModelOptions";
 
 export default function BreakoutConsolidationAnalysisPage() {
   const [observationDate, setObservationDate] = useState<string>(() => {
@@ -19,7 +23,7 @@ export default function BreakoutConsolidationAnalysisPage() {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string>("");
   const [analysisCached, setAnalysisCached] = useState<boolean>(false);
-  const [selectedModel, setSelectedModel] = useState<string>("google/gemini-3-flash-preview");
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
 
   // Prompt state
   const [promptText, setPromptText] = useState<string>("");
@@ -251,25 +255,11 @@ export default function BreakoutConsolidationAnalysisPage() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="w-full sm:w-auto rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="google/gemini-3-flash-preview">Gemini 3 Flash Preview (Default)</option>
-                  <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-                  <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                  <option value="google/gemini-3-pro-preview">Gemini 3 Pro Preview</option>
-                  <option value="openai/gpt-5-mini">GPT-5 Mini</option>
-                  <option value="openai/gpt-5.1">GPT-5.1</option>
-                  <option value="openai/gpt-5.2">GPT-5.2</option>
-                  <option value="openai/gpt-4.1-mini">GPT-4.1 Mini</option>
-                  <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-                  <option value="openai/gpt-4o-2024-11-20">GPT-4o (2024-11-20)</option>
-                  <option value="openai/gpt-4o-mini-2024-07-18">GPT-4o Mini (2024-07-18)</option>
-                  <option value="qwen/qwen3-30b-a3b">Qwen3 30B</option>
-                  <option value="deepseek/deepseek-v3.2">DeepSeek V3.2</option>
-                  <option value="deepseek/deepseek-r1-distill-qwen-32b">DeepSeek R1 Qwen3 32B</option>
-                  <option value="anthropic/claude-3.7-sonnet:thinking">Claude 3.7 Sonnet (Thinking)</option>
-                  <option value="x-ai/grok-4.1-fast">Grok 4.1 Fast</option>
-                  <option value="bytedance-seed/seed-1.6-flash">Seed 1.6 Flash</option>
-                  <option value="moonshotai/kimi-k2-thinking">Kimi K2 Thinking</option>
-                  <option value="z-ai/glm-4.7-flash">GLM-4.7 Flash</option>
+                  {SHARED_MARKET_FLOW_MODEL_OPTIONS.map((model) => (
+                    <option key={model.value} value={model.value}>
+                      {model.label}
+                    </option>
+                  ))}
                 </select>
                 <button
                   type="button"

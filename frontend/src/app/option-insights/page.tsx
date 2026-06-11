@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import InsightTab from "../components/InsightTab";
+import { DEFAULT_MARKET_FLOW_MODEL } from "../components/llmModelOptions";
 
 export default function OptionInsightsPage() {
   const [observationDate, setObservationDate] = useState<string>(() => {
@@ -19,7 +20,7 @@ export default function OptionInsightsPage() {
   const [optionPredictionError, setOptionPredictionError] = useState<string>("");
   const [optionPredictionCached, setOptionPredictionCached] = useState<boolean>(false);
   const [optionPredictionWarning, setOptionPredictionWarning] = useState<string>("");
-  const [selectedOptionModel, setSelectedOptionModel] = useState<string>("google/gemini-2.5-flash");
+  const [selectedOptionModel, setSelectedOptionModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
 
   const [optionPromptText, setOptionPromptText] = useState<string>("");
   const [optionPromptLoading, setOptionPromptLoading] = useState(false);
