@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import logging
+import math
 from threading import Lock
 from time import monotonic
 from typing import Any, Dict, List
@@ -30,6 +31,37 @@ def _load_price_mapping() -> List[Dict[str, Any]]:
         (0,),
     )
     return rows or []
+
+
+def _load_latest_spx_30m_price() -> Dict[str, Any] | None:
+    model = SQLServerModel(database=DATABASE)
+    rows = model.execute_read_query(
+        """
+        SELECT TOP (1)
+            [Close] AS Price,
+            TimeIntervalStart
+        FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame]
+        WHERE ASXCode = ?
+          AND TimeFrame = ?
+        ORDER BY TimeIntervalStart DESC
+        """,
+        ("SPXW.US", "30M"),
+    ) or []
+    if not rows:
+        return None
+
+    try:
+        price = float(rows[0]["Price"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not math.isfinite(price) or price <= 0:
+        return None
+
+    return {
+        "price": round(price, 4),
+        "source": "database_30m_close",
+        "timestamp": rows[0].get("TimeIntervalStart"),
+    }
 
 
 def _get_price_mapping(force_refresh: bool = False) -> tuple[List[Dict[str, Any]], datetime, bool]:
@@ -65,6 +97,12 @@ def get_index_stock_price_mapping(
         except Exception:
             logger.warning("Unable to load the current SPX index price", exc_info=True)
             spx_quote = None
+        if spx_quote is None:
+            try:
+                spx_quote = _load_latest_spx_30m_price()
+            except Exception:
+                logger.warning("Unable to load the latest SPX 30-minute price", exc_info=True)
+                spx_quote = None
         logger.info(
             "Returned %s index price mapping rows (cached=%s, user=%s)",
             len(rows),

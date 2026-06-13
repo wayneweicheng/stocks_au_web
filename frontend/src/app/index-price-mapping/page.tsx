@@ -147,10 +147,6 @@ export default function IndexPriceMappingPage() {
     void loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [query, pageSize, spxRange]);
-
   const columns = data?.columns ?? [];
   const spxColumn = useMemo(() => findSpxPriceColumn(columns), [columns]);
   const spxRangeDetails = useMemo(() => {
@@ -210,6 +206,10 @@ export default function IndexPriceMappingPage() {
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setPage(Math.ceil(pageCount / 2));
+  }, [pageCount, pageSize, query, spxRange]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
