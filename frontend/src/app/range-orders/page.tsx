@@ -26,6 +26,11 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+function formatPriceInput(value: string): string {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed.toFixed(2) : value;
+}
+
 function ceilInt(n: number): number {
   return Math.ceil(n);
 }
@@ -82,6 +87,22 @@ export default function RangeOrdersPage() {
   const [cancelling, setCancelling] = useState<boolean>(false);
   const [cancelResult, setCancelResult] = useState<any | null>(null);
   const [cancelError, setCancelError] = useState<string>("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const stock = params.get("stock")?.trim().toUpperCase();
+    const requestedSide = params.get("side");
+    const start = Number(params.get("start"));
+    const end = Number(params.get("end"));
+
+    if (stock) setStockCode(stock);
+    if (requestedSide === "Buy" || requestedSide === "Sell") setSide(requestedSide);
+    if (Number.isFinite(start) && start > 0) setStartPrice(start.toFixed(2));
+    if (Number.isFinite(end) && end > 0) setEndPrice(end.toFixed(2));
+    if (stock || requestedSide || (Number.isFinite(start) && start > 0) || (Number.isFinite(end) && end > 0)) {
+      setPositionMode("open");
+    }
+  }, []);
 
   // Bracket order settings (SMART only)
   const [enableBracket, setEnableBracket] = useState<boolean>(false);
@@ -1032,6 +1053,7 @@ export default function RangeOrdersPage() {
                 min="0"
                 value={startPrice}
                 onChange={(e) => setStartPrice(e.target.value)}
+                onBlur={() => setStartPrice((value) => formatPriceInput(value))}
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
@@ -1053,6 +1075,7 @@ export default function RangeOrdersPage() {
                 min="0"
                 value={endPrice}
                 onChange={(e) => setEndPrice(e.target.value)}
+                onBlur={() => setEndPrice((value) => formatPriceInput(value))}
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />

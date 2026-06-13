@@ -11,6 +11,7 @@ from math import erf, exp, log, sqrt
 from typing import Any, Dict, List, Optional
 
 from app.core.config import settings
+from app.core.db import get_sql_model
 
 try:
     from ib_insync import IB, Stock, Option  # type: ignore
@@ -26,6 +27,8 @@ RISK_FREE_RATE = 0.045
 DOWN_MOVE_IV_EXPANSION = 0.02
 UP_MOVE_IV_CRUSH = -0.01
 MAX_IV_SHIFT = 0.10
+MAX_UNDERLYING_IV_ADJUSTMENT = 0.03
+UNDERLYING_IV_ADJUSTMENT_WEIGHT = 0.25
 DEFAULT_FALLBACK_IV = 0.35
 
 
@@ -41,6 +44,76 @@ class OptionQuote:
     gamma: Optional[float]
     theta: Optional[float]
     vega: Optional[float]
+    market_data_type: Optional[int] = None
+
+
+def _normalize_iv(value: Any) -> Optional[float]:
+    iv = _clean(value)
+    if iv is None or iv <= 0:
+        return None
+    normalized = iv / 100.0 if iv > 3 else iv
+    return normalized if 0.01 <= normalized <= 5.0 else None
+
+
+def _spread_pct(bid: Optional[float], ask: Optional[float]) -> Optional[float]:
+    if bid is None or ask is None or bid <= 0 or ask < bid:
+        return None
+    return round((ask - bid) * 100.0 / bid, 2)
+
+
+def _latest_delayed_quotes(symbol: str, expiry: str) -> Dict[str, Dict[str, Any]]:
+    model = get_sql_model()
+    db_symbol = f"{_base_symbol(symbol)}.US"
+    expiry_date = _expiry_date(expiry).isoformat()
+    rows = model.execute_read_query(
+        """
+        WITH LatestQuotes AS (
+            SELECT
+                OptionSymbol,
+                ObservationDate,
+                Bid,
+                Ask,
+                Volume,
+                IV,
+                ROW_NUMBER() OVER (
+                    PARTITION BY OptionSymbol
+                    ORDER BY ObservationDate DESC
+                ) AS RowNumber
+            FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
+            WHERE ASXCode = ?
+              AND ExpiryDate = ?
+        )
+        SELECT OptionSymbol, ObservationDate, Bid, Ask, Volume, IV
+        FROM LatestQuotes
+        WHERE RowNumber = 1
+        """,
+        (db_symbol, expiry_date),
+    ) or []
+
+    quotes: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        option_symbol = str(row.get("OptionSymbol") or "").strip().upper()
+        if not option_symbol:
+            continue
+        bid = _clean(row.get("Bid"))
+        ask = _clean(row.get("Ask"))
+        volume = _clean(row.get("Volume"))
+        iv = _normalize_iv(row.get("IV"))
+        observation_date = row.get("ObservationDate")
+        quotes[option_symbol] = {
+            "bid": _round(bid),
+            "ask": _round(ask),
+            "mid": _round((bid + ask) / 2.0) if bid is not None and ask is not None else None,
+            "spread_pct": _spread_pct(bid, ask),
+            "volume": int(volume) if volume is not None else None,
+            "iv": _round(iv, 6),
+            "observation_date": (
+                observation_date.isoformat()
+                if hasattr(observation_date, "isoformat")
+                else str(observation_date or "")
+            ),
+        }
+    return quotes
 
 
 def _connect_ib() -> "tuple[IB, asyncio.AbstractEventLoop]":
@@ -117,6 +190,10 @@ def _clean(value: Any) -> Optional[float]:
 def _round(value: Optional[float], digits: int = 4) -> Optional[float]:
     return None if value is None else round(float(value), digits)
 
+def _positive_price(value: Any) -> Optional[float]:
+    price = _clean(value)
+    return price if price is not None and price > 0 else None
+
 
 def _normal_cdf(value: float) -> float:
     return 0.5 * (1 + erf(value / sqrt(2)))
@@ -175,19 +252,23 @@ def _quote_underlying(ib: "IB", symbol: str) -> Dict[str, Any]:
         ib.reqMarketDataType(1)
     except Exception:
         pass
-    ticker = ib.reqMktData(contract, "221,225,294,295", False, False)
+    ticker = ib.reqMktData(contract, "104,106,221,225,294,295", False, False)
     start = time.time()
-    bid = ask = last = close = None
+    bid = ask = last = close = implied_volatility = historical_volatility = None
     while time.time() - start < 4.0:
         ib.sleep(0.2)
-        bid = _clean(getattr(ticker, "bid", None))
-        ask = _clean(getattr(ticker, "ask", None))
-        last = _clean(getattr(ticker, "last", None))
-        close = _clean(getattr(ticker, "close", None))
-        if bid is not None or ask is not None or last is not None or close is not None:
+        bid = _positive_price(getattr(ticker, "bid", None))
+        ask = _positive_price(getattr(ticker, "ask", None))
+        last = _positive_price(getattr(ticker, "last", None))
+        close = _positive_price(getattr(ticker, "close", None))
+        implied_volatility = _normalize_iv(getattr(ticker, "impliedVolatility", None))
+        historical_volatility = _normalize_iv(getattr(ticker, "histVolatility", None))
+        has_price = bid is not None or ask is not None or last is not None or close is not None
+        if has_price and (implied_volatility is not None or historical_volatility is not None):
             break
     mid = (bid + ask) / 2 if bid is not None and ask is not None else None
     reference = mid or last or close or bid or ask
+    market_data_type = getattr(ticker, "marketDataType", None)
     return {
         "symbol": _base_symbol(symbol),
         "con_id": getattr(contract, "conId", None),
@@ -197,6 +278,9 @@ def _quote_underlying(ib: "IB", symbol: str) -> Dict[str, Any]:
         "close": _round(close),
         "mid": _round(mid),
         "reference_price": _round(reference),
+        "implied_volatility": _round(implied_volatility, 6),
+        "historical_volatility": _round(historical_volatility, 6),
+        "market_data_type": int(market_data_type) if market_data_type in {1, 2, 3, 4} else None,
     }
 
 
@@ -213,7 +297,7 @@ def _quote_option(ib: "IB", symbol: str, expiry: str, strike: float, right: str)
     contract = _option_contract(symbol, expiry, strike, right)
     qualified = ib.qualifyContracts(contract)
     if not qualified:
-        return OptionQuote(None, None, None, None, None, None, None, None, None, None)
+        return OptionQuote(None, None, None, None, None, None, None, None, None, None, None)
     contract = qualified[0]
 
     for market_data_type in [1, 3]:
@@ -225,10 +309,10 @@ def _quote_option(ib: "IB", symbol: str, expiry: str, strike: float, right: str)
         start = time.time()
         while time.time() - start < 1.5:
             ib.sleep(0.25)
-            bid = _clean(getattr(ticker, "bid", None))
-            ask = _clean(getattr(ticker, "ask", None))
-            last = _clean(getattr(ticker, "last", None))
-            close = _clean(getattr(ticker, "close", None))
+            bid = _positive_price(getattr(ticker, "bid", None))
+            ask = _positive_price(getattr(ticker, "ask", None))
+            last = _positive_price(getattr(ticker, "last", None))
+            close = _positive_price(getattr(ticker, "close", None))
             iv = _option_greek(ticker, "impliedVol")
             if bid is not None or ask is not None or last is not None or close is not None or iv is not None:
                 mid = (bid + ask) / 2 if bid is not None and ask is not None else None
@@ -243,9 +327,14 @@ def _quote_option(ib: "IB", symbol: str, expiry: str, strike: float, right: str)
                     gamma=_option_greek(ticker, "gamma"),
                     theta=_option_greek(ticker, "theta"),
                     vega=_option_greek(ticker, "vega"),
+                    market_data_type=(
+                        int(getattr(ticker, "marketDataType", market_data_type))
+                        if getattr(ticker, "marketDataType", market_data_type) in {1, 2, 3, 4}
+                        else market_data_type
+                    ),
                 )
 
-    return OptionQuote(None, None, None, None, None, None, None, None, None, None)
+    return OptionQuote(None, None, None, None, None, None, None, None, None, None, None)
 
 
 def _quote_with_iv(
@@ -277,6 +366,7 @@ def _quote_with_iv(
         gamma=quote.gamma,
         theta=quote.theta,
         vega=quote.vega,
+        market_data_type=quote.market_data_type,
     )
 
 
@@ -344,6 +434,7 @@ def get_option_chain(
                 logger.warning("Option orders: failed to qualify chain chunk for %s: %s", symbol, exc)
 
         valid_keys = {_contract_key(contract): contract for contract in valid_contracts}
+        delayed_quotes = _latest_delayed_quotes(symbol, expirations[0]) if len(expirations) == 1 else {}
         rows: List[Dict[str, Any]] = []
         for row in candidate_rows:
             key = (row["expiry"], round(float(row["strike"]), 4), row["right"])
@@ -353,6 +444,7 @@ def get_option_chain(
             next_row = dict(row)
             next_row["con_id"] = getattr(contract, "conId", None)
             next_row["local_symbol"] = getattr(contract, "localSymbol", None)
+            next_row["delayed_quote"] = delayed_quotes.get(str(row["option_symbol"]).upper())
             rows.append(next_row)
 
         return {
@@ -433,7 +525,9 @@ def estimate_option_price(
             raise RuntimeError("IB did not return a usable underlying price")
 
         warnings: List[str] = []
-        selected_quote = _quote_with_iv(ib, symbol, expiry, strike, right, current_price)
+        selected_quote = _quote_option(ib, symbol, expiry, strike, right)
+        delayed_quotes = _latest_delayed_quotes(symbol, expiry)
+        delayed_quote = delayed_quotes.get(_occ_symbol(symbol, expiry, right, strike).upper())
 
         chains = ib.reqSecDefOptParams(_base_symbol(symbol), "", "STK", int(underlying["con_id"]))
         chain = next((c for c in chains if str(getattr(c, "exchange", "")).upper() == "SMART"), chains[0] if chains else None)
@@ -441,31 +535,115 @@ def estimate_option_price(
         nearest_index = min(range(len(all_strikes)), key=lambda index: abs(all_strikes[index] - strike)) if all_strikes else 0
         nearby_strikes = all_strikes[max(0, nearest_index - 2): min(len(all_strikes), nearest_index + 3)]
 
-        skew_points: List[tuple[float, float]] = []
+        skew_by_strike: Dict[float, float] = {}
         for nearby_strike in nearby_strikes:
-            quote = selected_quote if abs(nearby_strike - strike) < 0.0001 else _quote_with_iv(
-                ib,
-                symbol,
-                expiry,
-                nearby_strike,
-                right,
-                current_price,
+            database_quote = delayed_quotes.get(
+                _occ_symbol(symbol, expiry, right, nearby_strike).upper()
             )
-            if quote.iv is not None and quote.iv > 0:
-                skew_points.append((nearby_strike, quote.iv))
+            database_iv = _normalize_iv((database_quote or {}).get("iv"))
+            if database_iv is not None:
+                skew_by_strike[nearby_strike] = database_iv
 
-        pricing_iv = selected_quote.iv
-        if pricing_iv is None or pricing_iv <= 0:
-            if skew_points:
-                nearest_iv_point = min(skew_points, key=lambda point: abs(point[0] - strike))
-                pricing_iv = nearest_iv_point[1]
-                warnings.append(
-                    "IB did not return IV/price for the selected contract; used nearest available strike IV."
+        selected_ib_iv = _normalize_iv(selected_quote.iv)
+        selected_live_ib_iv = selected_ib_iv if selected_quote.market_data_type == 1 else None
+        selected_delayed_ib_iv = selected_ib_iv if selected_quote.market_data_type in {2, 3, 4} else None
+        selected_database_iv = _normalize_iv((delayed_quote or {}).get("iv"))
+        live_timestamps_match = (
+            selected_quote.market_data_type == 1
+            and underlying.get("market_data_type") == 1
+        )
+        live_option_price = (
+            _positive_price(selected_quote.mid)
+            or _positive_price(selected_quote.last)
+        )
+        selected_market_implied_iv = (
+            _implied_vol_from_price(
+                right,
+                strike,
+                current_price,
+                _dte(expiry),
+                live_option_price,
+            )
+            if live_timestamps_match
+            else None
+        )
+        underlying_implied_iv = _normalize_iv(underlying.get("implied_volatility"))
+        underlying_historical_iv = _normalize_iv(underlying.get("historical_volatility"))
+
+        if selected_live_ib_iv is not None:
+            skew_by_strike[strike] = selected_live_ib_iv
+
+        if len(skew_by_strike) < 2:
+            for nearby_strike in nearby_strikes:
+                if nearby_strike in skew_by_strike:
+                    continue
+                quote = selected_quote if abs(nearby_strike - strike) < 0.0001 else _quote_with_iv(
+                    ib,
+                    symbol,
+                    expiry,
+                    nearby_strike,
+                    right,
+                    current_price,
                 )
-            else:
-                pricing_iv = DEFAULT_FALLBACK_IV
+                quote_iv = _normalize_iv(quote.iv)
+                if quote_iv is not None:
+                    skew_by_strike[nearby_strike] = quote_iv
+
+        skew_points = sorted(skew_by_strike.items())
+        nearest_surface_iv = (
+            min(skew_points, key=lambda point: abs(point[0] - strike))[1]
+            if skew_points
+            else None
+        )
+        delayed_atm_iv = (
+            min(skew_points, key=lambda point: abs(point[0] - current_price))[1]
+            if skew_points
+            else None
+        )
+
+        iv_candidates = [
+            ("live IB selected contract IV", selected_live_ib_iv),
+            ("live contract midpoint-implied IV", selected_market_implied_iv),
+            ("latest delayed quote IV", selected_database_iv),
+            ("IB delayed contract IV", selected_delayed_ib_iv),
+            ("nearby same-expiry contract IV", nearest_surface_iv),
+            ("IB underlying implied volatility proxy", underlying_implied_iv),
+            ("IB underlying historical volatility", underlying_historical_iv),
+            ("35% hard fallback", DEFAULT_FALLBACK_IV),
+        ]
+        iv_source, pricing_iv = next(
+            (source, value)
+            for source, value in iv_candidates
+            if value is not None and value > 0
+        )
+        if iv_source != "live IB selected contract IV":
+            warnings.append(f"Live selected-contract IV was unavailable; used {iv_source}.")
+        if iv_source == "35% hard fallback":
+            warnings.append("No contract, nearby-strike, or underlying volatility evidence was available.")
+
+        underlying_iv_adjustment = 0.0
+        if (
+            iv_source in {
+                "latest delayed quote IV",
+                "IB delayed contract IV",
+                "nearby same-expiry contract IV",
+            }
+            and underlying_implied_iv is not None
+            and delayed_atm_iv is not None
+        ):
+            raw_underlying_adjustment = (
+                underlying_implied_iv - delayed_atm_iv
+            ) * UNDERLYING_IV_ADJUSTMENT_WEIGHT
+            underlying_iv_adjustment = max(
+                min(raw_underlying_adjustment, MAX_UNDERLYING_IV_ADJUSTMENT),
+                -MAX_UNDERLYING_IV_ADJUSTMENT,
+            )
+            pricing_iv = max(pricing_iv + underlying_iv_adjustment, 0.05)
+            if abs(underlying_iv_adjustment) >= 0.0001:
                 warnings.append(
-                    f"IB did not return option IV or price data; used fallback IV {DEFAULT_FALLBACK_IV:.0%}."
+                    "Adjusted delayed contract IV by "
+                    f"{underlying_iv_adjustment:+.2%} using the current underlying-IV regime "
+                    f"(capped at +/-{MAX_UNDERLYING_IV_ADJUSTMENT:.0%})."
                 )
 
         price_move_pct = (target_underlying_price - current_price) / current_price
@@ -510,7 +688,9 @@ def estimate_option_price(
                 "gamma": _round(selected_quote.gamma, 6),
                 "theta": _round(selected_quote.theta, 6),
                 "vega": _round(selected_quote.vega, 6),
+                "market_data_type": selected_quote.market_data_type,
             },
+            "delayed_quote": delayed_quote,
             "warnings": warnings,
             "estimated_price": round(conservative, 2),
             "base_case": round(base_case, 4),
@@ -518,6 +698,19 @@ def estimate_option_price(
             "conservative": round(conservative, 4),
             "adjusted_iv": round(adjusted_iv, 6),
             "contract_iv": round(pricing_iv, 6),
+            "iv_source": iv_source,
+            "iv_clues": {
+                "ib_contract_iv": _round(selected_ib_iv, 6),
+                "ib_contract_market_data_type": selected_quote.market_data_type,
+                "delayed_quote_iv": _round(selected_database_iv, 6),
+                "market_implied_iv": _round(selected_market_implied_iv, 6),
+                "nearby_contract_iv": _round(nearest_surface_iv, 6),
+                "delayed_atm_iv": _round(delayed_atm_iv, 6),
+                "underlying_implied_iv": _round(underlying_implied_iv, 6),
+                "underlying_historical_iv": _round(underlying_historical_iv, 6),
+                "underlying_iv_adjustment": _round(underlying_iv_adjustment, 6),
+                "timestamps_match_for_market_iv": live_timestamps_match,
+            },
             "skew_adjustment": round(iv_skew_adjustment, 6),
             "directional_iv_adjustment": round(iv_directional, 6),
             "total_iv_shift": round(total_iv_shift, 6),

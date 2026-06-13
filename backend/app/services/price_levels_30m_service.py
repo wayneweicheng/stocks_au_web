@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from statistics import median
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from app.core.db import get_sql_model
+from app.services.live_stock_price_service import get_live_stock_prices
 
 ATR_PERIOD = 14
 MIN_ZONE_DISTANCE_ATR = 0.33
 MAX_ZONE_DISTANCE_ATR = 3.0
+US_EASTERN = ZoneInfo("America/New_York")
+logger = logging.getLogger("app.price_levels_30m_service")
 
 
 def _number(value: Any) -> Optional[float]:
@@ -24,6 +29,19 @@ def _timestamp(value: Any) -> datetime:
     if isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value))
+
+
+def _should_use_live_prices(
+    observation_date: date,
+    market_today: date,
+    recent_trading_dates: List[date],
+) -> bool:
+    live_dates = {market_today}
+    prior_trading_dates = [
+        trading_date for trading_date in recent_trading_dates if trading_date < market_today
+    ][:2]
+    live_dates.update(prior_trading_dates)
+    return observation_date in live_dates
 
 
 def _cluster_levels(points: List[Dict[str, Any]], tolerance: float) -> List[Dict[str, Any]]:
@@ -134,15 +152,35 @@ def _select_reasonable_levels(
     levels: List[Dict[str, Any]],
     latest_close: float,
     atr_daily: float,
+    minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
+    maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
 ) -> List[Dict[str, Any]]:
     selected: List[Dict[str, Any]] = []
     for level in levels:
         distance_atr = abs(level["price"] - latest_close) / atr_daily if atr_daily > 0 else None
         if distance_atr is None:
             continue
-        if MIN_ZONE_DISTANCE_ATR <= distance_atr <= MAX_ZONE_DISTANCE_ATR:
+        if minimum_distance_atr <= distance_atr <= maximum_distance_atr:
             level["distance_atr"] = distance_atr
             selected.append(level)
+
+    def quality_key(level: Dict[str, Any]) -> tuple[Any, ...]:
+        sources = set(level.get("sources", ["30m"]))
+        has_confluence = "30m" in sources and "gamma" in sources
+        touches = int(level.get("touches") or 0)
+        wall = level.get("gamma_wall") or {}
+        gamma_open_interest = int(wall.get("open_interest") or 0)
+        latest_touch = level.get("latest_touch")
+        recency = latest_touch.timestamp() if isinstance(latest_touch, datetime) else 0.0
+        return (
+            -int(has_confluence),
+            -touches,
+            -gamma_open_interest,
+            -recency,
+            level["distance_atr"],
+        )
+
+    selected.sort(key=quality_key)
     return selected[:2]
 
 
@@ -151,6 +189,10 @@ def _calculate_levels(
     bars: List[Dict[str, Any]],
     daily_bars: List[Dict[str, Any]],
     gamma_walls: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    reference_price: Optional[float] = None,
+    price_source: str = "30m_close",
+    minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
+    maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
 ) -> Optional[Dict[str, Any]]:
     clean_bars: List[Dict[str, Any]] = []
     for row in bars:
@@ -190,10 +232,12 @@ def _calculate_levels(
 
     latest = clean_bars[-1]
     latest_close = latest["close"]
+    has_reference_price = reference_price is not None and reference_price > 0
+    current_price = reference_price if has_reference_price else latest_close
     ranges = [max(bar["high"] - bar["low"], 0.0) for bar in clean_bars]
     median_range = median(ranges) if ranges else 0.0
     atr_daily = _calculate_atr(clean_daily_bars)
-    tolerance = max(latest_close * 0.003, median_range * 0.6, 0.01)
+    tolerance = max(current_price * 0.003, median_range * 0.6, 0.01)
 
     support_points: List[Dict[str, Any]] = []
     resistance_points: List[Dict[str, Any]] = []
@@ -209,18 +253,20 @@ def _calculate_levels(
     support_clusters = _cluster_levels(support_points, tolerance)
     resistance_clusters = _cluster_levels(resistance_points, tolerance)
 
-    supports = [cluster for cluster in support_clusters if cluster["price"] < latest_close]
-    resistances = [cluster for cluster in resistance_clusters if cluster["price"] > latest_close]
+    supports = [cluster for cluster in support_clusters if cluster["price"] < current_price]
+    resistances = [cluster for cluster in resistance_clusters if cluster["price"] > current_price]
 
     if not supports:
         lowest = min(clean_bars, key=lambda bar: bar["low"])
-        supports = [{"price": lowest["low"], "touches": 1, "latest_touch": lowest["time"]}]
+        if lowest["low"] < current_price:
+            supports = [{"price": lowest["low"], "touches": 1, "latest_touch": lowest["time"]}]
     if not resistances:
         highest = max(clean_bars, key=lambda bar: bar["high"])
-        resistances = [{"price": highest["high"], "touches": 1, "latest_touch": highest["time"]}]
+        if highest["high"] > current_price:
+            resistances = [{"price": highest["high"], "touches": 1, "latest_touch": highest["time"]}]
 
-    supports.sort(key=lambda item: (latest_close - item["price"], -item["touches"]))
-    resistances.sort(key=lambda item: (item["price"] - latest_close, -item["touches"]))
+    supports.sort(key=lambda item: (current_price - item["price"], -item["touches"]))
+    resistances.sort(key=lambda item: (item["price"] - current_price, -item["touches"]))
 
     half_width = tolerance / 2.0
     for item in supports:
@@ -234,19 +280,31 @@ def _calculate_levels(
     supports = _merge_gamma_walls(
         supports,
         walls.get("puts", []),
-        latest_close,
+        current_price,
         tolerance,
         "support",
     )
     resistances = _merge_gamma_walls(
         resistances,
         walls.get("calls", []),
-        latest_close,
+        current_price,
         tolerance,
         "resistance",
     )
-    supports = _select_reasonable_levels(supports, latest_close, atr_daily)
-    resistances = _select_reasonable_levels(resistances, latest_close, atr_daily)
+    supports = _select_reasonable_levels(
+        supports,
+        latest_close,
+        atr_daily,
+        minimum_distance_atr,
+        maximum_distance_atr,
+    )
+    resistances = _select_reasonable_levels(
+        resistances,
+        latest_close,
+        atr_daily,
+        minimum_distance_atr,
+        maximum_distance_atr,
+    )
 
     def format_level(item: Dict[str, Any]) -> Dict[str, Any]:
         distance_pct = (item["price"] - latest_close) / latest_close * 100 if latest_close else 0.0
@@ -277,14 +335,16 @@ def _calculate_levels(
         "stock_code": stock_code[:-3] if stock_code.upper().endswith(".US") else stock_code,
         "database_code": stock_code,
         "latest_close": round(latest_close, 4),
+        "reference_price": round(current_price, 4),
+        "price_source": price_source if has_reference_price else "30m_close",
         "latest_bar_time": latest["time"].isoformat(),
         "bar_count": len(clean_bars),
         "median_bar_range": round(median_range, 4),
         "atr_daily": round(atr_daily, 4) if atr_daily > 0 else None,
         "atr_period": ATR_PERIOD,
         "reasonable_distance_atr": {
-            "minimum": MIN_ZONE_DISTANCE_ATR,
-            "maximum": MAX_ZONE_DISTANCE_ATR,
+            "minimum": minimum_distance_atr,
+            "maximum": maximum_distance_atr,
         },
         "supports": [format_level(item) for item in supports[:2]],
         "resistances": [format_level(item) for item in resistances[:2]],
@@ -294,22 +354,45 @@ def _calculate_levels(
 def get_30m_support_resistance(
     observation_date: Optional[date] = None,
     lookback_days: int = 10,
+    minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
+    maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
 ) -> Dict[str, Any]:
-    model = get_sql_model()
+    if minimum_distance_atr > maximum_distance_atr:
+        raise ValueError("Minimum ATR distance cannot exceed maximum ATR distance")
 
+    model = get_sql_model()
+    market_today = datetime.now(US_EASTERN).date()
+
+    date_rows = model.execute_read_query(
+        """
+        SELECT DISTINCT TOP (3)
+            CAST(TimeIntervalStart AS date) AS TradingDate
+        FROM StockDB_US.StockData.PriceHistoryTimeFrame
+        WHERE TimeFrame = '30M'
+          AND CAST(TimeIntervalStart AS date) <= ?
+        ORDER BY TradingDate DESC
+        """,
+        (market_today.isoformat(),),
+    ) or []
+    recent_trading_dates = [
+        value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+        for row in date_rows
+        if (value := row.get("TradingDate")) is not None
+    ]
+    if not recent_trading_dates:
+        return {
+            "observation_date": None,
+            "lookback_days": lookback_days,
+            "atr_range": {
+                "minimum": minimum_distance_atr,
+                "maximum": maximum_distance_atr,
+            },
+            "stocks": [],
+            "count": 0,
+        }
+    latest_available_date = recent_trading_dates[0]
     if observation_date is None:
-        date_rows = model.execute_read_query(
-            """
-            SELECT MAX(CAST(TimeIntervalStart AS date)) AS LatestDate
-            FROM StockDB_US.StockData.PriceHistoryTimeFrame
-            WHERE TimeFrame = '30M'
-            """,
-            (),
-        ) or []
-        latest_value = date_rows[0].get("LatestDate") if date_rows else None
-        if latest_value is None:
-            return {"observation_date": None, "lookback_days": lookback_days, "stocks": [], "count": 0}
-        observation_date = latest_value if isinstance(latest_value, date) else date.fromisoformat(str(latest_value)[:10])
+        observation_date = latest_available_date
 
     rows = model.execute_read_query(
         """
@@ -388,13 +471,34 @@ def get_30m_support_resistance(
             }
         )
 
+    use_live_prices = _should_use_live_prices(
+        observation_date,
+        market_today,
+        recent_trading_dates,
+    )
+    live_prices: Dict[str, Dict[str, Any]] = {}
+    if use_live_prices:
+        try:
+            live_prices = get_live_stock_prices(grouped.keys())
+        except Exception as exc:
+            logger.warning("Live price check failed for live-price observation date: %s", exc)
+
     stocks = []
+    live_price_missing: List[str] = []
     for code, stock_bars in grouped.items():
+        live_quote = live_prices.get(code)
+        if use_live_prices and live_quote is None:
+            live_price_missing.append(code)
+            continue
         result = _calculate_levels(
             code,
             stock_bars,
             daily_by_stock.get(code, []),
             walls_by_stock.get(code),
+            reference_price=_number(live_quote.get("price")) if live_quote else None,
+            price_source=str(live_quote.get("source")) if live_quote else "30m_close",
+            minimum_distance_atr=minimum_distance_atr,
+            maximum_distance_atr=maximum_distance_atr,
         )
         if result is not None:
             stocks.append(result)
@@ -402,7 +506,15 @@ def get_30m_support_resistance(
 
     return {
         "observation_date": observation_date.isoformat(),
+        "latest_available_date": latest_available_date.isoformat(),
+        "recent_trading_dates": [item.isoformat() for item in recent_trading_dates],
+        "live_price_check": use_live_prices,
+        "live_price_missing": sorted(live_price_missing),
         "lookback_days": lookback_days,
+        "atr_range": {
+            "minimum": minimum_distance_atr,
+            "maximum": maximum_distance_atr,
+        },
         "count": len(stocks),
         "stocks": stocks,
     }

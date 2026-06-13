@@ -30,6 +30,8 @@ interface StockLevels {
   stock_code: string;
   database_code: string;
   latest_close: number;
+  reference_price: number;
+  price_source: "ib_live" | "ib_delayed" | "30m_close";
   latest_bar_time: string;
   bar_count: number;
   median_bar_range: number;
@@ -41,10 +43,22 @@ interface StockLevels {
 
 interface LevelsResponse {
   observation_date: string | null;
+  latest_available_date: string | null;
+  recent_trading_dates: string[];
+  live_price_check: boolean;
+  live_price_missing: string[];
   lookback_days: number;
+  atr_range: {
+    minimum: number;
+    maximum: number;
+  };
   count: number;
   stocks: StockLevels[];
 }
+
+const ATR_RANGE_MIN = 0;
+const ATR_RANGE_MAX = 5;
+const ATR_RANGE_STEP = 0.05;
 
 function price(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "n/a";
@@ -55,21 +69,76 @@ function price(value: number | null | undefined) {
   });
 }
 
-function LevelCell({ level, tone }: { level?: PriceRange; tone: "support" | "resistance" }) {
+function LevelCell({
+  level,
+  tone,
+  stockCode,
+}: {
+  level?: PriceRange;
+  tone: "support" | "resistance";
+  stockCode: string;
+}) {
   if (!level) return <span className="text-slate-400">n/a</span>;
   const color = tone === "support" ? "text-emerald-700" : "text-red-700";
+  const rangeSide = tone === "support" ? "Buy" : "Sell";
+  const optionAction = tone === "support" ? "SELL" : "BUY";
+  const midpoint = (level.range_low + level.range_high) / 2;
+  const rangeParams = new URLSearchParams({
+    stock: stockCode,
+    side: rangeSide,
+    start: level.range_low.toFixed(2),
+    end: level.range_high.toFixed(2),
+  });
+  const optionParams = new URLSearchParams({
+    symbol: stockCode,
+    right: "P",
+    action: optionAction,
+    target: midpoint.toFixed(2),
+    auto: "1",
+  });
   const source = level.sources.includes("gamma")
     ? (level.sources.includes("30m") ? "30M + Gamma" : "Gamma wall")
     : "30M structure";
   return (
     <div className="min-w-[180px]">
-      <div className={`font-semibold ${color}`}>
-        {price(level.range_low)} - {price(level.range_high)}
+      <div className="flex items-center gap-2">
+        <div className={`font-semibold ${color}`}>
+          {price(level.range_low)} - {price(level.range_high)}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <a
+            href={`/range-orders?${rangeParams.toString()}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Open ${rangeSide.toLowerCase()} range order`}
+            aria-label={`Open ${rangeSide.toLowerCase()} range order for ${stockCode}`}
+            className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M5 7h14M5 12h14M5 17h14" />
+              <path d={tone === "support" ? "m8 10 4-4 4 4" : "m8 14 4 4 4-4"} />
+            </svg>
+          </a>
+          <a
+            href={`/option-orders?${optionParams.toString()}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Open ${optionAction === "SELL" ? "sell" : "buy"} put order and estimate`}
+            aria-label={`Open ${optionAction === "SELL" ? "sell" : "buy"} put order for ${stockCode}`}
+            className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="4" y="4" width="16" height="16" rx="3" />
+              <path d="M9 16V8h3.5a2.5 2.5 0 0 1 0 5H9" />
+            </svg>
+          </a>
+        </div>
       </div>
       <div className="mt-1 text-xs text-slate-500">
         {level.distance_pct > 0 ? "+" : ""}{level.distance_pct.toFixed(2)}%, {level.distance_atr.toFixed(2)} ATR
         {level.touches > 0 ? `, ${level.touches} touch${level.touches === 1 ? "" : "es"}` : ""}
       </div>
+      <div className="mt-1 text-[11px] text-slate-400">Distance from last close</div>
       <div className="mt-1 text-xs font-medium text-indigo-600">{source}</div>
       {level.gamma_wall ? (
         <div className="mt-1 text-xs text-slate-500">
@@ -85,6 +154,8 @@ export default function PriceLevels30mPage() {
   const [data, setData] = useState<LevelsResponse | null>(null);
   const [observationDate, setObservationDate] = useState("");
   const [lookbackDays, setLookbackDays] = useState("10");
+  const [minimumAtr, setMinimumAtr] = useState(0.33);
+  const [maximumAtr, setMaximumAtr] = useState(3);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -96,6 +167,8 @@ export default function PriceLevels30mPage() {
     try {
       const params = new URLSearchParams({
         lookback_days: String(Math.max(3, Math.min(30, Number(lookbackDays) || 10))),
+        minimum_distance_atr: minimumAtr.toFixed(2),
+        maximum_distance_atr: maximumAtr.toFixed(2),
       });
       if (observationDate) params.set("observation_date", observationDate);
       const response = await authenticatedFetch(`${baseUrl}/api/price-levels-30m?${params}`, {
@@ -110,11 +183,11 @@ export default function PriceLevels30mPage() {
     } finally {
       setLoading(false);
     }
-  }, [baseUrl, lookbackDays, observationDate]);
+  }, [baseUrl, lookbackDays, maximumAtr, minimumAtr, observationDate]);
 
   useEffect(() => {
     void loadLevels();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const visibleStocks = useMemo(() => {
     const query = search.trim().toUpperCase();
@@ -130,13 +203,20 @@ export default function PriceLevels30mPage() {
       />
 
       {error ? <Alert variant="danger">Error: {error}</Alert> : null}
+      {data?.live_price_check && data.live_price_missing?.length ? (
+        <Alert variant="warning">
+          IB did not return a current price for {data.live_price_missing.length} symbol
+          {data.live_price_missing.length === 1 ? "" : "s"}; those rows are omitted rather than calculated from a
+          30-minute close.
+        </Alert>
+      ) : null}
 
       <Card>
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <label className="text-sm">
               <span className="mb-1 block text-slate-600">Observation Date</span>
               <Input type="date" value={observationDate} onChange={(event) => setObservationDate(event.target.value)} />
@@ -152,9 +232,65 @@ export default function PriceLevels30mPage() {
               </Select>
             </label>
             <label className="text-sm">
-              <span className="mb-1 block text-slate-600">Stock Search</span>
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="AVGO" />
+              <span className="mb-1 block text-slate-600">Quick Filter</span>
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Filter loaded stocks..."
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                Refresh still calculates all stocks.
+              </span>
             </label>
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 xl:col-span-1">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-700">ATR Distance Range</div>
+                  <div className="mt-0.5 text-xs text-slate-500">Applied when Refresh is clicked</div>
+                </div>
+                <div className="whitespace-nowrap rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                  {minimumAtr.toFixed(2)} - {maximumAtr.toFixed(2)} ATR
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-4">
+                <label className="text-xs text-slate-500">
+                  <span className="mb-1 flex justify-between">
+                    <span>Minimum</span>
+                    <span>{minimumAtr.toFixed(2)}</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={ATR_RANGE_MIN}
+                    max={ATR_RANGE_MAX}
+                    step={ATR_RANGE_STEP}
+                    value={minimumAtr}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setMinimumAtr(Math.min(value, maximumAtr));
+                    }}
+                    className="h-2 w-full cursor-pointer accent-indigo-600"
+                  />
+                </label>
+                <label className="text-xs text-slate-500">
+                  <span className="mb-1 flex justify-between">
+                    <span>Maximum</span>
+                    <span>{maximumAtr.toFixed(2)}</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={ATR_RANGE_MIN}
+                    max={ATR_RANGE_MAX}
+                    step={ATR_RANGE_STEP}
+                    value={maximumAtr}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setMaximumAtr(Math.max(value, minimumAtr));
+                    }}
+                    className="h-2 w-full cursor-pointer accent-indigo-600"
+                  />
+                </label>
+              </div>
+            </div>
             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="text-xs uppercase tracking-wide text-slate-500">Stocks</div>
               <div className="mt-1 text-2xl font-semibold text-slate-900">
@@ -169,8 +305,13 @@ export default function PriceLevels30mPage() {
         <CardHeader>
           <CardTitle>Price Levels</CardTitle>
           <p className="mt-1 text-sm text-slate-600">
-            Zone 1 is nearest to spot. Zones must be 0.33-3.0 times the 14-day daily ATR from the latest close.
-            Near-term put and call OI walls are merged when they reinforce a 30-minute range.
+            Live price determines direction: supports must be below it and resistances above it. Last close is the
+            baseline for the displayed percentage and ATR distance. The table currently shows the best two levels
+            between{" "}
+            {(data?.atr_range.minimum ?? minimumAtr).toFixed(2)} and{" "}
+            {(data?.atr_range.maximum ?? maximumAtr).toFixed(2)} times the 14-day daily ATR from last close.
+            Eligible zones are ranked by 30M-plus-gamma confluence, touch count, gamma open interest, and recency;
+            distance is only a final tie-breaker.
           </p>
         </CardHeader>
         <CardContent>
@@ -179,7 +320,8 @@ export default function PriceLevels30mPage() {
               <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-3">Stock</th>
-                  <th className="px-3 py-3 text-right">Latest Close</th>
+                  <th className="px-3 py-3 text-right">Last Close</th>
+                  <th className="px-3 py-3 text-right">Selection Price</th>
                   <th className="px-3 py-3 text-right">Daily ATR(14)</th>
                   <th className="px-3 py-3">Support Zone 1</th>
                   <th className="px-3 py-3">Support Zone 2</th>
@@ -193,12 +335,25 @@ export default function PriceLevels30mPage() {
                 {visibleStocks.map((stock) => (
                   <tr key={stock.database_code} className="align-top hover:bg-slate-50">
                     <td className="px-3 py-3 font-semibold text-slate-900">{stock.stock_code}</td>
-                    <td className="px-3 py-3 text-right font-medium">{price(stock.latest_close)}</td>
+                    <td className="px-3 py-3 text-right font-medium">
+                      <div>{price(stock.latest_close)}</div>
+                      <div className="mt-1 text-xs font-normal text-slate-500">Distance baseline</div>
+                    </td>
+                    <td className="px-3 py-3 text-right font-medium">
+                      <div>{price(stock.reference_price)}</div>
+                      <div className="mt-1 text-xs font-normal text-slate-500">
+                        {stock.price_source === "ib_live"
+                          ? "IB live"
+                          : stock.price_source === "ib_delayed"
+                            ? "IB delayed"
+                            : "30M close"}
+                      </div>
+                    </td>
                     <td className="px-3 py-3 text-right text-slate-600">{price(stock.atr_daily)}</td>
-                    <td className="px-3 py-3"><LevelCell level={stock.supports[0]} tone="support" /></td>
-                    <td className="px-3 py-3"><LevelCell level={stock.supports[1]} tone="support" /></td>
-                    <td className="px-3 py-3"><LevelCell level={stock.resistances[0]} tone="resistance" /></td>
-                    <td className="px-3 py-3"><LevelCell level={stock.resistances[1]} tone="resistance" /></td>
+                    <td className="px-3 py-3"><LevelCell level={stock.supports[0]} tone="support" stockCode={stock.stock_code} /></td>
+                    <td className="px-3 py-3"><LevelCell level={stock.supports[1]} tone="support" stockCode={stock.stock_code} /></td>
+                    <td className="px-3 py-3"><LevelCell level={stock.resistances[0]} tone="resistance" stockCode={stock.stock_code} /></td>
+                    <td className="px-3 py-3"><LevelCell level={stock.resistances[1]} tone="resistance" stockCode={stock.stock_code} /></td>
                     <td className="px-3 py-3 text-right">{stock.bar_count}</td>
                     <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-500">
                       {new Date(stock.latest_bar_time).toLocaleString()}
@@ -207,7 +362,7 @@ export default function PriceLevels30mPage() {
                 ))}
                 {!visibleStocks.length ? (
                   <tr>
-                    <td className="px-3 py-8 text-center text-slate-500" colSpan={9}>
+                    <td className="px-3 py-8 text-center text-slate-500" colSpan={10}>
                       {loading ? "Loading 30-minute levels..." : "No 30-minute price data found."}
                     </td>
                   </tr>

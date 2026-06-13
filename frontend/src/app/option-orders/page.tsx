@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import Alert from "../components/ui/Alert";
 import Button from "../components/ui/Button";
@@ -12,6 +12,8 @@ import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 type Right = "P" | "C";
 type Action = "SELL" | "BUY";
+type LiquiditySortKey = "spread" | "volume";
+type SortDirection = "asc" | "desc";
 
 interface ChainRow {
   symbol: string;
@@ -21,6 +23,17 @@ interface ChainRow {
   dte: number;
   right: Right;
   strike: number;
+  delayed_quote: DelayedQuote | null;
+}
+
+interface DelayedQuote {
+  bid: number | null;
+  ask: number | null;
+  mid: number | null;
+  spread_pct: number | null;
+  volume: number | null;
+  iv: number | null;
+  observation_date: string;
 }
 
 interface ChainResponse {
@@ -59,9 +72,23 @@ interface EstimateResponse {
   conservative: number;
   adjusted_iv: number;
   contract_iv: number;
+  iv_source: string;
+  iv_clues: {
+    ib_contract_iv: number | null;
+    ib_contract_market_data_type: number | null;
+    delayed_quote_iv: number | null;
+    market_implied_iv: number | null;
+    nearby_contract_iv: number | null;
+    delayed_atm_iv: number | null;
+    underlying_implied_iv: number | null;
+    underlying_historical_iv: number | null;
+    underlying_iv_adjustment: number | null;
+    timestamps_match_for_market_iv: boolean;
+  };
   skew_adjustment: number;
   directional_iv_adjustment: number;
   warnings?: string[];
+  delayed_quote: DelayedQuote | null;
   quote: {
     bid: number | null;
     ask: number | null;
@@ -99,9 +126,19 @@ function pct(value: number | null | undefined) {
   return `${(Number(value) * 100).toFixed(1)}%`;
 }
 
+function spreadPct(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "n/a";
+  return `${Number(value).toFixed(2)}%`;
+}
+
 function parsePositive(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function formatPriceInput(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed.toFixed(2) : value;
 }
 
 function orderSummary(action: Action, row: ChainRow | null, qty: string, limitPrice: string) {
@@ -111,6 +148,7 @@ function orderSummary(action: Action, row: ChainRow | null, qty: string, limitPr
 
 export default function OptionOrdersPage() {
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const prefillStarted = useRef(false);
   const [symbol, setSymbol] = useState("AVGO");
   const [right, setRight] = useState<Right>("P");
   const [strikeWindowPct, setStrikeWindowPct] = useState("0.25");
@@ -120,6 +158,10 @@ export default function OptionOrdersPage() {
   const [selectedKey, setSelectedKey] = useState("");
   const [expiryFilter, setExpiryFilter] = useState("");
   const [strikeFilter, setStrikeFilter] = useState("");
+  const [liquiditySort, setLiquiditySort] = useState<{
+    key: LiquiditySortKey;
+    direction: SortDirection;
+  } | null>(null);
   const [loadingChain, setLoadingChain] = useState(false);
   const [estimating, setEstimating] = useState(false);
   const [placing, setPlacing] = useState(false);
@@ -134,6 +176,122 @@ export default function OptionOrdersPage() {
   const [bracketExitPct, setBracketExitPct] = useState("30");
   const [showConfirm, setShowConfirm] = useState(false);
 
+  useEffect(() => {
+    if (!baseUrl || prefillStarted.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("auto") !== "1") return;
+
+    const requestedSymbol = params.get("symbol")?.trim().toUpperCase();
+    const requestedRight = params.get("right");
+    const requestedAction = params.get("action");
+    const requestedTarget = Number(params.get("target"));
+    if (
+      !requestedSymbol
+      || (requestedRight !== "P" && requestedRight !== "C")
+      || (requestedAction !== "SELL" && requestedAction !== "BUY")
+      || !Number.isFinite(requestedTarget)
+      || requestedTarget <= 0
+    ) {
+      setError("Invalid option-order prefill link.");
+      return;
+    }
+
+    prefillStarted.current = true;
+    const runPrefill = async () => {
+      setSymbol(requestedSymbol);
+      setRight(requestedRight);
+      setAction(requestedAction);
+      setTargetUnderlying(requestedTarget.toFixed(2));
+      setLoadingChain(true);
+      setError("");
+      setEstimateError("");
+      setOrderResult(null);
+      setEstimate(null);
+      setSelectedKey("");
+      setChain(null);
+
+      try {
+        const expirationParams = new URLSearchParams({ symbol: requestedSymbol });
+        const expirationResponse = await authenticatedFetch(
+          `${baseUrl}/api/option-orders/expirations?${expirationParams.toString()}`,
+          { cache: "no-store" },
+        );
+        const expirationData: ExpirationsResponse = await expirationResponse.json();
+        if (!expirationResponse.ok) {
+          throw new Error((expirationData as any)?.detail || `HTTP ${expirationResponse.status}`);
+        }
+
+        const availableExpirations = Array.isArray(expirationData.expirations)
+          ? expirationData.expirations
+          : [];
+        setExpirations(availableExpirations);
+        const chosenExpiry = [...availableExpirations]
+          .filter((item) => item.dte >= 15 && item.dte <= 21)
+          .sort((left, right) => Math.abs(left.dte - 18) - Math.abs(right.dte - 18) || left.dte - right.dte)[0];
+        if (!chosenExpiry) {
+          throw new Error(`No ${requestedSymbol} expiry is available between 15 and 21 DTE.`);
+        }
+        setSelectedExpiry(chosenExpiry.expiry);
+
+        const chainParams = new URLSearchParams({
+          symbol: requestedSymbol,
+          right: requestedRight,
+          expiry: chosenExpiry.expiry,
+          max_expiries: "1",
+          strike_window_pct: "0.25",
+        });
+        const chainResponse = await authenticatedFetch(
+          `${baseUrl}/api/option-orders/chain?${chainParams.toString()}`,
+          { cache: "no-store" },
+        );
+        const chainData: ChainResponse = await chainResponse.json();
+        if (!chainResponse.ok) {
+          throw new Error((chainData as any)?.detail || `HTTP ${chainResponse.status}`);
+        }
+        setChain(chainData);
+        setExpiryFilter(chosenExpiry.expiry);
+
+        const chosenContract = [...(chainData.rows || [])].sort((left, right) => {
+          const leftVolume = Number(left.delayed_quote?.volume);
+          const rightVolume = Number(right.delayed_quote?.volume);
+          const safeLeftVolume = Number.isFinite(leftVolume) ? leftVolume : -1;
+          const safeRightVolume = Number.isFinite(rightVolume) ? rightVolume : -1;
+          return safeRightVolume - safeLeftVolume;
+        })[0];
+        if (!chosenContract) {
+          throw new Error(`No ${requestedRight === "P" ? "put" : "call"} contracts were returned for ${chosenExpiry.expiry_date}.`);
+        }
+        setSelectedKey(chosenContract.option_symbol);
+
+        setEstimating(true);
+        const estimateResponse = await authenticatedFetch(`${baseUrl}/api/option-orders/estimate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbol: chosenContract.symbol,
+            expiry: chosenContract.expiry,
+            strike: chosenContract.strike,
+            right: chosenContract.right,
+            target_underlying_price: requestedTarget,
+          }),
+        });
+        const estimateData: EstimateResponse = await estimateResponse.json();
+        if (!estimateResponse.ok) {
+          throw new Error((estimateData as any)?.detail || `HTTP ${estimateResponse.status}`);
+        }
+        setEstimate(estimateData);
+        setLimitPrice(Number(estimateData.estimated_price).toFixed(2));
+      } catch (exc: any) {
+        setError(exc?.message || String(exc));
+      } finally {
+        setLoadingChain(false);
+        setEstimating(false);
+      }
+    };
+
+    void runPrefill();
+  }, [baseUrl]);
+
   const selectedRow = useMemo(() => {
     if (!chain || !selectedKey) return null;
     return chain.rows.find((row) => row.option_symbol === selectedKey) || null;
@@ -141,11 +299,44 @@ export default function OptionOrdersPage() {
 
   const filteredRows = useMemo(() => {
     const strikeSearch = Number(strikeFilter);
-    return (chain?.rows || [])
+    const rows = (chain?.rows || [])
       .filter((row) => !expiryFilter || row.expiry === expiryFilter)
-      .filter((row) => !strikeFilter || !Number.isFinite(strikeSearch) || Math.abs(row.strike - strikeSearch) < 0.0001)
-      .slice(0, 600);
-  }, [chain, expiryFilter, strikeFilter]);
+      .filter((row) => !strikeFilter || !Number.isFinite(strikeSearch) || Math.abs(row.strike - strikeSearch) < 0.0001);
+
+    if (liquiditySort) {
+      rows.sort((left, right) => {
+        const leftValue = liquiditySort.key === "spread"
+          ? left.delayed_quote?.spread_pct
+          : left.delayed_quote?.volume;
+        const rightValue = liquiditySort.key === "spread"
+          ? right.delayed_quote?.spread_pct
+          : right.delayed_quote?.volume;
+        const leftMissing = leftValue === null || leftValue === undefined || !Number.isFinite(Number(leftValue));
+        const rightMissing = rightValue === null || rightValue === undefined || !Number.isFinite(Number(rightValue));
+        if (leftMissing && rightMissing) return left.strike - right.strike;
+        if (leftMissing) return 1;
+        if (rightMissing) return -1;
+        const comparison = Number(leftValue) - Number(rightValue);
+        return liquiditySort.direction === "asc" ? comparison : -comparison;
+      });
+    }
+
+    return rows.slice(0, 600);
+  }, [chain, expiryFilter, liquiditySort, strikeFilter]);
+
+  const toggleLiquiditySort = (key: LiquiditySortKey) => {
+    setLiquiditySort((current) => {
+      if (current?.key === key) {
+        return { key, direction: current.direction === "asc" ? "desc" : "asc" };
+      }
+      return { key, direction: key === "spread" ? "asc" : "desc" };
+    });
+  };
+
+  const sortIndicator = (key: LiquiditySortKey) => {
+    if (liquiditySort?.key !== key) return "";
+    return liquiditySort.direction === "asc" ? " ▲" : " ▼";
+  };
 
   const assignmentExposure = useMemo(() => {
     const qty = parsePositive(quantity);
@@ -183,7 +374,11 @@ export default function OptionOrdersPage() {
       const data: ExpirationsResponse = await response.json();
       if (!response.ok) throw new Error((data as any)?.detail || `HTTP ${response.status}`);
       setExpirations(Array.isArray(data.expirations) ? data.expirations : []);
-      setTargetUnderlying(data?.underlying?.reference_price ? String(data.underlying.reference_price) : "");
+      setTargetUnderlying(
+        data?.underlying?.reference_price
+          ? Number(data.underlying.reference_price).toFixed(2)
+          : "",
+      );
       setSelectedExpiry(data?.expirations?.[0]?.expiry || "");
     } catch (exc: any) {
       setError(exc?.message || String(exc));
@@ -218,7 +413,11 @@ export default function OptionOrdersPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
       setChain(data);
-      setTargetUnderlying(data?.underlying?.reference_price ? String(data.underlying.reference_price) : "");
+      setTargetUnderlying(
+        data?.underlying?.reference_price
+          ? Number(data.underlying.reference_price).toFixed(2)
+          : "",
+      );
       setExpiryFilter(selectedExpiry);
     } catch (exc: any) {
       setError(exc?.message || String(exc));
@@ -398,15 +597,46 @@ export default function OptionOrdersPage() {
                     <th className="px-3 py-2">Expiry</th>
                     <th className="px-3 py-2">DTE</th>
                     <th className="px-3 py-2">Type</th>
-                    <th className="px-3 py-2 text-right">Strike</th>
-                    <th className="px-3 py-2">Option Symbol</th>
+                  <th className="px-3 py-2 text-right">Strike</th>
+                  <th className="px-3 py-2 text-right">Bid</th>
+                  <th className="px-3 py-2 text-right">Ask</th>
+                  <th className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => toggleLiquiditySort("spread")}
+                      className="font-semibold hover:text-slate-900"
+                      title="Sort by bid-ask spread"
+                    >
+                      Spread{sortIndicator("spread")}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => toggleLiquiditySort("volume")}
+                      className="font-semibold hover:text-slate-900"
+                      title="Sort by volume"
+                    >
+                      Volume{sortIndicator("volume")}
+                    </button>
+                  </th>
+                  <th className="px-3 py-2">Option Symbol</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredRows.map((row) => {
                     const selected = selectedRow?.option_symbol === row.option_symbol;
+                    const illiquid = row.delayed_quote?.spread_pct !== null
+                      && row.delayed_quote?.spread_pct !== undefined
+                      && row.delayed_quote.spread_pct > 3;
+                    const liquid = row.delayed_quote?.spread_pct !== null
+                      && row.delayed_quote?.spread_pct !== undefined
+                      && row.delayed_quote.spread_pct < 3;
                     return (
-                      <tr key={row.option_symbol} className={selected ? "bg-indigo-50" : "hover:bg-slate-50"}>
+                      <tr
+                        key={row.option_symbol}
+                        className={`${illiquid ? "bg-pink-100 hover:bg-pink-200" : liquid ? "bg-emerald-50 hover:bg-emerald-100" : "hover:bg-slate-50"} ${selected ? "outline outline-2 outline-inset outline-indigo-500" : ""}`}
+                      >
                         <td className="px-3 py-2">
                           <button
                             type="button"
@@ -420,13 +650,19 @@ export default function OptionOrdersPage() {
                         <td className="px-3 py-2">{row.dte}</td>
                         <td className="px-3 py-2">{row.right === "P" ? "Put" : "Call"}</td>
                         <td className="px-3 py-2 text-right">{num(row.strike, 2)}</td>
+                        <td className="px-3 py-2 text-right">{money(row.delayed_quote?.bid)}</td>
+                        <td className="px-3 py-2 text-right">{money(row.delayed_quote?.ask)}</td>
+                        <td className={`px-3 py-2 text-right ${illiquid ? "font-semibold text-pink-800" : ""}`}>
+                          {spreadPct(row.delayed_quote?.spread_pct)}
+                        </td>
+                        <td className="px-3 py-2 text-right">{num(row.delayed_quote?.volume, 0)}</td>
                         <td className="px-3 py-2 font-mono text-xs">{row.option_symbol}</td>
                       </tr>
                     );
                   })}
                   {!filteredRows.length ? (
                     <tr>
-                      <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>
+                      <td className="px-3 py-6 text-center text-slate-500" colSpan={10}>
                         {loadingChain ? "Loading..." : "No contracts loaded."}
                       </td>
                     </tr>
@@ -446,10 +682,29 @@ export default function OptionOrdersPage() {
               <div className="rounded-md bg-slate-50 p-3 text-sm">
                 <div className="text-xs uppercase text-slate-500">Selected</div>
                 <div className="mt-1 break-all font-mono text-xs">{selectedRow?.option_symbol || "None"}</div>
+                {selectedRow?.delayed_quote ? (
+                  <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-600">
+                    <div>Bid: {money(selectedRow.delayed_quote.bid)}</div>
+                    <div>Ask: {money(selectedRow.delayed_quote.ask)}</div>
+                    <div>Mid: {money(selectedRow.delayed_quote.mid)}</div>
+                    <div className={Number(selectedRow.delayed_quote.spread_pct) > 3 ? "font-semibold text-pink-700" : Number(selectedRow.delayed_quote.spread_pct) < 3 ? "font-semibold text-emerald-700" : ""}>
+                      Spread: {spreadPct(selectedRow.delayed_quote.spread_pct)}
+                    </div>
+                    <div>Volume: {num(selectedRow.delayed_quote.volume, 0)}</div>
+                    <div>Quote date: {selectedRow.delayed_quote.observation_date || "n/a"}</div>
+                  </div>
+                ) : null}
               </div>
               <label className="text-sm">
                 <span className="mb-1 block text-slate-600">Target Underlying Price</span>
-                <Input type="number" min="0" step="0.01" value={targetUnderlying} onChange={(event) => setTargetUnderlying(event.target.value)} />
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={targetUnderlying}
+                  onChange={(event) => setTargetUnderlying(event.target.value)}
+                  onBlur={() => setTargetUnderlying((value) => formatPriceInput(value))}
+                />
               </label>
               <Button onClick={estimatePrice} disabled={!selectedRow || estimating} className="w-full">
                 {estimating ? "Estimating..." : "Estimate Option Price"}
@@ -464,13 +719,39 @@ export default function OptionOrdersPage() {
                   <div className="rounded-md border border-slate-200 p-3">
                     <div className="text-xs uppercase text-slate-500">IV</div>
                     <div className="mt-1 text-xl font-semibold">{pct(estimate.adjusted_iv)}</div>
+                    <div className="mt-1 text-xs text-slate-500">{estimate.iv_source}</div>
                   </div>
-                  <div>Bid: {money(estimate.quote.bid)}</div>
-                  <div>Ask: {money(estimate.quote.ask)}</div>
-                  <div>Mid: {money(estimate.quote.mid)}</div>
+                  <div>Bid: {money(estimate.delayed_quote?.bid ?? estimate.quote.bid)}</div>
+                  <div>Ask: {money(estimate.delayed_quote?.ask ?? estimate.quote.ask)}</div>
+                  <div>Mid: {money(estimate.delayed_quote?.mid ?? estimate.quote.mid)}</div>
+                  <div className={Number(estimate.delayed_quote?.spread_pct) > 3 ? "font-semibold text-pink-700" : Number(estimate.delayed_quote?.spread_pct) < 3 ? "font-semibold text-emerald-700" : ""}>
+                    Spread: {spreadPct(estimate.delayed_quote?.spread_pct)}
+                  </div>
+                  <div>Volume: {num(estimate.delayed_quote?.volume, 0)}</div>
                   <div>Delta: {num(estimate.quote.delta, 3)}</div>
                   <div>Base: {money(estimate.base_case, 4)}</div>
                   <div>Conservative: {money(estimate.conservative, 4)}</div>
+                  <div className="col-span-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                    <div className="mb-2 font-semibold text-slate-700">IV evidence</div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                      <div>
+                        IB contract: {pct(estimate.iv_clues.ib_contract_iv)}
+                        {estimate.iv_clues.ib_contract_market_data_type
+                          ? ` (type ${estimate.iv_clues.ib_contract_market_data_type})`
+                          : ""}
+                      </div>
+                      <div>Delayed quote: {pct(estimate.iv_clues.delayed_quote_iv)}</div>
+                      <div>
+                        Live midpoint: {pct(estimate.iv_clues.market_implied_iv)}
+                        {!estimate.iv_clues.timestamps_match_for_market_iv ? " (timestamp mismatch)" : ""}
+                      </div>
+                      <div>Nearby contract: {pct(estimate.iv_clues.nearby_contract_iv)}</div>
+                      <div>Delayed near-ATM: {pct(estimate.iv_clues.delayed_atm_iv)}</div>
+                      <div>Underlying implied: {pct(estimate.iv_clues.underlying_implied_iv)}</div>
+                      <div>Underlying historical: {pct(estimate.iv_clues.underlying_historical_iv)}</div>
+                      <div>Underlying adjustment: {pct(estimate.iv_clues.underlying_iv_adjustment)}</div>
+                    </div>
+                  </div>
                   {estimate.warnings?.length ? (
                     <div className="col-span-2">
                       <Alert variant="warning">{estimate.warnings.join(" ")}</Alert>
