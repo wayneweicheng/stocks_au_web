@@ -25,6 +25,8 @@ const NAV: NavGroup[] = [
   {
     label: "Market",
     items: [
+      { href: "/", label: "US Command Center" },
+      { href: "/asx-command-center", label: "ASX Command Center" },
       { href: "/market-flow", label: "Market Flow" },
       { href: "/index-price-mapping", label: "Index Price Mapping" },
       { href: "/price-levels-30m", label: "30M Price Levels" },
@@ -45,6 +47,7 @@ const NAV: NavGroup[] = [
       { href: "/breakout-watchlist", label: "Breakout Watchlist" },
       { href: "/gap-up-watchlist", label: "Gap Up Watchlist" },
       { href: "/monitor-stocks", label: "Monitor Stocks" },
+      { href: "/bet-odds-monitors", label: "Bet Odds Monitor" },
     ],
   },
   {
@@ -77,11 +80,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Sidebar */}
         <aside
           className={[
-            "sticky top-0 h-screen border-r border-slate-200 bg-white/80 backdrop-blur",
+            "sticky top-0 flex h-screen flex-col overflow-hidden border-r border-slate-200 bg-white/80 backdrop-blur",
             collapsed ? "w-[72px]" : "w-[260px]",
           ].join(" ")}
         >
-          <div className="h-14 px-4 flex items-center justify-between border-b border-slate-200">
+          <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4">
             <Link
               href="/"
               className={[
@@ -101,7 +104,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
 
-          <nav className="px-3 py-4 text-sm">
+          <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 text-sm">
             {NAV.map((group) => (
               <div key={group.label} className="mb-5">
                 {!collapsed ? (

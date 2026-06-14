@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "source_file": "sentiment.xls",
+  "purpose": "Reusable knowledge about AAII sentiment and subsequent S&P 500 performance.",
+  "latest_report": {
+    "source": "latest workbook row",
+    "reading_date": "2026-06-11",
+    "history_start": "1987-07-24",
+    "history_end": "2026-06-11",
+    "observations": 2027,
+    "sentiment": {
+      "bullish": 0.303738,
+      "neutral": 0.219626,
+      "bearish": 0.476636,
+      "bull_bear_spread": -0.172898,
+      "spread_historical_percentile": 0.09916132215096202,
+      "regime": "extreme bearish sentiment (historically contrarian-positive)"
+    },
+    "predictions": [
+      {
+        "horizon_weeks": 1,
+        "predicted_return": 0.0030780948406016607,
+        "interval_10": -0.024709213172382984,
+        "interval_90": 0.02945124373224011,
+        "probability_positive": 0.6354679802955665,
+        "analog_median_return": 0.0068384862897808985,
+        "analog_positive_rate": 0.56,
+        "validation_mae": 0.017262655966114624,
+        "baseline_mae": 0.01729579788477907,
+        "mae_skill": 0.0019161832767260467,
+        "directional_accuracy": 0.6083743842364532,
+        "alpha": 10.0,
+        "validation_rows": 406,
+        "analog_count": 50
+      },
+      {
+        "horizon_weeks": 4,
+        "predicted_return": 0.011670209789136667,
+        "interval_10": -0.0432851520029991,
+        "interval_90": 0.06005269752993719,
+        "probability_positive": 0.7086419753086419,
+        "analog_median_return": 0.012286840718514047,
+        "analog_positive_rate": 0.6,
+        "validation_mae": 0.03478626502500911,
+        "baseline_mae": 0.034656618981814595,
+        "mae_skill": -0.003740873951453283,
+        "directional_accuracy": 0.671604938271605,
+        "alpha": 100.0,
+        "validation_rows": 405,
+        "analog_count": 50
+      },
+      {
+        "horizon_weeks": 13,
+        "predicted_return": 0.033443998441306154,
+        "interval_10": -0.05876349592783226,
+        "interval_90": 0.11842842952123575,
+        "probability_positive": 0.7593052109181141,
+        "analog_median_return": 0.03715530517459409,
+        "analog_positive_rate": 0.7,
+        "validation_mae": 0.060053245925659984,
+        "baseline_mae": 0.059842946530937705,
+        "mae_skill": -0.0035141885036285014,
+        "directional_accuracy": 0.7196029776674938,
+        "alpha": 0.1,
+        "validation_rows": 403,
+        "analog_count": 50
+      },
+      {
+        "horizon_weeks": 26,
+        "predicted_return": 0.06330053644130672,
+        "interval_10": -0.05950906635964186,
+        "interval_90": 0.20322205985213082,
+        "probability_positive": 0.7880299251870324,
+        "analog_median_return": 0.05950942552404537,
+        "analog_positive_rate": 0.7,
+        "validation_mae": 0.08384592663068582,
+        "baseline_mae": 0.08247246401411623,
+        "mae_skill": -0.016653590176892274,
+        "directional_accuracy": 0.7456359102244389,
+        "alpha": 0.1,
+        "validation_rows": 401,
+        "analog_count": 50
+      }
+    ],
+    "note": "Associational estimate, not investment advice. Sentiment has weak and time-varying predictive power; inspect validation skill and intervals."
+  },
+  "historical_findings": {
+    "sentiment_distribution": {
+      "bullish_mean": 0.3761565313270844,
+      "bullish_median": 0.372208,
+      "neutral_mean": 0.3102731563887519,
+      "neutral_median": 0.31,
+      "bearish_mean": 0.31356961371484954,
+      "bearish_median": 0.3,
+      "bull_bear_spread_mean": 0.06258691761223482,
+      "bull_bear_spread_median": 0.07,
+      "bull_bear_spread_p10": -0.1711054,
+      "bull_bear_spread_p25": -0.05984999999999999,
+      "bull_bear_spread_p75": 0.1858685,
+      "bull_bear_spread_p90": 0.28345140000000013
+    },
+    "forward_return_baselines": [
+      {
+        "horizon_weeks": 1,
+        "observations": 2026,
+        "mean_return": 0.0018182099201732595,
+        "median_return": 0.0035377208493669876,
+        "positive_rate": 0.5789733464955578,
+        "p10": -0.02414080696866333,
+        "p90": 0.025972917167556786,
+        "spread_return_correlation": -0.02131501658559332
+      },
+      {
+        "horizon_weeks": 4,
+        "observations": 2023,
+        "mean_return": 0.007183467771103962,
+        "median_return": 0.012224341108014292,
+        "positive_rate": 0.6332179930795848,
+        "p10": -0.04155508711374476,
+        "p90": 0.051064548935667496,
+        "spread_return_correlation": -0.07929840394290469
+      },
+      {
+        "horizon_weeks": 13,
+        "observations": 2014,
+        "mean_return": 0.023130089600445984,
+        "median_return": 0.03072058420670387,
+        "positive_rate": 0.6956305858987091,
+        "p10": -0.07025127734580473,
+        "p90": 0.09905630215434275,
+        "spread_return_correlation": -0.11362467612421387
+      },
+      {
+        "horizon_weeks": 26,
+        "observations": 2001,
+        "mean_return": 0.04843081303770486,
+        "median_return": 0.056596508034900905,
+        "positive_rate": 0.7436281859070465,
+        "p10": -0.0811107180756987,
+        "p90": 0.16820105861351253,
+        "spread_return_correlation": -0.13031030623563214
+      }
+    ],
+    "spread_regimes": [
+      {
+        "label": "most bearish 20%",
+        "spread_min": -0.54,
+        "spread_max": -0.09,
+        "observations": 409,
+        "forward_returns": [
+          {
+            "horizon_weeks": 1,
+            "mean_return": 0.002431587097515953,
+            "median_return": 0.003242342968960976,
+            "positive_rate": 0.5563725490196079
+          },
+          {
+            "horizon_weeks": 4,
+            "mean_return": 0.012433631350246537,
+            "median_return": 0.017243729552889997,
+            "positive_rate": 0.6511056511056511
+          },
+          {
+            "horizon_weeks": 13,
+            "mean_return": 0.03607741829455088,
+            "median_return": 0.04061149722853985,
+            "positive_rate": 0.739454094292804
+          },
+          {
+            "horizon_weeks": 26,
+            "mean_return": 0.06471753393847703,
+            "median_return": 0.06928423555557028,
+            "positive_rate": 0.753731343283582
+          }
+        ]
+      },
+      {
+        "label": "bearish 20-40%",
+        "spread_min": -0.08999999999999997,
+        "spread_max": 0.022876000000000007,
+        "observations": 402,
+        "forward_returns": [
+          {
+            "horizon_weeks": 1,
+            "mean_return": 0.002715112718035606,
+            "median_return": 0.005138751605638814,
+            "positive_rate": 0.5920398009950248
+          },
+          {
+            "horizon_weeks": 4,
+            "mean_return": 0.008053970916325011,
+            "median_return": 0.01245912397378579,
+            "positive_rate": 0.6525
+          },
+          {
+            "horizon_weeks": 13,
+            "mean_return": 0.024765311765328885,
+            "median_return": 0.03408292357159204,
+            "positive_rate": 0.7135678391959799
+          },
+          {
+            "horizon_weeks": 26,
+            "mean_return": 0.05600854712879522,
+            "median_return": 0.06554976430329607,
+            "positive_rate": 0.748730964467005
+          }
+        ]
+      },
+      {
+        "label": "middle 20%",
+        "spread_min": 0.02509,
+        "spread_max": 0.11499999999999999,
+        "observations": 405,
+        "forward_returns": [
+          {
+            "horizon_weeks": 1,
+            "mean_return": 0.0003788988339699926,
+            "median_return": 0.002672046033268316,
+            "positive_rate": 0.5777777777777777
+          },
+          {
+            "horizon_weeks": 4,
+            "mean_return": 0.005844782009901448,
+            "median_return": 0.010379628088544646,
+            "positive_rate": 0.6395061728395062
+          },
+          {
+            "horizon_weeks": 13,
+            "mean_return": 0.02033314201137723,
+            "median_return": 0.025751924450440278,
+            "positive_rate": 0.6501240694789082
+          },
+          {
+            "horizon_weeks": 26,
+            "mean_return": 0.0409773217561144,
+            "median_return": 0.045350920045595045,
+            "positive_rate": 0.7142857142857143
+          }
+        ]
+      },
+      {
+        "label": "bullish 60-80%",
+        "spread_min": 0.11579,
+        "spread_max": 0.21428499999999998,
+        "observations": 405,
+        "forward_returns": [
+          {
+            "horizon_weeks": 1,
+            "mean_return": 0.0024099459542413788,
+            "median_return": 0.003978019879079975,
+            "positive_rate": 0.6024691358024692
+          },
+          {
+            "horizon_weeks": 4,
+            "mean_return": 0.0062960896073540554,
+            "median_return": 0.01180655805320674,
+            "positive_rate": 0.6320987654320988
+          },
+          {
+            "horizon_weeks": 13,
+            "mean_return": 0.02028603375843694,
+            "median_return": 0.030875526499895112,
+            "positive_rate": 0.7103960396039604
+          },
+          {
+            "horizon_weeks": 26,
+            "mean_return": 0.04980444424714909,
+            "median_return": 0.062098730676649505,
+            "positive_rate": 0.77
+          }
+        ]
+      },
+      {
+        "label": "most bullish 20%",
+        "spread_min": 0.2143,
+        "spread_max": 0.6286,
+        "observations": 406,
+        "forward_returns": [
+          {
+            "horizon_weeks": 1,
+            "mean_return": 0.0011592322921394004,
+            "median_return": 0.0029040776410921287,
+            "positive_rate": 0.5665024630541872
+          },
+          {
+            "horizon_weeks": 4,
+            "mean_return": 0.0032833151967351986,
+            "median_return": 0.010110497084400705,
+            "positive_rate": 0.5911330049261084
+          },
+          {
+            "horizon_weeks": 13,
+            "mean_return": 0.014281755987684143,
+            "median_return": 0.024902067208087186,
+            "positive_rate": 0.6650246305418719
+          },
+          {
+            "horizon_weeks": 26,
+            "mean_return": 0.030922442356859776,
+            "median_return": 0.042125908138827106,
+            "positive_rate": 0.7315270935960592
+          }
+        ]
+      }
+    ]
+  },
+  "usage_guidance": {
+    "primary_use": "market context and contrarian confirmation",
+    "not_recommended_as": "standalone trading or market-timing signal",
+    "preferred_horizons_weeks": [
+      13,
+      26
+    ],
+    "combine_with": [
+      "price trend",
+      "market breadth",
+      "volatility",
+      "liquidity",
+      "credit conditions",
+      "positioning",
+      "valuation",
+      "macro regime"
+    ]
+  }
+}

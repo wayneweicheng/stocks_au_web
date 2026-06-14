@@ -7,6 +7,7 @@ Currently handles automatic GEX insight processing every 5 minutes.
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from datetime import date, datetime
 import logging
@@ -107,6 +108,47 @@ def gex_auto_insight_job():
         logger.error(f"[GEX Auto Insight] Job failed with error: {e}", exc_info=True)
 
 
+def discord_market_intelligence_job():
+    """Generate the cached rolling 24-hour Discord summary at 4 PM Sydney time."""
+    from app.services.discord_market_intelligence_service import (
+        DEFAULT_DISCORD_SUMMARY_MODEL,
+        DiscordFollowerMarketIntelligenceService,
+    )
+
+    logger.info("[Discord Summary] Starting scheduled follower-summary generation")
+    try:
+        result = DiscordFollowerMarketIntelligenceService().get_latest_or_generate(
+            force_regenerate=True,
+            model=DEFAULT_DISCORD_SUMMARY_MODEL,
+        )
+        logger.info(
+            "[Discord Summary] Generated follower summary %s using %s messages",
+            result["summary_date"],
+            result["message_count"],
+        )
+    except ValueError as exc:
+        logger.warning("[Discord Summary] Skipped scheduled generation: %s", exc)
+    except Exception as exc:
+        logger.error("[Discord Summary] Scheduled generation failed: %s", exc, exc_info=True)
+
+
+def bet_odds_monitor_job():
+    """Scan active TAB odds monitors that are due."""
+    from app.services.bet_odds_monitor_service import BetOddsMonitorService
+
+    try:
+        result = BetOddsMonitorService().scan_due_monitors()
+        if result["due"]:
+            logger.info(
+                "[Bet Odds] Due=%s scanned=%s failed=%s",
+                result["due"],
+                result["scanned"],
+                result["failed"],
+            )
+    except Exception as exc:
+        logger.error("[Bet Odds] Scheduled scan failed: %s", exc, exc_info=True)
+
+
 def start_scheduler():
     """
     Start the background scheduler with all configured jobs.
@@ -131,6 +173,28 @@ def start_scheduler():
         id='gex_auto_insight',
         name='GEX Auto Insight Processor',
         replace_existing=True
+    )
+
+    scheduler.add_job(
+        discord_market_intelligence_job,
+        trigger=CronTrigger(
+            hour=16,
+            minute=0,
+            timezone="Australia/Sydney",
+        ),
+        id="discord_market_intelligence",
+        name="Discord Follower Messages Summary",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+    scheduler.add_job(
+        bet_odds_monitor_job,
+        trigger=IntervalTrigger(minutes=1),
+        id="bet_odds_monitor",
+        name="TAB Bet Odds Monitor",
+        replace_existing=True,
+        misfire_grace_time=60,
     )
 
     scheduler.start()

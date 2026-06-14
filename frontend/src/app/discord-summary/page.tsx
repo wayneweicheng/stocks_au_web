@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import {
@@ -18,6 +18,12 @@ export default function DiscordSummaryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [cached, setCached] = useState<boolean>(false);
+  const [summaryMetadata, setSummaryMetadata] = useState<{
+    windowStart?: string;
+    windowEnd?: string;
+    generatedAt?: string;
+    messageCount?: number;
+  } | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
 
   const [promptText, setPromptText] = useState<string>("");
@@ -36,6 +42,12 @@ export default function DiscordSummaryPage() {
   const [followersError, setFollowersError] = useState("");
   const [followersCached, setFollowersCached] = useState(false);
   const [followersSummary, setFollowersSummary] = useState("");
+  const [followersSummaryMetadata, setFollowersSummaryMetadata] = useState<{
+    windowStart?: string;
+    windowEnd?: string;
+    generatedAt?: string;
+    messageCount?: number;
+  } | null>(null);
   const [followersPromptLoading, setFollowersPromptLoading] = useState(false);
   const [followersPromptCopied, setFollowersPromptCopied] = useState(false);
   const [followersPromptError, setFollowersPromptError] = useState("");
@@ -68,6 +80,12 @@ export default function DiscordSummaryPage() {
         const data = await r.json();
         setSummary(data.summary_markdown || "");
         setCached(data.cached || false);
+        setSummaryMetadata({
+          windowStart: data.window_start,
+          windowEnd: data.window_end,
+          generatedAt: data.generated_at,
+          messageCount: data.message_count,
+        });
       } catch (e: any) {
         setError(e.message);
       } finally {
@@ -76,6 +94,40 @@ export default function DiscordSummaryPage() {
     },
     [baseUrl, observationDate, selectedModel]
   );
+
+  useEffect(() => {
+    if (!baseUrl) return;
+
+    const loadLatestSummary = async () => {
+      setFollowersLoading(true);
+      setFollowersError("");
+      try {
+        const params = new URLSearchParams({ model: followersModel });
+        const r = await authenticatedFetch(`${baseUrl}/api/discord-summary-latest?${params}`);
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          throw new Error(data.detail || `HTTP ${r.status}`);
+        }
+        const data = await r.json();
+        setObservationDate(data.summary_date || data.observation_date);
+        setFollowersSummary(data.summary_markdown || "");
+        setFollowersCached(data.cached || false);
+        setFollowersSummaryMetadata({
+          windowStart: data.window_start,
+          windowEnd: data.window_end,
+          generatedAt: data.generated_at,
+          messageCount: data.message_count,
+        });
+        setActiveTab("followers");
+      } catch (e: any) {
+        setFollowersError(e.message);
+      } finally {
+        setFollowersLoading(false);
+      }
+    };
+
+    loadLatestSummary();
+  }, [baseUrl]);
 
   const fetchFollowersSummary = useCallback(
     async (forceRegenerate: boolean = false) => {
@@ -98,6 +150,7 @@ export default function DiscordSummaryPage() {
         const data = await r.json();
         setFollowersSummary(data.summary_markdown || "");
         setFollowersCached(data.cached || false);
+        setFollowersSummaryMetadata(null);
       } catch (e: any) {
         setFollowersError(e.message);
       } finally {
@@ -372,6 +425,21 @@ export default function DiscordSummaryPage() {
                 )}
               </div>
 
+              {summaryMetadata && (
+                <div className="mb-4 rounded border border-purple-100 bg-purple-50 px-3 py-2 text-xs text-slate-600">
+                  Automated daily at 4:00 PM Sydney time
+                  {summaryMetadata.windowStart && summaryMetadata.windowEnd && (
+                    <> | Window: {new Date(summaryMetadata.windowStart).toLocaleString()} to {new Date(summaryMetadata.windowEnd).toLocaleString()}</>
+                  )}
+                  {typeof summaryMetadata.messageCount === "number" && (
+                    <> | Messages: {summaryMetadata.messageCount}</>
+                  )}
+                  {summaryMetadata.generatedAt && (
+                    <> | Generated: {new Date(summaryMetadata.generatedAt).toLocaleString()}</>
+                  )}
+                </div>
+              )}
+
               {promptMetadata && (
                 <div className="mb-4 text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded border border-slate-200">
                   Messages: {promptMetadata.messageCount} | Est. Tokens: {promptMetadata.estimatedTokens.toLocaleString()}
@@ -402,7 +470,7 @@ export default function DiscordSummaryPage() {
               ) : (
                 !loading && (
                   <div className="text-sm text-slate-500 text-center py-8">
-                    Select a date and click Generate to create a Discord channel summary
+                    Select a date and click Generate to create a Discord channel summary.
                   </div>
                 )
               )}
@@ -482,6 +550,21 @@ export default function DiscordSummaryPage() {
                 </div>
               )}
 
+              {followersSummaryMetadata && (
+                <div className="mb-4 rounded border border-purple-100 bg-purple-50 px-3 py-2 text-xs text-slate-600">
+                  Automated daily at 4:00 PM Sydney time
+                  {followersSummaryMetadata.windowStart && followersSummaryMetadata.windowEnd && (
+                    <> | Window: {new Date(followersSummaryMetadata.windowStart).toLocaleString()} to {new Date(followersSummaryMetadata.windowEnd).toLocaleString()}</>
+                  )}
+                  {typeof followersSummaryMetadata.messageCount === "number" && (
+                    <> | Messages: {followersSummaryMetadata.messageCount}</>
+                  )}
+                  {followersSummaryMetadata.generatedAt && (
+                    <> | Generated: {new Date(followersSummaryMetadata.generatedAt).toLocaleString()}</>
+                  )}
+                </div>
+              )}
+
               {followersPromptText && (
                 <details className="mb-4">
                   <summary className="cursor-pointer text-sm font-medium text-slate-700 hover:text-slate-900">
@@ -500,7 +583,7 @@ export default function DiscordSummaryPage() {
               ) : (
                 !followersLoading && (
                   <div className="text-sm text-slate-500 text-center py-8">
-                    Select a date and click Generate to create a followers summary
+                    The latest cached 24-hour follower summary will load automatically.
                   </div>
                 )
               )}

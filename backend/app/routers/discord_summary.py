@@ -6,6 +6,12 @@ from app.routers.auth import verify_credentials
 from app.services.gex_data_service import GEXDataService
 from app.services.llm_prediction_service import LLMPredictionService
 from app.services.prediction_cache_service import PredictionCacheService
+from app.services.discord_market_intelligence_service import (
+    DEFAULT_DISCORD_SUMMARY_MODEL,
+    FOLLOWER_USERNAMES,
+    DiscordFollowerMarketIntelligenceService,
+    DiscordMarketIntelligenceService,
+)
 
 import logging
 
@@ -13,25 +19,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["discord_summary"])
 
-FOLLOWER_USERNAMES = [
-    "Fanfansd",
-    "Williambayc6866",
-    "A_beelining_capybara",
-    "Ming09082",
-    "Will01138",
-    "Lancebao",
-    "Royalflush88888",
-    "Jayoscar2238",
-    "Sr5772",
-    "Yuanzidan",
-]
-
-
 @router.get("/discord-summary")
 def get_discord_summary(
     observation_date: date,
     regenerate: bool = False,
-    model: str = "deepseek/deepseek-v4-flash",
+    model: str = DEFAULT_DISCORD_SUMMARY_MODEL,
     username: str = Depends(verify_credentials)
 ) -> Dict:
     """
@@ -47,109 +39,40 @@ def get_discord_summary(
         Dictionary containing summary markdown and metadata
     """
     try:
-        gex_service = GEXDataService()
-        llm_service = LLMPredictionService()
-        cache_service = PredictionCacheService(cache_dir="llm_output/discord_message_summary")
-
         logger.info(f"Discord summary request for {observation_date}, regenerate={regenerate}, model={model}")
+        return DiscordMarketIntelligenceService().generate_summary(
+            summary_date=observation_date,
+            force_regenerate=regenerate,
+            model=model,
+        )
 
-        # Step 1: Check cache unless regeneration requested
-        if not regenerate:
-            cached = cache_service.get_cached_prediction(
-                stock_code="DISCORD",  # Use a constant since no stock code
-                observation_date=observation_date
-            )
-            if cached:
-                logger.info(f"Returning cached Discord summary for {observation_date}")
-                return {
-                    "summary_markdown": cached,
-                    "observation_date": observation_date.isoformat(),
-                    "cached": True,
-                    "model": "cached"
-                }
-
-        # Generate new summary
-        logger.info(f"Generating new Discord summary for {observation_date}")
-
-        # Step 2: Query Discord messages
-        try:
-            discord_rows = gex_service.get_discord_messages(observation_date)
-            if not discord_rows:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No Discord messages found for {observation_date}"
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Database query failed: {e}")
-            raise HTTPException(status_code=503, detail="Database unavailable")
-
-        # Step 3: Format data as pipe-delimited
-        discord_data = gex_service.format_discord_messages_as_pipe_delimited(discord_rows)
-
-        # Step 4: Load Discord summary template
-        try:
-            from pathlib import Path
-            template_path = "signal_pattern/discord_summary_template.md"
-            template_file = Path(template_path)
-
-            if not template_file.exists():
-                raise FileNotFoundError(f"Discord summary template not found: {template_path}")
-
-            template = template_file.read_text(encoding="utf-8")
-            logger.info(f"Loaded Discord summary template ({len(template)} characters)")
-
-            # Replace placeholders in template
-            prompt = template.replace("{{ observation_date }}", observation_date.isoformat())
-            prompt = prompt.replace("{{ discord_messages }}", discord_data)
-            prompt = prompt.replace("{{observation_date}}", observation_date.isoformat())
-            prompt = prompt.replace("{{discord_messages}}", discord_data)
-
-        except FileNotFoundError as e:
-            logger.error(f"Template loading failed: {e}")
-            raise HTTPException(status_code=500, detail="Discord summary template not found")
-        except Exception as e:
-            logger.error(f"Template processing failed: {e}")
-            raise HTTPException(status_code=500, detail="Template processing error")
-
-        # Step 5: Generate summary via LLM
-        try:
-            llm_result = llm_service.generate_prediction(
-                prompt=prompt,
-                stock_code="DISCORD",
-                observation_date=observation_date.isoformat(),
-                model=model
-            )
-            summary_text = llm_result.get("prediction_text", "")
-            logger.info(f"LLM generated Discord summary ({len(summary_text)} characters)")
-        except Exception as e:
-            logger.error(f"LLM generation failed: {e}")
-            raise HTTPException(status_code=500, detail="LLM service unavailable, please try again")
-
-        # Step 6: Save to cache
-        try:
-            cache_service.save_prediction(
-                stock_code="DISCORD",
-                observation_date=observation_date,
-                markdown_content=summary_text
-            )
-            logger.info(f"Cached Discord summary for {observation_date}")
-        except Exception as e:
-            logger.error(f"Cache write failed (non-fatal): {e}")
-
-        # Step 7: Return result
-        return {
-            "summary_markdown": summary_text,
-            "observation_date": observation_date.isoformat(),
-            "cached": False,
-            "model": model
-        }
-
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Unexpected error in discord_summary endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/discord-summary-latest")
+def get_latest_discord_summary(
+    regenerate: bool = False,
+    model: str = DEFAULT_DISCORD_SUMMARY_MODEL,
+    username: str = Depends(verify_credentials),
+) -> Dict:
+    """Return the latest scheduled follower summary, generating it if absent."""
+    try:
+        return DiscordFollowerMarketIntelligenceService().get_latest_or_generate(
+            force_regenerate=regenerate,
+            model=model,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("Latest Discord summary request failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -169,17 +92,22 @@ def get_discord_summary_prompt(
         Dictionary containing the prompt and metadata
     """
     try:
-        gex_service = GEXDataService()
+        service = DiscordMarketIntelligenceService()
+        gex_service = service.gex_service
 
         logger.info(f"Discord summary prompt request for {observation_date}")
 
         # Query Discord messages data
         try:
-            discord_rows = gex_service.get_discord_messages(observation_date)
+            window_start, window_end = service.summary_window(observation_date)
+            discord_rows = gex_service.get_discord_messages_between(window_start, window_end)
             if not discord_rows:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"No Discord messages found for {observation_date}"
+                    detail=(
+                        f"No Discord messages found between {window_start.isoformat()} "
+                        f"and {window_end.isoformat()}"
+                    )
                 )
         except HTTPException:
             raise
@@ -204,8 +132,12 @@ def get_discord_summary_prompt(
             # Replace placeholders
             prompt = template.replace("{{ observation_date }}", observation_date.isoformat())
             prompt = prompt.replace("{{ discord_messages }}", discord_data)
+            prompt = prompt.replace("{{ window_start }}", window_start.isoformat())
+            prompt = prompt.replace("{{ window_end }}", window_end.isoformat())
             prompt = prompt.replace("{{observation_date}}", observation_date.isoformat())
             prompt = prompt.replace("{{discord_messages}}", discord_data)
+            prompt = prompt.replace("{{window_start}}", window_start.isoformat())
+            prompt = prompt.replace("{{window_end}}", window_end.isoformat())
 
         except FileNotFoundError as e:
             logger.error(f"Template loading failed: {e}")
@@ -220,6 +152,8 @@ def get_discord_summary_prompt(
         return {
             "prompt": prompt,
             "observation_date": observation_date.isoformat(),
+            "window_start": window_start.isoformat(),
+            "window_end": window_end.isoformat(),
             "estimated_tokens": estimated_tokens,
             "message_count": len(discord_rows)
         }
@@ -456,101 +390,20 @@ def get_discord_summary_followers(
     username: str = Depends(verify_credentials)
 ) -> Dict:
     """
-    Generate or retrieve Discord summary for a predefined list of follower usernames.
+    Generate or retrieve the rolling follower summary used by the command center.
     """
     try:
-        gex_service = GEXDataService()
-        llm_service = LLMPredictionService()
-        cache_service = PredictionCacheService(cache_dir="llm_output/discord_message_summary_followers")
-
         logger.info(f"Discord followers summary request for {observation_date}, regenerate={regenerate}, model={model}")
+        return DiscordFollowerMarketIntelligenceService().generate_summary(
+            summary_date=observation_date,
+            force_regenerate=regenerate,
+            model=model,
+        )
 
-        cache_key = "DISCORD_FOLLOWERS"
-
-        if not regenerate:
-            cached = cache_service.get_cached_prediction(
-                stock_code=cache_key,
-                observation_date=observation_date
-            )
-            if cached:
-                logger.info(f"Returning cached Discord followers summary for {observation_date}")
-                return {
-                    "summary_markdown": cached,
-                    "observation_date": observation_date.isoformat(),
-                    "cached": True,
-                    "model": "cached"
-                }
-
-        try:
-            discord_rows = gex_service.get_discord_messages_by_users(observation_date, FOLLOWER_USERNAMES)
-            if not discord_rows:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No Discord messages found for {observation_date} (followers list)"
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Database query failed: {e}")
-            raise HTTPException(status_code=503, detail="Database unavailable")
-
-        discord_data = gex_service.format_discord_messages_as_pipe_delimited(discord_rows)
-
-        try:
-            from pathlib import Path
-            template_path = "signal_pattern/discord_followers_summary_template.md"
-            template_file = Path(template_path)
-
-            if not template_file.exists():
-                raise FileNotFoundError(f"Discord followers summary template not found: {template_path}")
-
-            template = template_file.read_text(encoding="utf-8")
-            logger.info(f"Loaded Discord followers summary template ({len(template)} characters)")
-
-            prompt = template.replace("{{ observation_date }}", observation_date.isoformat())
-            prompt = prompt.replace("{{ discord_messages }}", discord_data)
-            prompt = prompt.replace("{{ follower_usernames }}", ", ".join(FOLLOWER_USERNAMES))
-            prompt = prompt.replace("{{observation_date}}", observation_date.isoformat())
-            prompt = prompt.replace("{{discord_messages}}", discord_data)
-            prompt = prompt.replace("{{follower_usernames}}", ", ".join(FOLLOWER_USERNAMES))
-
-        except FileNotFoundError as e:
-            logger.error(f"Template loading failed: {e}")
-            raise HTTPException(status_code=500, detail="Discord followers summary template not found")
-        except Exception as e:
-            logger.error(f"Template processing failed: {e}")
-            raise HTTPException(status_code=500, detail="Template processing error")
-
-        try:
-            llm_result = llm_service.generate_prediction(
-                prompt=prompt,
-                stock_code=cache_key,
-                observation_date=observation_date.isoformat(),
-                model=model
-            )
-            summary_text = llm_result.get("prediction_text", "")
-            logger.info(f"LLM generated Discord followers summary ({len(summary_text)} characters)")
-        except Exception as e:
-            logger.error(f"LLM generation failed: {e}")
-            raise HTTPException(status_code=500, detail="LLM service unavailable, please try again")
-
-        try:
-            cache_service.save_prediction(
-                stock_code=cache_key,
-                observation_date=observation_date,
-                markdown_content=summary_text
-            )
-            logger.info(f"Cached Discord followers summary for {observation_date}")
-        except Exception as e:
-            logger.error(f"Cache write failed (non-fatal): {e}")
-
-        return {
-            "summary_markdown": summary_text,
-            "observation_date": observation_date.isoformat(),
-            "cached": False,
-            "model": model
-        }
-
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:

@@ -70,6 +70,159 @@ def _signal_strength(value: Any) -> float:
     }.get(text, 50.0)
 
 
+def _interpolate_score(value: float, anchors: List[Tuple[float, float]]) -> float:
+    value = _clamp(value, anchors[0][0], anchors[-1][0])
+    for index in range(1, len(anchors)):
+        upper_value, upper_score = anchors[index]
+        lower_value, lower_score = anchors[index - 1]
+        if value <= upper_value:
+            position = (value - lower_value) / (upper_value - lower_value)
+            return lower_score + position * (upper_score - lower_score)
+    return anchors[-1][1]
+
+
+def score_vix_regime(vix: float, bullish_structure: bool) -> Tuple[float, str]:
+    if bullish_structure:
+        score = _interpolate_score(
+            vix,
+            [
+                (12.0, 68.0),
+                (15.0, 78.0),
+                (18.0, 72.0),
+                (22.0, 44.0),
+                (25.0, 35.0),
+                (30.0, 65.0),
+                (35.0, 78.0),
+                (40.0, 85.0),
+            ],
+        )
+        if vix < 18:
+            phase = "bull-market grind"
+        elif vix < 25:
+            phase = "rising volatility"
+        elif vix < 30:
+            phase = "selloff / early bottoming"
+        else:
+            phase = "capitulation / bottoming"
+    else:
+        score = _interpolate_score(
+            vix,
+            [
+                (12.0, 65.0),
+                (18.0, 58.0),
+                (22.0, 42.0),
+                (25.0, 32.0),
+                (30.0, 22.0),
+                (35.0, 15.0),
+                (40.0, 10.0),
+            ],
+        )
+        phase = "elevated risk" if vix >= 25 else "weak-market volatility"
+    return round(score, 1), phase
+
+
+def analyze_us_breadth(row: Dict[str, Any]) -> Tuple[float, str, Dict[str, Any]]:
+    equal_weight_change = _number(row.get("TodayAverageChange"))
+    if equal_weight_change is None:
+        equal_weight_change = _number(row.get("TodayValueChange"))
+    spx_change = _number(row.get("TodayChange"))
+    advancers = _number(row.get("NumAdv"))
+    decliners = _number(row.get("NumDec"))
+    above_sma50 = _number(row.get("PercentageAboveSMA50"))
+    above_sma200 = _number(row.get("PercentageAboveSMA200"))
+
+    participation = None
+    if advancers is not None and decliners is not None and advancers + decliners > 0:
+        participation = advancers / (advancers + decliners)
+
+    leadership_gap = None
+    if equal_weight_change is not None and spx_change is not None:
+        leadership_gap = equal_weight_change - spx_change
+
+    score_inputs: List[Tuple[float, float]] = []
+    if participation is not None:
+        score_inputs.append((participation * 100, 0.40))
+    if equal_weight_change is not None:
+        score_inputs.append((_clamp(50 + equal_weight_change * 20), 0.25))
+    if leadership_gap is not None:
+        score_inputs.append((_clamp(50 + leadership_gap * 20), 0.15))
+    if above_sma50 is not None:
+        score_inputs.append((_clamp(above_sma50), 0.12))
+    if above_sma200 is not None:
+        score_inputs.append((_clamp(above_sma200), 0.08))
+    total_weight = sum(weight for _, weight in score_inputs)
+    score = (
+        sum(value * weight for value, weight in score_inputs) / total_weight
+        if total_weight > 0
+        else 50.0
+    )
+
+    if (
+        spx_change is not None
+        and spx_change > 0
+        and (
+            (equal_weight_change is not None and equal_weight_change < 0)
+            or (participation is not None and participation < 0.40)
+        )
+    ):
+        state = "NARROW ADVANCE"
+        explanation = "SPX is up, but most stocks are not participating."
+    elif (
+        spx_change is not None
+        and spx_change >= 0
+        and leadership_gap is not None
+        and leadership_gap <= -0.50
+        and participation is not None
+        and participation < 0.50
+    ):
+        state = "CAP-WEIGHT LEADERSHIP"
+        explanation = "Large stocks are lifting SPX faster than the typical constituent."
+    elif (
+        spx_change is not None
+        and spx_change < 0
+        and equal_weight_change is not None
+        and equal_weight_change > 0
+        and participation is not None
+        and participation >= 0.50
+    ):
+        state = "RESILIENT BREADTH"
+        explanation = "The average stock is stronger than the headline index."
+    elif (
+        equal_weight_change is not None
+        and equal_weight_change > 0
+        and participation is not None
+        and participation >= 0.60
+    ):
+        state = "BROAD ADVANCE"
+        explanation = "Gains are supported by broad constituent participation."
+    elif (
+        equal_weight_change is not None
+        and equal_weight_change < 0
+        and participation is not None
+        and participation <= 0.40
+    ):
+        state = "BROAD DECLINE"
+        explanation = "Losses are widespread across SPX constituents."
+    else:
+        state = "MIXED BREADTH"
+        explanation = "Participation and index direction are not strongly aligned."
+
+    diagnostics = {
+        "state": state,
+        "explanation": explanation,
+        "equal_weight_change": round(equal_weight_change, 2) if equal_weight_change is not None else None,
+        "spx_change": round(spx_change, 2) if spx_change is not None else None,
+        "leadership_gap": round(leadership_gap, 2) if leadership_gap is not None else None,
+        "advancers": int(advancers) if advancers is not None else None,
+        "decliners": int(decliners) if decliners is not None else None,
+        "advance_percentage": round(participation * 100, 1) if participation is not None else None,
+        "percentage_above_sma50": round(above_sma50, 1) if above_sma50 is not None else None,
+        "percentage_above_sma200": round(above_sma200, 1) if above_sma200 is not None else None,
+        "trend_as_of": _iso(row.get("TrendObservationDate")),
+    }
+    return round(_clamp(score), 1), f"{state}: {explanation}", diagnostics
+
+
 def score_regime_components(components: Iterable[Dict[str, Any]]) -> Tuple[float, float]:
     usable = [
         component
@@ -222,6 +375,7 @@ class MarketCommandService:
         score: Optional[float],
         detail: str,
         source: str,
+        diagnostics: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         return {
             "name": name,
@@ -231,6 +385,7 @@ class MarketCommandService:
             "detail": detail,
             "source": source,
             "as_of": _iso(row.get("ObservationDate")) if row else None,
+            "diagnostics": diagnostics,
         }
 
     def get_regime(self, observation_date: date, market: str) -> Dict[str, Any]:
@@ -260,8 +415,25 @@ class MarketCommandService:
         )
         breadth_rows = self._query(
             """
-            SELECT TOP 1 *
-            FROM StockDB_US.Transform.LeadingBreath
+            SELECT TOP 1
+                lb.*,
+                bl.NumAdv,
+                bl.NumDec
+            FROM StockDB_US.Transform.LeadingBreath AS lb
+            LEFT JOIN StockDB_US.Transform.BreathLine AS bl
+              ON lb.ObservationDate = bl.ObservationDate
+            WHERE lb.ObservationDate <= ?
+            ORDER BY lb.ObservationDate DESC
+            """,
+            (observation_date,),
+        )
+        breadth_trend_rows = self._query(
+            """
+            SELECT TOP 1
+                ObservationDate AS TrendObservationDate,
+                PercentageAboveSMA50,
+                PercentageAboveSMA200
+            FROM StockDB_US.StockData.SPX500Overview
             WHERE ObservationDate <= ?
             ORDER BY ObservationDate DESC
             """,
@@ -279,6 +451,8 @@ class MarketCommandService:
 
         gex = gex_rows[0] if gex_rows else None
         breadth = breadth_rows[0] if breadth_rows else None
+        if breadth and breadth_trend_rows:
+            breadth = {**breadth, **breadth_trend_rows[0]}
         clv = clv_rows[0] if clv_rows else None
 
         trend_score = None
@@ -293,15 +467,21 @@ class MarketCommandService:
                 trend_score -= 8
 
         breadth_score = None
+        breadth_detail = "Unavailable"
+        breadth_diagnostics = None
         if breadth:
-            breadth_change = _number(breadth.get("TodayAverageChange"))
-            breadth_value = _number(breadth.get("TodayValueChange"))
-            breadth_score = 50 + (breadth_change or 0) * 10 + (breadth_value or 0) * 0.05
+            breadth_score, breadth_detail, breadth_diagnostics = analyze_us_breadth(breadth)
 
         vix = _number(gex.get("VIX")) if gex else None
         volatility_score = None
+        volatility_detail = "Unavailable"
         if vix is not None:
-            volatility_score = 72 if vix < 16 else 58 if vix < 20 else 38 if vix < 25 else 22
+            bullish_structure = (
+                _number(gex.get("Price_Above_SMA50")) == 1
+                and _number(gex.get("SMA20_Above_SMA50")) == 1
+            )
+            volatility_score, volatility_phase = score_vix_regime(vix, bullish_structure)
+            volatility_detail = f"VIX {vix:.1f} - {volatility_phase}"
 
         gex_value = _number(gex.get("GEX")) if gex else None
         gex_score = None
@@ -329,8 +509,16 @@ class MarketCommandService:
 
         components = [
             self._component("Trend", 25, gex, trend_score, "SPX trend, moving averages and swing state.", "GEX_Features"),
-            self._component("Breadth", 20, breadth, breadth_score, "Leading breadth participation.", "LeadingBreath"),
-            self._component("Volatility", 15, gex, volatility_score, f"VIX {vix:.1f}" if vix is not None else "Unavailable", "GEX_Features"),
+            self._component(
+                "Breadth",
+                20,
+                breadth,
+                breadth_score,
+                breadth_detail,
+                "LeadingBreath + BreathLine",
+                breadth_diagnostics,
+            ),
+            self._component("Volatility", 15, gex, volatility_score, volatility_detail, "GEX_Features"),
             self._component("GEX", 15, gex, gex_score, "Positive gamma favours mean reversion; negative gamma favours larger moves.", "GEX_Features"),
             self._component("Dark Pool", 10, gex, dark_pool_score, f"Buy/sell ratio {dark_pool_ratio:.2f}" if dark_pool_ratio is not None else "Unavailable", "GEX_Features"),
             self._component("CLV / Flow", 15, clv, clv_score, "Market close-location-value trend.", "MarketCLVTrend"),
@@ -769,17 +957,33 @@ class MarketCommandService:
             "option_strategies": option_strategies,
         }
 
-    def get_summary(self, observation_date: date, limit: int = 20) -> Dict[str, Any]:
+    def get_summary(
+        self, observation_date: date, limit: int = 20, market: Optional[str] = None
+    ) -> Dict[str, Any]:
+        from app.services.aaii_sentiment_service import AAIISentimentService
+        from app.services.discord_market_intelligence_service import (
+            DiscordFollowerMarketIntelligenceService,
+        )
+        from app.services.fear_greed_service import FearGreedService
+
+        markets = (market.upper(),) if market else ("ASX", "US")
         regimes = {
             market: self.get_regime(observation_date, market)
-            for market in ("ASX", "US")
+            for market in markets
         }
-        return {
+        response = {
             "requested_date": observation_date.isoformat(),
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "regimes": regimes,
             "opportunities": {
                 market: self.get_opportunities(observation_date, market, regimes[market], limit)
-                for market in ("ASX", "US")
+                for market in markets
             },
         }
+        if "US" in markets:
+            response["sentiment"] = AAIISentimentService().get_insight(observation_date)
+            response["fear_greed"] = FearGreedService().get_insight(observation_date)
+            response["market_intelligence"] = (
+                DiscordFollowerMarketIntelligenceService().get_dashboard_digest(observation_date)
+            )
+        return response
