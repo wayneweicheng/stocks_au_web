@@ -474,26 +474,19 @@ def get_30m_support_resistance(
     snapshot_rows = model.execute_read_query(
         """
         SELECT
-            snapshot.ASXCode,
-            snapshot.ObservationDate,
-            snapshot.ImpliedVolatility,
-            snapshot.HistoricalVolatility,
-            snapshot.IVRank252,
-            snapshot.IVPercentile252,
-            snapshot.IVHistoryCount
-        FROM StockDB_US.StockData.DailyMarketSnapshot snapshot
-        INNER JOIN
-        (
-            SELECT ASXCode, MAX(ObservationDate) AS ObservationDate
-            FROM StockDB_US.StockData.DailyMarketSnapshot
-            WHERE ObservationDate <= ?
-              AND CollectionStatus = 'COMPLETE'
-            GROUP BY ASXCode
-        ) latest
-            ON latest.ASXCode = snapshot.ASXCode
-           AND latest.ObservationDate = snapshot.ObservationDate
+            ASXCode,
+            ObservationDate,
+            ImpliedVolatility,
+            HistoricalVolatility,
+            IVRank252,
+            IVPercentile252,
+            IVHistoryCount,
+            TrailingPE,
+            ForwardPE
+        FROM StockDB_US.StockData.v_DailyMarketSnapshot_Latest
+        WHERE CollectionStatus = 'COMPLETE'
         """,
-        (observation_date.isoformat(),),
+        (),
     ) or []
     snapshots_by_stock = {
         str(row.get("ASXCode") or ""): row
@@ -531,24 +524,16 @@ def get_30m_support_resistance(
         )
         if result is not None:
             stored_snapshot = snapshots_by_stock.get(code) or {}
-            live_iv = _number(live_quote.get("implied_volatility")) if live_quote else None
-            live_hv = (
-                _number(live_quote.get("historical_volatility"))
-                if live_quote
-                else None
-            )
             stored_iv = _number(stored_snapshot.get("ImpliedVolatility"))
             stored_hv = _number(stored_snapshot.get("HistoricalVolatility"))
-            implied_volatility = live_iv if live_iv is not None else stored_iv
-            historical_volatility = live_hv if live_hv is not None else stored_hv
             result["implied_volatility"] = (
-                round(implied_volatility, 6)
-                if implied_volatility is not None
+                round(stored_iv, 6)
+                if stored_iv is not None
                 else None
             )
             result["historical_volatility"] = (
-                round(historical_volatility, 6)
-                if historical_volatility is not None
+                round(stored_hv, 6)
+                if stored_hv is not None
                 else None
             )
             iv_percentile = _number(stored_snapshot.get("IVPercentile252"))
@@ -557,17 +542,21 @@ def get_30m_support_resistance(
                 round(iv_percentile, 2) if iv_percentile is not None else None
             )
             result["iv_rank"] = round(iv_rank, 2) if iv_rank is not None else None
+            trailing_pe = _number(stored_snapshot.get("TrailingPE"))
+            result["trailing_pe"] = (
+                round(trailing_pe, 4) if trailing_pe is not None else None
+            )
+            forward_pe = _number(stored_snapshot.get("ForwardPE"))
+            result["forward_pe"] = (
+                round(forward_pe, 4) if forward_pe is not None else None
+            )
             result["iv_history_count"] = int(
                 _number(stored_snapshot.get("IVHistoryCount")) or 0
             )
             result["iv_source"] = (
-                str(live_quote.get("source"))
-                if live_iv is not None and live_quote
-                else (
-                    "database"
-                    if implied_volatility is not None or historical_volatility is not None
-                    else None
-                )
+                "database"
+                if stored_iv is not None or stored_hv is not None
+                else None
             )
             snapshot_date = stored_snapshot.get("ObservationDate")
             result["iv_observation_date"] = (

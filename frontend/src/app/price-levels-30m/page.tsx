@@ -42,6 +42,8 @@ interface StockLevels {
   iv_percentile: number | null;
   iv_rank: number | null;
   iv_history_count: number;
+  trailing_pe: number | null;
+  forward_pe: number | null;
   iv_source: "ib_live" | "ib_delayed" | "database" | null;
   iv_observation_date: string | null;
   supports: PriceRange[];
@@ -332,12 +334,11 @@ export default function PriceLevels30mPage() {
               <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-3">Stock</th>
-                  <th className="px-3 py-3 text-right">Last Close</th>
-                  <th className="px-3 py-3 text-right">Selection Price</th>
+                  <th className="px-3 py-3 text-right">Reference Price</th>
                   <th className="px-3 py-3 text-right">Daily ATR(14)</th>
                   <th className="px-3 py-3 text-right">IV Percentile / Rank</th>
-                  <th className="px-3 py-3 text-right">IV</th>
-                  <th className="px-3 py-3 text-right">Historical IV</th>
+                  <th className="px-3 py-3 text-right">Volatility</th>
+                  <th className="px-3 py-3 text-right">P/E</th>
                   <th className="px-3 py-3">Support Zone 1</th>
                   <th className="px-3 py-3">Support Zone 2</th>
                   <th className="px-3 py-3">Resistance Zone 1</th>
@@ -351,17 +352,13 @@ export default function PriceLevels30mPage() {
                   <tr key={stock.database_code} className="align-top hover:bg-slate-50">
                     <td className="px-3 py-3 font-semibold text-slate-900">{stock.stock_code}</td>
                     <td className="px-3 py-3 text-right font-medium">
-                      <div>{price(stock.latest_close)}</div>
-                      <div className="mt-1 text-xs font-normal text-slate-500">Distance baseline</div>
-                    </td>
-                    <td className="px-3 py-3 text-right font-medium">
-                      <div>{price(stock.reference_price)}</div>
+                      <div>Last Close {price(stock.latest_close)}</div>
                       <div className="mt-1 text-xs font-normal text-slate-500">
                         {stock.price_source === "ib_live"
-                          ? "IB live"
+                          ? `IB Live ${price(stock.reference_price)}`
                           : stock.price_source === "ib_delayed"
-                            ? "IB delayed"
-                            : "30M close"}
+                            ? `IB Delayed ${price(stock.reference_price)}`
+                            : `30M Close ${price(stock.reference_price)}`}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right text-slate-600">{price(stock.atr_daily)}</td>
@@ -373,21 +370,18 @@ export default function PriceLevels30mPage() {
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <div>{percent(stock.implied_volatility)}</div>
+                      <div>IV {percent(stock.implied_volatility)}</div>
                       <div className="mt-1 text-xs font-normal text-slate-500">
-                        {stock.iv_source === "ib_live"
-                          ? "IB live 30-day"
-                          : stock.iv_source === "ib_delayed"
-                            ? "IB delayed 30-day"
-                            : stock.iv_source === "database"
-                              ? `Stored${stock.iv_observation_date ? ` ${stock.iv_observation_date}` : ""}`
-                              : "Unavailable"}
+                        Historical IV {percent(stock.historical_volatility)}
+                      </div>
+                      <div className="mt-1 text-[11px] font-normal text-slate-400">
+                        {stock.iv_observation_date ? `Stored ${stock.iv_observation_date}` : "Stored snapshot"}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <div>{percent(stock.historical_volatility)}</div>
+                      <div>Trailing {price(stock.trailing_pe)}</div>
                       <div className="mt-1 text-xs font-normal text-slate-500">
-                        {stock.historical_volatility === null ? "Unavailable" : "IB 30-day realized"}
+                        Forward {price(stock.forward_pe)}
                       </div>
                     </td>
                     <td className="px-3 py-3"><LevelCell level={stock.supports[0]} tone="support" stockCode={stock.stock_code} /></td>
@@ -402,7 +396,7 @@ export default function PriceLevels30mPage() {
                 ))}
                 {!visibleStocks.length ? (
                   <tr>
-                    <td className="px-3 py-8 text-center text-slate-500" colSpan={13}>
+                    <td className="px-3 py-8 text-center text-slate-500" colSpan={12}>
                       {loading ? "Loading 30-minute levels..." : "No 30-minute price data found."}
                     </td>
                   </tr>
