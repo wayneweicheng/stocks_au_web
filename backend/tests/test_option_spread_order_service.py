@@ -220,6 +220,33 @@ class OptionSpreadOrderServiceTests(unittest.TestCase):
 
                 self.assertIn(message, str(ctx.exception))
 
+    def test_preview_rejects_profit_exit_above_credit(self):
+        spread = SellPutSpread(
+            underlying="QQQ",
+            quantity=1,
+            short_leg=OptionLeg(
+                option_symbol="QQQ260116P00480000",
+                action="SELL",
+                put_call="P",
+                expiry="20260116",
+                strike=480.0,
+            ),
+            long_leg=OptionLeg(
+                option_symbol="QQQ260116P00470000",
+                action="BUY",
+                put_call="P",
+                expiry="20260116",
+                strike=470.0,
+            ),
+            net_credit=1.25,
+            profit_exit_percent=0.0,
+        )
+
+        with self.assertRaises(ValueError) as ctx:
+            calculate_sell_put_spread_preview(spread)
+
+        self.assertIn("Profit exit debit must be positive and less than entry credit", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

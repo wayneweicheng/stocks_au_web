@@ -1,9 +1,15 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from pydantic import BaseModel, field_validator
-from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, field_validator, model_validator
+from typing import List, Dict, Any, Optional, Literal
 from .auth import verify_credentials
 from app.core.config import settings
 from app.core.db import get_db_connection
+from app.services.option_spread_order_service import (
+    OptionLeg,
+    SellPutSpread,
+    calculate_sell_put_spread_preview,
+    validate_sell_put_spread,
+)
 import math
 import random
 import time
@@ -11,12 +17,14 @@ import logging
 import asyncio
 
 try:
-    from ib_insync import IB, Stock, LimitOrder, StopOrder  # type: ignore
+    from ib_insync import IB, Stock, LimitOrder, StopOrder, Contract, ComboLeg  # type: ignore
 except Exception:  # pragma: no cover
     IB = None  # type: ignore
     Stock = None  # type: ignore
     LimitOrder = None  # type: ignore
     StopOrder = None  # type: ignore
+    Contract = None  # type: ignore
+    ComboLeg = None  # type: ignore
 
 
 router = APIRouter(prefix="/api/ib", tags=["ib-orders"], dependencies=[Depends(verify_credentials)])
@@ -194,6 +202,148 @@ class PlaceOrdersAtPriceBatchRequest(BaseModel):
         if not v:
             raise ValueError("orders must not be empty")
         return v
+
+
+class OptionLegRequest(BaseModel):
+    option_symbol: str
+    action: Literal["BUY", "SELL"]
+    put_call: Literal["P", "C"]
+    expiry: str
+    strike: float
+    con_id: Optional[int] = None
+    exchange: str = "SMART"
+
+    @field_validator("option_symbol", "expiry", "exchange")
+    @classmethod
+    def validate_required_text(cls, v: str) -> str:
+        vv = (v or "").strip()
+        if not vv:
+            raise ValueError("Value is required")
+        return vv
+
+    @field_validator("strike")
+    @classmethod
+    def validate_strike(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("Strike must be greater than zero")
+        return float(v)
+
+
+class SellPutSpreadOrderRequest(BaseModel):
+    underlying: str
+    quantity: int
+    short_leg: OptionLegRequest
+    long_leg: OptionLegRequest
+    net_credit: float
+    profit_exit_percent: Optional[float] = 30.0
+    place_profit_exit: bool = True
+
+    @field_validator("underlying")
+    @classmethod
+    def validate_underlying(cls, v: str) -> str:
+        vv = (v or "").strip().upper()
+        if not vv:
+            raise ValueError("Underlying is required")
+        return vv
+
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("Quantity must be greater than zero")
+        return int(v)
+
+    @field_validator("net_credit")
+    @classmethod
+    def validate_net_credit(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("Net credit must be greater than zero")
+        return float(v)
+
+    @model_validator(mode="after")
+    def validate_spread_shape(self) -> "SellPutSpreadOrderRequest":
+        validate_sell_put_spread(_spread_from_request(self))
+        return self
+
+
+class SellPutOrderRequest(BaseModel):
+    underlying: str
+    quantity: int
+    short_leg: OptionLegRequest
+    net_credit: float
+
+    @field_validator("underlying")
+    @classmethod
+    def validate_underlying(cls, v: str) -> str:
+        vv = (v or "").strip().upper()
+        if not vv:
+            raise ValueError("Underlying is required")
+        return vv
+
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("Quantity must be greater than zero")
+        return int(v)
+
+    @field_validator("net_credit")
+    @classmethod
+    def validate_net_credit(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("Net credit must be greater than zero")
+        return float(v)
+
+
+def _spread_from_request(request: SellPutSpreadOrderRequest) -> SellPutSpread:
+    return SellPutSpread(
+        underlying=request.underlying,
+        quantity=request.quantity,
+        short_leg=OptionLeg(
+            option_symbol=request.short_leg.option_symbol,
+            action=request.short_leg.action,
+            put_call=request.short_leg.put_call,
+            expiry=request.short_leg.expiry,
+            strike=request.short_leg.strike,
+        ),
+        long_leg=OptionLeg(
+            option_symbol=request.long_leg.option_symbol,
+            action=request.long_leg.action,
+            put_call=request.long_leg.put_call,
+            expiry=request.long_leg.expiry,
+            strike=request.long_leg.strike,
+        ),
+        net_credit=request.net_credit,
+        profit_exit_percent=request.profit_exit_percent or 30.0,
+    )
+
+
+def _build_combo_leg(leg: OptionLegRequest, ratio: int = 1):
+    if leg.con_id is None:
+        raise HTTPException(status_code=400, detail=f"Missing con_id for {leg.option_symbol}; qualify option legs before placing combo")
+    combo_leg = ComboLeg()
+    combo_leg.conId = int(leg.con_id)
+    combo_leg.ratio = ratio
+    combo_leg.action = leg.action
+    combo_leg.exchange = leg.exchange or "SMART"
+    return combo_leg
+
+
+def _build_sell_put_spread_contract(request: SellPutSpreadOrderRequest):
+    if Contract is None or ComboLeg is None:
+        raise HTTPException(status_code=500, detail="ib_insync combo support is not available")
+
+    contract = Contract()
+    contract.symbol = request.underlying.split(".")[0].upper()
+    contract.secType = "BAG"
+    contract.currency = "USD"
+    contract.exchange = "SMART"
+    contract.comboLegs = [
+        _build_combo_leg(request.short_leg),
+        _build_combo_leg(request.long_leg),
+    ]
+    return contract
+
 
 def _connect_ib() -> "tuple[IB, asyncio.AbstractEventLoop]":
     if IB is None:
@@ -776,6 +926,166 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
     except Exception as e:
         logger.exception("IB place_orders_at_price unexpected error: %s", e)
         raise HTTPException(status_code=500, detail=f"Unexpected IB error: {e}")
+    finally:
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+
+
+@router.post("/place-sell-put")
+def place_sell_put(order: SellPutOrderRequest) -> Dict[str, Any]:
+    if order.short_leg.put_call != "P" or order.short_leg.action != "SELL":
+        raise HTTPException(status_code=400, detail="Cash-secured put order requires one SELL put leg")
+    if order.short_leg.con_id is None:
+        raise HTTPException(status_code=400, detail=f"Missing con_id for {order.short_leg.option_symbol}")
+    if Contract is None:
+        raise HTTPException(status_code=500, detail="ib_insync option support is not available")
+
+    ib, loop = _connect_ib()
+    try:
+        contract = Contract()
+        contract.conId = int(order.short_leg.con_id)
+        contract.secType = "OPT"
+        contract.exchange = order.short_leg.exchange or "SMART"
+        contract.currency = "USD"
+
+        limit_order = LimitOrder("SELL", order.quantity, lmtPrice=float(order.net_credit))
+        limit_order.outsideRth = True
+        try:
+            limit_order.tif = "DAY"
+        except Exception:
+            pass
+        limit_order.eTradeOnly = None
+        limit_order.firmQuoteOnly = None
+
+        trade = ib.placeOrder(contract, limit_order)
+        additional_settings = {
+            "OptionStrategy": "SELL_PUT",
+            "OptionBuySell": "SELL",
+            "OptionSymbol": order.short_leg.option_symbol,
+            "NetCreditLimit": order.net_credit,
+        }
+        return {
+            "ok": True,
+            "message": f"Placed cash-secured sell put {order.short_leg.option_symbol} credit {order.net_credit}",
+            "order_type": "SELL_PUT",
+            "entry": {
+                "ib_order_id": getattr(trade, "order", None).orderId if getattr(trade, "order", None) else None,
+                "side": "SELL",
+                "quantity": order.quantity,
+                "net_credit": order.net_credit,
+            },
+            "additional_settings": additional_settings,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("IB place_sell_put unexpected error for %s: %s", order.short_leg.option_symbol, e)
+        raise HTTPException(status_code=500, detail=f"Unexpected IB sell put error: {e}")
+    finally:
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+
+
+@router.post("/place-sell-put-spread")
+def place_sell_put_spread(order: SellPutSpreadOrderRequest) -> Dict[str, Any]:
+    spread = validate_sell_put_spread(_spread_from_request(order))
+    preview = calculate_sell_put_spread_preview(spread)
+    entry_credit = float(order.net_credit)
+    profit_exit_debit = float(preview["profit_exit_debit"])
+
+    ib, loop = _connect_ib()
+    try:
+        contract = _build_sell_put_spread_contract(order)
+
+        parent = LimitOrder("SELL", order.quantity, lmtPrice=entry_credit)
+        parent.orderId = ib.client.getReqId()
+        parent.transmit = not order.place_profit_exit
+        parent.outsideRth = True
+        try:
+            parent.tif = "DAY"
+        except Exception:
+            pass
+        parent.eTradeOnly = None
+        parent.firmQuoteOnly = None
+
+        parent_trade = ib.placeOrder(contract, parent)
+        ib.sleep(0.05)
+
+        profit_trade = None
+        if order.place_profit_exit:
+            profit_exit = LimitOrder("BUY", order.quantity, lmtPrice=profit_exit_debit)
+            profit_exit.parentId = parent.orderId
+            profit_exit.transmit = True
+            profit_exit.outsideRth = True
+            try:
+                profit_exit.tif = "GTC"
+            except Exception:
+                pass
+            profit_exit.eTradeOnly = None
+            profit_exit.firmQuoteOnly = None
+            profit_trade = ib.placeOrder(contract, profit_exit)
+
+        additional_settings = {
+            "OptionStrategy": "SELL_PUT_SPREAD",
+            "OptionBuySell": "SELL",
+            "OptionSymbol": spread.short_leg.option_symbol,
+            "SpreadLegs": [
+                {
+                    "role": "SHORT",
+                    "action": "SELL",
+                    "put_call": "P",
+                    "option_symbol": spread.short_leg.option_symbol,
+                    "expiry": spread.short_leg.expiry,
+                    "strike": spread.short_leg.strike,
+                },
+                {
+                    "role": "LONG",
+                    "action": "BUY",
+                    "put_call": "P",
+                    "option_symbol": spread.long_leg.option_symbol,
+                    "expiry": spread.long_leg.expiry,
+                    "strike": spread.long_leg.strike,
+                },
+            ],
+            "NetCreditLimit": entry_credit,
+            "ProfitExitPercent": order.profit_exit_percent or 30.0,
+            "ProfitExitDebit": profit_exit_debit,
+        }
+
+        return {
+            "ok": True,
+            "message": f"Placed sell put spread {order.underlying} credit {entry_credit}",
+            "order_type": "SELL_PUT_SPREAD",
+            "entry": {
+                "ib_order_id": getattr(parent_trade, "order", None).orderId if getattr(parent_trade, "order", None) else None,
+                "side": "SELL",
+                "quantity": order.quantity,
+                "net_credit": entry_credit,
+            },
+            "profit_exit": None if profit_trade is None else {
+                "ib_order_id": getattr(profit_trade, "order", None).orderId if getattr(profit_trade, "order", None) else None,
+                "side": "BUY",
+                "quantity": order.quantity,
+                "limit_debit": profit_exit_debit,
+                "profit_exit_percent": order.profit_exit_percent or 30.0,
+            },
+            "spread": {
+                "underlying": spread.underlying,
+                "short_leg": spread.short_leg.__dict__,
+                "long_leg": spread.long_leg.__dict__,
+            },
+            "preview": preview,
+            "additional_settings": additional_settings,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("IB place_sell_put_spread unexpected error for %s: %s", order.underlying, e)
+        raise HTTPException(status_code=500, detail=f"Unexpected IB spread order error: {e}")
     finally:
         try:
             ib.disconnect()
