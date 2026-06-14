@@ -30,6 +30,16 @@ def _positive_price(value: Any) -> Optional[float]:
     return price
 
 
+def _volatility(value: Any) -> Optional[float]:
+    try:
+        volatility = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(volatility) or volatility <= 0:
+        return None
+    return volatility
+
+
 def _base_symbol(symbol: str) -> str:
     return (symbol or "").strip().upper().split(".", 1)[0]
 
@@ -176,14 +186,21 @@ def get_live_stock_prices(stock_codes: Iterable[str], wait_seconds: float = 3.0)
                 contract = contracts_by_symbol.get(_base_symbol(code))
                 if contract is None:
                     continue
-                ticker = ib.reqMktData(contract, "221,225,294,295", False, False)
+                ticker = ib.reqMktData(contract, "104,106,221,225,294,295", False, False)
                 subscriptions.append(contract)
                 active[code] = ticker
 
             deadline = time.time() + wait_seconds
             while time.time() < deadline:
                 ib.sleep(0.2)
-                if active and all(_ticker_price(ticker) is not None for ticker in active.values()):
+                if active and all(
+                    _ticker_price(ticker) is not None
+                    and (
+                        _volatility(getattr(ticker, "impliedVolatility", None)) is not None
+                        or _volatility(getattr(ticker, "histVolatility", None)) is not None
+                    )
+                    for ticker in active.values()
+                ):
                     break
 
             for code, ticker in active.items():
@@ -197,6 +214,12 @@ def get_live_stock_prices(stock_codes: Iterable[str], wait_seconds: float = 3.0)
                         "ib_delayed" if actual_type in {2, 3, 4} else source
                     ),
                     "market_data_type": int(actual_type) if actual_type in {1, 2, 3, 4} else market_data_type,
+                    "implied_volatility": _volatility(
+                        getattr(ticker, "impliedVolatility", None)
+                    ),
+                    "historical_volatility": _volatility(
+                        getattr(ticker, "histVolatility", None)
+                    ),
                 }
                 remaining.discard(code)
 

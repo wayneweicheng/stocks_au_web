@@ -37,6 +37,13 @@ interface StockLevels {
   median_bar_range: number;
   atr_daily: number | null;
   atr_period: number;
+  implied_volatility: number | null;
+  historical_volatility: number | null;
+  iv_percentile: number | null;
+  iv_rank: number | null;
+  iv_history_count: number;
+  iv_source: "ib_live" | "ib_delayed" | "database" | null;
+  iv_observation_date: string | null;
   supports: PriceRange[];
   resistances: PriceRange[];
 }
@@ -67,6 +74,11 @@ function price(value: number | null | undefined) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
+}
+
+function percent(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "n/a";
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 function LevelCell({
@@ -206,8 +218,8 @@ export default function PriceLevels30mPage() {
       {data?.live_price_check && data.live_price_missing?.length ? (
         <Alert variant="warning">
           IB did not return a current price for {data.live_price_missing.length} symbol
-          {data.live_price_missing.length === 1 ? "" : "s"}; those rows are omitted rather than calculated from a
-          30-minute close.
+          {data.live_price_missing.length === 1 ? "" : "s"}; the page used the latest 30-minute close and stored
+          volatility where available.
         </Alert>
       ) : null}
 
@@ -323,6 +335,9 @@ export default function PriceLevels30mPage() {
                   <th className="px-3 py-3 text-right">Last Close</th>
                   <th className="px-3 py-3 text-right">Selection Price</th>
                   <th className="px-3 py-3 text-right">Daily ATR(14)</th>
+                  <th className="px-3 py-3 text-right">IV Percentile / Rank</th>
+                  <th className="px-3 py-3 text-right">IV</th>
+                  <th className="px-3 py-3 text-right">Historical IV</th>
                   <th className="px-3 py-3">Support Zone 1</th>
                   <th className="px-3 py-3">Support Zone 2</th>
                   <th className="px-3 py-3">Resistance Zone 1</th>
@@ -350,6 +365,31 @@ export default function PriceLevels30mPage() {
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right text-slate-600">{price(stock.atr_daily)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <div>{stock.iv_percentile === null ? "n/a" : `${stock.iv_percentile.toFixed(1)}%`}</div>
+                      <div className="mt-1 text-xs font-normal text-slate-500">
+                        Rank {stock.iv_rank === null ? "n/a" : `${stock.iv_rank.toFixed(1)}%`}
+                        {stock.iv_history_count ? `, ${stock.iv_history_count} days` : ""}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <div>{percent(stock.implied_volatility)}</div>
+                      <div className="mt-1 text-xs font-normal text-slate-500">
+                        {stock.iv_source === "ib_live"
+                          ? "IB live 30-day"
+                          : stock.iv_source === "ib_delayed"
+                            ? "IB delayed 30-day"
+                            : stock.iv_source === "database"
+                              ? `Stored${stock.iv_observation_date ? ` ${stock.iv_observation_date}` : ""}`
+                              : "Unavailable"}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <div>{percent(stock.historical_volatility)}</div>
+                      <div className="mt-1 text-xs font-normal text-slate-500">
+                        {stock.historical_volatility === null ? "Unavailable" : "IB 30-day realized"}
+                      </div>
+                    </td>
                     <td className="px-3 py-3"><LevelCell level={stock.supports[0]} tone="support" stockCode={stock.stock_code} /></td>
                     <td className="px-3 py-3"><LevelCell level={stock.supports[1]} tone="support" stockCode={stock.stock_code} /></td>
                     <td className="px-3 py-3"><LevelCell level={stock.resistances[0]} tone="resistance" stockCode={stock.stock_code} /></td>
@@ -362,7 +402,7 @@ export default function PriceLevels30mPage() {
                 ))}
                 {!visibleStocks.length ? (
                   <tr>
-                    <td className="px-3 py-8 text-center text-slate-500" colSpan={10}>
+                    <td className="px-3 py-8 text-center text-slate-500" colSpan={13}>
                       {loading ? "Loading 30-minute levels..." : "No 30-minute price data found."}
                     </td>
                   </tr>
