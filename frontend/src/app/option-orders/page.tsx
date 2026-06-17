@@ -23,10 +23,11 @@ interface ChainRow {
   dte: number;
   right: Right;
   strike: number;
+  quote: QuoteSnapshot | null;
   delayed_quote: DelayedQuote | null;
 }
 
-interface DelayedQuote {
+interface QuoteSnapshot {
   bid: number | null;
   ask: number | null;
   mid: number | null;
@@ -34,11 +35,26 @@ interface DelayedQuote {
   volume: number | null;
   iv: number | null;
   observation_date: string;
+  source?: string;
+  market_data_type?: number | null;
+}
+
+type DelayedQuote = QuoteSnapshot;
+
+interface MarketStatus {
+  label: string;
+  is_live_market: boolean;
+  detail: string;
+  market_data_type: number | null;
+  regular_session: boolean;
+  checked_at: string;
+  timezone: string;
 }
 
 interface ChainResponse {
   ok: boolean;
   symbol: string;
+  market_status?: MarketStatus;
   underlying: {
     reference_price: number | null;
     bid: number | null;
@@ -59,6 +75,7 @@ interface ExpirationRow {
 interface ExpirationsResponse {
   ok: boolean;
   symbol: string;
+  market_status?: MarketStatus;
   underlying: ChainResponse["underlying"];
   expirations: ExpirationRow[];
 }
@@ -88,6 +105,8 @@ interface EstimateResponse {
   skew_adjustment: number;
   directional_iv_adjustment: number;
   warnings?: string[];
+  market_status?: MarketStatus;
+  effective_quote: QuoteSnapshot | null;
   delayed_quote: DelayedQuote | null;
   quote: {
     bid: number | null;
@@ -146,6 +165,13 @@ function orderSummary(action: Action, row: ChainRow | null, qty: string, limitPr
   return `${action} ${qty || "?"} ${row.option_symbol} @ ${limitPrice || "?"} limit`;
 }
 
+function quoteSourceLabel(quote: QuoteSnapshot | null | undefined) {
+  if (!quote?.source) return "Quote source: n/a";
+  if (quote.source === "live") return "Quote source: live IB";
+  if (quote.source === "database") return "Quote source: database";
+  return `Quote source: ${quote.source}`;
+}
+
 export default function OptionOrdersPage() {
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const prefillStarted = useRef(false);
@@ -169,6 +195,7 @@ export default function OptionOrdersPage() {
   const [estimateError, setEstimateError] = useState("");
   const [orderResult, setOrderResult] = useState<OrderResult | null>(null);
   const [estimate, setEstimate] = useState<EstimateResponse | null>(null);
+  const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null);
   const [targetUnderlying, setTargetUnderlying] = useState("");
   const [action, setAction] = useState<Action>("SELL");
   const [quantity, setQuantity] = useState("1");
@@ -225,6 +252,7 @@ export default function OptionOrdersPage() {
           ? expirationData.expirations
           : [];
         setExpirations(availableExpirations);
+        setMarketStatus(expirationData.market_status || null);
         const chosenExpiry = [...availableExpirations]
           .filter((item) => item.dte >= 15 && item.dte <= 21)
           .sort((left, right) => Math.abs(left.dte - 18) - Math.abs(right.dte - 18) || left.dte - right.dte)[0];
@@ -249,11 +277,12 @@ export default function OptionOrdersPage() {
           throw new Error((chainData as any)?.detail || `HTTP ${chainResponse.status}`);
         }
         setChain(chainData);
+        setMarketStatus(chainData.market_status || expirationData.market_status || null);
         setExpiryFilter(chosenExpiry.expiry);
 
         const chosenContract = [...(chainData.rows || [])].sort((left, right) => {
-          const leftVolume = Number(left.delayed_quote?.volume);
-          const rightVolume = Number(right.delayed_quote?.volume);
+          const leftVolume = Number((left.quote || left.delayed_quote)?.volume);
+          const rightVolume = Number((right.quote || right.delayed_quote)?.volume);
           const safeLeftVolume = Number.isFinite(leftVolume) ? leftVolume : -1;
           const safeRightVolume = Number.isFinite(rightVolume) ? rightVolume : -1;
           return safeRightVolume - safeLeftVolume;
@@ -280,6 +309,7 @@ export default function OptionOrdersPage() {
           throw new Error((estimateData as any)?.detail || `HTTP ${estimateResponse.status}`);
         }
         setEstimate(estimateData);
+        setMarketStatus(estimateData.market_status || chainData.market_status || expirationData.market_status || null);
         setLimitPrice(Number(estimateData.estimated_price).toFixed(2));
       } catch (exc: any) {
         setError(exc?.message || String(exc));
@@ -305,12 +335,14 @@ export default function OptionOrdersPage() {
 
     if (liquiditySort) {
       rows.sort((left, right) => {
+        const leftQuote = left.quote || left.delayed_quote;
+        const rightQuote = right.quote || right.delayed_quote;
         const leftValue = liquiditySort.key === "spread"
-          ? left.delayed_quote?.spread_pct
-          : left.delayed_quote?.volume;
+          ? leftQuote?.spread_pct
+          : leftQuote?.volume;
         const rightValue = liquiditySort.key === "spread"
-          ? right.delayed_quote?.spread_pct
-          : right.delayed_quote?.volume;
+          ? rightQuote?.spread_pct
+          : rightQuote?.volume;
         const leftMissing = leftValue === null || leftValue === undefined || !Number.isFinite(Number(leftValue));
         const rightMissing = rightValue === null || rightValue === undefined || !Number.isFinite(Number(rightValue));
         if (leftMissing && rightMissing) return left.strike - right.strike;
@@ -374,6 +406,7 @@ export default function OptionOrdersPage() {
       const data: ExpirationsResponse = await response.json();
       if (!response.ok) throw new Error((data as any)?.detail || `HTTP ${response.status}`);
       setExpirations(Array.isArray(data.expirations) ? data.expirations : []);
+      setMarketStatus(data.market_status || null);
       setTargetUnderlying(
         data?.underlying?.reference_price
           ? Number(data.underlying.reference_price).toFixed(2)
@@ -413,6 +446,7 @@ export default function OptionOrdersPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
       setChain(data);
+      setMarketStatus(data.market_status || null);
       setTargetUnderlying(
         data?.underlying?.reference_price
           ? Number(data.underlying.reference_price).toFixed(2)
@@ -460,6 +494,7 @@ export default function OptionOrdersPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
       setEstimate(data);
+      setMarketStatus(data.market_status || marketStatus);
       setLimitPrice(Number(data.estimated_price).toFixed(2));
     } catch (exc: any) {
       setEstimateError(exc?.message || String(exc));
@@ -527,6 +562,19 @@ export default function OptionOrdersPage() {
       />
 
       {error ? <Alert variant="danger">Error: {error}</Alert> : null}
+
+      {marketStatus ? (
+        <div
+          className={`rounded-md border px-4 py-3 text-sm ${
+            marketStatus.is_live_market
+              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+              : "border-orange-200 bg-orange-50 text-orange-900"
+          }`}
+        >
+          <div className="font-semibold">{marketStatus.label}</div>
+          <div className="mt-0.5">{marketStatus.detail}</div>
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -625,13 +673,14 @@ export default function OptionOrdersPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredRows.map((row) => {
+                    const rowQuote = row.quote || row.delayed_quote;
                     const selected = selectedRow?.option_symbol === row.option_symbol;
-                    const illiquid = row.delayed_quote?.spread_pct !== null
-                      && row.delayed_quote?.spread_pct !== undefined
-                      && row.delayed_quote.spread_pct > 3;
-                    const liquid = row.delayed_quote?.spread_pct !== null
-                      && row.delayed_quote?.spread_pct !== undefined
-                      && row.delayed_quote.spread_pct < 3;
+                    const illiquid = rowQuote?.spread_pct !== null
+                      && rowQuote?.spread_pct !== undefined
+                      && rowQuote.spread_pct > 3;
+                    const liquid = rowQuote?.spread_pct !== null
+                      && rowQuote?.spread_pct !== undefined
+                      && rowQuote.spread_pct < 3;
                     return (
                       <tr
                         key={row.option_symbol}
@@ -650,12 +699,12 @@ export default function OptionOrdersPage() {
                         <td className="px-3 py-2">{row.dte}</td>
                         <td className="px-3 py-2">{row.right === "P" ? "Put" : "Call"}</td>
                         <td className="px-3 py-2 text-right">{num(row.strike, 2)}</td>
-                        <td className="px-3 py-2 text-right">{money(row.delayed_quote?.bid)}</td>
-                        <td className="px-3 py-2 text-right">{money(row.delayed_quote?.ask)}</td>
+                        <td className="px-3 py-2 text-right">{money(rowQuote?.bid)}</td>
+                        <td className="px-3 py-2 text-right">{money(rowQuote?.ask)}</td>
                         <td className={`px-3 py-2 text-right ${illiquid ? "font-semibold text-pink-800" : ""}`}>
-                          {spreadPct(row.delayed_quote?.spread_pct)}
+                          {spreadPct(rowQuote?.spread_pct)}
                         </td>
-                        <td className="px-3 py-2 text-right">{num(row.delayed_quote?.volume, 0)}</td>
+                        <td className="px-3 py-2 text-right">{num(rowQuote?.volume, 0)}</td>
                         <td className="px-3 py-2 font-mono text-xs">{row.option_symbol}</td>
                       </tr>
                     );
@@ -682,16 +731,24 @@ export default function OptionOrdersPage() {
               <div className="rounded-md bg-slate-50 p-3 text-sm">
                 <div className="text-xs uppercase text-slate-500">Selected</div>
                 <div className="mt-1 break-all font-mono text-xs">{selectedRow?.option_symbol || "None"}</div>
-                {selectedRow?.delayed_quote ? (
+                {selectedRow?.quote || selectedRow?.delayed_quote ? (
                   <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-600">
-                    <div>Bid: {money(selectedRow.delayed_quote.bid)}</div>
-                    <div>Ask: {money(selectedRow.delayed_quote.ask)}</div>
-                    <div>Mid: {money(selectedRow.delayed_quote.mid)}</div>
-                    <div className={Number(selectedRow.delayed_quote.spread_pct) > 3 ? "font-semibold text-pink-700" : Number(selectedRow.delayed_quote.spread_pct) < 3 ? "font-semibold text-emerald-700" : ""}>
-                      Spread: {spreadPct(selectedRow.delayed_quote.spread_pct)}
-                    </div>
-                    <div>Volume: {num(selectedRow.delayed_quote.volume, 0)}</div>
-                    <div>Quote date: {selectedRow.delayed_quote.observation_date || "n/a"}</div>
+                    {(() => {
+                      const selectedQuote = selectedRow.quote || selectedRow.delayed_quote;
+                      return (
+                        <>
+                          <div>Bid: {money(selectedQuote?.bid)}</div>
+                          <div>Ask: {money(selectedQuote?.ask)}</div>
+                          <div>Mid: {money(selectedQuote?.mid)}</div>
+                          <div className={Number(selectedQuote?.spread_pct) > 3 ? "font-semibold text-pink-700" : Number(selectedQuote?.spread_pct) < 3 ? "font-semibold text-emerald-700" : ""}>
+                            Spread: {spreadPct(selectedQuote?.spread_pct)}
+                          </div>
+                          <div>Volume: {num(selectedQuote?.volume, 0)}</div>
+                          <div>{quoteSourceLabel(selectedQuote)}</div>
+                          <div className="col-span-2">Quote date: {selectedQuote?.observation_date || "n/a"}</div>
+                        </>
+                      );
+                    })()}
                   </div>
                 ) : null}
               </div>
@@ -721,13 +778,21 @@ export default function OptionOrdersPage() {
                     <div className="mt-1 text-xl font-semibold">{pct(estimate.adjusted_iv)}</div>
                     <div className="mt-1 text-xs text-slate-500">{estimate.iv_source}</div>
                   </div>
-                  <div>Bid: {money(estimate.delayed_quote?.bid ?? estimate.quote.bid)}</div>
-                  <div>Ask: {money(estimate.delayed_quote?.ask ?? estimate.quote.ask)}</div>
-                  <div>Mid: {money(estimate.delayed_quote?.mid ?? estimate.quote.mid)}</div>
-                  <div className={Number(estimate.delayed_quote?.spread_pct) > 3 ? "font-semibold text-pink-700" : Number(estimate.delayed_quote?.spread_pct) < 3 ? "font-semibold text-emerald-700" : ""}>
-                    Spread: {spreadPct(estimate.delayed_quote?.spread_pct)}
-                  </div>
-                  <div>Volume: {num(estimate.delayed_quote?.volume, 0)}</div>
+                  {(() => {
+                    const estimateQuote = estimate.effective_quote || estimate.delayed_quote;
+                    return (
+                      <>
+                        <div>Bid: {money(estimateQuote?.bid ?? estimate.quote.bid)}</div>
+                        <div>Ask: {money(estimateQuote?.ask ?? estimate.quote.ask)}</div>
+                        <div>Mid: {money(estimateQuote?.mid ?? estimate.quote.mid)}</div>
+                        <div className={Number(estimateQuote?.spread_pct) > 3 ? "font-semibold text-pink-700" : Number(estimateQuote?.spread_pct) < 3 ? "font-semibold text-emerald-700" : ""}>
+                          Spread: {spreadPct(estimateQuote?.spread_pct)}
+                        </div>
+                        <div>Volume: {num(estimateQuote?.volume, 0)}</div>
+                        <div>{quoteSourceLabel(estimateQuote)}</div>
+                      </>
+                    );
+                  })()}
                   <div>Delta: {num(estimate.quote.delta, 3)}</div>
                   <div>Base: {money(estimate.base_case, 4)}</div>
                   <div>Conservative: {money(estimate.conservative, 4)}</div>

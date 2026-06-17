@@ -6,7 +6,7 @@ import math
 import random
 import time
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from math import erf, exp, log, sqrt
 from typing import Any, Dict, List, Optional
 
@@ -45,6 +45,7 @@ class OptionQuote:
     theta: Optional[float]
     vega: Optional[float]
     market_data_type: Optional[int] = None
+    volume: Optional[int] = None
 
 
 def _normalize_iv(value: Any) -> Optional[float]:
@@ -59,6 +60,111 @@ def _spread_pct(bid: Optional[float], ask: Optional[float]) -> Optional[float]:
     if bid is None or ask is None or bid <= 0 or ask < bid:
         return None
     return round((ask - bid) * 100.0 / bid, 2)
+
+
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    current = date(year, month, 1)
+    offset = (weekday - current.weekday()) % 7
+    return current + timedelta(days=offset + (n - 1) * 7)
+
+
+def _us_eastern_offset_hours(moment_utc: datetime) -> int:
+    dst_start = _nth_weekday(moment_utc.year, 3, 6, 2)
+    dst_end = _nth_weekday(moment_utc.year, 11, 6, 1)
+    current_day = moment_utc.date()
+    return -4 if dst_start <= current_day < dst_end else -5
+
+
+def _now_us_eastern(now: Optional[datetime] = None) -> datetime:
+    current = now or datetime.utcnow().replace(tzinfo=timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current_utc = current.astimezone(timezone.utc)
+    offset = timezone(timedelta(hours=_us_eastern_offset_hours(current_utc)))
+    return current_utc.astimezone(offset)
+
+
+def _market_status_from_context(
+    market_data_type: Optional[int],
+    now: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    eastern_now = _now_us_eastern(now)
+    minutes_since_midnight = eastern_now.hour * 60 + eastern_now.minute
+    regular_open = 9 * 60 + 30
+    regular_close = 16 * 60
+    in_regular_session = (
+        eastern_now.weekday() < 5
+        and regular_open <= minutes_since_midnight < regular_close
+    )
+    realtime = market_data_type == 1
+    is_live_market = bool(in_regular_session and realtime)
+
+    if is_live_market:
+        detail = "IB is returning real-time quotes during regular US market hours."
+    elif not in_regular_session:
+        detail = "Outside regular US market hours; using delayed/database quotes where live bid/ask is unavailable."
+    elif market_data_type is None:
+        detail = "IB market data type is unavailable; using delayed/database quotes where live bid/ask is unavailable."
+    else:
+        detail = "IB is not returning real-time market data; using delayed/database quotes where live bid/ask is unavailable."
+
+    return {
+        "label": "Live Market" if is_live_market else "Market Not Live",
+        "is_live_market": is_live_market,
+        "detail": detail,
+        "market_data_type": market_data_type,
+        "regular_session": in_regular_session,
+        "checked_at": eastern_now.isoformat(),
+        "timezone": "America/New_York",
+    }
+
+
+def _option_quote_to_payload(quote: Optional[OptionQuote]) -> Optional[Dict[str, Any]]:
+    if quote is None:
+        return None
+    bid = _round(quote.bid)
+    ask = _round(quote.ask)
+    mid = _round(quote.mid if quote.mid is not None else ((quote.bid + quote.ask) / 2.0 if quote.bid is not None and quote.ask is not None else None))
+    if bid is None and ask is None and mid is None and quote.iv is None and quote.volume is None:
+        return None
+    return {
+        "bid": bid,
+        "ask": ask,
+        "mid": mid,
+        "spread_pct": _spread_pct(quote.bid, quote.ask),
+        "volume": quote.volume,
+        "iv": _round(quote.iv, 6),
+        "observation_date": "",
+        "source": "live" if quote.market_data_type == 1 else "ib",
+        "market_data_type": quote.market_data_type,
+    }
+
+
+def _merge_option_quote(
+    delayed_quote: Optional[Dict[str, Any]],
+    live_quote: Optional[OptionQuote],
+    prefer_live: bool,
+) -> Optional[Dict[str, Any]]:
+    database_payload = dict(delayed_quote or {})
+    if database_payload and "source" not in database_payload:
+        database_payload["source"] = "database"
+
+    live_payload = _option_quote_to_payload(live_quote)
+    if not prefer_live or live_payload is None:
+        return database_payload or live_payload
+
+    merged = dict(database_payload)
+    for key in ("bid", "ask", "mid", "spread_pct", "iv"):
+        value = live_payload.get(key)
+        if value is not None:
+            merged[key] = value
+    if live_payload.get("volume") is not None:
+        merged["volume"] = live_payload["volume"]
+    elif "volume" not in merged:
+        merged["volume"] = None
+    merged["source"] = "live"
+    merged["market_data_type"] = live_payload.get("market_data_type")
+    return merged
 
 
 def _latest_delayed_quotes(symbol: str, expiry: str) -> Dict[str, Dict[str, Any]]:
@@ -316,6 +422,7 @@ def _quote_option(ib: "IB", symbol: str, expiry: str, strike: float, right: str)
             iv = _option_greek(ticker, "impliedVol")
             if bid is not None or ask is not None or last is not None or close is not None or iv is not None:
                 mid = (bid + ask) / 2 if bid is not None and ask is not None else None
+                volume = _clean(getattr(ticker, "volume", None))
                 return OptionQuote(
                     bid=bid,
                     ask=ask,
@@ -332,9 +439,60 @@ def _quote_option(ib: "IB", symbol: str, expiry: str, strike: float, right: str)
                         if getattr(ticker, "marketDataType", market_data_type) in {1, 2, 3, 4}
                         else market_data_type
                     ),
+                    volume=int(volume) if volume is not None else None,
                 )
 
     return OptionQuote(None, None, None, None, None, None, None, None, None, None, None)
+
+
+def _quote_option_contracts(ib: "IB", contracts: List[Any]) -> Dict[tuple[str, float, str], OptionQuote]:
+    quotes: Dict[tuple[str, float, str], OptionQuote] = {}
+    if not contracts:
+        return quotes
+
+    try:
+        ib.reqMarketDataType(1)
+    except Exception:
+        pass
+
+    for start in range(0, len(contracts), 50):
+        chunk = contracts[start:start + 50]
+        try:
+            tickers = ib.reqTickers(*chunk)
+        except Exception as exc:
+            logger.warning("Option orders: failed live quote chunk: %s", exc)
+            continue
+
+        for ticker in tickers:
+            contract = getattr(ticker, "contract", None)
+            if contract is None:
+                continue
+            bid = _positive_price(getattr(ticker, "bid", None))
+            ask = _positive_price(getattr(ticker, "ask", None))
+            last = _positive_price(getattr(ticker, "last", None))
+            close = _positive_price(getattr(ticker, "close", None))
+            mid = (bid + ask) / 2.0 if bid is not None and ask is not None else None
+            volume = _clean(getattr(ticker, "volume", None))
+            market_data_type = getattr(ticker, "marketDataType", 1)
+            quotes[_contract_key(contract)] = OptionQuote(
+                bid=bid,
+                ask=ask,
+                last=last,
+                close=close,
+                mid=mid,
+                iv=_option_greek(ticker, "impliedVol"),
+                delta=_option_greek(ticker, "delta"),
+                gamma=_option_greek(ticker, "gamma"),
+                theta=_option_greek(ticker, "theta"),
+                vega=_option_greek(ticker, "vega"),
+                market_data_type=(
+                    int(market_data_type)
+                    if market_data_type in {1, 2, 3, 4}
+                    else 1
+                ),
+                volume=int(volume) if volume is not None else None,
+            )
+    return quotes
 
 
 def _quote_with_iv(
@@ -380,6 +538,7 @@ def get_option_chain(
     ib, _loop = _connect_ib()
     try:
         underlying = _quote_underlying(ib, symbol)
+        market_status = _market_status_from_context(underlying.get("market_data_type"))
         reference_price = _clean(underlying.get("reference_price"))
         if not underlying.get("con_id"):
             raise RuntimeError(f"Unable to qualify underlying contract for {symbol}")
@@ -435,6 +594,7 @@ def get_option_chain(
 
         valid_keys = {_contract_key(contract): contract for contract in valid_contracts}
         delayed_quotes = _latest_delayed_quotes(symbol, expirations[0]) if len(expirations) == 1 else {}
+        live_quotes = _quote_option_contracts(ib, valid_contracts) if market_status["is_live_market"] else {}
         rows: List[Dict[str, Any]] = []
         for row in candidate_rows:
             key = (row["expiry"], round(float(row["strike"]), 4), row["right"])
@@ -442,14 +602,22 @@ def get_option_chain(
             if contract is None:
                 continue
             next_row = dict(row)
+            delayed_quote = delayed_quotes.get(str(row["option_symbol"]).upper())
+            live_quote = live_quotes.get(key)
             next_row["con_id"] = getattr(contract, "conId", None)
             next_row["local_symbol"] = getattr(contract, "localSymbol", None)
-            next_row["delayed_quote"] = delayed_quotes.get(str(row["option_symbol"]).upper())
+            next_row["delayed_quote"] = delayed_quote
+            next_row["quote"] = _merge_option_quote(
+                delayed_quote,
+                live_quote,
+                prefer_live=market_status["is_live_market"],
+            )
             rows.append(next_row)
 
         return {
             "ok": True,
             "symbol": _base_symbol(symbol),
+            "market_status": market_status,
             "underlying": underlying,
             "expirations": [str(expiry) for expiry in expirations],
             "strikes": [round(strike, 4) for strike in strikes],
@@ -466,6 +634,7 @@ def get_option_expirations(symbol: str) -> Dict[str, Any]:
     ib, _loop = _connect_ib()
     try:
         underlying = _quote_underlying(ib, symbol)
+        market_status = _market_status_from_context(underlying.get("market_data_type"))
         if not underlying.get("con_id"):
             raise RuntimeError(f"Unable to qualify underlying contract for {symbol}")
 
@@ -483,6 +652,7 @@ def get_option_expirations(symbol: str) -> Dict[str, Any]:
         return {
             "ok": True,
             "symbol": _base_symbol(symbol),
+            "market_status": market_status,
             "underlying": underlying,
             "expirations": [
                 {
@@ -520,6 +690,7 @@ def estimate_option_price(
     ib, _loop = _connect_ib()
     try:
         underlying = _quote_underlying(ib, symbol)
+        market_status = _market_status_from_context(underlying.get("market_data_type"))
         current_price = _clean(underlying.get("reference_price"))
         if current_price is None or current_price <= 0:
             raise RuntimeError("IB did not return a usable underlying price")
@@ -545,11 +716,12 @@ def estimate_option_price(
                 skew_by_strike[nearby_strike] = database_iv
 
         selected_ib_iv = _normalize_iv(selected_quote.iv)
-        selected_live_ib_iv = selected_ib_iv if selected_quote.market_data_type == 1 else None
+        selected_live_ib_iv = selected_ib_iv if market_status["is_live_market"] and selected_quote.market_data_type == 1 else None
         selected_delayed_ib_iv = selected_ib_iv if selected_quote.market_data_type in {2, 3, 4} else None
         selected_database_iv = _normalize_iv((delayed_quote or {}).get("iv"))
         live_timestamps_match = (
-            selected_quote.market_data_type == 1
+            market_status["is_live_market"]
+            and selected_quote.market_data_type == 1
             and underlying.get("market_data_type") == 1
         )
         live_option_price = (
@@ -668,6 +840,7 @@ def estimate_option_price(
         return {
             "ok": True,
             "symbol": _base_symbol(symbol),
+            "market_status": market_status,
             "option_symbol": _occ_symbol(symbol, expiry, right, strike),
             "expiry": expiry,
             "expiry_date": _expiry_date(expiry).isoformat(),
@@ -690,6 +863,11 @@ def estimate_option_price(
                 "vega": _round(selected_quote.vega, 6),
                 "market_data_type": selected_quote.market_data_type,
             },
+            "effective_quote": _merge_option_quote(
+                delayed_quote,
+                selected_quote,
+                prefer_live=market_status["is_live_market"],
+            ),
             "delayed_quote": delayed_quote,
             "warnings": warnings,
             "estimated_price": round(conservative, 2),
