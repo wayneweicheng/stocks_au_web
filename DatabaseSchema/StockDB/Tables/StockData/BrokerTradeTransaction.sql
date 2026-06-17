@@ -16,3 +16,9 @@ CREATE TABLE [StockData].[BrokerTradeTransaction] (
 ,
     CONSTRAINT [PK__BrokerTr__55433A4B9D045C77] PRIMARY KEY (TransactionID)
 );
+
+CREATE INDEX [IX_BrokerTradeTransaction_ASX_ObsDate] ON [StockData].[BrokerTradeTransaction] (ASXCode, ObservationDate, TransactionDateTime)
+INCLUDE (Buyer, Seller, Price, Volume, Value, Condition, Market);
+
+CREATE INDEX [IX_BrokerTradeTransaction_ObservationDate_ASXCode] ON [StockData].[BrokerTradeTransaction] (ObservationDate, ASXCode)
+INCLUDE (TransactionDateTime);

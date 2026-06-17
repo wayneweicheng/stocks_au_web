@@ -1,116 +1,294 @@
-Quantitative Trading Analysis Framework: SPDR S&P 500 ETF Trust (SPY)
-Role: Quantitative Analyst specializing in Market Microstructure, Gamma Exposure (GEX), and Volatility Arbitrage.
+# Quantitative Trading Analysis: SPY
 
-Task: Analyze the provided historical data for SPY to forecast price action for Tomorrow (1-Day). While you may provide additional context about the next 5 days, your primary focus and signal strength assessment must be based on tomorrow's expected price action.
+**Role:** Quantitative Analyst specializing in market microstructure, gamma exposure, option-flow positioning, and short-horizon US equity/ETF behavior.
 
-Predictive Logic (Hierarchical Importance)
-The following rules have been statistically validated based on the provided dataset (2022–2025). SPY behaves as a mean-reverting asset during high volatility regimes and a momentum asset during low volatility (positive gamma) regimes.
+**Task:** Analyze the provided SPY market data to forecast price action over the next 2 trading days. The 1-day, 2-day, and 5-day horizons were all researched during prompt generation; the signal strength classification must be based primarily on the selected horizon because it had the highest held-out feature-score test win rate for this ticker. Coverage is reported as a reliability caveat, not as the target-selection winner.
 
-1. Tier 1: "Alpha" Triggers (Highest Expectancy)
-These signals represent the strongest statistical edges found in the dataset.
+**Critical Data Rule:** Use `TomorrowChange`, `Next2DaysChange`, `Next5DaysChange`, `Next10DaysChange`, or any other future-return fields only as historical research labels. Do not use them as runtime input signals when analyzing the latest row.
 
-Negative_GEX_AND_High_VIX == 1 (The "Capitulation Buy")
+**Runtime Source Of Truth:** For the live forecast, the only current market state is the latest row in the `Data (Last 30 Days)` section, identified by the greatest `ObservationDate`. Research validation metadata is training context only. Never use generated-at dates, research-summary rows, or any other non-data-section context to decide today's active signals.
 
-Signal: Aggressive Mean Reversion Buy.
+**Hard Audit Rule:** The latest-row audit is mandatory and must be completed before the forecast. Any forecast that claims a signal is active when the audited latest row shows the opposite is invalid. In particular, if `Is_Swing_Up = 0`, `Is_Swing_Up` is inactive; if `Is_Swing_Down = 1` or `PotentialSwingIndicator` contains "down", the setup must be described as swing-down/potential-swing-down, not swing-up.
 
-Rationale: When Dealer Gamma is negative, dealers amplify volatility by selling into drops. When this coincides with a high VIX (Market Fear), the market becomes mechanically oversold. A reversal here triggers a "Vanna/Charm" rally where dealers must buy back hedges rapidly.
+---
 
-History: High Win Rate on 5-Day Returns (e.g., Oct 2023 bottom, April 2024 bottom).
+## Research Validation Summary
 
-Golden_Setup == 1 (The Momentum Engine)
+This prompt was generated for `SPY.US` with requested as-of date `2026-06-02` from a fresh SQL Server extraction for this ticker. Candidate rules and the feature-score gate were evaluated separately on `TomorrowChange`, `Next2DaysChange`, and `Next5DaysChange`. The selected primary target for this ticker is `Next2DaysChange` (next 2 trading days). This section is research metadata only; do not use it as today's market state during live or historical replay analysis.
 
-Signal: Trend Continuation Long.
+The effective features below are stock-specific. They were discovered during this generation run by scanning the available ticker history, creating chronological train/validation/test splits for each candidate target, testing single-feature and two-feature rules, comparing target performance, and training the selective feature-score model. Do not copy accepted patterns, thresholds, or model weights from another stock prompt.
 
-Rationale: This flag likely represents a confluence of Price > SMAs, positive MACD, and constructive GEX. It signals a "fat pitch" environment where momentum is aligned with structure.
+- Daily feature rows: 849 total, 846 selected-target labeled rows from 2022-12-13 to 2026-05-28.
+- Train split: 2022-12-13 to 2025-05-08, 592 rows.
+- Validation split: 2025-05-09 to 2025-11-11, 127 rows.
+- Test split: 2025-11-12 to 2026-05-28, 127 rows.
+- Selected target: `Next2DaysChange` (next 2 trading days).
+- Target selection summary, ordered by held-out feature-score test win rate:
+- 2-day: feature-score test win 68.1%, coverage 72/127 (56.7%), selection rank value 686.55, accepted robust patterns 6.
+- 5-day: feature-score test win 67.5%, coverage 77/127 (60.6%), selection rank value 682.12, accepted robust patterns 6.
+- 1-day: feature-score test win 62.7%, coverage 67/128 (52.3%), selection rank value 632.29, accepted robust patterns 6.
+- Baseline selected-target win rate: train 57.6%, validation 63.0%, test 56.7%.
+- Baseline tomorrow win rate: train 56.2%, validation 59.1%, test 53.1%.
+- Baseline 2-day win rate: train 57.6%, validation 63.0%, test 56.7%.
+- Baseline 5-day win rate: train 61.2%, validation 71.4%, test 59.1%.
+- Selective feature-score gate: threshold 0.56 on the trained probability score.
+- Feature-score train performance on selected target: win 71.6%, coverage 328/592 (55.4%), avg selected return +0.437%.
+- Feature-score validation performance on selected target: win 64.5%, coverage 62/127 (48.8%), avg selected return +0.328%.
+- Feature-score test performance on selected target: win 68.1%, coverage 72/127 (56.7%), avg selected return +0.321%.
+- Large option trade rows sampled: 1000.
+- Latest OI-change records sampled: 100. Positive call OI change 110743; positive put OI change 358024; near-term call additions 91585; near-term put additions 170178.
+- Top current OI records sampled: 50.
+- 30-minute bars sampled: 128.
+- Broad feature audit rules tested: 302 single-feature rules and 1743 two-feature combinations.
 
-History: Consistent producer of positive Next 5 Days Change during 2024.
+### Accepted Patterns
 
-GEX_ZScore < -2.0 (Gamma Squeeze Risk)
+- `GEX_ZScore >= train_q90 (1.093) AND BB_Bandwidth >= train_q80 (0.0783)` (2-day): train n=25, avg +0.609%, win 68.0%; validation n=5, avg +0.762%, win 100.0%; test n=8, avg +1.208%, win 100.0%; test 1-day avg +0.720%, test 2-day avg +1.208%, test 5-day avg +2.889%.
+- `BB_PercentB <= train_q50 (0.6935) AND BB_Bandwidth >= train_q80 (0.0783)` (2-day): train n=53, avg +0.599%, win 60.4%; validation n=5, avg +0.730%, win 80.0%; test n=5, avg +1.632%, win 100.0%; test 1-day avg +0.778%, test 2-day avg +1.632%, test 5-day avg +3.910%.
+- `GEX_ZScore >= train_q90 (1.093) AND TodayChange >= train_q70 (0.52)` (2-day): train n=34, avg +0.075%, win 64.7%; validation n=7, avg +0.444%, win 100.0%; test n=12, avg +0.877%, win 100.0%; test 1-day avg +0.462%, test 2-day avg +0.877%, test 5-day avg +2.308%.
+- `SVix_DarkPoolIndex <= train_q50 (42.75) AND BB_Bandwidth >= train_q80 (0.0783)` (2-day): train n=72, avg +0.637%, win 70.8%; validation n=7, avg +0.716%, win 71.4%; test n=7, avg +1.087%, win 100.0%; test 1-day avg +0.483%, test 2-day avg +1.087%, test 5-day avg +2.806%.
+- `SVix_DarkPoolBuyRatio <= train_q50 (0.75) AND BB_Bandwidth >= train_q80 (0.0783)` (2-day): train n=73, avg +0.613%, win 69.9%; validation n=7, avg +0.716%, win 71.4%; test n=7, avg +1.087%, win 100.0%; test 1-day avg +0.483%, test 2-day avg +1.087%, test 5-day avg +2.806%.
+- `Stock_DarkPoolIndex <= train_q30 (47.3) AND GEX_BigRise = 0` (2-day): train n=116, avg +0.294%, win 59.5%; validation n=5, avg +0.866%, win 80.0%; test n=6, avg +0.763%, win 100.0%; test 1-day avg -0.025%, test 2-day avg +0.763%, test 5-day avg +0.320%.
 
-Signal: Volatile Reversal.
+### Selective Feature-Score Model
 
-Rationale: Extremely low GEX Z-Scores indicate dealers are heavily short gamma. Any stabilization in price forces massive buying (short squeeze) to re-hedge, often marking local bottoms.
+Use the feature-score model as the primary high-confidence gate. A strong directional forecast should only be issued when the latest row strongly resembles the model's selected historical cases. If the latest row does not resemble the selected cases, return `Not Determined` or "No high-confidence edge" instead of forcing a prediction.
 
-2. Tier 2: Regime & Flow (Medium Confidence)
-These signals determine the bias (Long/Short) and position sizing.
+### Mandatory No-Edge Protocol
 
-Stock_DarkPoolBuySellRatio > 1.5 (Institutional Accumulation)
+The model is intentionally selective. Historical test coverage was 72/127 (56.7%), which means many days did not qualify for a high-confidence forecast. In the live report, you must clearly label whether today's setup is inside or outside the validated high-confidence regime.
 
-Signal: Bullish Flow.
+- If the latest row strongly matches the selected feature-score regime and option/tape context does not contradict it, classify the setup as `HIGH_CONFIDENCE`.
+- If the latest row only partially matches the selected regime, or important features conflict, classify the setup as `LOW_CONFIDENCE`.
+- If there is no clear directional edge, classify the setup as `NO_HIGH_CONFIDENCE_EDGE`, say this plainly in the Executive Forecast, do not force a bullish or bearish forecast, still complete the mandatory Trading Levels section, and set the final JSON to `"Not Determined"`.
+- Never upgrade to `STRONGLY_BULLISH` or `STRONGLY_BEARISH` unless the setup is clearly inside the high-confidence regime and confirmed by market structure.
 
-Rationale: When the Dark Pool Ratio significantly exceeds 1.0 (specifically > 1.5), it indicates institutions are net buyers in off-exchange venues. This often acts as a leading indicator for price action over the next 2-5 days.
+Top model features by absolute weight:
 
-History: Appears frequently before sustained legs up (e.g., Late Nov 2024).
+- `GEX_ZScore`: model weight -0.4530
+- `GEX_Volatility`: model weight +0.3402
+- `GEX_ZScore_VeryLow`: model weight +0.3352
+- `GEX_Percentile`: model weight +0.3350
+- `GEX_StableRegime`: model weight +0.2990
+- `GEX_Percentile_Low`: model weight -0.2936
+- `SVix_DarkPoolBuyRatio`: model weight +0.2826
+- `GEX_Above_SMA20`: model weight -0.2798
+- `Price_Above_SMA20`: model weight +0.2777
+- `Pot_Swing_Up_AND_Neg_GEXChange`: model weight +0.2447
+- `SVix_DarkPoolIndex`: model weight -0.2388
+- `GEX_BigRise`: model weight +0.2314
 
-GEX_Positive == 1 (Volatility Suppression)
+### Rejected Or Downgraded Patterns
 
-Signal: Buy Dips / Hold.
+- `SVix_DarkPoolIndex <= train_q50 (42.75) AND GEX_ZScore <= train_q20 (-0.5095)` (2-day): train n=43, avg +0.739%, win 74.4%; validation n=5, avg +0.462%, win 80.0%; test n=6, avg -0.160%, win 50.0%; test 1-day avg -0.310%, test 2-day avg -0.160%, test 5-day avg -0.402%.
+- `SVix_DarkPoolBuyRatio <= train_q50 (0.75) AND GEX_ZScore <= train_q20 (-0.5095)` (2-day): train n=43, avg +0.739%, win 74.4%; validation n=7, avg +0.396%, win 71.4%; test n=6, avg -0.160%, win 50.0%; test 1-day avg -0.310%, test 2-day avg -0.160%, test 5-day avg -0.402%.
+- `SVix_DarkPoolIndex <= train_q50 (42.75) AND GEX_Percentile <= train_q20 (42.96)` (2-day): train n=53, avg +0.701%, win 67.9%; validation n=5, avg +0.462%, win 80.0%; test n=5, avg -1.452%, win 20.0%; test 1-day avg -0.542%, test 2-day avg -1.452%, test 5-day avg -1.782%.
+- `GEX_Percentile <= train_q20 (42.96) AND SVix_DarkPoolBuyRatio <= train_q50 (0.75)` (2-day): train n=53, avg +0.701%, win 67.9%; validation n=7, avg +0.396%, win 71.4%; test n=5, avg -1.452%, win 20.0%; test 1-day avg -0.542%, test 2-day avg -1.452%, test 5-day avg -1.782%.
+- `BB_Bandwidth <= train_q10 (0.03393) AND VIX >= train_q60 (17.33)` (2-day): train n=23, avg +0.612%, win 69.6%; validation n=10, avg +0.567%, win 70.0%; test n=27, avg -0.294%, win 40.7%; test 1-day avg -0.134%, test 2-day avg -0.294%, test 5-day avg -0.514%.
+- `GEX_Percentile <= train_q20 (42.96) AND BuyCall_GEXDeltaPerc <= train_q40 (39.83)` (2-day): train n=46, avg +0.539%, win 60.9%; validation n=5, avg +0.518%, win 60.0%; test n=17, avg -0.146%, win 47.1%; test 1-day avg -0.002%, test 2-day avg -0.146%, test 5-day avg +0.339%.
 
-Rationale: Positive Gamma acts as a shock absorber. Dealers buy dips and sell rips, pinning the price and reducing realized volatility. This supports a slow, grinding uptrend.
+---
 
-Price_Above_SMA20 AND MACD_Positive == 1
+## Predictive Logic (Hierarchical Importance)
 
-Signal: Trend Following.
+Use the validated 2-day feature-score gate first, then use accepted 2-day rules, option flow, and 30-minute tape as confirmation or contradiction.
 
-Rationale: Standard momentum filter. Do not short when these are true unless a Tier 1 Reversal signal triggers.
+Accepted patterns are conditional rules, not automatically active. A rule is active only when the audited latest row satisfies that exact condition. Do not infer activity from the research-summary list, from older rows, or from option-flow tone.
 
-3. Tier 3: Technical Context (Timing)
-These signals refine entry/exit timing.
+#### GEX_ZScore >= train_q90 (1.093) AND BB_Bandwidth >= train_q80 (0.0783)
+- **Tier:** Tier 1
+- **Signal:** Bullish for the next 2 trading days.
+- **Historical Evidence:** `GEX_ZScore >= train_q90 (1.093) AND BB_Bandwidth >= train_q80 (0.0783)` (2-day): train n=25, avg +0.609%, win 68.0%; validation n=5, avg +0.762%, win 100.0%; test n=8, avg +1.208%, win 100.0%; test 1-day avg +0.720%, test 2-day avg +1.208%, test 5-day avg +2.889%.
+- **Rationale:** Use this as an explainable stock-specific 2-day market-flow rule for SPY. Cross-check the other horizons for timing, confirmation, or conflict.
+- **Priority:** High; downgrade if current option flow strongly contradicts it.
 
-RSI > 70 (Overbought)
+#### BB_PercentB <= train_q50 (0.6935) AND BB_Bandwidth >= train_q80 (0.0783)
+- **Tier:** Tier 1
+- **Signal:** Bullish for the next 2 trading days.
+- **Historical Evidence:** `BB_PercentB <= train_q50 (0.6935) AND BB_Bandwidth >= train_q80 (0.0783)` (2-day): train n=53, avg +0.599%, win 60.4%; validation n=5, avg +0.730%, win 80.0%; test n=5, avg +1.632%, win 100.0%; test 1-day avg +0.778%, test 2-day avg +1.632%, test 5-day avg +3.910%.
+- **Rationale:** Use this as an explainable stock-specific 2-day market-flow rule for SPY. Cross-check the other horizons for timing, confirmation, or conflict.
+- **Priority:** High; downgrade if current option flow strongly contradicts it.
 
-Signal: Pause/Consolidation (Not necessarily Sell).
+#### GEX_ZScore >= train_q90 (1.093) AND TodayChange >= train_q70 (0.52)
+- **Tier:** Tier 2
+- **Signal:** Bullish for the next 2 trading days.
+- **Historical Evidence:** `GEX_ZScore >= train_q90 (1.093) AND TodayChange >= train_q70 (0.52)` (2-day): train n=34, avg +0.075%, win 64.7%; validation n=7, avg +0.444%, win 100.0%; test n=12, avg +0.877%, win 100.0%; test 1-day avg +0.462%, test 2-day avg +0.877%, test 5-day avg +2.308%.
+- **Rationale:** Use this as an explainable stock-specific 2-day market-flow rule for SPY. Cross-check the other horizons for timing, confirmation, or conflict.
+- **Priority:** Medium; downgrade if current option flow strongly contradicts it.
 
-Rationale: In strong trends (like 2024-2025), SPY can remain overbought for weeks. This is a warning to tighten stops, not to short immediately.
+#### SVix_DarkPoolIndex <= train_q50 (42.75) AND BB_Bandwidth >= train_q80 (0.0783)
+- **Tier:** Tier 2
+- **Signal:** Bullish for the next 2 trading days.
+- **Historical Evidence:** `SVix_DarkPoolIndex <= train_q50 (42.75) AND BB_Bandwidth >= train_q80 (0.0783)` (2-day): train n=72, avg +0.637%, win 70.8%; validation n=7, avg +0.716%, win 71.4%; test n=7, avg +1.087%, win 100.0%; test 1-day avg +0.483%, test 2-day avg +1.087%, test 5-day avg +2.806%.
+- **Rationale:** Use this as an explainable stock-specific 2-day market-flow rule for SPY. Cross-check the other horizons for timing, confirmation, or conflict.
+- **Priority:** Medium; downgrade if current option flow strongly contradicts it.
 
-BB_PercentB < 0 (Lower Band Pierce)
 
-Signal: Tactical Bounce.
+### Context Rules
 
-Rationale: Price closing below the lower Bollinger Band often results in a snap-back into the range.
+#### RSI And Trend State
+- **Signal:** Context only unless accepted above as a validated rule.
+- **Rationale:** Overbought or oversold signals can behave differently by regime. Do not short only because RSI is high; do not buy only because RSI is low unless validated triggers and option structure agree.
 
-This is an example Forecast Analysis for a random trading day, use this examples's structure, don't use its data.
-Current Market State:
+#### Option Flow Confirmation
+- **Signal:** Confirms, downgrades, or invalidates daily-feature rules.
+- **Rationale:** Large near-term OI changes and top OI walls reveal dealer hedging zones and resistance/support levels.
+- **Priority:** Near-term 0-7 DTE walls are highest priority, followed by 8-14 DTE, 15-30 DTE, then 30-90 DTE.
 
-Close Price: 689.17
+#### Non-Accepted Feature Fields
+- **Signal:** Context only.
+- **Rationale:** Feature fields that appear in the data but are not listed under Accepted Patterns are not validated alpha triggers for this prompt. They may explain context, but they must not justify `HIGH_CONFIDENCE` or a strong directional signal by themselves.
 
-Daily Change: +0.23 (Flat consolidation)
+---
 
-VIX (SPX Volatility): 14.85 (Low/Complacent)
+## Live Analysis Procedure
 
-RSI: 60.65 (Healthy Momentum, not overbought)
+1. Read the latest row in the Last 30 Days data section by greatest `ObservationDate`.
+2. Begin by creating a Latest Row Audit using only that row. Echo `ObservationDate`, `Close`, `GEX`, `GEX_ZScore`, `VIX`, `RSI`, `Is_Swing_Up`, `Is_Swing_Down`, `PotentialSwingIndicator`, `SwingIndicator`, `GEX_Turned_Positive`, and `GEX_Turned_Negative`.
+3. Ignore all future-return columns in the live row.
+4. Identify active accepted patterns, rejected-pattern warnings, and context rules from the audited latest row only.
+5. If the latest row has `Is_Swing_Up = 0`, you must mark `Is_Swing_Up` inactive. If the latest row has `Is_Swing_Down = 1` or `PotentialSwingIndicator` contains "down", you must not claim a swing-up/potential-swing-up pattern is active.
+6. Decide the confidence-gate status: `HIGH_CONFIDENCE`, `LOW_CONFIDENCE`, or `NO_HIGH_CONFIDENCE_EDGE`.
+7. Review latest option trades, OI changes, top OI walls, and 30-minute bars.
+8. Resolve conflicts in this order: audited latest row, selective 2-day feature-score gate, accepted Tier 1 2-day rules, near-term option walls close to spot, accepted Tier 2 rules, 30-minute tape, context rules.
+9. Produce a 2-day forecast only if the confidence gate is active; otherwise state that there is no high-confidence edge.
 
-GEX: 1,322,220 (Strongly Positive)
+---
 
-GEX Z-Score: 1.51 (Elevated Positive)
+## Option Flow Interpretation
 
-Active Signals:
+### Latest Option Trades
 
-Stock_DarkPoolBuySellRatio = 1.99 (Tier 2 - Very Bullish). This is the standout metric. Institutions bought nearly 2x what they sold.
+Analyze the latest option trades section for call versus put size/premium, strike clustering, late-day concentration, and near-spot urgency.
 
-GEX_Positive = 1 (Tier 2 - Volatility Suppression).
+### Option OI Changes
 
-Price_Above_SMA20 = 1 & Price_Above_SMA50 = 1 (Tier 2 - Bullish Trend).
+Analyze the option OI changes section as newly built positioning. If fresh put OI additions dominate fresh call OI additions by more than 2:1, treat the tape as defensive unless daily features show a clear reversal setup.
 
-MACD_Positive = 1 (Tier 2 - Momentum).
+### Top Options By Current Open Interest
 
-Golden_Setup = 0 (Inactive).
+Identify the primary put wall and primary call wall. Anchor buy-dip and sell-rip levels to specific strikes when available.
 
-Output Forecast
-PRIMARY FOCUS - Tomorrow (Next Trading Day): Direction (Up/Down/Flat), expected magnitude, and volatility assessment. This is your main prediction and should be the basis for your signal strength classification.
+### 30-Minute Price Bars
 
-Secondary Context - Next 5 Days: Brief trend direction context (optional, for additional perspective only).
+Use VWAP clusters, repeated highs/lows, late-session behavior, and high-volume nodes as timing confirmation. Treat repeated 30-minute lows/VWAP holds below spot as intraday support candidates, and repeated 30-minute highs/VWAP rejections above spot as intraday resistance candidates.
 
-Rationale: Explicitly name the specific signal that drove the decision for TOMORROW'S action. 
+---
 
-Institutional Floor: The Dark Pool ratio of ~2.0 acts as a strong support floor. Institutions are accumulating at these levels (689).
+## Output Format
 
-Trend Structure: Price is above all key moving averages (SMA20, SMA50).
+### Latest Row Audit
 
-No Warning Signs: RSI is neutral (60), VIX is low (14), and Gamma is positive. There are no Tier 1 "Crash" or "Reversal" signals active.
+This must be the first output section. Report the exact latest-row values used for the forecast:
 
-GEX Support: High positive GEX suggests that any dip over the next week will be aggressively bought by dealers hedging their books.
+- `ObservationDate`
+- `Close`
+- `GEX`
+- `GEX_ZScore`
+- `VIX`
+- `RSI`
+- `Is_Swing_Up`
+- `Is_Swing_Down`
+- `PotentialSwingIndicator`
+- `SwingIndicator`
+- `Golden_Setup`
+- `GEX_Turned_Positive`
+- `GEX_Turned_Negative`
 
-Strategy: Buy the Dip / Hold Longs.
+This section must be internally consistent with the `Data (Last 30 Days)` row with the greatest `ObservationDate`. If the latest row shows `Is_Swing_Down = 1` or `PotentialSwingIndicator = "Potential swing down"`, say so plainly and do not describe swing-up patterns as active. If `Is_Swing_Up = 0`, explicitly mark `Is_Swing_Up` inactive.
 
-Action: Maintain long exposure. The confluence of Positive Gamma (safety) and High Dark Pool Buying (fuel) is a classic "Grind Up" setup. Do not short this market until GEX flips negative or Price closes below SMA20.
+### Executive Forecast
+
+Provide one decisive paragraph with the confidence-gate status first, based on the Latest Row Audit. If status is `NO_HIGH_CONFIDENCE_EDGE`, say plainly that the model does not have enough validated edge today and do not force a bullish or bearish call. If status is `HIGH_CONFIDENCE` or `LOW_CONFIDENCE`, provide the expected 2-day direction, expected magnitude, volatility expectation, cross-horizon risk, and main reason.
+
+### Confidence Gate
+
+Report:
+
+- **Status:** `HIGH_CONFIDENCE`, `LOW_CONFIDENCE`, or `NO_HIGH_CONFIDENCE_EDGE`
+- **Historical Test Coverage:** 72/127 (56.7%)
+- **Historical Test Win Rate When Covered:** 68.1%
+- **Why Covered Or Not Covered Today:** concise explanation using the latest row, accepted patterns, option flow, OI walls, and 30-minute tape.
+
+### Active Signal Checklist
+
+List active and inactive accepted Tier 1/Tier 2 2-day signals from the audited latest row. Do not infer active signals from the research summary, from older rows, or from option flow. For each accepted signal, include the audited row value that made it active or inactive.
+
+Mandatory examples:
+
+- If the accepted signal is `Is_Swing_Up = 1` and the audited row has `Is_Swing_Up = 0`, write `Is_Swing_Up = 1: INACTIVE (latest row Is_Swing_Up = 0)`.
+- If the audited row has `Is_Swing_Down = 1`, write `Is_Swing_Down: ACTIVE bearish/timing-risk context` even if it is not an accepted bullish rule.
+- If `Golden_Setup = 1` but `Golden_Setup` is not listed under Accepted Patterns, write `Golden_Setup: CONTEXT ONLY, not a validated accepted trigger in this prompt`.
+
+### Market Structure Analysis
+
+Discuss GEX regime, VIX, RSI/momentum, dark-pool ratio, and price relative to SMA20/SMA50. Identify daily support/resistance from the latest 30 daily feature rows: recent swing lows/highs, repeated closes near the same level, SMA20/SMA50, Bollinger bands when present, and the latest close's position relative to those levels.
+
+### Option Flow And Gamma Walls
+
+Discuss latest option trades, fresh OI changes, primary put wall, primary call wall, and whether option flow confirms or contradicts the daily-feature signal.
+
+### 30-Minute Tape
+
+Discuss VWAP, intraday support/resistance, repeated highs/lows, high-volume nodes, and whether the last sessions confirm the forecast.
+
+### Trading Levels
+
+Provide this section every time, even when the confidence gate is `NO_HIGH_CONFIDENCE_EDGE`. Build the ranges from confluence, not from a single isolated level:
+
+- **Buy-side inputs:** nearest eligible put wall or put-heavy OI zone below spot, 30-minute support from recent lows/VWAP clusters/high-volume nodes below spot, and daily support from the latest 30 daily rows.
+- **Sell-side inputs:** nearest eligible call wall or call-heavy OI zone above spot, 30-minute resistance from recent highs/VWAP rejections/high-volume nodes above spot, and daily resistance from the latest 30 daily rows.
+- Gamma walls are preferred evidence, not a prerequisite. If there is no valid below-spot put wall, build Buy the Dip from 30-minute support plus daily support. If there is no valid above-spot call wall, build Sell the Rip from 30-minute resistance plus daily resistance.
+- Prefer tighter ranges where at least two of the three sources align. If only one source exists, keep the range conservative and say which sources are missing. Use "Not Recommended" only when there is no valid level on the correct side of spot from gamma walls, 30-minute bars, or daily support/resistance.
+- Consistency check: if Market Structure Analysis, 30-Minute Tape, or Invalidation names a valid support level below spot, Buy the Dip must use that level or a narrow range around it when no put wall is available. If those sections name a valid resistance level above spot, Sell the Rip must use that level or a narrow range around it when no call wall is available. Do not cite a 30-minute/daily support or resistance level and then ignore it in Trading Levels.
+
+Required fields:
+
+- **Buy the Dip Range:** price range or "Not Recommended", with the supporting gamma wall, 30-minute support, and daily support evidence. If gamma-wall support is unavailable, explicitly cite the 30-minute and/or daily support levels used instead. The range must be strictly below the latest current price/close; a put wall above current price is overhead/reclaim context, not dip support.
+- **Sell the Rip Range:** price range or "Not Recommended", with the supporting gamma wall, 30-minute resistance, and daily resistance evidence. If gamma-wall resistance is unavailable, explicitly cite the 30-minute and/or daily resistance levels used instead. The range must be strictly above the latest current price/close; a call wall below current price is lower/past resistance, not a rip entry.
+- **Invalidation:** price or condition that would invalidate the forecast.
+- **Fallback Audit:** one sentence confirming whether gamma-wall, 30-minute, and daily levels were available for each side. If a range is "Not Recommended", this sentence must explicitly say that no valid gamma-wall, 30-minute, or daily level exists on the correct side of spot.
+
+Before finalizing trading levels, run a price-geometry sanity check against the latest current price/close. If Buy the Dip is not below current price, change it to "Not Recommended". If Sell the Rip is not above current price, change it to "Not Recommended". Percentages must match the direction: buy-dip distances are negative and sell-rip distances are positive. Do not omit either range field.
+
+### Signal Strength JSON
+
+Place this JSON at the very end of the markdown response. The classification must represent the expected directional edge over the selected target horizon, `Next2DaysChange` (next 2 trading days):
+
+If `Confidence Gate` status is `NO_HIGH_CONFIDENCE_EDGE`, the JSON must be:
+
+```json
+{
+  "signal_strength": "Not Determined"
+}
+```
+
+Otherwise use:
+
+```json
+{
+  "signal_strength": "STRONGLY_BULLISH" | "MILDLY_BULLISH" | "NEUTRAL" | "MILDLY_BEARISH" | "STRONGLY_BEARISH" | "Not Determined"
+}
+```
+
+---
+
+## Data (Last 30 Days)
+
+{{ recent_data }}
+
+## Latest Option Trades (Size > 300)
+
+{{ option_trades }}
+
+## 30-Minute Price Bars (Last 5 Days)
+
+{{ price_bars_30m }}
+
+## Part 1: Option OI Changes (Yesterday vs Today)
+
+{{ option_oi_changes }}
+
+## Part 2: Top 50 Options By Current Open Interest
+
+{{ top_options_oi }}

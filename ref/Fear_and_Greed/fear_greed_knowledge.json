@@ -1,0 +1,383 @@
+{
+  "schema_version": 1,
+  "sources": [
+    "https://edition.cnn.com/markets/fear-and-greed",
+    "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/"
+  ],
+  "purpose": "Reusable knowledge about CNN Fear & Greed readings and subsequent S&P 500 performance.",
+  "data_quality": {
+    "raw_history_start": "2020-09-14",
+    "usable_history_start": "2021-01-22",
+    "excluded_pre_cutoff_rows": 90,
+    "excluded_exact_50_rows": 83,
+    "placeholder_rule": "Exclude history through the last initial run of at least 10 consecutive exact-neutral scores of 50."
+  },
+  "latest_report": {
+    "source": "latest CNN history row",
+    "reading_date": "2026-06-12",
+    "history_start": "2021-01-22",
+    "history_end": "2026-06-12",
+    "observations": 1353,
+    "sentiment": {
+      "score": 34.0,
+      "rating": "fear",
+      "historical_percentile": 0.2660753880266075,
+      "contrarian_interpretation": "contrarian-positive"
+    },
+    "predictions": [
+      {
+        "horizon_trading_days": 1,
+        "predicted_return": 0.0003851335531393975,
+        "interval_10": -0.00816016752431434,
+        "interval_90": 0.00867691540994193,
+        "probability_positive": 0.5940959409594095,
+        "analog_median_return": -0.0008650990436227524,
+        "analog_positive_rate": 0.4666666666666667,
+        "validation_mae": 0.005781809428494126,
+        "baseline_mae": 0.005816810271724906,
+        "mae_skill": 0.006017188389471184,
+        "directional_accuracy": 0.5756457564575646,
+        "alpha": 100.0,
+        "validation_rows": 271,
+        "analog_count": 45
+      },
+      {
+        "horizon_trading_days": 5,
+        "predicted_return": 0.0024182182650362544,
+        "interval_10": -0.01604796982546387,
+        "interval_90": 0.024671593414091905,
+        "probability_positive": 0.6592592592592592,
+        "analog_median_return": 0.005482028194337851,
+        "analog_positive_rate": 0.6363636363636364,
+        "validation_mae": 0.013270558129789103,
+        "baseline_mae": 0.013096144932452215,
+        "mae_skill": -0.013317903721780988,
+        "directional_accuracy": 0.5370370370370371,
+        "alpha": 100.0,
+        "validation_rows": 270,
+        "analog_count": 44
+      },
+      {
+        "horizon_trading_days": 20,
+        "predicted_return": 0.010648239712077524,
+        "interval_10": -0.013016752596648756,
+        "interval_90": 0.06689348174689186,
+        "probability_positive": 0.8164794007490637,
+        "analog_median_return": 0.008377652589753537,
+        "analog_positive_rate": 0.5681818181818182,
+        "validation_mae": 0.027947427038709692,
+        "baseline_mae": 0.026984936742113948,
+        "mae_skill": -0.03566768771014517,
+        "directional_accuracy": 0.7752808988764045,
+        "alpha": 100.0,
+        "validation_rows": 267,
+        "analog_count": 44
+      },
+      {
+        "horizon_trading_days": 63,
+        "predicted_return": 0.02065342326215139,
+        "interval_10": -0.014196558755385818,
+        "interval_90": 0.10317765202156473,
+        "probability_positive": 0.8372093023255814,
+        "analog_median_return": 0.04384750670384707,
+        "analog_positive_rate": 0.627906976744186,
+        "validation_mae": 0.045672744960172644,
+        "baseline_mae": 0.04682454432793901,
+        "mae_skill": 0.024598197041698078,
+        "directional_accuracy": 0.8914728682170543,
+        "alpha": 0.0,
+        "validation_rows": 258,
+        "analog_count": 43
+      },
+      {
+        "horizon_trading_days": 126,
+        "predicted_return": 0.05350159585629945,
+        "interval_10": 0.029833242051263077,
+        "interval_90": 0.21012975057460714,
+        "probability_positive": 0.9349593495934959,
+        "analog_median_return": 0.07326615606768216,
+        "analog_positive_rate": 0.75,
+        "validation_mae": 0.06881654904758572,
+        "baseline_mae": 0.06152179492057894,
+        "mae_skill": -0.11857186768402772,
+        "directional_accuracy": 0.9024390243902439,
+        "alpha": 0.0,
+        "validation_rows": 246,
+        "analog_count": 40
+      }
+    ],
+    "note": "Associational estimate, not investment advice. CNN history only provides a relatively short usable sample beginning in 2021."
+  },
+  "historical_findings": {
+    "score_distribution": {
+      "mean": 47.55979234857284,
+      "median": 48.371428571428574,
+      "p10": 22.057142857142853,
+      "p25": 32.74285714285714,
+      "p75": 63.2,
+      "p90": 72.02857142857142
+    },
+    "forward_return_baselines": [
+      {
+        "horizon_trading_days": 1,
+        "observations": 1352,
+        "mean_return": 0.0005440756558436853,
+        "median_return": 0.0008533620661766994,
+        "positive_rate": 0.5399408284023669,
+        "p10": -0.01172764970723369,
+        "p90": 0.011881893670479338,
+        "score_return_correlation": -0.048327306127858585
+      },
+      {
+        "horizon_trading_days": 5,
+        "observations": 1348,
+        "mean_return": 0.0026973790832544465,
+        "median_return": 0.0041753728958785485,
+        "positive_rate": 0.5949554896142433,
+        "p10": -0.025007129886676215,
+        "p90": 0.028551305910745704,
+        "score_return_correlation": -0.08249793486133154
+      },
+      {
+        "horizon_trading_days": 20,
+        "observations": 1333,
+        "mean_return": 0.010818222645596514,
+        "median_return": 0.016586218015043785,
+        "positive_rate": 0.6594148537134283,
+        "p10": -0.04763538089190389,
+        "p90": 0.05698494773135465,
+        "score_return_correlation": -0.13425927595960677
+      },
+      {
+        "horizon_trading_days": 63,
+        "observations": 1290,
+        "mean_return": 0.031284279000810086,
+        "median_return": 0.04275298969436081,
+        "positive_rate": 0.724031007751938,
+        "p10": -0.0630462707049881,
+        "p90": 0.10327491196364526,
+        "score_return_correlation": -0.06116922154913736
+      },
+      {
+        "horizon_trading_days": 126,
+        "observations": 1227,
+        "mean_return": 0.06113865051135036,
+        "median_return": 0.07572931679241934,
+        "positive_rate": 0.7579462102689487,
+        "p10": -0.07265783699933791,
+        "p90": 0.1627386213324101,
+        "score_return_correlation": -0.02445725862811795
+      }
+    ],
+    "rating_regimes": [
+      {
+        "rating": "extreme fear",
+        "observations": 188,
+        "score_min": 2.9,
+        "score_max": 24.8,
+        "forward_returns": [
+          {
+            "horizon_trading_days": 1,
+            "mean_return": 0.0018127574868941213,
+            "median_return": 0.002238678314188669,
+            "positive_rate": 0.5904255319148937
+          },
+          {
+            "horizon_trading_days": 5,
+            "mean_return": 0.008508790318950422,
+            "median_return": 0.010205346434874696,
+            "positive_rate": 0.6382978723404256
+          },
+          {
+            "horizon_trading_days": 20,
+            "mean_return": 0.02753175510964045,
+            "median_return": 0.029768798957943154,
+            "positive_rate": 0.7127659574468085
+          },
+          {
+            "horizon_trading_days": 63,
+            "mean_return": 0.05181574463844378,
+            "median_return": 0.053446165879364016,
+            "positive_rate": 0.7616279069767442
+          },
+          {
+            "horizon_trading_days": 126,
+            "mean_return": 0.07586488716268759,
+            "median_return": 0.08117352964820901,
+            "positive_rate": 0.7440476190476191
+          }
+        ]
+      },
+      {
+        "rating": "fear",
+        "observations": 416,
+        "score_min": 25.085714285714285,
+        "score_max": 44.93333333333334,
+        "forward_returns": [
+          {
+            "horizon_trading_days": 1,
+            "mean_return": 0.0007156900584007196,
+            "median_return": 0.0011649703264435818,
+            "positive_rate": 0.5493975903614458
+          },
+          {
+            "horizon_trading_days": 5,
+            "mean_return": 0.0030612424527073235,
+            "median_return": 0.0054264107038974885,
+            "positive_rate": 0.6155717761557178
+          },
+          {
+            "horizon_trading_days": 20,
+            "mean_return": 0.010905979252266535,
+            "median_return": 0.01862252670809783,
+            "positive_rate": 0.6707317073170732
+          },
+          {
+            "horizon_trading_days": 63,
+            "mean_return": 0.02409332568184406,
+            "median_return": 0.04070847136608824,
+            "positive_rate": 0.6650246305418719
+          },
+          {
+            "horizon_trading_days": 126,
+            "mean_return": 0.05901865788106884,
+            "median_return": 0.07364830491415697,
+            "positive_rate": 0.7532808398950132
+          }
+        ]
+      },
+      {
+        "rating": "neutral",
+        "observations": 221,
+        "score_min": 45.01428571428572,
+        "score_max": 54.91428571428572,
+        "forward_returns": [
+          {
+            "horizon_trading_days": 1,
+            "mean_return": 5.4857442950773005e-05,
+            "median_return": 0.0007212964460983073,
+            "positive_rate": 0.5475113122171946
+          },
+          {
+            "horizon_trading_days": 5,
+            "mean_return": -0.0006195069895757067,
+            "median_return": 0.0022676188453505386,
+            "positive_rate": 0.5475113122171946
+          },
+          {
+            "horizon_trading_days": 20,
+            "mean_return": 0.0013330544430680354,
+            "median_return": 0.007021705815634771,
+            "positive_rate": 0.5753424657534246
+          },
+          {
+            "horizon_trading_days": 63,
+            "mean_return": 0.02593732745555351,
+            "median_return": 0.041503076391070315,
+            "positive_rate": 0.7568807339449541
+          },
+          {
+            "horizon_trading_days": 126,
+            "mean_return": 0.055213141458642825,
+            "median_return": 0.0684492791650626,
+            "positive_rate": 0.7360406091370558
+          }
+        ]
+      },
+      {
+        "rating": "greed",
+        "observations": 448,
+        "score_min": 55.02857142857143,
+        "score_max": 74.65714285714286,
+        "forward_returns": [
+          {
+            "horizon_trading_days": 1,
+            "mean_return": 0.0001529148449052081,
+            "median_return": 0.0002414870984664974,
+            "positive_rate": 0.5133928571428571
+          },
+          {
+            "horizon_trading_days": 5,
+            "mean_return": 0.0017181069424321235,
+            "median_return": 0.0032199731050770453,
+            "positive_rate": 0.5803571428571429
+          },
+          {
+            "horizon_trading_days": 20,
+            "mean_return": 0.008226197883940424,
+            "median_return": 0.013509888736417786,
+            "positive_rate": 0.658256880733945
+          },
+          {
+            "horizon_trading_days": 63,
+            "mean_return": 0.03532256181952966,
+            "median_return": 0.044149484021263063,
+            "positive_rate": 0.7777777777777778
+          },
+          {
+            "horizon_trading_days": 126,
+            "mean_return": 0.053326811642490334,
+            "median_return": 0.07790852575488438,
+            "positive_rate": 0.7331670822942643
+          }
+        ]
+      },
+      {
+        "rating": "extreme greed",
+        "observations": 80,
+        "score_min": 75.08571428571429,
+        "score_max": 82.97142857142858,
+        "forward_returns": [
+          {
+            "horizon_trading_days": 1,
+            "mean_return": 0.00021438949398268903,
+            "median_return": 8.43536895571706e-05,
+            "positive_rate": 0.5
+          },
+          {
+            "horizon_trading_days": 5,
+            "mean_return": 0.0018180363836030598,
+            "median_return": 0.0015378211671548403,
+            "positive_rate": 0.6
+          },
+          {
+            "horizon_trading_days": 20,
+            "mean_return": 0.011183851651356824,
+            "median_return": 0.0193190567672471,
+            "positive_rate": 0.7125
+          },
+          {
+            "horizon_trading_days": 63,
+            "mean_return": 0.017308045347600647,
+            "median_return": 0.024922593979425645,
+            "positive_rate": 0.575
+          },
+          {
+            "horizon_trading_days": 126,
+            "mean_return": 0.09405842681771115,
+            "median_return": 0.08685220924208836,
+            "positive_rate": 0.9875
+          }
+        ]
+      }
+    ]
+  },
+  "usage_guidance": {
+    "primary_use": "market context and contrarian confirmation",
+    "not_recommended_as": "standalone trading or market-timing signal",
+    "preferred_horizons_trading_days": [
+      20,
+      63,
+      126
+    ],
+    "combine_with": [
+      "price trend",
+      "market breadth",
+      "volatility",
+      "credit conditions",
+      "liquidity",
+      "positioning",
+      "macro regime"
+    ]
+  }
+}

@@ -15,7 +15,7 @@ from app.services.prediction_cache_service import PredictionCacheService
 from app.services.signal_strength_parser import SignalStrengthParser
 from app.services.signal_strength_db_service import SignalStrengthDBService
 import logging
-from pathlib import Path
+import json
 
 logger = logging.getLogger("app.gex_auto_insight")
 
@@ -23,6 +23,12 @@ logger = logging.getLogger("app.gex_auto_insight")
 DATABASE = "StockDB_US"
 CONFIG_SCHEMA = "Configuration"
 CONFIG_TABLE = "GEXAutoInsightStocks"
+DEFAULT_GEX_AUTO_INSIGHT_MODEL = "google/gemma-4-26b-a4b-it"
+LEGACY_GEX_AUTO_INSIGHT_MODELS = {
+    "google/gemini-2.5-flash",
+    "deepseek/deepseek-v4-flash",
+}
+MAX_INCOMPLETE_CACHE_RETRIES = 3
 
 
 class GEXAutoInsightService:
@@ -45,6 +51,77 @@ class GEXAutoInsightService:
         except Exception as e:
             logger.error(f"Failed to resolve effective observation date for {stock_code}: {e}")
             return None
+
+    def _resolve_llm_model(self, model: Optional[str] = None) -> str:
+        configured_model = (model or "").strip()
+        if not configured_model or configured_model in LEGACY_GEX_AUTO_INSIGHT_MODELS:
+            return DEFAULT_GEX_AUTO_INSIGHT_MODEL
+        return configured_model
+
+    def _processing_marker_path(self, stock_code: str, observation_date: date):
+        cache_path = self.cache_service.get_cache_filepath(stock_code, observation_date)
+        return cache_path.with_suffix(".processing.json")
+
+    def _read_processing_marker(self, stock_code: str, observation_date: date) -> Dict[str, Any]:
+        path = self._processing_marker_path(stock_code, observation_date)
+        if not path.exists():
+            return {}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.warning("Failed to read processing marker %s: %s", path, e)
+            return {}
+
+    def _write_processing_marker(
+        self,
+        stock_code: str,
+        observation_date: date,
+        marker: Dict[str, Any],
+    ) -> None:
+        path = self._processing_marker_path(stock_code, observation_date)
+        payload = {
+            **marker,
+            "stock_code": self.cache_service.normalize_stock_code(stock_code),
+            "observation_date": observation_date.isoformat(),
+            "updated_at": datetime.now().isoformat(),
+        }
+        try:
+            path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        except Exception as e:
+            logger.warning("Failed to write processing marker %s: %s", path, e)
+
+    def _clear_processing_marker(self, stock_code: str, observation_date: date) -> None:
+        path = self._processing_marker_path(stock_code, observation_date)
+        try:
+            if path.exists():
+                path.unlink()
+        except Exception as e:
+            logger.warning("Failed to clear processing marker %s: %s", path, e)
+
+    def _record_incomplete_processing_attempt(
+        self,
+        stock_code: str,
+        observation_date: date,
+        reason: str,
+    ) -> Dict[str, Any]:
+        marker = self._read_processing_marker(stock_code, observation_date)
+        attempts = int(marker.get("incomplete_attempts") or 0) + 1
+        failed = attempts >= MAX_INCOMPLETE_CACHE_RETRIES
+        marker.update(
+            {
+                "incomplete_attempts": attempts,
+                "failed": failed,
+                "last_error": reason,
+            }
+        )
+        self._write_processing_marker(stock_code, observation_date, marker)
+        return marker
+
+    def _get_processing_failure(self, stock_code: str, observation_date: date) -> Optional[Dict[str, Any]]:
+        marker = self._read_processing_marker(stock_code, observation_date)
+        if marker.get("failed"):
+            return marker
+        return None
 
     def get_configured_stocks(self, active_only: bool = True) -> List[Dict[str, Any]]:
         """
@@ -70,7 +147,9 @@ class GEXAutoInsightService:
 
             result = []
             for row in rows:
-                result.append(dict(zip(columns, row)))
+                item = dict(zip(columns, row))
+                item["LLMModel"] = self._resolve_llm_model(item.get("LLMModel"))
+                result.append(item)
 
             logger.info(f"Retrieved {len(result)} configured stocks (active_only={active_only})")
             return result
@@ -114,7 +193,13 @@ class GEXAutoInsightService:
                     @pbitIsActive = ?,
                     @pintPriority = ?,
                     @pvchLLMModel = ?""",
-                (normalized_code, display_name, is_active, priority, llm_model)
+                (
+                    normalized_code,
+                    display_name,
+                    is_active,
+                    priority,
+                    self._resolve_llm_model(llm_model),
+                )
             )
 
             columns = [column[0] for column in cursor.description]
@@ -244,6 +329,7 @@ class GEXAutoInsightService:
         available_count = 0
         processed_count = 0
         pending_count = 0
+        failed_count = 0
 
         for stock in stocks:
             stock_code = stock["StockCode"]
@@ -252,6 +338,7 @@ class GEXAutoInsightService:
             # For status view, only consider exact target_date; do not fall back to prior dates
             has_gex_data = self.check_gex_data_available(stock_code, target_date)
             has_signal = self.check_signal_strength_exists(stock_code, target_date) if has_gex_data else False
+            processing_failure = self._get_processing_failure(base_code, target_date) if has_gex_data else None
 
             stock_status = {
                 "stock_code": stock_code,
@@ -266,10 +353,16 @@ class GEXAutoInsightService:
                 available_count += 1
                 if has_signal:
                     processed_count += 1
+                    self._clear_processing_marker(base_code, target_date)
                     # Get the actual signal strength value (use normalized code)
                     signal = self.signal_strength_db.get_signal_strength(base_code, target_date, "GEX")
                     stock_status["signal_strength"] = signal
                     stock_status["status"] = "processed"
+                elif processing_failure:
+                    failed_count += 1
+                    stock_status["status"] = "failed"
+                    stock_status["processing_error"] = processing_failure.get("last_error")
+                    stock_status["processing_attempts"] = processing_failure.get("incomplete_attempts")
                 else:
                     pending_count += 1
                     stock_status["status"] = "pending"
@@ -279,6 +372,7 @@ class GEXAutoInsightService:
         status["available_count"] = available_count
         status["processed_count"] = processed_count
         status["pending_count"] = pending_count
+        status["failed_count"] = failed_count
 
         return status
 
@@ -302,8 +396,7 @@ class GEXAutoInsightService:
             Dictionary with processing result
         """
         base_code = self.cache_service.normalize_stock_code(stock_code)
-        default_model = "google/gemini-2.5-flash"
-        llm_model = model or default_model
+        llm_model = self._resolve_llm_model(model)
 
         result = {
             "stock_code": base_code,
@@ -327,6 +420,7 @@ class GEXAutoInsightService:
             # Check if already processed (unless force_regenerate)
             if not force_regenerate and self.check_signal_strength_exists(base_code, effective_date):
                 existing_signal = self.signal_strength_db.get_signal_strength(base_code, effective_date, "GEX")
+                self._clear_processing_marker(base_code, effective_date)
                 result["success"] = True
                 result["cached"] = True
                 result["signal_strength"] = existing_signal
@@ -334,14 +428,26 @@ class GEXAutoInsightService:
                 logger.info(f"Stock {base_code} already processed for {effective_date}")
                 return result
 
-            # Check cache file and optionally upsert DB from cache (avoid LLM if cache exists)
+            processing_failure = self._get_processing_failure(base_code, effective_date)
+            if processing_failure and not force_regenerate:
+                attempts = processing_failure.get("incomplete_attempts")
+                result["error"] = (
+                    f"Stock flagged as not properly processed after {attempts} incomplete cache attempts"
+                )
+                result["processing_attempts"] = attempts
+                result["flagged_failed"] = True
+                logger.warning("%s on %s is flagged failed; skipping paid regeneration", base_code, effective_date)
+                return result
+
+            # Check cache file and optionally upsert DB from cache (avoid LLM if the cache is complete).
+            # Partial/debug cache files are ignored so the scheduler can regenerate and persist a signal.
             if not force_regenerate and self.cache_service.cache_exists(base_code, effective_date):
                 cached_text = self.cache_service.get_cached_prediction(base_code, effective_date) or ""
-                result["cached"] = True
                 # Try to extract and persist signal strength if missing
                 signal_from_cache = SignalStrengthParser.extract_signal_strength(cached_text)
                 ranges = SignalStrengthParser.extract_trade_ranges(cached_text)
                 if signal_from_cache:
+                    result["cached"] = True
                     self.signal_strength_db.upsert_signal_strength(
                         stock_code=base_code,
                         observation_date=effective_date,
@@ -351,10 +457,37 @@ class GEXAutoInsightService:
                         sell_rip_range=ranges.get("sell_rip_range"),
                     )
                     result["signal_strength"] = signal_from_cache
-                result["success"] = True
-                result["message"] = "Cache hit; skipped LLM generation"
-                logger.info(f"Cache hit for {base_code} on {effective_date}; skipped LLM")
-                return result
+                    result["success"] = True
+                    result["message"] = "Cache hit; skipped LLM generation"
+                    self._clear_processing_marker(base_code, effective_date)
+                    logger.info(f"Cache hit for {base_code} on {effective_date}; skipped LLM")
+                    return result
+                marker = self._record_incomplete_processing_attempt(
+                    base_code,
+                    effective_date,
+                    "Cache file exists but does not contain a parseable signal strength",
+                )
+                if marker.get("failed"):
+                    attempts = marker.get("incomplete_attempts")
+                    result["error"] = (
+                        f"Stock flagged as not properly processed after {attempts} incomplete cache attempts"
+                    )
+                    result["processing_attempts"] = attempts
+                    result["flagged_failed"] = True
+                    logger.warning(
+                        "Flagged %s on %s as not properly processed after %s incomplete cache attempts",
+                        base_code,
+                        effective_date,
+                        attempts,
+                    )
+                    return result
+                logger.warning(
+                    "Ignoring incomplete cache for %s on %s; attempt %s/%s, regenerating",
+                    base_code,
+                    effective_date,
+                    marker.get("incomplete_attempts"),
+                    MAX_INCOMPLETE_CACHE_RETRIES,
+                )
 
             # Get GEX features
             gex_rows = self.gex_service.get_recent_features(base_code, effective_date, days=30)
@@ -426,11 +559,28 @@ class GEXAutoInsightService:
                 if success:
                     result["signal_strength"] = signal_strength
                     result["success"] = True
+                    self._clear_processing_marker(base_code, effective_date)
                     logger.info(f"Successfully processed {base_code} on {effective_date}: {signal_strength}")
                 else:
                     result["error"] = "Failed to save signal strength to database"
             else:
-                result["error"] = "Failed to extract signal strength from LLM response"
+                marker = self._record_incomplete_processing_attempt(
+                    base_code,
+                    effective_date,
+                    "Generated prediction did not contain a parseable signal strength",
+                )
+                attempts = marker.get("incomplete_attempts")
+                result["processing_attempts"] = attempts
+                if marker.get("failed"):
+                    result["flagged_failed"] = True
+                    result["error"] = (
+                        f"Stock flagged as not properly processed after {attempts} incomplete cache attempts"
+                    )
+                else:
+                    result["error"] = (
+                        "Failed to extract signal strength from LLM response "
+                        f"(attempt {attempts}/{MAX_INCOMPLETE_CACHE_RETRIES})"
+                    )
                 logger.warning(f"No signal strength extracted for {base_code}")
 
             if used_fallback:
@@ -467,6 +617,7 @@ class GEXAutoInsightService:
             "total_configured": status["total_configured"],
             "available": status["available_count"],
             "already_processed": status["processed_count"],
+            "flagged_failed": status.get("failed_count", 0),
             "pending": len(pending_stocks),
             "processed": [],
             "failed": [],

@@ -17,10 +17,11 @@ import logging
 import asyncio
 
 try:
-    from ib_insync import IB, Stock, LimitOrder, StopOrder, Contract, ComboLeg  # type: ignore
+    from ib_insync import IB, Stock, Option, LimitOrder, StopOrder, Contract, ComboLeg  # type: ignore
 except Exception:  # pragma: no cover
     IB = None  # type: ignore
     Stock = None  # type: ignore
+    Option = None  # type: ignore
     LimitOrder = None  # type: ignore
     StopOrder = None  # type: ignore
     Contract = None  # type: ignore
@@ -38,6 +39,95 @@ def _normalize_us_symbol(symbol: str) -> str:
     if "." in s:
         return s
     return f"{s}.US"
+
+
+def _parse_option_symbol(option_symbol: str) -> tuple[str, str, float, str] | None:
+    """
+    Parse OCC option symbol format: TICKER[YY]MMDD[C/P][STRIKE]
+    Example: AMZN260402P00200000 -> ("AMZN", "20260402", 200.0, "P")
+
+    Returns: (underlying_symbol, expiry_yyyymmdd, strike, right) or None if invalid
+    """
+    try:
+        s = option_symbol.strip().upper()
+
+        # Find where the date starts (6 digits YYMMDD)
+        # Option symbols format: SYMBOL + YYMMDD + C/P + 8-digit strike price
+        # Example: AMZN260402P00200000
+
+        # Extract the ticker (letters before date)
+        i = 0
+        while i < len(s) and s[i].isalpha():
+            i += 1
+
+        if i == 0:
+            return None
+
+        underlying = s[:i]
+        remainder = s[i:]
+
+        # Next 6 chars should be YYMMDD
+        if len(remainder) < 6:
+            return None
+
+        date_part = remainder[:6]
+        if not date_part.isdigit():
+            return None
+
+        # Convert YY to YYYY
+        yy = date_part[:2]
+        mm = date_part[2:4]
+        dd = date_part[4:6]
+        year = int(yy)
+        # Assume 20xx for years
+        yyyy = f"20{yy}"
+        expiry = f"{yyyy}{mm}{dd}"
+
+        remainder = remainder[6:]
+
+        # Next char should be C or P
+        if len(remainder) < 1 or remainder[0] not in ("C", "P"):
+            return None
+
+        right = remainder[0]
+        remainder = remainder[1:]
+
+        # Remaining should be 8-digit strike price (format: 00200000 = $200.00)
+        if len(remainder) < 8 or not remainder[:8].isdigit():
+            return None
+
+        strike_str = remainder[:8]
+        strike = float(strike_str) / 1000.0  # Divide by 1000 to get actual price
+
+        return (underlying, expiry, strike, right)
+
+    except Exception as e:
+        logger.warning(f"Failed to parse option symbol {option_symbol}: {e}")
+        return None
+
+
+def _build_option_contract(option_symbol: str):
+    """Build an IB Option contract from an OCC option symbol."""
+    if Option is None:
+        raise HTTPException(status_code=500, detail="ib_insync Option support not available")
+
+    parsed = _parse_option_symbol(option_symbol)
+    if not parsed:
+        raise HTTPException(status_code=400, detail=f"Invalid option symbol format: {option_symbol}")
+
+    underlying, expiry, strike, right = parsed
+
+    # IB expects expiry in format YYYYMMDD
+    logger.info(f"Building option contract: symbol={underlying}, expiry={expiry}, strike={strike}, right={right}")
+
+    return Option(
+        symbol=underlying,
+        lastTradeDateOrContractMonth=expiry,
+        strike=strike,
+        right=right,
+        exchange="SMART",
+        currency="USD"
+    )
 
 
 
@@ -933,6 +1023,107 @@ def place_orders_at_price(batch: PlaceOrdersAtPriceBatchRequest) -> Dict[str, An
             pass
 
 
+@router.get("/option-quote")
+def get_option_quote(option_symbol: str) -> Dict[str, Any]:
+    """
+    Return lightweight quote fields for an option symbol.
+    Response: { ok, option_symbol, last, close, bid, ask, mid }
+    """
+    try:
+        ib, loop = _connect_ib()
+        try:
+            contract = _build_option_contract(option_symbol)
+            ib.qualifyContracts(contract)
+
+            # Request market data
+            try:
+                ib.reqMarketDataType(1)  # 1 = real-time
+            except Exception:
+                pass
+
+            ticker = ib.reqMktData(contract, "", False, False)
+            start = time.time()
+
+            # Wait briefly for quote data
+            last = getattr(ticker, "last", float("nan"))
+            close = getattr(ticker, "close", float("nan"))
+            bid = getattr(ticker, "bid", float("nan"))
+            ask = getattr(ticker, "ask", float("nan"))
+
+            while (
+                (math.isnan(last) and math.isnan(close) and math.isnan(bid) and math.isnan(ask))
+                and (time.time() - start < 5.0)
+            ):
+                ib.sleep(0.2)
+                last = getattr(ticker, "last", float("nan"))
+                close = getattr(ticker, "close", float("nan"))
+                bid = getattr(ticker, "bid", float("nan"))
+                ask = getattr(ticker, "ask", float("nan"))
+
+            # Try delayed data if real-time fails
+            if math.isnan(last) and math.isnan(close) and math.isnan(bid) and math.isnan(ask):
+                try:
+                    ib.reqMarketDataType(3)  # 3 = delayed
+                except Exception:
+                    pass
+                ticker = ib.reqMktData(contract, "", False, False)
+                start = time.time()
+                last = getattr(ticker, "last", float("nan"))
+                close = getattr(ticker, "close", float("nan"))
+                bid = getattr(ticker, "bid", float("nan"))
+                ask = getattr(ticker, "ask", float("nan"))
+                while (
+                    (math.isnan(last) and math.isnan(close) and math.isnan(bid) and math.isnan(ask))
+                    and (time.time() - start < 3.0)
+                ):
+                    ib.sleep(0.2)
+                    last = getattr(ticker, "last", float("nan"))
+                    close = getattr(ticker, "close", float("nan"))
+                    bid = getattr(ticker, "bid", float("nan"))
+                    ask = getattr(ticker, "ask", float("nan"))
+
+            def clean(x: float) -> float | None:
+                return None if x is None or (isinstance(x, float) and (math.isnan(x) or math.isinf(x))) else float(x)
+
+            last_c = clean(last)
+            close_c = clean(close)
+            bid_c = clean(bid)
+            ask_c = clean(ask)
+            mid_c = None
+            if bid_c is not None and ask_c is not None:
+                mid_c = round((bid_c + ask_c) / 2.0, 4)
+
+            def r2(v: float | None) -> float | None:
+                return None if v is None else round(v, 4)
+
+            return {
+                "ok": True,
+                "option_symbol": option_symbol,
+                "last": r2(last_c),
+                "close": r2(close_c),
+                "bid": r2(bid_c),
+                "ask": r2(ask_c),
+                "mid": r2(mid_c),
+                "source": "ib",
+            }
+        finally:
+            try:
+                ib.disconnect()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning("IB get_option_quote failed for %s: %s", option_symbol, e)
+        return {
+            "ok": False,
+            "option_symbol": option_symbol,
+            "error": str(e),
+            "last": None,
+            "close": None,
+            "bid": None,
+            "ask": None,
+            "mid": None,
+        }
+
 @router.post("/place-sell-put")
 def place_sell_put(order: SellPutOrderRequest) -> Dict[str, Any]:
     if order.short_leg.put_call != "P" or order.short_leg.action != "SELL":
@@ -1347,6 +1538,205 @@ def _try_tcp(host: str, port: int) -> bool:
         return False
 
 
+class PlaceOptionOrderRequest(BaseModel):
+    option_symbol: str
+    quantity: int  # Number of contracts
+    action: str  # BUY or SELL
+    limit_price: float
+    bracket_exit_price: Optional[float] = None
+
+    @field_validator("quantity")
+    @classmethod
+    def validate_quantity(cls, v: int) -> int:
+        if v is None or v <= 0:
+            raise ValueError("quantity must be > 0")
+        return int(v)
+
+    @field_validator("limit_price")
+    @classmethod
+    def validate_limit_price(cls, v: float) -> float:
+        if v is None or v <= 0:
+            raise ValueError("limit_price must be > 0")
+        return float(v)
+
+    @field_validator("bracket_exit_price")
+    @classmethod
+    def validate_bracket_exit_price(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return v
+        if v <= 0:
+            raise ValueError("bracket_exit_price must be > 0")
+        return float(v)
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        vv = (v or "").strip().upper()
+        if vv not in ("BUY", "SELL"):
+            raise ValueError("action must be BUY or SELL")
+        return vv
+
+@router.post("/place-option-order")
+def place_option_order(request: PlaceOptionOrderRequest) -> Dict[str, Any]:
+    """
+    Place a limit order for an option contract.
+
+    Args:
+        request: PlaceOptionOrderRequest with option_symbol, quantity, action, limit_price
+
+    Returns:
+        Order placement result with IB order ID
+    """
+    action_upper = request.action.upper()
+
+    ib, loop = _connect_ib()
+    try:
+        # Build option contract
+        contract = _build_option_contract(request.option_symbol)
+        ib.qualifyContracts(contract)
+
+        # Use the quantity directly (number of contracts)
+        qty = request.quantity
+
+        # Option entries expire at the end of the session. Attached exits stay
+        # active across sessions after the parent fills.
+        parent_tif = "DAY"
+        bracket_exit_tif = "GTC"
+        entry_price = round(float(request.limit_price), 2)
+
+        exit_action = "BUY" if action_upper == "SELL" else "SELL"
+        exit_price = None
+        if request.bracket_exit_price is not None:
+            exit_price = round(float(request.bracket_exit_price), 2)
+
+        # Create entry limit order. When an exit price is supplied, always send
+        # it as an attached bracket so the BUY exit is visible in IB immediately.
+        lo = LimitOrder(action_upper, qty, lmtPrice=entry_price)
+        if exit_price is not None:
+            lo.orderId = ib.client.getReqId()
+            lo.transmit = False
+        else:
+            lo.transmit = True
+        lo.outsideRth = True
+        try:
+            lo.tif = parent_tif
+        except Exception:
+            pass
+        lo.eTradeOnly = None
+        lo.firmQuoteOnly = None
+
+        ib_errors: List[str] = []
+
+        def on_error(req_id, error_code, error_string, contract):
+            ib_errors.append(f"{error_code}: {error_string}")
+
+        ib.errorEvent += on_error
+
+        trade = ib.placeOrder(contract, lo)
+        exit_trade = None
+        if exit_price is not None:
+            exit_order = LimitOrder(exit_action, qty, lmtPrice=exit_price)
+            exit_order.orderId = ib.client.getReqId()
+            exit_order.parentId = lo.orderId
+            exit_order.transmit = True
+            exit_order.outsideRth = True
+            try:
+                exit_order.tif = bracket_exit_tif
+            except Exception:
+                pass
+            exit_order.eTradeOnly = None
+            exit_order.firmQuoteOnly = None
+            exit_trade = ib.placeOrder(contract, exit_order)
+        ib.sleep(0.5)
+
+        try:
+            ib.errorEvent -= on_error
+        except Exception:
+            pass
+
+        logger.info(
+            "Placed option order: symbol=%s action=%s qty=%d limit=%.2f exit=%s parent_tif=%s exit_tif=%s entry_id=%s errors=%s",
+            request.option_symbol,
+            action_upper,
+            request.quantity,
+            entry_price,
+            exit_price,
+            parent_tif,
+            bracket_exit_tif if exit_price is not None else None,
+            getattr(trade.order, "orderId", None) if trade.order else None,
+            ib_errors,
+        )
+
+        blocking_option_side_error = next(
+            (
+                err
+                for err in ib_errors
+                if "Cannot have open orders on both sides of the same US Option contract" in err
+            ),
+            None,
+        )
+        if blocking_option_side_error:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "IB rejected this option order because there is already an open opposite-side order "
+                    f"for {request.option_symbol}. IB does not allow open BUY and SELL orders on the same US option contract. "
+                    "Cancel the existing bracket/exit order first, or place additional entry orders without attached exits."
+                ),
+            )
+
+        rejecting_errors = [err for err in ib_errors if err.startswith("201:")]
+        if rejecting_errors:
+            raise HTTPException(status_code=409, detail="IB rejected the option order: " + " | ".join(rejecting_errors))
+
+        if exit_price is not None:
+            return {
+                "ok": True,
+                "message": (
+                    f"Placed bracket order: {action_upper} {request.quantity} contract(s) "
+                    f"{request.option_symbol} @ ${entry_price}; {exit_action} exit @ ${exit_price}."
+                ),
+                "option_symbol": request.option_symbol,
+                "order_type": "bracket",
+                "parent": {
+                    "ib_order_id": getattr(trade.order, "orderId", None) if trade.order else None,
+                    "action": action_upper,
+                    "qty": request.quantity,
+                    "limit_price": entry_price,
+                    "tif": parent_tif,
+                },
+                "exit": {
+                    "ib_order_id": getattr(exit_trade.order, "orderId", None) if exit_trade and exit_trade.order else None,
+                    "action": exit_action,
+                    "qty": request.quantity,
+                    "limit_price": exit_price,
+                    "tif": bracket_exit_tif,
+                },
+                "warnings": ib_errors,
+            }
+
+        return {
+            "ok": True,
+            "message": f"Placed {action_upper} {request.quantity} contract(s) {request.option_symbol} @ ${entry_price}",
+            "option_symbol": request.option_symbol,
+            "qty": request.quantity,
+            "limit_price": entry_price,
+            "action": action_upper,
+            "ib_order_id": getattr(trade.order, "orderId", None) if trade.order else None,
+            "warnings": ib_errors,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("IB place_option_order unexpected error for %s: %s", request.option_symbol, e)
+        raise HTTPException(status_code=500, detail=f"Unexpected IB error: {e}")
+    finally:
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+
+
 @router.post("/cancel-all-orders-for-stock")
 def cancel_all_orders_for_stock(stock_code: str, side: str = None) -> Dict[str, Any]:
     """
@@ -1474,5 +1864,3 @@ def cancel_all_orders_for_stock(stock_code: str, side: str = None) -> Dict[str, 
             ib.disconnect()
         except Exception:
             pass
-
-

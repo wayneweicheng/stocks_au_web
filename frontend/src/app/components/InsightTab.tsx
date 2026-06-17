@@ -1,6 +1,7 @@
 "use client";
 
 import MarkdownRenderer from "./MarkdownRenderer";
+import { SHARED_MARKET_FLOW_MODEL_OPTIONS } from "./llmModelOptions";
 
 type SignalStrengthItem = {
   stock_code: string;
@@ -74,19 +75,11 @@ export default function InsightTab({
               onChange={(e) => onModelChange(e.target.value)}
               className="w-full sm:w-auto rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="openai/gpt-5-mini">GPT-5 Mini</option>
-              <option value="qwen/qwen3-30b-a3b">Qwen3 30B</option>
-              <option value="openai/gpt-5.1">GPT-5.1</option>
-              <option value="openai/gpt-4.1-mini">GPT-4.1 Mini</option>
-              <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-              <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-              <option value="deepseek/deepseek-v3.2">DeepSeek V3.2</option>
-              <option value="deepseek/deepseek-r1-distill-qwen-32b">DeepSeek R1 Qwen3 32B</option>
-              <option value="x-ai/grok-4.1-fast">Grok 4.1 Fast</option>
-              <option value="bytedance-seed/seed-1.6-flash">Seed 1.6 Flash</option>
-              <option value="moonshotai/kimi-k2-thinking">Kimi K2 Thinking</option>
-              <option value="z-ai/glm-4.7-flash">GLM-4.7 Flash</option>
+              {SHARED_MARKET_FLOW_MODEL_OPTIONS.map((model) => (
+                <option key={model.value} value={model.value}>
+                  {model.label}
+                </option>
+              ))}
             </select>
             <button
               type="button"
@@ -202,20 +195,21 @@ export default function InsightTab({
               {/* Desktop/Tablet matrix */}
               <div className="hidden sm:block overflow-x-auto">
                 <div className="inline-block min-w-full">
-                  <div className="grid grid-cols-8 gap-2 mb-3 pb-2 border-b border-slate-200">
+                  <div className="grid grid-cols-9 gap-2 mb-3 pb-2 border-b border-slate-200">
                     <div className="text-xs font-semibold text-slate-600 uppercase">Stock</div>
                     <div className="text-xs font-semibold text-center text-indigo-700">Strongly Bullish</div>
                     <div className="text-xs font-semibold text-center text-emerald-500">Mildly Bullish</div>
                     <div className="text-xs font-semibold text-center text-amber-600">Neutral</div>
                     <div className="text-xs font-semibold text-center text-orange-500">Mildly Bearish</div>
                     <div className="text-xs font-semibold text-center text-red-600">Strongly Bearish</div>
+                    <div className="text-xs font-semibold text-center text-slate-500">Not Determined</div>
                     <div className="text-xs font-semibold text-center text-slate-600">Buy the Dip Range</div>
                     <div className="text-xs font-semibold text-center text-slate-600">Sell the Rip Range</div>
                   </div>
                   {signalStrengths.map((item) => {
                     const level = item.signal_strength_level;
                     return (
-                      <div key={item.stock_code} className="grid grid-cols-8 gap-2 py-2 border-b border-slate-100 hover:bg-slate-50">
+                      <div key={item.stock_code} className="grid grid-cols-9 gap-2 py-2 border-b border-slate-100 hover:bg-slate-50">
                         <div className="text-sm font-medium text-slate-700">{item.stock_code}</div>
                         <div className="flex justify-center items-center">
                           {level === "STRONGLY_BULLISH" && <div className="w-6 h-6 rounded-full bg-indigo-600" title="Strongly Bullish" />}
@@ -231,6 +225,9 @@ export default function InsightTab({
                         </div>
                         <div className="flex justify-center items-center">
                           {level === "STRONGLY_BEARISH" && <div className="w-6 h-6 rounded-full bg-red-600" title="Strongly Bearish" />}
+                        </div>
+                        <div className="flex justify-center items-center">
+                          {level === "NOT_DETERMINED" && <div className="w-6 h-6 rounded-full bg-slate-300" title="Not Determined" />}
                         </div>
                         <div className="flex justify-center items-center text-xs text-slate-700">
                           {item.buy_dip_range || "-"}
@@ -254,7 +251,8 @@ export default function InsightTab({
                     level === "MILDLY_BULLISH" ? "bg-emerald-300" :
                     level === "NEUTRAL" ? "bg-amber-400" :
                     level === "MILDLY_BEARISH" ? "bg-orange-400" :
-                    level === "STRONGLY_BEARISH" ? "bg-red-600" : "bg-slate-300";
+                    level === "STRONGLY_BEARISH" ? "bg-red-600" :
+                    level === "NOT_DETERMINED" ? "bg-slate-300" : "bg-slate-300";
                   return (
                     <div key={item.stock_code} className="rounded-md border border-slate-200 p-3 bg-white">
                       <div className="flex items-center justify-between">

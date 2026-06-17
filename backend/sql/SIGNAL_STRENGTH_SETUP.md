@@ -4,12 +4,13 @@ This document describes the setup process for the Signal Strength classification
 
 ## Overview
 
-The Signal Strength feature adds LLM-based classification of market signals into 5 levels:
+The Signal Strength feature adds LLM-based classification of market signals into 5 directional levels plus a no-edge state:
 - **STRONGLY_BULLISH**: Multiple strong buy signals, high conviction upside
 - **MILDLY_BULLISH**: Some bullish indicators, positive bias with caveats
 - **NEUTRAL**: Conflicting signals, unclear direction
 - **MILDLY_BEARISH**: Some bearish indicators, negative bias
 - **STRONGLY_BEARISH**: Multiple strong sell signals, high conviction downside
+- **NOT_DETERMINED**: Selective model did not find enough validated edge to make a directional call
 
 ## Database Setup
 
@@ -97,6 +98,7 @@ The GEX Signals page displays a matrix showing all stocks and their signal stren
 - **Amber** (bg-amber-400): NEUTRAL
 - **Orange** (bg-orange-400): MILDLY_BEARISH
 - **Red** (bg-red-600): STRONGLY_BEARISH
+- **Slate** (bg-slate-300): NOT_DETERMINED
 
 ## API Documentation
 

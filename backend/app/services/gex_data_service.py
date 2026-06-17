@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from datetime import date
+from datetime import date, datetime
 from app.core.db import get_sql_model
 import logging
 import json
@@ -696,6 +696,95 @@ class GEXDataService:
 
         except Exception as e:
             logger.error(f"Failed to query Discord messages for {observation_date}: {e}")
+            raise
+
+    def get_discord_messages_between(
+        self,
+        window_start: datetime,
+        window_end: datetime
+    ) -> List[Dict[str, Any]]:
+        """Query Discord messages in a half-open Sydney-time window."""
+        try:
+            model = get_sql_model()
+
+            sql = """
+            SELECT MessageId, ChannelId,
+                   CAST(TimeStamp AS datetime) as TimeStamp_Sydney,
+                   UserName, Content, CreateDate,
+                   CAST(TimeStamp_USEst AS datetime) as TimeStamp_USEst
+            FROM StockDB_US.Discord.v_DiscordMessages
+            WHERE CAST(TimeStamp AS datetime) >= ?
+              AND CAST(TimeStamp AS datetime) < ?
+            ORDER BY TimeStamp DESC
+            """
+
+            params = (
+                window_start.replace(tzinfo=None),
+                window_end.replace(tzinfo=None),
+            )
+            logger.info(
+                "Querying Discord messages from %s to %s Sydney time",
+                window_start.isoformat(),
+                window_end.isoformat(),
+            )
+
+            rows = model.execute_read_query(sql, params) or []
+            logger.info("Retrieved %d Discord messages for rolling window", len(rows))
+            return rows
+
+        except Exception as e:
+            logger.error(
+                "Failed to query Discord messages from %s to %s: %s",
+                window_start,
+                window_end,
+                e,
+            )
+            raise
+
+    def get_discord_messages_between_by_users(
+        self,
+        window_start: datetime,
+        window_end: datetime,
+        usernames: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Query Discord messages for selected users in a Sydney-time window."""
+        if not usernames:
+            return []
+
+        try:
+            model = get_sql_model()
+            placeholders = ", ".join(["?"] * len(usernames))
+            sql = f"""
+            SELECT MessageId, ChannelId,
+                   CAST(TimeStamp AS datetime) as TimeStamp_Sydney,
+                   UserName, Content, CreateDate,
+                   CAST(TimeStamp_USEst AS datetime) as TimeStamp_USEst
+            FROM StockDB_US.Discord.v_DiscordMessages
+            WHERE CAST(TimeStamp AS datetime) >= ?
+              AND CAST(TimeStamp AS datetime) < ?
+              AND UserName IN ({placeholders})
+            ORDER BY TimeStamp DESC
+            """
+            params = [
+                window_start.replace(tzinfo=None),
+                window_end.replace(tzinfo=None),
+                *usernames,
+            ]
+            rows = model.execute_read_query(sql, params) or []
+            logger.info(
+                "Retrieved %d Discord messages for %d followers in rolling window",
+                len(rows),
+                len(usernames),
+            )
+            return rows
+
+        except Exception as e:
+            logger.error(
+                "Failed to query Discord follower messages from %s to %s: %s",
+                window_start,
+                window_end,
+                e,
+            )
             raise
 
     def get_discord_messages_by_users(

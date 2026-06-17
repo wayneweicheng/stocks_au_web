@@ -6,6 +6,7 @@ param(
     [string]$LogPath = ".\logs",
     [int]$MaxRestarts = 0,
     [int]$RestartCooldown = 10,
+    [switch]$ReplaceExisting,
     [switch]$NoNewWindows
 )
 
@@ -73,12 +74,31 @@ $backendWD = Join-Path $Repo "backend"
 $python = Join-Path $Repo "venv\Scripts\python.exe"
 if (!(Test-Path $backendWD) -or !(Test-Path $python)) { Write-Log "ERROR: paths invalid"; exit 1 }
 
-# Singleton mutex
-try { $mutex = New-Object System.Threading.Mutex($true, "Global/StocksAUWebBackend", [ref]$created); if (-not $created) { Write-Log "Already running"; exit 0 } } catch {}
+# Singleton mutex. Use the Windows Global namespace so scheduled tasks and
+# interactive sessions cannot run competing supervisors.
+try {
+    $created = $false
+    $mutex = New-Object System.Threading.Mutex($true, "Global\StocksAUWebBackend", [ref]$created)
+    if (-not $created) {
+        Write-Log "Another backend supervisor is already running. Leaving it untouched."
+        exit 0
+    }
+} catch {
+    Write-Log "WARNING: Could not acquire backend supervisor mutex: $($_.Exception.Message)"
+}
+
+$existingPid = Get-PortOwnerPid -Port $Port
+if ($existingPid -gt 0) {
+    if (-not $ReplaceExisting) {
+        Write-Log "Backend is already listening on port $Port (PID $existingPid). Leaving it untouched."
+        exit 0
+    }
+    Write-Log "Replacing existing backend on port $Port (PID $existingPid)."
+    Stop-ProcessOnPort -Port $Port
+}
 
 function Start-BackendOnce {
     Write-Log "Starting backend on port $Port"
-    Stop-ProcessOnPort -Port $Port
 
     $scriptTimestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $outLog = Join-Path $AbsoluteLogPath "backend-out-$scriptTimestamp.log"
@@ -100,7 +120,9 @@ while ($true) {
 
     try {
         while (-not $proc.HasExited) { Start-Sleep -Seconds 20 }
-        $code = $proc.ExitCode
+        $proc.WaitForExit()
+        $proc.Refresh()
+        $code = try { $proc.ExitCode } catch { "unavailable" }
         Write-Log "Backend exited with code $code"
     }
     finally {
@@ -108,7 +130,12 @@ while ($true) {
         Stop-ProcessOnPort -Port $Port
     }
 
-    if ($MaxRestarts -gt 0 -and $restartCount -ge $MaxRestarts) {
+    if ($MaxRestarts -le 0) {
+        Write-Log "Auto-restart disabled (MaxRestarts=$MaxRestarts). Exiting supervisor."
+        break
+    }
+
+    if ($restartCount -ge $MaxRestarts) {
         Write-Log "Max restarts reached ($MaxRestarts). Exiting supervisor."
         break
     }

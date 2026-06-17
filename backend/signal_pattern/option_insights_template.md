@@ -42,6 +42,7 @@ Analysis Requirements:
       - Is new money flow primarily in Puts or Calls?
       - Calculate: (Total Call OI Change) / (Total Put OI Change)
       - Ratio > 1.5 = Bullish bias, Ratio < 0.67 = Bearish bias
+      - **IMPORTANT:** Report ONLY the aggregated totals and final ratio. DO NOT list individual option strikes in this section. Simply state: "Total Call OI Change: +X, Total Put OI Change: +Y, Ratio: Z.ZZ"
 
    b) Conviction Index
       - Which specific strikes show institutional positioning vs. retail day-trading?
@@ -82,7 +83,8 @@ Your analysis should be structured as follows:
 - Current Price vs. Walls
 
 ## Tactical Bias
-- OI Change Ratio: X.XX (Bullish/Bearish)
+- OI Change Ratio: Total Call OI Change: +X, Total Put OI Change: +Y, Ratio: X.XX (Bullish/Bearish)
+  - **DO NOT list individual option strikes here - report only aggregated totals**
 - Conviction Assessment: (Institutional/Retail/Mixed)
 - Gamma Squeeze Risk: (High/Medium/Low)
 
@@ -95,5 +97,24 @@ Your analysis should be structured as follows:
 - Directional Bias for Next 1-5 Days
 - Risk/Reward Assessment
 - Recommended Strategy (e.g., Buy dips to $XXX, Sell rips to $YYY, Stay flat)
+
+**CRITICAL - LOGICAL CONSISTENCY CHECK:**
+Your Buy the Dip Range and Sell the Rip Range recommendations MUST be logically consistent with your signal strength classification:
+
+- **If STRONGLY_BEARISH or MILDLY_BEARISH:**
+  - Sell the Rip Range SHOULD be recommended (with specific price levels based on Call Wall resistance)
+  - Buy the Dip Range should typically be "Not Recommended" UNLESS there's a very strong Put Wall providing exceptional tactical support
+  - Rationale: If you're bearish, you should recommend selling rallies, not avoiding them
+
+- **If STRONGLY_BULLISH or MILDLY_BULLISH:**
+  - Buy the Dip Range SHOULD be recommended (with specific price levels based on Put Wall support)
+  - Sell the Rip Range should typically be "Not Recommended" UNLESS there's a very strong Call Wall providing clear resistance
+  - Rationale: If you're bullish, you should recommend buying dips, not avoiding them
+
+- **If NEUTRAL:**
+  - Either provide BOTH ranges (range-bound trading strategy) OR recommend "Not Recommended" for both
+  - Rationale: Neutral means unclear direction, so either trade the range or stay flat
+
+**AVOID CONTRADICTIONS:** Do NOT say "overwhelming bearish flow" or "rallies will be short-lived" and then recommend "Sell the Rip: Not Recommended". This is logically inconsistent. If rallies will be short-lived, that is EXACTLY when you should sell the rip.
 
 Remember: Focus on SHORT-TERM price action (1-10 days). This is tactical flow analysis, not fundamental investing.

@@ -1,7 +1,9 @@
 from typing import List, Dict, Any, Optional
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from app.core.db import get_db_connection
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +16,41 @@ class SignalStrengthDBService:
     # Use Analysis schema to match other GEX tables
     SCHEMA = "Analysis"
     TABLE = "SignalStrength"
+
+    @staticmethod
+    def _format_price(value: Decimal) -> str:
+        return f"${value.quantize(Decimal('0.01')):,.2f}"
+
+    @staticmethod
+    def _offset_price_range(price_range: Optional[str], avg_change: Optional[Any], multiplier: int) -> Optional[str]:
+        if not price_range or avg_change is None:
+            return None
+
+        if "not recommended" in price_range.lower():
+            return None
+
+        try:
+            change = Decimal(str(avg_change))
+        except (InvalidOperation, ValueError):
+            return None
+
+        # Keep the extraction focused on the stated price range, not percentage notes in parentheses.
+        range_text = price_range.split("(", 1)[0]
+        values = re.findall(r"\$?\s*([0-9]+(?:,[0-9]{3})*(?:\.\d+)?)", range_text)
+        if not values:
+            return None
+
+        try:
+            prices = [Decimal(value.replace(",", "")) for value in values[:2]]
+        except InvalidOperation:
+            return None
+
+        offset_prices = [price + (change * multiplier) for price in prices]
+        if len(offset_prices) == 1:
+            return SignalStrengthDBService._format_price(offset_prices[0])
+
+        low, high = sorted(offset_prices)
+        return f"{SignalStrengthDBService._format_price(low)} - {SignalStrengthDBService._format_price(high)}"
 
     @staticmethod
     def upsert_signal_strength(
@@ -32,7 +69,7 @@ class SignalStrengthDBService:
         Args:
             stock_code: Stock code (e.g., "NVDA", "SPY")
             observation_date: Observation date
-            signal_strength_level: One of STRONGLY_BULLISH, MILDLY_BULLISH, NEUTRAL, MILDLY_BEARISH, STRONGLY_BEARISH
+            signal_strength_level: One of STRONGLY_BULLISH, MILDLY_BULLISH, NEUTRAL, MILDLY_BEARISH, STRONGLY_BEARISH, NOT_DETERMINED
             source_type: Source of signal - "GEX" (Market Flow Signals) or "BREAKOUT" (Breakout Analysis). Defaults to "GEX"
 
         Returns:
@@ -119,12 +156,32 @@ class SignalStrengthDBService:
             if source_type:
                 try:
                     query = f"""
-                        SELECT StockCode, SignalStrengthLevel, SourceType, BuyDipRange, SellRipRange, CreatedAt, UpdatedAt
-                        FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
-                        WHERE ObservationDate = ? AND SourceType = ?
-                        ORDER BY StockCode
+                        SELECT
+                            s.StockCode,
+                            s.SignalStrengthLevel,
+                            s.SourceType,
+                            s.BuyDipRange,
+                            s.SellRipRange,
+                            price_range.AvgChange,
+                            s.CreatedAt,
+                            s.UpdatedAt
+                        FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE} s
+                        LEFT JOIN (
+                            SELECT
+                                ph10.ASXCode,
+                                AVG(CAST((ph10.[High] - ph10.[Low]) * 0.618 AS DECIMAL(20, 4))) AS AvgChange
+                            FROM (
+                                SELECT ph.ASXCode, ph.[High], ph.[Low]
+                                FROM StockDB_US.Transform.PriceHistory24Month ph
+                                WHERE ph.ObservationDate < ?
+                                  AND ph.ObservationDate > DATEADD(day, -20, ?)
+                            ) ph10
+                            GROUP BY ph10.ASXCode
+                        ) price_range ON s.StockCode + '.US' = price_range.ASXCode
+                        WHERE s.ObservationDate = ? AND s.SourceType = ?
+                        ORDER BY s.StockCode
                     """
-                    cursor.execute(query, (observation_date, source_type))
+                    cursor.execute(query, (observation_date, observation_date, observation_date, source_type))
                 except Exception as e:
                     logger.warning(f"Select with ranges failed, falling back to legacy schema: {e}")
                     # Fallback without range columns
@@ -139,12 +196,32 @@ class SignalStrengthDBService:
             else:
                 try:
                     query = f"""
-                        SELECT StockCode, SignalStrengthLevel, SourceType, BuyDipRange, SellRipRange, CreatedAt, UpdatedAt
-                        FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
-                        WHERE ObservationDate = ?
-                        ORDER BY StockCode
+                        SELECT
+                            s.StockCode,
+                            s.SignalStrengthLevel,
+                            s.SourceType,
+                            s.BuyDipRange,
+                            s.SellRipRange,
+                            price_range.AvgChange,
+                            s.CreatedAt,
+                            s.UpdatedAt
+                        FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE} s
+                        LEFT JOIN (
+                            SELECT
+                                ph10.ASXCode,
+                                AVG(CAST((ph10.[High] - ph10.[Low]) * 0.618 AS DECIMAL(20, 4))) AS AvgChange
+                            FROM (
+                                SELECT ph.ASXCode, ph.[High], ph.[Low]
+                                FROM StockDB_US.Transform.PriceHistory24Month ph
+                                WHERE ph.ObservationDate < ?
+                                  AND ph.ObservationDate > DATEADD(day, -20, ?)
+                            ) ph10
+                            GROUP BY ph10.ASXCode
+                        ) price_range ON s.StockCode + '.US' = price_range.ASXCode
+                        WHERE s.ObservationDate = ?
+                        ORDER BY s.StockCode
                     """
-                    cursor.execute(query, (observation_date,))
+                    cursor.execute(query, (observation_date, observation_date, observation_date))
                 except Exception as e:
                     logger.warning(f"Select with ranges failed, falling back to legacy schema: {e}")
                     # Fallback without range columns
@@ -162,13 +239,28 @@ class SignalStrengthDBService:
             results = []
             # Detect shape based on column count
             for row in rows:
-                if len(row) >= 7:
+                if len(row) >= 8:
+                    avg_change = row[5]
                     results.append({
                         "stock_code": row[0],
                         "signal_strength_level": row[1],
                         "source_type": row[2],
                         "buy_dip_range": row[3],
                         "sell_rip_range": row[4],
+                        "intraday_sell_range": SignalStrengthDBService._offset_price_range(row[3], avg_change, 1),
+                        "intraday_buy_range": SignalStrengthDBService._offset_price_range(row[4], avg_change, -1),
+                        "created_at": row[6].isoformat() if row[6] else None,
+                        "updated_at": row[7].isoformat() if row[7] else None
+                    })
+                elif len(row) >= 7:
+                    results.append({
+                        "stock_code": row[0],
+                        "signal_strength_level": row[1],
+                        "source_type": row[2],
+                        "buy_dip_range": row[3],
+                        "sell_rip_range": row[4],
+                        "intraday_sell_range": None,
+                        "intraday_buy_range": None,
                         "created_at": row[5].isoformat() if row[5] else None,
                         "updated_at": row[6].isoformat() if row[6] else None
                     })
@@ -180,6 +272,8 @@ class SignalStrengthDBService:
                         "source_type": row[2],
                         "buy_dip_range": None,
                         "sell_rip_range": None,
+                        "intraday_sell_range": None,
+                        "intraday_buy_range": None,
                         "created_at": row[3].isoformat() if row[3] else None,
                         "updated_at": row[4].isoformat() if row[4] else None
                     })

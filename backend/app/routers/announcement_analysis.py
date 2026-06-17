@@ -310,11 +310,11 @@ def list_announcements(
 def get_announcement_analysis(
 	announcement_id: int = Query(..., description="AnnouncementID"),
 	regenerate: bool = Query(False, description="Force regeneration (no cache currently)"),
-	model: str = Query("google/gemini-3-flash-preview", description="LLM model to use for generation"),
+	model: str = Query("deepseek/deepseek-v4-flash", description="LLM model to use for generation"),
 	username: str = Depends(verify_credentials),
 ) -> Dict[str, Any]:
 	"""
-	Generate LLM analysis for an announcement using the same model default as breakout-consolidation analysis.
+	Generate LLM analysis for an announcement.
 	Cache files are stored as: {announcement_id}_{stock_code}.md (e.g., 2399_LIN_AX.md)
 	"""
 	try:

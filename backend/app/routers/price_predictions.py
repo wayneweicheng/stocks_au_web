@@ -14,12 +14,127 @@ router = APIRouter(prefix="/api", tags=["price-predictions"])
 logger = logging.getLogger("app.price_predictions")
 
 
+def _build_price_prediction_prompt(
+    base_code: str,
+    observation_date: date,
+    gex_service: GEXDataService,
+    template_service: PromptTemplateService,
+) -> Dict[str, Any]:
+    """Build the Market Flow price prediction prompt and return source metadata."""
+    try:
+        gex_rows = gex_service.get_recent_features(base_code, observation_date, days=30)
+        if not gex_rows:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No GEX features found for {base_code} on or before {observation_date}"
+            )
+
+        latest_row = gex_rows[-1]
+        latest_date_value = latest_row.get('ObservationDate')
+
+        if isinstance(latest_date_value, str):
+            latest_date = datetime.strptime(latest_date_value[:10], '%Y-%m-%d').date()
+        elif hasattr(latest_date_value, 'date'):
+            latest_date = latest_date_value.date()
+        else:
+            latest_date = latest_date_value
+
+        if latest_date != observation_date:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No data available for {observation_date.isoformat()}. Latest available data is from {latest_date.isoformat()}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Database query failed: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    recent_data = gex_service.format_as_json(gex_rows)
+
+    option_rows = []
+    try:
+        option_rows = gex_service.get_option_trades(base_code, observation_date)
+        option_trades_data = gex_service.format_option_trades_as_pipe_delimited(option_rows)
+        logger.info(f"Retrieved {len(option_rows)} option trades for {base_code} on {observation_date}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch option trades for {base_code}: {e}")
+        option_trades_data = "Option trade data unavailable."
+
+    bar_rows = []
+    try:
+        bar_rows = gex_service.get_price_bars_30m(base_code, observation_date)
+        price_bars_data = gex_service.format_price_bars_as_pipe_delimited(bar_rows)
+        logger.info(f"Retrieved {len(bar_rows)} 30M bars for {base_code}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch 30M price bars for {base_code}: {e}")
+        price_bars_data = "30-minute bar data unavailable."
+
+    option_oi_rows = []
+    try:
+        option_oi_rows = gex_service.get_option_oi_changes(base_code, observation_date)
+        option_oi_data = gex_service.format_option_oi_changes_as_pipe_delimited(option_oi_rows, max_rows=50)
+        logger.info(f"Retrieved {len(option_oi_rows)} option OI changes for {base_code}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch option OI changes for {base_code}: {e}")
+        option_oi_data = "No option OI change data available."
+
+    top_options_rows = []
+    try:
+        top_options_rows = gex_service.get_top_options_by_oi(base_code, observation_date, limit=50)
+        top_options_oi_data = gex_service.format_top_options_by_oi_as_pipe_delimited(top_options_rows)
+        logger.info(f"Retrieved {len(top_options_rows)} top options by OI for {base_code}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch top options by OI for {base_code}: {e}")
+        top_options_oi_data = "No option OI data available."
+
+    try:
+        template, used_fallback = template_service.get_template(base_code)
+        prompt = template_service.inject_variables(
+            template=template,
+            recent_data=recent_data,
+            stock_code=base_code,
+            observation_date=observation_date.isoformat(),
+            option_trades=option_trades_data,
+            price_bars_30m=price_bars_data,
+            option_oi_changes=option_oi_data,
+            top_options_oi=top_options_oi_data,
+        )
+    except FileNotFoundError as e:
+        logger.error(f"Template loading failed: {e}")
+        raise HTTPException(status_code=500, detail="Prediction template not found")
+    except Exception as e:
+        logger.error(f"Template processing failed: {e}")
+        raise HTTPException(status_code=500, detail="Template processing error")
+
+    template_file = f"{base_code}.md" if not used_fallback else "SPXW.md"
+
+    return {
+        "prompt": prompt,
+        "used_fallback": used_fallback,
+        "template_file": template_file,
+        "template_path": str(template_service.template_dir / template_file),
+        "prompt_length": len(prompt),
+        "estimated_tokens": len(prompt) // 4,
+        "has_option_trades": "no large option trades" not in option_trades_data.lower(),
+        "has_price_bars_30m": "30-minute bar data unavailable" not in price_bars_data.lower(),
+        "has_option_oi": "no option oi" not in option_oi_data.lower(),
+        "database_results": {
+            "gex_feature_rows": len(gex_rows),
+            "option_trade_rows": len(option_rows),
+            "price_bar_30m_rows": len(bar_rows),
+            "option_oi_change_rows": len(option_oi_rows),
+            "top_options_by_oi_rows": len(top_options_rows),
+        },
+    }
+
+
 @router.get("/price-prediction")
 def get_price_prediction(
     observation_date: date = Query(..., description="Observation date, e.g. 2025-12-11"),
     stock_code: str = Query("SPXW", min_length=1, description="Stock code, e.g. BAC, NVDA.US"),
     regenerate: bool = Query(False, description="Force regeneration even if cached file exists"),
-    model: str = Query("google/gemini-2.5-flash", description="LLM model to use for generation"),
+    model: str = Query("google/gemma-4-26b-a4b-it", description="LLM model to use for generation"),
     username: str = Depends(verify_credentials),
 ) -> Dict[str, Any]:
     """
@@ -93,78 +208,14 @@ def get_price_prediction(
         # Generate new prediction
         logger.info(f"Generating new prediction for {base_code}")
 
-        # Step 1: Query GEX features data
-        try:
-            gex_rows = gex_service.get_recent_features(base_code, observation_date, days=30)
-            if not gex_rows:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No GEX features found for {base_code} on or before {observation_date}"
-                )
-
-            # Validate that data exists for the requested date
-            latest_row = gex_rows[-1]  # Last row is most recent (query orders ASC)
-            latest_date_value = latest_row.get('ObservationDate')
-
-            # Convert to date if needed
-            if isinstance(latest_date_value, str):
-                latest_date = datetime.strptime(latest_date_value[:10], '%Y-%m-%d').date()
-            elif hasattr(latest_date_value, 'date'):
-                latest_date = latest_date_value.date()
-            else:
-                latest_date = latest_date_value
-
-            # Compare with requested date
-            if latest_date != observation_date:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No data available for {observation_date.isoformat()}. Latest available data is from {latest_date.isoformat()}"
-                )
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Database query failed: {e}")
-            raise HTTPException(status_code=503, detail="Database unavailable")
-
-        # Step 2: Format data as JSON
-        recent_data = gex_service.format_as_json(gex_rows)
-
-        # Step 2b: Fetch and format option trades
-        try:
-            option_rows = gex_service.get_option_trades(base_code, observation_date)
-            option_trades_data = gex_service.format_option_trades_as_pipe_delimited(option_rows)
-            logger.info(f"Retrieved {len(option_rows)} option trades for {base_code} on {observation_date}")
-        except Exception as e:
-            logger.warning(f"Failed to fetch option trades for {base_code}: {e}")
-            option_trades_data = "Option trade data unavailable."
-
-        # Step 2c: Fetch and format 30-minute price bars
-        try:
-            bar_rows = gex_service.get_price_bars_30m(base_code, observation_date)
-            price_bars_data = gex_service.format_price_bars_as_pipe_delimited(bar_rows)
-            logger.info(f"Retrieved {len(bar_rows)} 30M bars for {base_code}")
-        except Exception as e:
-            logger.warning(f"Failed to fetch 30M price bars for {base_code}: {e}")
-            price_bars_data = "30-minute bar data unavailable."
-
-        # Step 3: Load and inject template
-        try:
-            template, used_fallback = template_service.get_template(base_code)
-            prompt = template_service.inject_variables(
-                template=template,
-                recent_data=recent_data,
-                stock_code=base_code,
-                observation_date=observation_date.isoformat(),
-                option_trades=option_trades_data,
-                price_bars_30m=price_bars_data,
-            )
-        except FileNotFoundError as e:
-            logger.error(f"Template loading failed: {e}")
-            raise HTTPException(status_code=500, detail="Prediction template not found")
-        except Exception as e:
-            logger.error(f"Template processing failed: {e}")
-            raise HTTPException(status_code=500, detail="Template processing error")
+        # Steps 1-3: Query DB data, load saved markdown template, and inject data.
+        prompt_info = _build_price_prediction_prompt(
+            base_code=base_code,
+            observation_date=observation_date,
+            gex_service=gex_service,
+            template_service=template_service,
+        )
+        prompt = prompt_info["prompt"]
 
         # Step 4: Generate prediction via LLM
         try:
@@ -229,11 +280,23 @@ def get_price_prediction(
             "stock_code": base_code,
             "token_usage": token_usage,
             "generated_at": datetime.now().isoformat(),
-            "signal_strength": signal_strength  # Include extracted signal strength
+            "signal_strength": signal_strength,  # Include extracted signal strength
+            "prompt": prompt,
+            "prompt_metadata": {
+                "template_file": prompt_info["template_file"],
+                "template_path": prompt_info["template_path"],
+                "used_fallback": prompt_info["used_fallback"],
+                "prompt_length": prompt_info["prompt_length"],
+                "estimated_tokens": prompt_info["estimated_tokens"],
+                "has_option_trades": prompt_info["has_option_trades"],
+                "has_price_bars_30m": prompt_info["has_price_bars_30m"],
+                "has_option_oi": prompt_info["has_option_oi"],
+                "database_results": prompt_info["database_results"],
+            }
         }
 
         # Add warning if fallback template was used
-        if used_fallback:
+        if prompt_info["used_fallback"]:
             response_data["warning"] = f"No learned pattern available for {base_code}. Using SPXW fallback template."
 
         return response_data
@@ -278,6 +341,29 @@ def get_price_prediction_prompt(
         base_code = cache_service.normalize_stock_code(stock_code)
 
         logger.info(f"Prompt request for {base_code} on {observation_date}")
+
+        prompt_info = _build_price_prediction_prompt(
+            base_code=base_code,
+            observation_date=observation_date,
+            gex_service=gex_service,
+            template_service=template_service,
+        )
+
+        return {
+            "prompt": prompt_info["prompt"],
+            "stock_code": base_code,
+            "observation_date": observation_date.isoformat(),
+            "used_fallback": prompt_info["used_fallback"],
+            "template_file": prompt_info["template_file"],
+            "template_path": prompt_info["template_path"],
+            "prompt_length": prompt_info["prompt_length"],
+            "estimated_tokens": prompt_info["estimated_tokens"],
+            "has_option_trades": prompt_info["has_option_trades"],
+            "has_price_bars_30m": prompt_info["has_price_bars_30m"],
+            "has_option_oi": prompt_info["has_option_oi"],
+            "database_results": prompt_info["database_results"],
+            "generated_at": datetime.now().isoformat()
+        }
 
         # Query GEX features data
         try:
@@ -332,6 +418,24 @@ def get_price_prediction_prompt(
             logger.warning(f"Failed to fetch 30M price bars for {base_code}: {e}")
             price_bars_data = "30-minute bar data unavailable."
 
+        # Fetch and format option OI changes (top 50 by absolute change)
+        try:
+            option_oi_rows = gex_service.get_option_oi_changes(base_code, observation_date)
+            option_oi_data = gex_service.format_option_oi_changes_as_pipe_delimited(option_oi_rows, max_rows=50)
+            logger.info(f"Retrieved {len(option_oi_rows)} option OI changes for {base_code}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch option OI changes for {base_code}: {e}")
+            option_oi_data = "No option OI change data available."
+
+        # Fetch and format top 50 options by current open interest
+        try:
+            top_options_rows = gex_service.get_top_options_by_oi(base_code, observation_date, limit=50)
+            top_options_oi_data = gex_service.format_top_options_by_oi_as_pipe_delimited(top_options_rows)
+            logger.info(f"Retrieved {len(top_options_rows)} top options by OI for {base_code}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch top options by OI for {base_code}: {e}")
+            top_options_oi_data = "No option OI data available."
+
         # Load and inject template
         try:
             template, used_fallback = template_service.get_template(base_code)
@@ -342,6 +446,8 @@ def get_price_prediction_prompt(
                 observation_date=observation_date.isoformat(),
                 option_trades=option_trades_data,
                 price_bars_30m=price_bars_data,
+                option_oi_changes=option_oi_data,
+                top_options_oi=top_options_oi_data,
             )
         except FileNotFoundError as e:
             logger.error(f"Template loading failed: {e}")
@@ -359,6 +465,7 @@ def get_price_prediction_prompt(
         # Check if new data sections are included
         has_option_trades = "no large option trades" not in option_trades_data.lower()
         has_price_bars = "30-minute bar data unavailable" not in price_bars_data.lower()
+        has_option_oi = "no option oi" not in option_oi_data.lower()
 
         return {
             "prompt": prompt,
@@ -370,6 +477,7 @@ def get_price_prediction_prompt(
             "estimated_tokens": estimated_tokens,
             "has_option_trades": has_option_trades,
             "has_price_bars_30m": has_price_bars,
+            "has_option_oi": has_option_oi,
             "generated_at": datetime.now().isoformat()
         }
 

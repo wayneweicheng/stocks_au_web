@@ -21,7 +21,7 @@ def get_option_insight_prediction(
     observation_date: date = Query(..., description="Observation date, e.g. 2025-12-11"),
     stock_code: str = Query("SLV", min_length=1, description="Stock code, e.g. SLV, NVDA.US"),
     regenerate: bool = Query(False, description="Force regeneration even if cached file exists"),
-    model: str = Query("google/gemini-2.5-flash", description="LLM model to use for generation"),
+    model: str = Query("google/gemma-4-26b-a4b-it", description="LLM model to use for generation"),
     username: str = Depends(verify_credentials),
 ) -> Dict[str, Any]:
     """
@@ -351,7 +351,7 @@ def get_option_trades_insight_prediction(
     observation_date: date = Query(..., description="Observation date, e.g. 2025-12-11"),
     stock_code: str = Query("SLV", min_length=1, description="Stock code, e.g. SLV, NVDA.US"),
     regenerate: bool = Query(False, description="Force regeneration even if cached file exists"),
-    model: str = Query("google/gemini-2.5-flash", description="LLM model to use for generation"),
+    model: str = Query("google/gemma-4-26b-a4b-it", description="LLM model to use for generation"),
     username: str = Depends(verify_credentials),
 ) -> Dict[str, Any]:
     """
