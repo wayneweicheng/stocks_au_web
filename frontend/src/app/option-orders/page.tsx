@@ -172,6 +172,21 @@ function quoteSourceLabel(quote: QuoteSnapshot | null | undefined) {
   return `Quote source: ${quote.source}`;
 }
 
+function chooseAutoExpiry(expirations: ExpirationRow[]) {
+  const sorted = [...expirations]
+    .filter((item) => item?.expiry)
+    .sort((left, right) => left.dte - right.dte || left.expiry.localeCompare(right.expiry));
+  const preferred = sorted
+    .filter((item) => item.dte >= 15 && item.dte <= 21)
+    .sort((left, right) => Math.abs(left.dte - 18) - Math.abs(right.dte - 18) || left.dte - right.dte)[0];
+  if (preferred) return preferred;
+
+  const future = sorted
+    .filter((item) => item.dte > 0)
+    .sort((left, right) => Math.abs(left.dte - 18) - Math.abs(right.dte - 18) || left.dte - right.dte)[0];
+  return future || sorted[0] || null;
+}
+
 export default function OptionOrdersPage() {
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
   const prefillStarted = useRef(false);
@@ -253,11 +268,9 @@ export default function OptionOrdersPage() {
           : [];
         setExpirations(availableExpirations);
         setMarketStatus(expirationData.market_status || null);
-        const chosenExpiry = [...availableExpirations]
-          .filter((item) => item.dte >= 15 && item.dte <= 21)
-          .sort((left, right) => Math.abs(left.dte - 18) - Math.abs(right.dte - 18) || left.dte - right.dte)[0];
+        const chosenExpiry = chooseAutoExpiry(availableExpirations);
         if (!chosenExpiry) {
-          throw new Error(`No ${requestedSymbol} expiry is available between 15 and 21 DTE.`);
+          throw new Error(`No ${requestedSymbol} expiries are available from IB.`);
         }
         setSelectedExpiry(chosenExpiry.expiry);
 

@@ -84,6 +84,10 @@ def _now_us_eastern(now: Optional[datetime] = None) -> datetime:
     return current_utc.astimezone(offset)
 
 
+def _today_us_market_date(now: Optional[datetime] = None) -> date:
+    return _now_us_eastern(now).date()
+
+
 def _market_status_from_context(
     market_data_type: Optional[int],
     now: Optional[datetime] = None,
@@ -345,8 +349,9 @@ def _expiry_date(expiry: str) -> date:
     return datetime.strptime(expiry[:8], "%Y%m%d").date()
 
 
-def _dte(expiry: str) -> int:
-    return max((_expiry_date(expiry) - date.today()).days, 0)
+def _dte(expiry: str, today: Optional[date] = None) -> int:
+    market_date = today or _today_us_market_date()
+    return max((_expiry_date(expiry) - market_date).days, 0)
 
 
 def _quote_underlying(ib: "IB", symbol: str) -> Dict[str, Any]:
@@ -548,7 +553,7 @@ def get_option_chain(
         if chain is None:
             raise RuntimeError(f"No option chain returned by IB for {symbol}")
 
-        today = date.today()
+        today = _today_us_market_date()
         all_expirations = sorted(
             expiry for expiry in getattr(chain, "expirations", []) if len(str(expiry)) >= 8 and _expiry_date(str(expiry)) >= today
         )
@@ -643,7 +648,7 @@ def get_option_expirations(symbol: str) -> Dict[str, Any]:
         if chain is None:
             raise RuntimeError(f"No option chain returned by IB for {symbol}")
 
-        today = date.today()
+        today = _today_us_market_date()
         expirations = sorted(
             str(expiry)
             for expiry in getattr(chain, "expirations", [])

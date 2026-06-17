@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import sys
 import types
 import unittest
@@ -12,12 +12,22 @@ sys.modules.setdefault("app.core.db", db_stub)
 
 from app.services.option_orders_service import (
     OptionQuote,
+    _dte,
     _market_status_from_context,
     _merge_option_quote,
+    _today_us_market_date,
 )
 
 
 class OptionOrdersServiceTests(unittest.TestCase):
+    def test_market_date_uses_us_eastern_not_sydney_calendar_day(self):
+        sydney_morning = datetime(2026, 6, 17, 14, 15, tzinfo=timezone.utc)
+
+        self.assertEqual(_today_us_market_date(sydney_morning), date(2026, 6, 17))
+
+    def test_dte_can_be_calculated_from_us_market_date(self):
+        self.assertEqual(_dte("20260702", today=date(2026, 6, 17)), 15)
+
     def test_market_status_live_during_regular_session_with_realtime_data(self):
         now = datetime(2026, 6, 17, 10, 15, tzinfo=timezone(timedelta(hours=-4)))
 
