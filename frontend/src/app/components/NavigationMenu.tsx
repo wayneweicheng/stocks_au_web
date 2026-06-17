@@ -42,6 +42,12 @@ export default function NavigationMenu() {
             <Link onClick={() => setOpen(false)} href="/trading-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pegasus Trading Orders</Link>
             <Link onClick={() => setOpen(false)} href="/pattern-predictions" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pattern Predictions</Link>
             <Link onClick={() => setOpen(false)} href="/market-flow" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Market Flow Signals</Link>
+            <Link onClick={() => setOpen(false)} href="/calculated-gex" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Calculated GEX</Link>
+            <Link onClick={() => setOpen(false)} href="/gamma-wall" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Gamma Wall</Link>
+            <Link onClick={() => setOpen(false)} href="/market-clv-trend" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Market CLV Trend</Link>
+            <Link onClick={() => setOpen(false)} href="/net-gex-vs-close" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Net GEX vs Close</Link>
+            <Link onClick={() => setOpen(false)} href="/net-gex-vs-price-change" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Net GEX vs Price Change</Link>
+            <Link onClick={() => setOpen(false)} href="/option-gex-delta-capital-type" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Option GEX Delta</Link>
             <Link onClick={() => setOpen(false)} href="/ib-gateway" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">IB Gateway</Link>
             <Link onClick={() => setOpen(false)} href="/range-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Price Range Orders</Link>
             <Link onClick={() => setOpen(false)} href="/integrated-charts" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Integrated Charts</Link>
