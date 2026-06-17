@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -70,18 +70,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { username, logout } = useAuth();
 
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const flat = useMemo(() => NAV.flatMap((g) => g.items), []);
   const activeLabel = flat.find((i) => isActive(pathname, i.href))?.label;
 
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   return (
-    <div className="min-h-[calc(100vh-0px)] bg-gradient-to-b from-indigo-50 via-white to-white text-slate-800">
-      <div className="flex">
+    <div className="min-h-screen bg-gradient-to-b from-indigo-50 via-white to-white text-slate-800">
+      {mobileOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-slate-900/35 md:hidden"
+          aria-label="Close navigation"
+          onClick={() => setMobileOpen(false)}
+        />
+      ) : null}
+
+      <div className="flex min-w-0">
         {/* Sidebar */}
         <aside
           className={[
-            "sticky top-0 flex h-screen flex-col overflow-hidden border-r border-slate-200 bg-white/80 backdrop-blur",
-            collapsed ? "w-[72px]" : "w-[260px]",
+            "fixed left-0 top-0 z-50 flex h-dvh w-[min(22rem,calc(100vw-1rem))] flex-col overflow-hidden border-r border-slate-200 bg-white/95 shadow-xl backdrop-blur transition-transform duration-200 ease-out",
+            "md:sticky md:z-30 md:h-screen md:shrink-0 md:bg-white/80 md:shadow-none",
+            mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+            collapsed ? "md:w-[72px]" : "md:w-[280px]",
           ].join(" ")}
         >
           <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 px-4">
@@ -93,25 +109,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 collapsed ? "text-lg" : "text-base",
               ].join(" ")}
             >
-              {collapsed ? "SA" : "Stocks AU"}
+              <span className={collapsed ? "md:hidden" : ""}>Stocks AU</span>
+              {collapsed ? <span className="hidden md:inline">SA</span> : null}
             </Link>
             <button
+              type="button"
               onClick={() => setCollapsed((v) => !v)}
-              className="text-slate-500 hover:text-slate-900 text-sm"
+              className="hidden text-sm text-slate-500 hover:text-slate-900 md:inline"
               aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
               {collapsed ? ">" : "<"}
             </button>
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              className="text-sm text-slate-500 hover:text-slate-900 md:hidden"
+              aria-label="Close navigation"
+            >
+              Close
+            </button>
           </div>
 
-          <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 text-sm">
+          <nav
+            id="primary-navigation"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 text-sm"
+          >
             {NAV.map((group) => (
               <div key={group.label} className="mb-5">
-                {!collapsed ? (
-                  <div className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {group.label}
-                  </div>
-                ) : null}
+                <div
+                  className={[
+                    "px-2 text-xs font-semibold uppercase tracking-wide text-slate-500",
+                    collapsed ? "md:hidden" : "",
+                  ].join(" ")}
+                >
+                  {group.label}
+                </div>
                 <div className="mt-2 space-y-1">
                   {group.items.map((item) => {
                     const active = isActive(pathname, item.href);
@@ -127,9 +159,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         ].join(" ")}
                         title={item.label}
                       >
-                        <span className={collapsed ? "text-xs" : "text-sm"}>
-                          {collapsed ? item.label.slice(0, 2).toUpperCase() : item.label}
+                        <span className={collapsed ? "text-sm md:hidden" : "text-sm"}>
+                          {item.label}
                         </span>
+                        {collapsed ? (
+                          <span className="hidden text-xs md:inline">
+                            {item.label.slice(0, 2).toUpperCase()}
+                          </span>
+                        ) : null}
                       </Link>
                     );
                   })}
@@ -140,19 +177,30 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* Main */}
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <header className="sticky top-0 z-40 h-14 border-b border-slate-200 bg-white/80 backdrop-blur">
-            <div className="mx-auto max-w-7xl px-6 h-14 flex items-center justify-between">
-              <div className="text-sm text-slate-600">
+            <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+              <div className="flex min-w-0 items-center gap-3 text-sm text-slate-600">
+                <button
+                  type="button"
+                  onClick={() => setMobileOpen(true)}
+                  className="shrink-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 md:hidden"
+                  aria-label="Open navigation"
+                  aria-controls="primary-navigation"
+                  aria-expanded={mobileOpen}
+                >
+                  Menu
+                </button>
                 {activeLabel ? (
-                  <span className="font-medium text-slate-900">{activeLabel}</span>
+                  <span className="truncate font-medium text-slate-900">{activeLabel}</span>
                 ) : (
-                  <span className="font-medium text-slate-900">Stocks AU</span>
+                  <span className="truncate font-medium text-slate-900">Stocks AU</span>
                 )}
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-500">{username}</span>
+              <div className="flex shrink-0 items-center gap-3">
+                <span className="hidden text-xs text-slate-500 sm:inline">{username}</span>
                 <button
+                  type="button"
                   onClick={logout}
                   className="text-xs text-slate-500 hover:text-red-600"
                 >
@@ -162,7 +210,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
         </div>
       </div>
     </div>

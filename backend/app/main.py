@@ -44,7 +44,7 @@ from app.routers.asx_data_refresh import router as asx_data_refresh_router
 from app.routers.index_stock_price_mapping import router as index_stock_price_mapping_router
 from app.routers.market_command import router as market_command_router
 from app.routers.bet_odds_monitors import router as bet_odds_monitors_router
-from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
+from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status, trigger_job_now
 from contextlib import asynccontextmanager
 import logging
 import sys
@@ -219,6 +219,15 @@ app.include_router(bet_odds_monitors_router)
 def scheduler_status(username: str = Depends(verify_credentials)):
     """Get the status of the background scheduler and its jobs."""
     return get_scheduler_status()
+
+
+@app.post("/api/scheduler/jobs/{job_id}/run-now")
+def scheduler_run_now(job_id: str, username: str = Depends(verify_credentials)):
+    """Ask a scheduled job to run as soon as possible."""
+    triggered = trigger_job_now(job_id)
+    if not triggered:
+        return JSONResponse(status_code=404, content={"detail": f"Scheduler job {job_id} not found"})
+    return {"job_id": job_id, "triggered": True}
 
 
 if __name__ == "__main__":

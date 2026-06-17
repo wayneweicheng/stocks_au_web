@@ -17,6 +17,20 @@ logger = logging.getLogger("app.scheduler")
 # Global scheduler instance
 _scheduler: BackgroundScheduler = None
 _is_running: bool = False
+_job_state: dict = {}
+
+
+def _iso(value):
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _update_job_state(job_id: str, **values) -> None:
+    state = _job_state.setdefault(job_id, {})
+    state.update(values)
 
 
 def get_scheduler() -> BackgroundScheduler:
@@ -55,19 +69,36 @@ def gex_auto_insight_job():
     from app.services.gex_data_service import GEXDataService
 
     job_start = datetime.now()
+    _update_job_state(
+        "gex_auto_insight",
+        running=True,
+        last_started_at=job_start,
+        last_error=None,
+    )
     # Determine the baseline processing date as the most recent SPXW date <= today
     try:
         gex_service = GEXDataService()
         latest_spxw_date = gex_service.get_latest_observation_date("SPXW", date.today())
     except Exception as e:
         latest_spxw_date = None
+        _update_job_state("gex_auto_insight", last_error=str(e))
         logger.error(f"[GEX Auto Insight] Failed to resolve latest SPXW date: {e}")
 
     if latest_spxw_date is None:
         logger.info("[GEX Auto Insight] No SPXW data available up to today; skipping run")
+        _update_job_state(
+            "gex_auto_insight",
+            running=False,
+            last_finished_at=datetime.now(),
+            last_target_date=None,
+            last_pending_count=0,
+            last_processed_count=0,
+            last_failed_count=0,
+        )
         return
 
     target_date = latest_spxw_date
+    _update_job_state("gex_auto_insight", last_target_date=target_date)
 
     logger.info(f"[GEX Auto Insight] Starting scheduled job for {target_date}")
 
@@ -77,9 +108,17 @@ def gex_auto_insight_job():
         # Get current status
         status = service.get_processing_status(target_date)
         pending_count = status.get("pending_count", 0)
+        _update_job_state("gex_auto_insight", last_pending_count=pending_count)
 
         if pending_count == 0:
             logger.info(f"[GEX Auto Insight] No pending stocks to process for {target_date}")
+            _update_job_state(
+                "gex_auto_insight",
+                running=False,
+                last_finished_at=datetime.now(),
+                last_processed_count=0,
+                last_failed_count=0,
+            )
             return
 
         logger.info(f"[GEX Auto Insight] Found {pending_count} pending stocks to process")
@@ -89,6 +128,11 @@ def gex_auto_insight_job():
 
         processed = len(result.get("processed", []))
         failed = len(result.get("failed", []))
+        _update_job_state(
+            "gex_auto_insight",
+            last_processed_count=processed,
+            last_failed_count=failed,
+        )
 
         duration = (datetime.now() - job_start).total_seconds()
         logger.info(
@@ -105,7 +149,14 @@ def gex_auto_insight_job():
             logger.warning(f"  [FAIL] {f['stock_code']}: {f.get('error', 'Unknown error')}")
 
     except Exception as e:
+        _update_job_state("gex_auto_insight", last_error=str(e))
         logger.error(f"[GEX Auto Insight] Job failed with error: {e}", exc_info=True)
+    finally:
+        _update_job_state(
+            "gex_auto_insight",
+            running=False,
+            last_finished_at=datetime.now(),
+        )
 
 
 def discord_market_intelligence_job():
@@ -241,7 +292,11 @@ def get_scheduler_status() -> dict:
             "name": job.name,
             "trigger": str(job.trigger),
             "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None,
-            "pending": job.pending
+            "pending": job.pending,
+            "state": {
+                key: _iso(value)
+                for key, value in _job_state.get(job.id, {}).items()
+            }
         })
 
     return {
@@ -269,6 +324,5 @@ def trigger_job_now(job_id: str) -> bool:
     if job is None:
         return False
 
-    # Run the job function directly
-    job.func()
+    job.modify(next_run_time=datetime.now())
     return True

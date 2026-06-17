@@ -19,8 +19,10 @@ type StockStatus = {
   priority: number;
   has_gex_data: boolean;
   has_signal_strength: boolean;
-  status: "no_data" | "pending" | "processed";
+  status: "no_data" | "pending" | "processed" | "failed";
   signal_strength?: string;
+  processing_error?: string;
+  processing_attempts?: number;
 };
 
 type ProcessingStatus = {
@@ -29,6 +31,7 @@ type ProcessingStatus = {
   available_count: number;
   processed_count: number;
   pending_count: number;
+  failed_count?: number;
   stocks: StockStatus[];
 };
 
@@ -38,12 +41,36 @@ type SchedulerJob = {
   trigger: string;
   next_run_time: string | null;
   pending: boolean;
+  state?: {
+    running?: string | boolean | null;
+    last_started_at?: string | null;
+    last_finished_at?: string | null;
+    last_target_date?: string | null;
+    last_pending_count?: string | number | null;
+    last_processed_count?: string | number | null;
+    last_failed_count?: string | number | null;
+    last_error?: string | null;
+  };
 };
 
 type SchedulerStatus = {
   running: boolean;
   jobs: SchedulerJob[];
 };
+
+function formatLocalDateISO(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getPreviousBusinessDayISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+  return formatLocalDateISO(d);
+}
 
 export default function GEXAutoInsightTab() {
   const [stocks, setStocks] = useState<StockConfig[]>([]);
@@ -53,10 +80,7 @@ export default function GEXAutoInsightTab() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string>("");
   const [info, setInfo] = useState<string>("");
-  const [targetDate, setTargetDate] = useState<string>(() => {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
-  });
+  const [targetDate, setTargetDate] = useState<string>(() => getPreviousBusinessDayISO());
 
   // Add form
   const [newCode, setNewCode] = useState("");
@@ -272,6 +296,31 @@ export default function GEXAutoInsightTab() {
     }
   };
 
+  const runSchedulerJobNow = async (jobId: string) => {
+    setProcessing(true);
+    setError("");
+    setInfo("");
+
+    try {
+      const res = await authenticatedFetch(`${baseUrl}/api/scheduler/jobs/${encodeURIComponent(jobId)}/run-now`, {
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        setError(`Scheduler trigger failed: ${msg || res.statusText}`);
+        return;
+      }
+
+      setInfo("Scheduler job queued to run now. Refreshing status...");
+      setTimeout(() => refreshAll(), 1500);
+    } catch (e) {
+      setError(`Scheduler trigger failed: ${e}`);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const processSingleStock = async (code: string) => {
     setProcessing(true);
     setError("");
@@ -310,6 +359,16 @@ export default function GEXAutoInsightTab() {
     }
     if (stockStatus.status === "pending") {
       return <span className="px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800">Pending</span>;
+    }
+    if (stockStatus.status === "failed") {
+      return (
+        <span
+          className="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800"
+          title={stockStatus.processing_error || undefined}
+        >
+          Failed{stockStatus.processing_attempts ? ` (${stockStatus.processing_attempts})` : ""}
+        </span>
+      );
     }
     return <span className="px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-500">No Data</span>;
   };
@@ -361,9 +420,46 @@ export default function GEXAutoInsightTab() {
               </span>
             </p>
             {schedulerStatus.jobs.map((job) => (
-              <p key={job.id} className="text-slate-600">
-                {job.name}: Next run at {job.next_run_time ? new Date(job.next_run_time).toLocaleString() : "N/A"}
-              </p>
+              <div key={job.id} className="mt-3 rounded-md border border-slate-100 bg-slate-50 p-3 text-slate-600">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-slate-800">{job.name}</div>
+                    <div>Next run: {job.next_run_time ? new Date(job.next_run_time).toLocaleString() : "N/A"}</div>
+                  </div>
+                  {job.id === "gex_auto_insight" && (
+                    <button
+                      type="button"
+                      onClick={() => runSchedulerJobNow(job.id)}
+                      disabled={processing}
+                      className="rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      Run now
+                    </button>
+                  )}
+                </div>
+                {job.state && Object.keys(job.state).length > 0 && (
+                  <div className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
+                    <div>Running now: {String(job.state.running ?? false)}</div>
+                    <div>Target date: {job.state.last_target_date || "N/A"}</div>
+                    <div>
+                      Last started:{" "}
+                      {job.state.last_started_at ? new Date(job.state.last_started_at).toLocaleString() : "N/A"}
+                    </div>
+                    <div>
+                      Last finished:{" "}
+                      {job.state.last_finished_at ? new Date(job.state.last_finished_at).toLocaleString() : "N/A"}
+                    </div>
+                    <div>Last pending: {job.state.last_pending_count ?? "N/A"}</div>
+                    <div>
+                      Last result: {job.state.last_processed_count ?? "N/A"} processed,{" "}
+                      {job.state.last_failed_count ?? "N/A"} failed
+                    </div>
+                    {job.state.last_error && (
+                      <div className="sm:col-span-2 text-red-600">Last error: {job.state.last_error}</div>
+                    )}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         ) : (
@@ -387,7 +483,7 @@ export default function GEXAutoInsightTab() {
                   const d = new Date(targetDate);
                   d.setDate(d.getDate() - 1);
                   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
-                  setTargetDate(d.toISOString().slice(0, 10));
+                  setTargetDate(formatLocalDateISO(d));
                 }}
                 className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm hover:bg-emerald-50"
               >
@@ -406,7 +502,7 @@ export default function GEXAutoInsightTab() {
                   const d = new Date(targetDate);
                   d.setDate(d.getDate() + 1);
                   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
-                  setTargetDate(d.toISOString().slice(0, 10));
+                  setTargetDate(formatLocalDateISO(d));
                 }}
                 className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm hover:bg-emerald-50"
               >
@@ -424,7 +520,7 @@ export default function GEXAutoInsightTab() {
         </div>
 
         {status && (
-          <div className="grid grid-cols-4 gap-4 mb-4">
+          <div className="grid gap-4 mb-4 sm:grid-cols-5">
             <div className="text-center p-3 rounded-lg bg-slate-50">
               <p className="text-2xl font-semibold">{status.total_configured}</p>
               <p className="text-xs text-slate-500">Configured</p>
@@ -440,6 +536,10 @@ export default function GEXAutoInsightTab() {
             <div className="text-center p-3 rounded-lg bg-amber-50">
               <p className="text-2xl font-semibold text-amber-600">{status.pending_count}</p>
               <p className="text-xs text-slate-500">Pending</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-red-50">
+              <p className="text-2xl font-semibold text-red-600">{status.failed_count || 0}</p>
+              <p className="text-xs text-slate-500">Failed</p>
             </div>
           </div>
         )}
@@ -467,7 +567,14 @@ export default function GEXAutoInsightTab() {
                     <td className="px-3 py-2 text-center">
                       {s.has_gex_data ? <span className="text-emerald-600">✓</span> : <span className="text-slate-400">-</span>}
                     </td>
-                    <td className="px-3 py-2 text-center">{getStatusBadge(s)}</td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        {getStatusBadge(s)}
+                        {s.status === "failed" && s.processing_error && (
+                          <span className="max-w-48 text-xs text-red-600">{s.processing_error}</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-2 text-center">
                       {s.status === "pending" && (
                         <button
