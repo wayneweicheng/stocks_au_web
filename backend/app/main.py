@@ -45,6 +45,8 @@ from app.routers.index_stock_price_mapping import router as index_stock_price_ma
 from app.routers.market_command import router as market_command_router
 from app.routers.bet_odds_monitors import router as bet_odds_monitors_router
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status, trigger_job_now
+from app.routers.market_theme_reports import router as market_theme_reports_router
+from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 from contextlib import asynccontextmanager
 import logging
 import sys
@@ -213,6 +215,7 @@ app.include_router(asx_data_refresh_router)
 app.include_router(index_stock_price_mapping_router)
 app.include_router(market_command_router)
 app.include_router(bet_odds_monitors_router)
+app.include_router(market_theme_reports_router)
 
 
 @app.get("/api/scheduler/status")
