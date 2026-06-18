@@ -1,5 +1,8 @@
 -- Stored procedure: [Report].[usp_GetIndexStockPriceMapping_model_input]
 
+-- Stored procedure: [Report].[usp_GetIndexStockPriceMapping_model_input]
+-- Generated: 2025-11-02 23:28:03
+
 
 
 CREATE PROCEDURE [Report].[usp_GetIndexStockPriceMapping_model_input]
@@ -75,14 +78,14 @@ BEGIN --Proc
 			(
 				  select *
 				  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
-				  where a.ASXCode = 'SPX.US'
-				  and TimeFrame = '5M'
+				  where a.ASXCode = 'SPXW.US'
+				  and TimeFrame = '30M'
 			) as spx
 			inner join(
 				  select max(TimeIntervalStart) as TimeIntervalStart
 				  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
-				  where a.ASXCode = 'SPX.US'
-				  and TimeFrame = '5M'
+				  where a.ASXCode = 'SPXW.US'
+				  and TimeFrame = '30M'
 			) as maxtime
 			on 1 = 1
 			left join
@@ -90,7 +93,7 @@ BEGIN --Proc
 			  select *
 			  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
 			  where a.ASXCode = 'SPY.US'
-			  and TimeFrame = '5M'
+			  and TimeFrame = '30M'
 			) as spy
 			on spx.TimeIntervalStart = spy.TimeIntervalStart
 			left join
@@ -98,7 +101,7 @@ BEGIN --Proc
 			  select *
 			  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
 			  where a.ASXCode = 'QQQ.US'
-			  and TimeFrame = '5M'
+			  and TimeFrame = '30M'
 			) as qqq
 			on spx.TimeIntervalStart = qqq.TimeIntervalStart
 			left join
@@ -106,7 +109,7 @@ BEGIN --Proc
 			  select *
 			  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
 			  where a.ASXCode = 'TQQQ.US'
-			  and TimeFrame = '5M'
+			  and TimeFrame = '30M'
 			) as tqqq
 			on spx.TimeIntervalStart = tqqq.TimeIntervalStart
 			left join
@@ -114,7 +117,7 @@ BEGIN --Proc
 			  select *
 			  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
 			  where a.ASXCode = 'SQQQ.US'
-			  and TimeFrame = '5M'
+			  and TimeFrame = '30M'
 			) as sqqq
 			on spx.TimeIntervalStart = sqqq.TimeIntervalStart
 			left join
@@ -122,7 +125,7 @@ BEGIN --Proc
 			  select *
 			  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
 			  where a.ASXCode = 'NVDA.US'
-			  and TimeFrame = '5M'
+			  and TimeFrame = '30M'
 			) as nvda
 			on spx.TimeIntervalStart = nvda.TimeIntervalStart
 			left join
@@ -130,7 +133,7 @@ BEGIN --Proc
 			  select *
 			  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
 			  where a.ASXCode like 'MES_%'
-			  and TimeFrame = '5M'
+			  and TimeFrame = '30M'
 			) as mes
 			on spx.TimeIntervalStart = mes.TimeIntervalStart
 			left join
@@ -138,7 +141,7 @@ BEGIN --Proc
 			  select *
 			  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
 			  where a.ASXCode like 'MNQ_%'
-			  and TimeFrame = '5M'
+			  and TimeFrame = '30M'
 			) as mnq
 			on spx.TimeIntervalStart = mnq.TimeIntervalStart
 			left join
@@ -146,7 +149,7 @@ BEGIN --Proc
 			  select *
 			  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
 			  where a.ASXCode = 'IWM.US'
-			  and TimeFrame = '5M'
+			  and TimeFrame = '30M'
 			) as iwm
 			on spx.TimeIntervalStart = iwm.TimeIntervalStart
 			left join
@@ -154,13 +157,13 @@ BEGIN --Proc
 			  select *
 			  from [StockDB_US].[StockData].[PriceHistoryTimeFrame] as a
 			  where a.ASXCode = 'DIA.US'
-			  and TimeFrame = '5M'
+			  and TimeFrame = '30M'
 			) as dia
 			on spx.TimeIntervalStart = dia.TimeIntervalStart
-			where spx.TimeIntervalStart > dateadd(minute, -120, maxtime.TimeIntervalStart)
+			where spx.TimeIntervalStart > dateadd(day, -7, maxtime.TimeIntervalStart)
 		) as x
 		where RK >= 1
-		order by SPX desc;
+		order by TimeIntervalStart asc;
 
 	END TRY
 

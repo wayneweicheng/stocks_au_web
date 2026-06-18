@@ -7,15 +7,15 @@ CREATE TABLE [Research].[StockAnalysisReport] (
     [ReportMarkdown] [nvarchar](MAX) NULL,
     [ReportJSON] [nvarchar](MAX) NULL,
     [Model] [varchar](100) NULL,
-    [Status] [varchar](20) NOT NULL DEFAULT 'Completed',
+    [Status] [varchar](20) NOT NULL DEFAULT ('Completed'),
     [ProcessedAt] [datetime] NOT NULL DEFAULT (getdate()),
     [ProcessedBy] [varchar](50) NULL,
     [TokensUsed] [int] NULL,
     [ProcessingTimeSeconds] [decimal](10,2) NULL
 ,
-    CONSTRAINT [PK_StockAnalysisReport] PRIMARY KEY CLUSTERED ([ReportID] ASC)
+    CONSTRAINT [PK_StockAnalysisReport] PRIMARY KEY (ReportID)
 );
 
-CREATE INDEX [IX_StockAnalysisReport_StockCode] ON [Research].[StockAnalysisReport] ([StockCode]);
-CREATE INDEX [IX_StockAnalysisReport_ObservationDate] ON [Research].[StockAnalysisReport] ([ObservationDate]);
-CREATE UNIQUE INDEX [IX_StockAnalysisReport_StockCode_ObservationDate] ON [Research].[StockAnalysisReport] ([StockCode], [ObservationDate]);
+CREATE INDEX [IX_StockAnalysisReport_ObservationDate] ON [Research].[StockAnalysisReport] (ObservationDate);
+CREATE INDEX [IX_StockAnalysisReport_StockCode] ON [Research].[StockAnalysisReport] (StockCode);
+CREATE UNIQUE INDEX [IX_StockAnalysisReport_StockCode_ObservationDate] ON [Research].[StockAnalysisReport] (StockCode, ObservationDate);

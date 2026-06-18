@@ -10,8 +10,7 @@ CREATE TABLE [Analysis].[SignalStrength] (
     [BuyDipRange] [nvarchar](64) NULL,
     [SellRipRange] [nvarchar](64) NULL
 ,
-    CONSTRAINT [PK_SignalStrength] PRIMARY KEY (ObservationDate, StockCode, SourceType),
-    CONSTRAINT [CK_SignalStrength_SourceType] CHECK (SourceType IN ('GEX', 'BREAKOUT', 'OPTION', 'OPTION_TRADES'))
+    CONSTRAINT [PK_SignalStrength] PRIMARY KEY (ObservationDate, StockCode, SourceType)
 );
 
 CREATE INDEX [IX_SignalStrength_ObservationDate_SourceType] ON [Analysis].[SignalStrength] (ObservationDate, SourceType);

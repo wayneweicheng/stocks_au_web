@@ -10,16 +10,63 @@ db_stub.get_sql_model = lambda: None
 sys.modules.setdefault("app.core.config", config_stub)
 sys.modules.setdefault("app.core.db", db_stub)
 
+import app.services.option_orders_service as option_orders_service
 from app.services.option_orders_service import (
     OptionQuote,
     _dte,
+    _latest_delayed_chain_rows,
     _market_status_from_context,
     _merge_option_quote,
+    _select_option_chain,
     _today_us_market_date,
 )
 
 
 class OptionOrdersServiceTests(unittest.TestCase):
+    def test_select_option_chain_prefers_base_trading_class_over_adjusted_chain(self):
+        adjusted = types.SimpleNamespace(exchange="SMART", tradingClass="2GOOG", expirations={"20260807"})
+        regular = types.SimpleNamespace(
+            exchange="SMART",
+            tradingClass="GOOG",
+            expirations={"20260618", "20260626", "20260702"},
+        )
+
+        selected = _select_option_chain([adjusted, regular], "GOOG")
+
+        self.assertIs(selected, regular)
+
+    def test_latest_delayed_chain_rows_maps_database_rows_to_chain_payload(self):
+        class FakeModel:
+            def execute_read_query(self, _sql, _params):
+                return [
+                    {
+                        "OptionSymbol": "MU260702P00100000",
+                        "ObservationDate": datetime(2026, 6, 17, 15, 59),
+                        "ExpiryDate": date(2026, 7, 2),
+                        "PorC": "P",
+                        "Strike": 100,
+                        "Bid": 1.2,
+                        "Ask": 1.35,
+                        "Volume": 123,
+                        "IV": 42.5,
+                    }
+                ]
+
+        original_get_sql_model = option_orders_service.get_sql_model
+        option_orders_service.get_sql_model = lambda: FakeModel()
+        try:
+            rows = _latest_delayed_chain_rows("MU", "20260702", "P", 90, 110)
+        finally:
+            option_orders_service.get_sql_model = original_get_sql_model
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["option_symbol"], "MU260702P00100000")
+        self.assertEqual(rows[0]["right"], "P")
+        self.assertEqual(rows[0]["strike"], 100.0)
+        self.assertEqual(rows[0]["quote"]["source"], "database")
+        self.assertEqual(rows[0]["quote"]["volume"], 123)
+        self.assertEqual(rows[0]["quote"]["iv"], 0.425)
+
     def test_market_date_uses_us_eastern_not_sydney_calendar_day(self):
         sydney_morning = datetime(2026, 6, 17, 14, 15, tzinfo=timezone.utc)
 
@@ -87,6 +134,37 @@ class OptionOrdersServiceTests(unittest.TestCase):
         self.assertEqual(merged["volume"], 42)
         self.assertEqual(merged["source"], "live")
         self.assertEqual(merged["market_data_type"], 1)
+
+    def test_merge_option_quote_does_not_label_database_prices_as_live_when_only_iv_is_live(self):
+        delayed_quote = {
+            "bid": 1.0,
+            "ask": 1.2,
+            "mid": 1.1,
+            "spread_pct": 20.0,
+            "volume": 42,
+            "iv": 0.35,
+            "source": "database",
+        }
+        live_quote = OptionQuote(
+            bid=None,
+            ask=None,
+            last=None,
+            close=None,
+            mid=None,
+            iv=0.36,
+            delta=-0.2,
+            gamma=None,
+            theta=None,
+            vega=None,
+            market_data_type=1,
+        )
+
+        merged = _merge_option_quote(delayed_quote, live_quote, prefer_live=True)
+
+        self.assertEqual(merged["bid"], 1.0)
+        self.assertEqual(merged["ask"], 1.2)
+        self.assertEqual(merged["iv"], 0.36)
+        self.assertEqual(merged["source"], "database")
 
     def test_merge_option_quote_uses_database_when_not_live(self):
         delayed_quote = {

@@ -10,21 +10,16 @@ CREATE TABLE [Notification].[BetOddsCriteria] (
     [TargetOdds] [decimal](10,4) NOT NULL,
     [LatestOdds] [decimal](10,4) NULL,
     [PreviousOdds] [decimal](10,4) NULL,
-    [LastCheckedAtUtc] [datetime2](0) NULL,
-    [LastMatchedAtUtc] [datetime2](0) NULL,
-    [LastAlertAtUtc] [datetime2](0) NULL,
+    [LastCheckedAtUtc] [datetime2] NULL,
+    [LastMatchedAtUtc] [datetime2] NULL,
+    [LastAlertAtUtc] [datetime2] NULL,
     [AlertCount] [int] NOT NULL DEFAULT ((0)),
     [IsCurrentlyMatched] [bit] NOT NULL DEFAULT ((0)),
-    [CreatedDateUtc] [datetime2](0) NOT NULL DEFAULT (sysutcdatetime()),
-    [UpdatedDateUtc] [datetime2](0) NOT NULL DEFAULT (sysutcdatetime()),
-    CONSTRAINT [PK_Notification_BetOddsCriteria] PRIMARY KEY ([CriterionID]),
-    CONSTRAINT [FK_BetOddsCriteria_Monitor] FOREIGN KEY ([MonitorID])
-        REFERENCES [Notification].[BetOddsMonitors] ([MonitorID]) ON DELETE CASCADE,
-    CONSTRAINT [CK_BetOddsCriteria_Operator]
-        CHECK ([ComparisonOperator] IN ('>=', '>', '<=', '<', '=')),
-    CONSTRAINT [CK_BetOddsCriteria_TargetOdds] CHECK ([TargetOdds] > 0)
+    [CreatedDateUtc] [datetime2] NOT NULL DEFAULT (sysutcdatetime()),
+    [UpdatedDateUtc] [datetime2] NOT NULL DEFAULT (sysutcdatetime())
+,
+    CONSTRAINT [PK__BetOddsC__647C3BD109529F61] PRIMARY KEY (CriterionID)
 );
 
-CREATE INDEX [IX_BetOddsCriteria_MonitorID]
-    ON [Notification].[BetOddsCriteria] ([MonitorID]);
-
+ALTER TABLE [Notification].[BetOddsCriteria] ADD CONSTRAINT [FK_BetOddsCriteria_Monitor] FOREIGN KEY (MonitorID) REFERENCES [Notification].[BetOddsMonitors] (MonitorID);
+CREATE INDEX [IX_BetOddsCriteria_MonitorID] ON [Notification].[BetOddsCriteria] (MonitorID);

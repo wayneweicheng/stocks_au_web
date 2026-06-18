@@ -166,8 +166,13 @@ def _merge_option_quote(
         merged["volume"] = live_payload["volume"]
     elif "volume" not in merged:
         merged["volume"] = None
-    merged["source"] = "live"
-    merged["market_data_type"] = live_payload.get("market_data_type")
+    live_price_present = any(live_payload.get(key) is not None for key in ("bid", "ask", "mid"))
+    if live_price_present:
+        merged["source"] = "live"
+        merged["market_data_type"] = live_payload.get("market_data_type")
+    elif database_payload:
+        merged["source"] = database_payload.get("source", "database")
+        merged["market_data_type"] = database_payload.get("market_data_type")
     return merged
 
 
@@ -226,6 +231,100 @@ def _latest_delayed_quotes(symbol: str, expiry: str) -> Dict[str, Dict[str, Any]
     return quotes
 
 
+def _latest_delayed_chain_rows(
+    symbol: str,
+    expiry: str,
+    right: str,
+    low_strike: Optional[float] = None,
+    high_strike: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    model = get_sql_model()
+    db_symbol = f"{_base_symbol(symbol)}.US"
+    expiry_date = _expiry_date(expiry).isoformat()
+    rights = ["P", "C"] if right.upper() == "ALL" else [right.upper()]
+    placeholders = ", ".join("?" for _ in rights)
+    params: List[Any] = [db_symbol, expiry_date, *rights]
+    strike_filter = ""
+    if low_strike is not None and high_strike is not None:
+        strike_filter = " AND Strike BETWEEN ? AND ?"
+        params.extend([float(low_strike), float(high_strike)])
+
+    rows = model.execute_read_query(
+        f"""
+        WITH LatestQuotes AS (
+            SELECT
+                OptionSymbol,
+                ObservationDate,
+                ExpiryDate,
+                PorC,
+                Strike,
+                Bid,
+                Ask,
+                Volume,
+                IV,
+                ROW_NUMBER() OVER (
+                    PARTITION BY OptionSymbol
+                    ORDER BY ObservationDate DESC
+                ) AS RowNumber
+            FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
+            WHERE ASXCode = ?
+              AND ExpiryDate = ?
+              AND PorC IN ({placeholders})
+              {strike_filter}
+        )
+        SELECT OptionSymbol, ObservationDate, ExpiryDate, PorC, Strike, Bid, Ask, Volume, IV
+        FROM LatestQuotes
+        WHERE RowNumber = 1
+        ORDER BY Strike, PorC
+        """,
+        tuple(params),
+    ) or []
+
+    chain_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        option_symbol = str(row.get("OptionSymbol") or "").strip().upper()
+        row_right = str(row.get("PorC") or "").strip().upper()
+        strike = _clean(row.get("Strike"))
+        if not option_symbol or row_right not in {"P", "C"} or strike is None:
+            continue
+        bid = _clean(row.get("Bid"))
+        ask = _clean(row.get("Ask"))
+        volume = _clean(row.get("Volume"))
+        iv = _normalize_iv(row.get("IV"))
+        observation_date = row.get("ObservationDate")
+        quote = {
+            "bid": _round(bid),
+            "ask": _round(ask),
+            "mid": _round((bid + ask) / 2.0) if bid is not None and ask is not None else None,
+            "spread_pct": _spread_pct(bid, ask),
+            "volume": int(volume) if volume is not None else None,
+            "iv": _round(iv, 6),
+            "observation_date": (
+                observation_date.isoformat()
+                if hasattr(observation_date, "isoformat")
+                else str(observation_date or "")
+            ),
+            "source": "database",
+            "market_data_type": None,
+        }
+        chain_rows.append(
+            {
+                "symbol": _base_symbol(symbol),
+                "option_symbol": option_symbol,
+                "expiry": expiry,
+                "expiry_date": _expiry_date(expiry).isoformat(),
+                "dte": _dte(expiry),
+                "right": row_right,
+                "strike": round(float(strike), 4),
+                "con_id": None,
+                "local_symbol": None,
+                "delayed_quote": quote,
+                "quote": quote,
+            }
+        )
+    return chain_rows
+
+
 def _connect_ib() -> "tuple[IB, asyncio.AbstractEventLoop]":
     if IB is None:
         raise RuntimeError("ib_insync is not installed on the backend")
@@ -275,6 +374,26 @@ def _option_contract(symbol: str, expiry: str, strike: float, right: str):
     if Option is None:
         raise RuntimeError("ib_insync Option support not available")
     return Option(_base_symbol(symbol), expiry, float(strike), right.upper(), "SMART", currency="USD")
+
+
+def _select_option_chain(chains: Any, symbol: str) -> Any:
+    chain_list = list(chains or [])
+    if not chain_list:
+        return None
+
+    base_symbol = _base_symbol(symbol)
+
+    def score(chain: Any) -> tuple[int, int, int]:
+        exchange = str(getattr(chain, "exchange", "") or "").upper()
+        trading_class = str(getattr(chain, "tradingClass", "") or "").upper()
+        expirations = getattr(chain, "expirations", []) or []
+        return (
+            1 if exchange == "SMART" else 0,
+            1 if trading_class == base_symbol else 0,
+            len(expirations),
+        )
+
+    return max(chain_list, key=score)
 
 
 def _contract_key(contract: Any) -> tuple[str, float, str]:
@@ -411,43 +530,77 @@ def _quote_option(ib: "IB", symbol: str, expiry: str, strike: float, right: str)
         return OptionQuote(None, None, None, None, None, None, None, None, None, None, None)
     contract = qualified[0]
 
+    best_quote: OptionQuote | None = None
     for market_data_type in [1, 3]:
         try:
             ib.reqMarketDataType(market_data_type)
         except Exception:
             pass
-        ticker = ib.reqMktData(contract, "106", False, False)
+        ticker = ib.reqMktData(contract, "", False, False)
         start = time.time()
-        while time.time() - start < 1.5:
+        timeout = 6.0 if market_data_type == 1 else 2.0
+        while time.time() - start < timeout:
             ib.sleep(0.25)
             bid = _positive_price(getattr(ticker, "bid", None))
             ask = _positive_price(getattr(ticker, "ask", None))
             last = _positive_price(getattr(ticker, "last", None))
             close = _positive_price(getattr(ticker, "close", None))
             iv = _option_greek(ticker, "impliedVol")
-            if bid is not None or ask is not None or last is not None or close is not None or iv is not None:
-                mid = (bid + ask) / 2 if bid is not None and ask is not None else None
-                volume = _clean(getattr(ticker, "volume", None))
-                return OptionQuote(
-                    bid=bid,
-                    ask=ask,
-                    last=last,
-                    close=close,
-                    mid=mid,
-                    iv=iv,
-                    delta=_option_greek(ticker, "delta"),
-                    gamma=_option_greek(ticker, "gamma"),
-                    theta=_option_greek(ticker, "theta"),
-                    vega=_option_greek(ticker, "vega"),
-                    market_data_type=(
-                        int(getattr(ticker, "marketDataType", market_data_type))
-                        if getattr(ticker, "marketDataType", market_data_type) in {1, 2, 3, 4}
-                        else market_data_type
-                    ),
-                    volume=int(volume) if volume is not None else None,
-                )
+            volume = _clean(getattr(ticker, "volume", None))
+            current_quote = OptionQuote(
+                bid=bid,
+                ask=ask,
+                last=last,
+                close=close,
+                mid=(bid + ask) / 2 if bid is not None and ask is not None else None,
+                iv=iv,
+                delta=_option_greek(ticker, "delta"),
+                gamma=_option_greek(ticker, "gamma"),
+                theta=_option_greek(ticker, "theta"),
+                vega=_option_greek(ticker, "vega"),
+                market_data_type=(
+                    int(getattr(ticker, "marketDataType", market_data_type))
+                    if getattr(ticker, "marketDataType", market_data_type) in {1, 2, 3, 4}
+                    else market_data_type
+                ),
+                volume=int(volume) if volume is not None else None,
+            )
+            has_price = bid is not None and ask is not None
+            has_option_model = any(
+                value is not None
+                for value in (iv, current_quote.delta, current_quote.gamma, current_quote.theta, current_quote.vega)
+            )
+            if has_price and has_option_model:
+                try:
+                    ib.cancelMktData(contract)
+                except Exception:
+                    pass
+                return current_quote
+            if any(
+                value is not None
+                for value in (bid, ask, last, close, iv, current_quote.delta, current_quote.gamma, current_quote.theta, current_quote.vega, current_quote.volume)
+            ):
+                if (
+                    best_quote is None
+                    or (
+                        has_price
+                        and not (best_quote.bid is not None and best_quote.ask is not None)
+                    )
+                    or (
+                        has_price
+                        and has_option_model
+                        and not any(value is not None for value in (best_quote.iv, best_quote.delta, best_quote.gamma, best_quote.theta, best_quote.vega))
+                    )
+                ):
+                    best_quote = current_quote
+        try:
+            ib.cancelMktData(contract)
+        except Exception:
+            pass
+        if market_data_type == 1 and best_quote is not None and best_quote.market_data_type == 1:
+            return best_quote
 
-    return OptionQuote(None, None, None, None, None, None, None, None, None, None, None)
+    return best_quote or OptionQuote(None, None, None, None, None, None, None, None, None, None, None)
 
 
 def _quote_option_contracts(ib: "IB", contracts: List[Any]) -> Dict[tuple[str, float, str], OptionQuote]:
@@ -548,8 +701,33 @@ def get_option_chain(
         if not underlying.get("con_id"):
             raise RuntimeError(f"Unable to qualify underlying contract for {symbol}")
 
+        requested_expiry = str(expiry).strip() if expiry else None
+        low_strike = high_strike = None
+        if reference_price and strike_window_pct > 0:
+            window = min(max(strike_window_pct, 0.01), 2.0)
+            low_strike = reference_price * (1 - window)
+            high_strike = reference_price * (1 + window)
+
+        if requested_expiry:
+            try:
+                rows = _latest_delayed_chain_rows(symbol, requested_expiry, right, low_strike, high_strike)
+            except Exception as exc:
+                logger.warning("Option orders: failed to load delayed chain rows for %s %s: %s", symbol, requested_expiry, exc)
+                rows = []
+            if rows:
+                return {
+                    "ok": True,
+                    "symbol": _base_symbol(symbol),
+                    "market_status": market_status,
+                    "underlying": underlying,
+                    "expirations": [requested_expiry],
+                    "strikes": sorted({round(float(row["strike"]), 4) for row in rows}),
+                    "rows": rows,
+                    "chain_source": "database",
+                }
+
         chains = ib.reqSecDefOptParams(_base_symbol(symbol), "", "STK", int(underlying["con_id"]))
-        chain = next((c for c in chains if str(getattr(c, "exchange", "")).upper() == "SMART"), chains[0] if chains else None)
+        chain = _select_option_chain(chains, symbol)
         if chain is None:
             raise RuntimeError(f"No option chain returned by IB for {symbol}")
 
@@ -557,18 +735,16 @@ def get_option_chain(
         all_expirations = sorted(
             expiry for expiry in getattr(chain, "expirations", []) if len(str(expiry)) >= 8 and _expiry_date(str(expiry)) >= today
         )
-        if expiry:
-            expiry_value = str(expiry).strip()
+        if requested_expiry:
+            expiry_value = requested_expiry
             if expiry_value not in all_expirations:
                 raise RuntimeError(f"Expiry {expiry_value} is not available for {symbol}")
             expirations = [expiry_value]
         else:
             expirations = all_expirations[: max(1, min(int(max_expiries), 24))]
         strikes = sorted(float(strike) for strike in getattr(chain, "strikes", []) if _clean(strike) is not None and float(strike) > 0)
-        if reference_price and strike_window_pct > 0:
-            low = reference_price * (1 - min(max(strike_window_pct, 0.01), 2.0))
-            high = reference_price * (1 + min(max(strike_window_pct, 0.01), 2.0))
-            strikes = [strike for strike in strikes if low <= strike <= high]
+        if low_strike is not None and high_strike is not None:
+            strikes = [strike for strike in strikes if low_strike <= strike <= high_strike]
 
         rights = ["P", "C"] if right.upper() == "ALL" else [right.upper()]
         candidate_rows: List[Dict[str, Any]] = []
@@ -627,6 +803,7 @@ def get_option_chain(
             "expirations": [str(expiry) for expiry in expirations],
             "strikes": [round(strike, 4) for strike in strikes],
             "rows": rows,
+            "chain_source": "ib",
         }
     finally:
         try:
@@ -644,7 +821,7 @@ def get_option_expirations(symbol: str) -> Dict[str, Any]:
             raise RuntimeError(f"Unable to qualify underlying contract for {symbol}")
 
         chains = ib.reqSecDefOptParams(_base_symbol(symbol), "", "STK", int(underlying["con_id"]))
-        chain = next((c for c in chains if str(getattr(c, "exchange", "")).upper() == "SMART"), chains[0] if chains else None)
+        chain = _select_option_chain(chains, symbol)
         if chain is None:
             raise RuntimeError(f"No option chain returned by IB for {symbol}")
 
@@ -706,7 +883,7 @@ def estimate_option_price(
         delayed_quote = delayed_quotes.get(_occ_symbol(symbol, expiry, right, strike).upper())
 
         chains = ib.reqSecDefOptParams(_base_symbol(symbol), "", "STK", int(underlying["con_id"]))
-        chain = next((c for c in chains if str(getattr(c, "exchange", "")).upper() == "SMART"), chains[0] if chains else None)
+        chain = _select_option_chain(chains, symbol)
         all_strikes = sorted(float(s) for s in getattr(chain, "strikes", []) if _clean(s) is not None and float(s) > 0)
         nearest_index = min(range(len(all_strikes)), key=lambda index: abs(all_strikes[index] - strike)) if all_strikes else 0
         nearby_strikes = all_strikes[max(0, nearest_index - 2): min(len(all_strikes), nearest_index + 3)]
@@ -841,6 +1018,7 @@ def estimate_option_price(
         base_case = _price_option(right, strike, target_underlying_price, adjusted_iv, dte)
         optimistic = _price_option(right, strike, target_underlying_price, max(adjusted_iv - 0.02, 0.05), dte)
         conservative = _price_option(right, strike, target_underlying_price, adjusted_iv + 0.02, dte)
+        selected_live_quote_payload = _option_quote_to_payload(selected_quote)
 
         return {
             "ok": True,
@@ -867,7 +1045,11 @@ def estimate_option_price(
                 "theta": _round(selected_quote.theta, 6),
                 "vega": _round(selected_quote.vega, 6),
                 "market_data_type": selected_quote.market_data_type,
+                "volume": selected_quote.volume,
+                "source": "live" if selected_quote.market_data_type == 1 else "ib",
+                "spread_pct": _spread_pct(selected_quote.bid, selected_quote.ask),
             },
+            "selected_live_quote": selected_live_quote_payload,
             "effective_quote": _merge_option_quote(
                 delayed_quote,
                 selected_quote,

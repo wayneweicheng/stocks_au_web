@@ -124,7 +124,7 @@ BEGIN --Proc
 			json_value(b.value, '$.OptionSymbol') as OptionSymbol,
 			left(json_value(b.value, '$.Saletime'), 19) as Saletime, 
 			try_cast(json_value(b.value, '$.Price') as decimal(20, 4)) as Price,
-			floor(cast(json_value(b.value, '$.Size') as decimal(20, 4))) as Size,
+			floor(try_cast(json_value(b.value, '$.Size') as decimal(20, 4))) as Size,
 			json_value(b.value, '$.Exchange') as Exchange,
 			json_value(b.value, '$.SpecialConditions') as SpecialConditions,
 			null as ObservationDateLocal,

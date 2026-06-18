@@ -6,6 +6,7 @@
 
 CREATE PROCEDURE [DataMaintenance].[usp_RefreshMarketFlow]
 @pbitDebug AS BIT = 0,
+@pNumberOfBackDays as int = 1,
 @pintErrorNumber AS INT = 0 OUTPUT
 AS
 /******************************************************************************
@@ -106,115 +107,176 @@ BEGIN --Proc
 
 		--PRINT 'Batch processing complete.';
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SPXW.US'
+		@ASXCode = 'SPXW.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'QQQ.US'
+		@ASXCode = 'QQQ.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SPY.US'
+		@ASXCode = 'SPY.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SQQQ.US'
+		@ASXCode = 'SQQQ.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'TLT.US'
+		@ASXCode = 'TLT.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'TQQQ.US'
+		@ASXCode = 'TQQQ.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'GDX.US'
+		@ASXCode = 'GDX.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SLV.US'
+		@ASXCode = 'SLV.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'AVGO.US'
+		@ASXCode = 'AVGO.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'NVDA.US'
+		@ASXCode = 'NVDA.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'TSLA.US'
+		@ASXCode = 'TSLA.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = '_VIX.US'
+		@ASXCode = '_VIX.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'AMAT.US'
+		@ASXCode = 'AAPL.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'AMD.US'
+		@ASXCode = 'AMD.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'AMZN.US'
+		@ASXCode = 'AMZN.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'IWM.US'
+		@ASXCode = 'IWM.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'XBI.US'
+		@ASXCode = 'XBI.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'META.US'
+		@ASXCode = 'META.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'XBI.US'
+		@ASXCode = 'XBI.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'ITB.US'
+		@ASXCode = 'ITB.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'BAC.US'
+		@ASXCode = 'BAC.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'C.US'
+		@ASXCode = 'C.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'CAT.US'
+		@ASXCode = 'CAT.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'DIS.US'
+		@ASXCode = 'DIS.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'FCX.US'
+		@ASXCode = 'FCX.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'GLD.US'
+		@ASXCode = 'GLD.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'IBIT.US'
+		@ASXCode = 'IBIT.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'KWEB.US'
+		@ASXCode = 'KWEB.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'MCD.US'
+		@ASXCode = 'MCD.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'MU.US'
+		@ASXCode = 'MU.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'ORCL.US'
+		@ASXCode = 'ORCL.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'OXY.US'
+		@ASXCode = 'OXY.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SNOW.US'
+		@ASXCode = 'SNOW.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'XLE.US'
+		@ASXCode = 'XLE.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'ALB.US'
+		@ASXCode = 'LLY.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'LIT.US'
+		@ASXCode = 'COST.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'XOM.US'
+		@ASXCode = 'XOM.US',
+		@NumberOfBackDays = @pNumberOfBackDays
+
+		exec Analysis.usp_RefreshGEXFeaturesForTraining
+		@ASXCode = 'NFLX.US',
+		@NumberOfBackDays = @pNumberOfBackDays
+
+		exec Analysis.usp_RefreshGEXFeaturesForTraining
+		@ASXCode = 'XLK.US',
+		@NumberOfBackDays = @pNumberOfBackDays
+
+		exec Analysis.usp_RefreshGEXFeaturesForTraining
+		@ASXCode = 'DIA.US',
+		@NumberOfBackDays = @pNumberOfBackDays
+
+		exec Analysis.usp_RefreshGEXFeaturesForTraining
+		@ASXCode = 'JPM.US',
+		@NumberOfBackDays = @pNumberOfBackDays
+
+		exec Analysis.usp_RefreshGEXFeaturesForTraining
+		@ASXCode = 'GOOG.US',
+		@NumberOfBackDays = @pNumberOfBackDays
+
+		exec Analysis.usp_RefreshGEXFeaturesForTraining
+		@ASXCode = 'MSFT.US',
+		@NumberOfBackDays = @pNumberOfBackDays
 
 	END TRY
 

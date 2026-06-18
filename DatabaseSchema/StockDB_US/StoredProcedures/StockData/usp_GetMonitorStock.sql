@@ -678,7 +678,7 @@ BEGIN --Proc
 			--return
 			
 			--if datepart(hour, getdate()) in (23)
-			if datepart(hour, getdate()) in (21, 22, 23, 0, 1, 2)
+			if datepart(hour, getdate()) in (23, 0, 1, 2)
 			begin
 				if object_id(N'Tempdb.dbo.#TempASXCodeObDate') is not null
 					drop table #TempASXCodeObDate

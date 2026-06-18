@@ -1,0 +1,46 @@
+-- Table: [TA].[price_pattern_candidate]
+
+CREATE TABLE [TA].[price_pattern_candidate] (
+    [symbol] [varchar](32) NOT NULL,
+    [as_of_date] [date] NOT NULL,
+    [timeframe] [varchar](16) NOT NULL,
+    [pattern_type] [varchar](64) NOT NULL,
+    [candidate_flag] [bit] NOT NULL,
+    [candidate_score] [decimal](18,6) NULL,
+    [confidence_label] [varchar](16) NULL,
+    [resistance_center] [decimal](18,6) NULL,
+    [resistance_touch_count] [int] NULL,
+    [support_slope] [decimal](18,10) NULL,
+    [support_touch_count] [int] NULL,
+    [range_narrowing_score] [decimal](18,6) NULL,
+    [apex_distance_days] [int] NULL,
+    [breakout_proximity_pct] [decimal](18,6) NULL,
+    [left_peak_date] [date] NULL,
+    [left_peak_price] [decimal](18,6) NULL,
+    [cup_low_date] [date] NULL,
+    [cup_low_price] [decimal](18,6) NULL,
+    [right_peak_date] [date] NULL,
+    [right_peak_price] [decimal](18,6) NULL,
+    [cup_depth_pct] [decimal](18,6) NULL,
+    [cup_duration_days] [int] NULL,
+    [handle_start_date] [date] NULL,
+    [handle_low_date] [date] NULL,
+    [handle_depth_pct] [decimal](18,6) NULL,
+    [handle_duration_days] [int] NULL,
+    [right_side_recovery_pct] [decimal](18,6) NULL,
+    [contraction_count] [int] NULL,
+    [range_contraction_score] [decimal](18,6) NULL,
+    [volume_dry_up_score] [decimal](18,6) NULL,
+    [pivot_tightness_score] [decimal](18,6) NULL,
+    [breakout_pivot_price] [decimal](18,6) NULL,
+    [template_pass_flag] [bit] NULL,
+    [template_score] [decimal](18,6) NULL,
+    [extension_risk_score] [decimal](18,6) NULL,
+    [constructive_state] [varchar](32) NULL,
+    [notes] [varchar](1000) NULL,
+    [created_at] [datetime2] NOT NULL DEFAULT (sysutcdatetime())
+,
+    CONSTRAINT [PK_price_pattern_candidate] PRIMARY KEY (symbol, as_of_date, timeframe, pattern_type)
+);
+
+CREATE INDEX [IX_price_pattern_candidate_symbol_as_of] ON [TA].[price_pattern_candidate] (symbol, as_of_date, timeframe, pattern_type);

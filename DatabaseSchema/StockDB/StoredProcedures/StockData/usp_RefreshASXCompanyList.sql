@@ -87,7 +87,7 @@ BEGIN --Proc
 		)
 		and IsDisabled = 0
 
-		--select @intExpired 
+		select @intExpired 
 
 		if @intExpired > 300
 		begin
@@ -409,7 +409,7 @@ BEGIN --Proc
 
 			update a
 			set a.MarketCap = b.MarketCap*1000,
-				a.CleansedMarketCap = cast(b.MarketCap/1000.0 as decimal(20, 2)),
+				a.CleansedMarketCap = try_cast(b.MarketCap/1000.0 as decimal(20, 2)),
 				a.IndustryGroup = b.IndustryGroup
 			from StockData.CompanyInfo as a
 			inner join Stock.ASXCompany as b
@@ -467,7 +467,11 @@ BEGIN --Proc
 				and DateTo is null
 			)
 
-			
+			update a
+			set a.CleansedMarketCap = null
+			from StockData.CompanyInfo as a
+			where CleansedMarketCap = 0
+
 		end
 	END TRY
 

@@ -1,5 +1,4 @@
 -- Table: [Research].[StockAnalysisReportRating]
--- Stores structured overall rating and aspect scores extracted from stock analysis reports
 
 CREATE TABLE [Research].[StockAnalysisReportRating] (
     [RatingID] [int] IDENTITY(1,1) NOT NULL,
@@ -18,12 +17,10 @@ CREATE TABLE [Research].[StockAnalysisReportRating] (
     [BrokerRating] [varchar](50) NULL,
     [CreatedAt] [datetime] NOT NULL DEFAULT (getdate())
 ,
-    CONSTRAINT [PK_StockAnalysisReportRating] PRIMARY KEY CLUSTERED ([RatingID] ASC),
-    CONSTRAINT [FK_StockAnalysisReportRating_Report] FOREIGN KEY ([ReportID])
-        REFERENCES [Research].[StockAnalysisReport] ([ReportID])
-        ON DELETE CASCADE
+    CONSTRAINT [PK_StockAnalysisReportRating] PRIMARY KEY (RatingID)
 );
 
-CREATE UNIQUE INDEX [IX_StockAnalysisReportRating_ReportID] ON [Research].[StockAnalysisReportRating] ([ReportID]);
-CREATE INDEX [IX_StockAnalysisReportRating_StockCode] ON [Research].[StockAnalysisReportRating] ([StockCode]);
-CREATE INDEX [IX_StockAnalysisReportRating_ObservationDate] ON [Research].[StockAnalysisReportRating] ([ObservationDate]);
+ALTER TABLE [Research].[StockAnalysisReportRating] ADD CONSTRAINT [FK_StockAnalysisReportRating_Report] FOREIGN KEY (ReportID) REFERENCES [Research].[StockAnalysisReport] (ReportID);
+CREATE INDEX [IX_StockAnalysisReportRating_ObservationDate] ON [Research].[StockAnalysisReportRating] (ObservationDate);
+CREATE INDEX [IX_StockAnalysisReportRating_StockCode] ON [Research].[StockAnalysisReportRating] (StockCode);
+CREATE UNIQUE INDEX [IX_StockAnalysisReportRating_ReportID] ON [Research].[StockAnalysisReportRating] (ReportID);

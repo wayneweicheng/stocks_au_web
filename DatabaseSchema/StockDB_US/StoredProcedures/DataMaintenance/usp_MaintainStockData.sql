@@ -62,6 +62,11 @@ BEGIN --Proc
 		--Normal varible declarations
 
 		--Code goes here
+		update a
+		set a.CleansedMarketCap = null
+		from StockData.CompanyInfo as a
+		where CleansedMarketCap = 0
+
 		truncate table StockData.PriceHistoryCurrent
 
 		if object_id('Tempdb.dbo.#TempPriceHistory') is not null

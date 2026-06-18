@@ -64,6 +64,11 @@ BEGIN --Proc
 
 		--Code goes here 
 		update a
+		set a.CleansedMarketCap = null
+		from StockData.CompanyInfo as a
+		where CleansedMarketCap = 0
+
+		update a
 		set AnnContent = replace(
 				replace(ltrim(rtrim(DA_Utility.dbo.RegexReplace(AnnContent,'[^a-zA-Z0-9\.\,\+\''\s\%\|]',' '))), 
 					'  ', 

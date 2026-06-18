@@ -1,5 +1,7 @@
 -- Stored procedure: [Report].[usp_Get_BrokerBuySuggestion]
 
+-- Stored procedure: [Report].[usp_Get_BrokerBuySuggestion]
+
 
 
 CREATE PROCEDURE [Report].[usp_Get_BrokerBuySuggestion]

@@ -81,7 +81,7 @@ BEGIN --Proc
 			SELECT 
 				ASXCode,
 				COUNT(*) as total_days,
-				SUM(CASE WHEN DailyValue > 200000 AND Trades > 20 AND [Close] > 0.02 AND [Close] < 1.0 
+				SUM(CASE WHEN DailyValue > 200000 AND Trades > 20 AND [Close] > 0.02 AND [Close] <2.0 
 						THEN 1 ELSE 0 END) as active_days,
 				AVG(DailyValue) as avg_daily_value,
 				AVG(Trades) as avg_trades,
@@ -98,19 +98,23 @@ BEGIN --Proc
 			AND avg_daily_value > 100000
 			AND avg_trades > 20
 			AND avg_close > 0.02 
-			AND avg_close < 1.0
+			AND avg_close < 2.0
 
-		select StockCode,  cast(getdate() as date) as ObservationDate
+		select StockCode,  cast(getdate() as date) as ObservationDate, max(Update_Priority) as Update_Priority
 		from
 		(
-			select ASXCode as StockCode
+			select ASXCode as StockCode, 10 as Update_Priority
 			from #TempActiveStocks as a
 			group by ASXCode
 			union
-			select ASXCode as StockCode
+			select ASXCode as StockCode, 20 as Update_Priority
 			from StockData.MonitorStock as a with(nolock)
 			where MonitorTypeID in ('M', 'X')
 			and isnull(PriorityLevel, 999) <= 100
+			union
+			select StockCode, 99 as Update_Priority
+			from Research.StockRating
+			group by StockCode
 			--union
 			--select distinct ASXCode as StockCode
 			--from Transform.PriceHistory24Month
@@ -140,8 +144,9 @@ BEGIN --Proc
 			--and [Close] < 5
 		) as x
 		where 1 = 1 
-		--and StockCode = 'BMG.AX'
-		order by newid()
+		and StockCode like '%.AX'
+		group by StockCode
+		order by max(Update_Priority) desc;
 
 
 	END TRY

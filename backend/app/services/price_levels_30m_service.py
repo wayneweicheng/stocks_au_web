@@ -356,12 +356,15 @@ def get_30m_support_resistance(
     lookback_days: int = 10,
     minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
     maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
+    stock_codes: Optional[List[str]] = None,
+    group: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if minimum_distance_atr > maximum_distance_atr:
         raise ValueError("Minimum ATR distance cannot exceed maximum ATR distance")
 
     model = get_sql_model()
     market_today = datetime.now(US_EASTERN).date()
+    filtered_stock_codes = sorted({code.strip().upper() for code in (stock_codes or []) if code.strip()})
 
     date_rows = model.execute_read_query(
         """
@@ -387,6 +390,7 @@ def get_30m_support_resistance(
                 "minimum": minimum_distance_atr,
                 "maximum": maximum_distance_atr,
             },
+            "group": group,
             "stocks": [],
             "count": 0,
         }
@@ -394,16 +398,28 @@ def get_30m_support_resistance(
     if observation_date is None:
         observation_date = latest_available_date
 
+    stock_filter = ""
+    stock_filter_params: tuple[Any, ...] = ()
+    if filtered_stock_codes:
+        stock_filter = f" AND ASXCode IN ({','.join(['?'] * len(filtered_stock_codes))})"
+        stock_filter_params = tuple(filtered_stock_codes)
+
     rows = model.execute_read_query(
-        """
+        f"""
         SELECT ASXCode, TimeIntervalStart, [High], [Low], [Close], Volume
         FROM StockDB_US.StockData.PriceHistoryTimeFrame
         WHERE TimeIntervalStart >= DATEADD(day, -?, ?)
           AND TimeIntervalStart <= DATEADD(hour, 23, CAST(? AS datetime))
           AND TimeFrame = '30M'
+          {stock_filter}
         ORDER BY ASXCode, TimeIntervalStart
         """,
-        (lookback_days, observation_date.isoformat(), observation_date.isoformat()),
+        (
+            lookback_days,
+            observation_date.isoformat(),
+            observation_date.isoformat(),
+            *stock_filter_params,
+        ),
     ) or []
 
     grouped: Dict[str, List[Dict[str, Any]]] = {}
@@ -414,14 +430,19 @@ def get_30m_support_resistance(
         grouped.setdefault(code, []).append(row)
 
     daily_rows = model.execute_read_query(
-        """
+        f"""
         SELECT ASXCode, ObservationDate, [High], [Low], [Close]
         FROM StockDB_US.StockData.PriceHistory
         WHERE ObservationDate >= DATEADD(day, -45, ?)
           AND ObservationDate <= ?
+          {stock_filter}
         ORDER BY ASXCode, ObservationDate
         """,
-        (observation_date.isoformat(), observation_date.isoformat()),
+        (
+            observation_date.isoformat(),
+            observation_date.isoformat(),
+            *stock_filter_params,
+        ),
     ) or []
 
     daily_by_stock: Dict[str, List[Dict[str, Any]]] = {}
@@ -432,7 +453,7 @@ def get_30m_support_resistance(
         daily_by_stock.setdefault(code, []).append(row)
 
     wall_rows = model.execute_read_query(
-        """
+        f"""
         SELECT
             ASXCode,
             PorC,
@@ -445,12 +466,14 @@ def get_30m_support_resistance(
           AND ExpiryDate <= DATEADD(day, 30, ?)
           AND PorC IN ('P', 'C')
           AND OpenInterest > 0
+          {stock_filter}
         GROUP BY ASXCode, PorC, Strike
         """,
         (
             observation_date.isoformat(),
             observation_date.isoformat(),
             observation_date.isoformat(),
+            *stock_filter_params,
         ),
     ) or []
 
@@ -472,7 +495,7 @@ def get_30m_support_resistance(
         )
 
     snapshot_rows = model.execute_read_query(
-        """
+        f"""
         SELECT
             ASXCode,
             ObservationDate,
@@ -485,8 +508,9 @@ def get_30m_support_resistance(
             ForwardPE
         FROM StockDB_US.StockData.v_DailyMarketSnapshot_Latest
         WHERE CollectionStatus = 'COMPLETE'
+          {stock_filter}
         """,
-        (),
+        stock_filter_params,
     ) or []
     snapshots_by_stock = {
         str(row.get("ASXCode") or ""): row
@@ -578,6 +602,7 @@ def get_30m_support_resistance(
             "minimum": minimum_distance_atr,
             "maximum": maximum_distance_atr,
         },
+        "group": group,
         "count": len(stocks),
         "stocks": stocks,
     }

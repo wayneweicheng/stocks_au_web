@@ -19,6 +19,7 @@ CREATE TABLE [BrokerData].[BrokerDayReport] (
 );
 
 CREATE INDEX [IX_BrokerDayReport_ASXCode] ON [BrokerData].[BrokerDayReport] (ASXCode, ObservationDate);
+CREATE INDEX [IX_BrokerDayReport_ASXCode_ObservationDate] ON [BrokerData].[BrokerDayReport] (BrokerName, NetValue, BuyValue, SellValue, TotalValue, BuyRatio, SellRatio, ASXCode, ObservationDate);
 CREATE INDEX [IX_BrokerDayReport_BrokerName] ON [BrokerData].[BrokerDayReport] (BrokerName, ObservationDate);
 CREATE INDEX [IX_BrokerDayReport_ObservationDate] ON [BrokerData].[BrokerDayReport] (BrokerName, ASXCode, BuyValue, SellValue, ObservationDate);
 CREATE UNIQUE INDEX [UQ_BrokerDayReport_Broker_ASX_Date] ON [BrokerData].[BrokerDayReport] (BrokerName, ASXCode, ObservationDate);

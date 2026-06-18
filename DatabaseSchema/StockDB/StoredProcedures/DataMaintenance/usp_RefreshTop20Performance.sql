@@ -4,7 +4,7 @@
 
 
 
-create PROCEDURE [DataMaintenance].[usp_RefreshTop20Performance]
+CREATE PROCEDURE [DataMaintenance].[usp_RefreshTop20Performance]
 @pbitDebug AS BIT = 0,
 @pintErrorNumber AS INT = 0 OUTPUT
 AS
@@ -63,6 +63,11 @@ BEGIN --Proc
 		--Normal varible declarations
 
 		--Code goes here 
+		update a
+		set a.CleansedMarketCap = null
+		from StockData.CompanyInfo as a
+		where CleansedMarketCap = 0
+
 		declare @dtMaxTop20Date as date
 
 		select @dtMaxTop20Date = max(CurrDate)

@@ -457,13 +457,6 @@ BEGIN --Proc
 			where a.MonitorTypeID = 'H'
 			and charindex('.', a.ASXCode, 0) > 0
 			--and a.ASXCode in ('CC9.AX')
-			--and not exists
-			--(
-			--	select 1
-			--	from StockData.PriceHistorySecondary
-			--	where ASXCode = a.ASXCode
-			--	and Exchange = 'ASX'
-			--)
 			--order by isnull(b.ModifyDate, '2050-01-12') asc
 			--and a.ASXCode in ('GOLD:US.US', 'GDX:US.US', 'GDXJ:US.US')
 			order by newid()
@@ -660,7 +653,7 @@ BEGIN --Proc
 			(
 				select max(ObservationDate) as ObservationDate 
 				from StockDB_US.StockData.v_OptionDelayedQuote
-				where ASXCode = 'SPXW.US'
+				--where ASXCode = 'SPXW.US'
 			) as b
 			on a.ObservationDate = b.ObservationDate
 			where ASXCode = 'SPXW.US'
@@ -682,7 +675,7 @@ BEGIN --Proc
 			(
 				select max(ObservationDate) as ObservationDate 
 				from StockDB_US.StockData.v_OptionDelayedQuote
-				where ASXCode = 'QQQ.US'
+				--where ASXCode = 'QQQ.US'
 			) as b
 			on a.ObservationDate = b.ObservationDate
 			where ASXCode = 'QQQ.US'

@@ -86,6 +86,7 @@ BEGIN --Proc
 		)
 		and datediff(day, AnnDateTime, getdate()) > 180
 
+		set identity_insert ArchiveDB.StockData.Announcement on
 		insert into ArchiveDB.StockData.Announcement
 		(
 			   [AnnouncementID]
@@ -117,7 +118,9 @@ BEGIN --Proc
 		from StockData.Announcement as a
 		inner join #TempAnnouncementID as b
 		on a.AnnouncementID = b.AnnouncementID
+		set identity_insert ArchiveDB.StockData.Announcement off
 
+		set identity_insert ArchiveDB.[StockData].[AnnouncementToken] on
 		insert into ArchiveDB.[StockData].[AnnouncementToken]
 		(
 			   [AnnouncementTokenID]
@@ -137,6 +140,7 @@ BEGIN --Proc
 		from [StockData].[AnnouncementToken] as a
 		inner join #TempAnnouncementID as b
 		on a.AnnouncementID = b.AnnouncementID
+		set identity_insert ArchiveDB.[StockData].[AnnouncementToken] off
 
 		delete a
 		from StockData.Announcement as a

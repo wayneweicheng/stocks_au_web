@@ -106,12 +106,17 @@ interface EstimateResponse {
   directional_iv_adjustment: number;
   warnings?: string[];
   market_status?: MarketStatus;
+  selected_live_quote: QuoteSnapshot | null;
   effective_quote: QuoteSnapshot | null;
   delayed_quote: DelayedQuote | null;
   quote: {
     bid: number | null;
     ask: number | null;
     mid: number | null;
+    spread_pct?: number | null;
+    volume?: number | null;
+    source?: string;
+    market_data_type?: number | null;
     iv: number | null;
     delta: number | null;
     gamma: number | null;
@@ -150,6 +155,16 @@ function spreadPct(value: number | null | undefined) {
   return `${Number(value).toFixed(2)}%`;
 }
 
+function quoteSpreadPct(quote: QuoteSnapshot | null | undefined) {
+  if (quote?.spread_pct !== null && quote?.spread_pct !== undefined && Number.isFinite(Number(quote.spread_pct))) {
+    return Number(quote.spread_pct);
+  }
+  const bid = Number(quote?.bid);
+  const ask = Number(quote?.ask);
+  if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask < bid) return null;
+  return ((ask - bid) * 100) / bid;
+}
+
 function parsePositive(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -172,18 +187,48 @@ function quoteSourceLabel(quote: QuoteSnapshot | null | undefined) {
   return `Quote source: ${quote.source}`;
 }
 
+function isLiveQuote(quote: QuoteSnapshot | null | undefined) {
+  return quote?.source === "live" || quote?.market_data_type === 1;
+}
+
+function liveQuoteClass(quote: QuoteSnapshot | null | undefined, extra = "") {
+  return `${isLiveQuote(quote) ? "font-semibold text-emerald-700" : ""} ${extra}`.trim();
+}
+
+function quotePayloadFromEstimate(estimate: EstimateResponse): QuoteSnapshot | null {
+  if (estimate.quote.market_data_type !== 1 || estimate.quote.bid === null || estimate.quote.ask === null) {
+    return null;
+  }
+  return {
+    bid: estimate.quote.bid,
+    ask: estimate.quote.ask,
+    mid: estimate.quote.mid,
+    spread_pct: estimate.quote.spread_pct ?? null,
+    volume: estimate.quote.volume ?? null,
+    iv: estimate.quote.iv,
+    observation_date: "",
+    source: "live",
+    market_data_type: estimate.quote.market_data_type,
+  };
+}
+
 function chooseAutoExpiry(expirations: ExpirationRow[]) {
+  const preferredMinDte = 13;
+  const preferredMaxDte = 23;
   const sorted = [...expirations]
     .filter((item) => item?.expiry)
     .sort((left, right) => left.dte - right.dte || left.expiry.localeCompare(right.expiry));
   const preferred = sorted
-    .filter((item) => item.dte >= 15 && item.dte <= 21)
-    .sort((left, right) => Math.abs(left.dte - 18) - Math.abs(right.dte - 18) || left.dte - right.dte)[0];
+    .filter((item) => item.dte >= preferredMinDte && item.dte <= preferredMaxDte)
+    .sort((left, right) => right.dte - left.dte || right.expiry.localeCompare(left.expiry))[0];
   if (preferred) return preferred;
 
   const future = sorted
     .filter((item) => item.dte > 0)
-    .sort((left, right) => Math.abs(left.dte - 18) - Math.abs(right.dte - 18) || left.dte - right.dte)[0];
+    .sort((left, right) => (
+      Math.abs(left.dte - preferredMaxDte) - Math.abs(right.dte - preferredMaxDte)
+      || right.dte - left.dte
+    ))[0];
   return future || sorted[0] || null;
 }
 
@@ -688,12 +733,9 @@ export default function OptionOrdersPage() {
                   {filteredRows.map((row) => {
                     const rowQuote = row.quote || row.delayed_quote;
                     const selected = selectedRow?.option_symbol === row.option_symbol;
-                    const illiquid = rowQuote?.spread_pct !== null
-                      && rowQuote?.spread_pct !== undefined
-                      && rowQuote.spread_pct > 3;
-                    const liquid = rowQuote?.spread_pct !== null
-                      && rowQuote?.spread_pct !== undefined
-                      && rowQuote.spread_pct < 3;
+                    const rowSpreadPct = quoteSpreadPct(rowQuote);
+                    const illiquid = rowSpreadPct !== null && rowSpreadPct > 3;
+                    const liquid = rowSpreadPct !== null && rowSpreadPct < 3;
                     return (
                       <tr
                         key={row.option_symbol}
@@ -712,12 +754,12 @@ export default function OptionOrdersPage() {
                         <td className="px-3 py-2">{row.dte}</td>
                         <td className="px-3 py-2">{row.right === "P" ? "Put" : "Call"}</td>
                         <td className="px-3 py-2 text-right">{num(row.strike, 2)}</td>
-                        <td className="px-3 py-2 text-right">{money(rowQuote?.bid)}</td>
-                        <td className="px-3 py-2 text-right">{money(rowQuote?.ask)}</td>
-                        <td className={`px-3 py-2 text-right ${illiquid ? "font-semibold text-pink-800" : ""}`}>
-                          {spreadPct(rowQuote?.spread_pct)}
+                        <td className={liveQuoteClass(rowQuote, "px-3 py-2 text-right")}>{money(rowQuote?.bid)}</td>
+                        <td className={liveQuoteClass(rowQuote, "px-3 py-2 text-right")}>{money(rowQuote?.ask)}</td>
+                        <td className={`px-3 py-2 text-right ${isLiveQuote(rowQuote) ? "font-semibold text-emerald-700" : illiquid ? "font-semibold text-pink-800" : ""}`}>
+                          {spreadPct(rowSpreadPct)}
                         </td>
-                        <td className="px-3 py-2 text-right">{num(rowQuote?.volume, 0)}</td>
+                        <td className={liveQuoteClass(rowQuote, "px-3 py-2 text-right")}>{num(rowQuote?.volume, 0)}</td>
                         <td className="px-3 py-2 font-mono text-xs">{row.option_symbol}</td>
                       </tr>
                     );
@@ -748,16 +790,17 @@ export default function OptionOrdersPage() {
                   <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-600">
                     {(() => {
                       const selectedQuote = selectedRow.quote || selectedRow.delayed_quote;
+                      const selectedSpreadPct = quoteSpreadPct(selectedQuote);
                       return (
                         <>
-                          <div>Bid: {money(selectedQuote?.bid)}</div>
-                          <div>Ask: {money(selectedQuote?.ask)}</div>
-                          <div>Mid: {money(selectedQuote?.mid)}</div>
-                          <div className={Number(selectedQuote?.spread_pct) > 3 ? "font-semibold text-pink-700" : Number(selectedQuote?.spread_pct) < 3 ? "font-semibold text-emerald-700" : ""}>
-                            Spread: {spreadPct(selectedQuote?.spread_pct)}
+                          <div className={liveQuoteClass(selectedQuote)}>Bid: {money(selectedQuote?.bid)}</div>
+                          <div className={liveQuoteClass(selectedQuote)}>Ask: {money(selectedQuote?.ask)}</div>
+                          <div className={liveQuoteClass(selectedQuote)}>Mid: {money(selectedQuote?.mid)}</div>
+                          <div className={isLiveQuote(selectedQuote) ? "font-semibold text-emerald-700" : Number(selectedSpreadPct) > 3 ? "font-semibold text-pink-700" : Number(selectedSpreadPct) < 3 ? "font-semibold text-emerald-700" : ""}>
+                            Spread: {spreadPct(selectedSpreadPct)}
                           </div>
-                          <div>Volume: {num(selectedQuote?.volume, 0)}</div>
-                          <div>{quoteSourceLabel(selectedQuote)}</div>
+                          <div className={liveQuoteClass(selectedQuote)}>Volume: {num(selectedQuote?.volume, 0)}</div>
+                          <div className={liveQuoteClass(selectedQuote)}>{quoteSourceLabel(selectedQuote)}</div>
                           <div className="col-span-2">Quote date: {selectedQuote?.observation_date || "n/a"}</div>
                         </>
                       );
@@ -788,21 +831,41 @@ export default function OptionOrdersPage() {
                   </div>
                   <div className="rounded-md border border-slate-200 p-3">
                     <div className="text-xs uppercase text-slate-500">IV</div>
-                    <div className="mt-1 text-xl font-semibold">{pct(estimate.adjusted_iv)}</div>
-                    <div className="mt-1 text-xs text-slate-500">{estimate.iv_source}</div>
+                    <div className={`mt-1 text-xl font-semibold ${estimate.iv_source === "live IB selected contract IV" ? "text-emerald-700" : ""}`}>
+                      {pct(estimate.adjusted_iv)}
+                    </div>
+                    <div className={`mt-1 text-xs ${estimate.iv_source === "live IB selected contract IV" ? "font-semibold text-emerald-700" : "text-slate-500"}`}>
+                      {estimate.iv_source}
+                    </div>
                   </div>
                   {(() => {
-                    const estimateQuote = estimate.effective_quote || estimate.delayed_quote;
+                    const liveQuote = quotePayloadFromEstimate(estimate);
+                    const estimateQuote = estimate.selected_live_quote
+                      || liveQuote
+                      || estimate.effective_quote
+                      || estimate.delayed_quote
+                      || {
+                        bid: estimate.quote.bid,
+                        ask: estimate.quote.ask,
+                        mid: estimate.quote.mid,
+                        spread_pct: estimate.quote.spread_pct ?? null,
+                        volume: estimate.quote.volume ?? null,
+                        iv: estimate.quote.iv,
+                        observation_date: "",
+                        source: estimate.quote.source || (estimate.quote.market_data_type === 1 ? "live" : "ib"),
+                        market_data_type: estimate.quote.market_data_type ?? null,
+                      };
+                    const estimateSpreadPct = quoteSpreadPct(estimateQuote);
                     return (
                       <>
-                        <div>Bid: {money(estimateQuote?.bid ?? estimate.quote.bid)}</div>
-                        <div>Ask: {money(estimateQuote?.ask ?? estimate.quote.ask)}</div>
-                        <div>Mid: {money(estimateQuote?.mid ?? estimate.quote.mid)}</div>
-                        <div className={Number(estimateQuote?.spread_pct) > 3 ? "font-semibold text-pink-700" : Number(estimateQuote?.spread_pct) < 3 ? "font-semibold text-emerald-700" : ""}>
-                          Spread: {spreadPct(estimateQuote?.spread_pct)}
+                        <div className={liveQuoteClass(estimateQuote)}>Bid: {money(estimateQuote.bid)}</div>
+                        <div className={liveQuoteClass(estimateQuote)}>Ask: {money(estimateQuote.ask)}</div>
+                        <div className={liveQuoteClass(estimateQuote)}>Mid: {money(estimateQuote.mid)}</div>
+                        <div className={isLiveQuote(estimateQuote) ? "font-semibold text-emerald-700" : Number(estimateSpreadPct) > 3 ? "font-semibold text-pink-700" : Number(estimateSpreadPct) < 3 ? "font-semibold text-emerald-700" : ""}>
+                          Spread: {spreadPct(estimateSpreadPct)}
                         </div>
-                        <div>Volume: {num(estimateQuote?.volume, 0)}</div>
-                        <div>{quoteSourceLabel(estimateQuote)}</div>
+                        <div className={liveQuoteClass(estimateQuote)}>Volume: {num(estimateQuote?.volume, 0)}</div>
+                        <div className={liveQuoteClass(estimateQuote)}>{quoteSourceLabel(estimateQuote)}</div>
                       </>
                     );
                   })()}
@@ -812,7 +875,7 @@ export default function OptionOrdersPage() {
                   <div className="col-span-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
                     <div className="mb-2 font-semibold text-slate-700">IV evidence</div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                      <div>
+                      <div className={estimate.iv_clues.ib_contract_market_data_type === 1 ? "font-semibold text-emerald-700" : ""}>
                         IB contract: {pct(estimate.iv_clues.ib_contract_iv)}
                         {estimate.iv_clues.ib_contract_market_data_type
                           ? ` (type ${estimate.iv_clues.ib_contract_market_data_type})`

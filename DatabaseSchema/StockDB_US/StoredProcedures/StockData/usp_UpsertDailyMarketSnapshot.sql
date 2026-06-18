@@ -1,6 +1,8 @@
 -- Stored procedure: [StockData].[usp_UpsertDailyMarketSnapshot]
 
-CREATE OR ALTER PROCEDURE [StockData].[usp_UpsertDailyMarketSnapshot]
+-- Stored procedure: [StockData].[usp_UpsertDailyMarketSnapshot]
+
+CREATE   PROCEDURE [StockData].[usp_UpsertDailyMarketSnapshot]
     @pvchASXCode varchar(20),
     @pdtObservationDate date,
     @pdtCaptureDateTime datetime2(0),

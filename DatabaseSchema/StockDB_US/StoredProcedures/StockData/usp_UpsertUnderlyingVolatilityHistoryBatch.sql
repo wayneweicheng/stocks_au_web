@@ -1,6 +1,8 @@
 -- Stored procedure: [StockData].[usp_UpsertUnderlyingVolatilityHistoryBatch]
 
-CREATE OR ALTER PROCEDURE [StockData].[usp_UpsertUnderlyingVolatilityHistoryBatch]
+-- Stored procedure: [StockData].[usp_UpsertUnderlyingVolatilityHistoryBatch]
+
+CREATE   PROCEDURE [StockData].[usp_UpsertUnderlyingVolatilityHistoryBatch]
     @pnvchRows nvarchar(max)
 AS
 BEGIN

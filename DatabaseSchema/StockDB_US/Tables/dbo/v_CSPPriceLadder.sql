@@ -1,0 +1,31 @@
+-- Table: [dbo].[v_CSPPriceLadder]
+
+CREATE TABLE [dbo].[v_CSPPriceLadder] (
+    [RecommendationID] [bigint] NOT NULL,
+    [ObservationDate] [date] NOT NULL,
+    [TradingDate] [date] NOT NULL,
+    [Rank] [int] NOT NULL,
+    [Ticker] [varchar](20) NOT NULL,
+    [OptionSymbol] [varchar](50) NOT NULL,
+    [Strike] [decimal](18,4) NOT NULL,
+    [Expiry] [date] NOT NULL,
+    [DTE] [int] NOT NULL,
+    [CurrentPrice] [decimal](18,4) NOT NULL,
+    [PremiumMid] [decimal](18,4) NOT NULL,
+    [PutWallLevel] [decimal](18,4) NOT NULL,
+    [PutWallConfidence] [varchar](10) NOT NULL,
+    [EffectiveEntry] [decimal](18,4) NOT NULL,
+    [BufferPct] [numeric](23,7) NULL,
+    [AnnualizedYield] [decimal](18,6) NOT NULL,
+    [CompositeScore] [decimal](18,2) NULL,
+    [Priority] [int] NOT NULL,
+    [TargetPrice] [decimal](18,2) NULL,
+    [STOLimitPrice] [decimal](18,2) NULL,
+    [BaseCase] [decimal](18,2) NULL,
+    [Optimistic] [decimal](18,2) NULL,
+    [IV_Decimal] [decimal](18,6) NULL,
+    [IV_Pct] [decimal](22,4) NULL,
+    [Confidence] [nvarchar](4000) NULL,
+    [Allocation] [numeric](2,2) NOT NULL,
+    [NormalizedRank] [bigint] NULL
+);

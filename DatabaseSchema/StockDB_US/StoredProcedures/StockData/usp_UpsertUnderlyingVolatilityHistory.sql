@@ -1,6 +1,8 @@
 -- Stored procedure: [StockData].[usp_UpsertUnderlyingVolatilityHistory]
 
-CREATE OR ALTER PROCEDURE [StockData].[usp_UpsertUnderlyingVolatilityHistory]
+-- Stored procedure: [StockData].[usp_UpsertUnderlyingVolatilityHistory]
+
+CREATE   PROCEDURE [StockData].[usp_UpsertUnderlyingVolatilityHistory]
     @pvchASXCode varchar(20),
     @pdtObservationDate date,
     @pdecIVOpen decimal(18,8) = NULL,

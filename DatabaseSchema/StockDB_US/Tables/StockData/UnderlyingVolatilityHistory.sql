@@ -11,12 +11,11 @@ CREATE TABLE [StockData].[UnderlyingVolatilityHistory] (
     [HVHigh] [decimal](18,8) NULL,
     [HVLow] [decimal](18,8) NULL,
     [HVClose] [decimal](18,8) NULL,
-    [Source] [varchar](30) NOT NULL CONSTRAINT [DF_UnderlyingVolatilityHistory_Source] DEFAULT ('IBKR'),
-    [CreateDate] [datetime2](0) NOT NULL CONSTRAINT [DF_UnderlyingVolatilityHistory_CreateDate] DEFAULT (sysdatetime()),
-    [ModifyDate] [datetime2](0) NOT NULL CONSTRAINT [DF_UnderlyingVolatilityHistory_ModifyDate] DEFAULT (sysdatetime()),
-    CONSTRAINT [PK_UnderlyingVolatilityHistory] PRIMARY KEY CLUSTERED ([ASXCode], [ObservationDate])
+    [Source] [varchar](30) NOT NULL DEFAULT ('IBKR'),
+    [CreateDate] [datetime2] NOT NULL DEFAULT (sysdatetime()),
+    [ModifyDate] [datetime2] NOT NULL DEFAULT (sysdatetime())
+,
+    CONSTRAINT [PK_UnderlyingVolatilityHistory] PRIMARY KEY (ASXCode, ObservationDate)
 );
 
-CREATE INDEX [IX_UnderlyingVolatilityHistory_ObservationDate]
-    ON [StockData].[UnderlyingVolatilityHistory] ([ObservationDate], [ASXCode])
-    INCLUDE ([IVClose], [HVClose]);
+CREATE INDEX [IX_UnderlyingVolatilityHistory_ObservationDate] ON [StockData].[UnderlyingVolatilityHistory] (IVClose, HVClose, ObservationDate, ASXCode);

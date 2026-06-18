@@ -3,7 +3,7 @@
 CREATE TABLE [StockData].[DailyMarketSnapshot] (
     [ASXCode] [varchar](20) NOT NULL,
     [ObservationDate] [date] NOT NULL,
-    [CaptureDateTime] [datetime2](0) NOT NULL,
+    [CaptureDateTime] [datetime2] NOT NULL,
     [MarketDataType] [tinyint] NULL,
     [LastPrice] [decimal](20,6) NULL,
     [ImpliedVolatility] [decimal](18,8) NULL,
@@ -45,15 +45,14 @@ CREATE TABLE [StockData].[DailyMarketSnapshot] (
     [RevenueGrowth] [decimal](20,8) NULL,
     [EPSGrowth] [decimal](20,8) NULL,
     [FreeCashFlow] [decimal](28,6) NULL,
-    [FundamentalRatiosJson] [nvarchar](max) NULL,
-    [DividendJson] [nvarchar](max) NULL,
+    [FundamentalRatiosJson] [nvarchar](MAX) NULL,
+    [DividendJson] [nvarchar](MAX) NULL,
     [CollectionStatus] [varchar](20) NOT NULL,
     [ErrorMessage] [nvarchar](1000) NULL,
-    [CreateDate] [datetime2](0) NOT NULL CONSTRAINT [DF_DailyMarketSnapshot_CreateDate] DEFAULT (sysdatetime()),
-    [ModifyDate] [datetime2](0) NOT NULL CONSTRAINT [DF_DailyMarketSnapshot_ModifyDate] DEFAULT (sysdatetime()),
-    CONSTRAINT [PK_DailyMarketSnapshot] PRIMARY KEY CLUSTERED ([ASXCode], [ObservationDate])
+    [CreateDate] [datetime2] NOT NULL DEFAULT (sysdatetime()),
+    [ModifyDate] [datetime2] NOT NULL DEFAULT (sysdatetime())
+,
+    CONSTRAINT [PK_DailyMarketSnapshot] PRIMARY KEY (ASXCode, ObservationDate)
 );
 
-CREATE INDEX [IX_DailyMarketSnapshot_ObservationDate]
-    ON [StockData].[DailyMarketSnapshot] ([ObservationDate], [CollectionStatus], [ASXCode])
-    INCLUDE ([ImpliedVolatility], [HistoricalVolatility], [IVRank252], [IVPercentile252]);
+CREATE INDEX [IX_DailyMarketSnapshot_ObservationDate] ON [StockData].[DailyMarketSnapshot] (ImpliedVolatility, HistoricalVolatility, IVRank252, IVPercentile252, ObservationDate, CollectionStatus, ASXCode);

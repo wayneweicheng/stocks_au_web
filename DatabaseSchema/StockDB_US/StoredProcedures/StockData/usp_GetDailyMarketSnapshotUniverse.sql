@@ -1,6 +1,8 @@
 -- Stored procedure: [StockData].[usp_GetDailyMarketSnapshotUniverse]
 
-CREATE OR ALTER PROCEDURE [StockData].[usp_GetDailyMarketSnapshotUniverse]
+-- Stored procedure: [StockData].[usp_GetDailyMarketSnapshotUniverse]
+
+CREATE   PROCEDURE [StockData].[usp_GetDailyMarketSnapshotUniverse]
     @pdtObservationDate date = NULL,
     @pvchCollectionType varchar(20) = 'DAILY',
     @pintLimit int = NULL

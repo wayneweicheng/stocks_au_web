@@ -75,7 +75,7 @@ BEGIN --Proc
 			from LookupRef.BrokerName as a
 			where exists(
 				select 1
-				from StockData.BrokerReport
+				from BrokerData.BrokerDayReport
 				where BrokerCode = a.BrokerCode
 			)
 			and isnull(IsDisabled, 0) = 0 
