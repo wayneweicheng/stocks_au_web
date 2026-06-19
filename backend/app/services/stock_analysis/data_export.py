@@ -13,7 +13,7 @@ def get_latest_trading_date(observation_date: date, conn: pyodbc.Connection) -> 
         """
         SELECT TOP 1 ObservationDate
         FROM StockData.PriceHistory
-        WHERE ObservationDate < ?
+        WHERE ObservationDate < convert(date, ?)
         ORDER BY ObservationDate DESC
         """,
         (observation_date,)
@@ -33,8 +33,8 @@ def get_latest_broker_observation_date(
         """
         SELECT TOP 1 ObservationDate
         FROM BrokerData.BrokerDayReport
-        WHERE ASXCode = ?
-          AND ObservationDate <= ?
+        WHERE ASXCode = convert(varchar(10), ?)
+          AND ObservationDate <= convert(date, ?)
         ORDER BY ObservationDate DESC
         """,
         (stock_code, cutoff_date),
@@ -56,7 +56,7 @@ def get_latest_snapshot_date(
             f"""
             SELECT TOP 1 SnapshotDate
             FROM {table_name}
-            WHERE ASXCode = ?
+            WHERE ASXCode = convert(varchar(10), ?)
               AND SnapshotDate <= ?
             ORDER BY SnapshotDate DESC
             """,
@@ -87,7 +87,7 @@ def get_latest_stock_snapshot_date(
         f"""
         SELECT TOP 1 SnapshotDate
         FROM {table_name}
-        WHERE ASXCode = ?
+        WHERE ASXCode = convert(varchar(10), ?)
         ORDER BY SnapshotDate DESC
         """,
         (asx_code,),
@@ -119,9 +119,9 @@ def export_announcements(
             AnnNumPage,
             ObservationDate
         FROM StockData.Announcement
-        WHERE ASXCode = ?
-          AND ObservationDate >= ?
-          AND ObservationDate <= ?
+        WHERE ASXCode = convert(varchar(10), ?)
+          AND ObservationDate >= convert(date, ?)
+          AND ObservationDate <= convert(date, ?)
         ORDER BY ObservationDate DESC, AnnDateTime DESC
         """,
         (stock_code, start_date, observation_date)
@@ -157,9 +157,9 @@ def export_price_history(
             [Value] AS MarketCap,
             NULL AS ChangePercent
         FROM StockData.PriceHistory
-        WHERE ASXCode = ?
-          AND ObservationDate >= ?
-          AND ObservationDate <= ?
+        WHERE ASXCode = convert(varchar(10), ?)
+          AND ObservationDate >= convert(date, ?)
+          AND ObservationDate <= convert(date, ?)
         ORDER BY ObservationDate DESC
         """,
         (stock_code, start_date, observation_date)
@@ -195,9 +195,9 @@ def export_retail_participation(
                 END) AS RetailTotalValue,
                 SUM(COALESCE(TotalValue, 0)) AS MarketTotalValue
             FROM BrokerData.BrokerDayReport
-            WHERE ASXCode = ?
-              AND ObservationDate > ?
-              AND ObservationDate <= ?
+            WHERE ASXCode = convert(varchar(10), ?)
+              AND ObservationDate > convert(date, ?)
+              AND ObservationDate <= convert(date, ?)
             GROUP BY ObservationDate
             HAVING SUM(COALESCE(TotalValue, 0)) > 0
         )
@@ -277,7 +277,7 @@ def export_broker_data(
             LeadBullBroker AS TopBuyBroker,
             LeadBearBroker AS TopSellBroker
         FROM Transform.StockDayBrokerSetup
-        WHERE ASXCode = ?
+        WHERE ASXCode = convert(varchar(10), ?)
           AND SnapshotDate = ?
         ORDER BY TradeDate DESC
         """,
@@ -334,9 +334,9 @@ def export_broker_data(
             LeadAggressorBroker,
             LeadDistributorBroker
         FROM Transform.BrokerTxMicrostructureDay
-        WHERE ASXCode = ?
+        WHERE ASXCode = convert(varchar(10), ?)
           AND SnapshotDate = ?
-          AND ObservationDate <= ?
+          AND ObservationDate <= convert(date, ?)
         ORDER BY ObservationDate DESC
         """,
         (

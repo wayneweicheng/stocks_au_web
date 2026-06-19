@@ -68,7 +68,7 @@ def get_breakout_watchlist(
             Next5DaysChange AS [5dChange],
             Next10DaysChange AS [10dChange]
         FROM StockDB.Transform.BreakoutWatchlist
-        WHERE ObservationDate = ?
+        WHERE ObservationDate = convert(date, ?)
         ORDER BY
             CASE WHEN Pattern = 'CONSOLIDATION' THEN 1 ELSE 2 END,
             ChangePercent DESC

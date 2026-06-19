@@ -191,7 +191,7 @@ def get_trading_orders(
         params.append(backtest_run_id)
 
     if stock_code:
-        where_clauses.append("o.StockCode = ?")
+        where_clauses.append("o.StockCode = convert(varchar(20), ?)")
         params.append(_normalize_stock_code(stock_code))
 
     if status:

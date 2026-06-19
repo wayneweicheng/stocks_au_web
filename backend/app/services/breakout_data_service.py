@@ -48,7 +48,7 @@ class BreakoutDataService:
             sql = f"""
             SELECT DISTINCT ASXCode, ObservationDate, Pattern, BreakoutDate
             FROM [{self.db_name}].[Transform].[BreakoutWatchlist]
-            WHERE ObservationDate = ?
+            WHERE ObservationDate = convert(date, ?)
             AND Pattern = 'CONSOLIDATION'
             ORDER BY ASXCode
             """
@@ -89,8 +89,8 @@ class BreakoutDataService:
             sql = f"""
             SELECT TOP 1 BreakoutDate
             FROM [{self.db_name}].[Transform].[BreakoutWatchlist]
-            WHERE ObservationDate = ?
-            AND ASXCode = ?
+            WHERE ObservationDate = convert(date, ?)
+            AND ASXCode = convert(varchar(10), ?)
             AND Pattern = 'CONSOLIDATION'
             """
 
@@ -163,8 +163,8 @@ class BreakoutDataService:
                 ,[PriceChangeVsOpen]
                 ,[Spread]
             FROM [{self.db_name}].[Transform].[PriceHistory]
-            WHERE ASXCode = ?
-            AND ObservationDate BETWEEN Common.DateAddBusinessDay_Plus(-60, ?) AND ?
+            WHERE ASXCode = convert(varchar(10), ?)
+            AND ObservationDate BETWEEN Common.DateAddBusinessDay_Plus(-60, convert(date, ?)) AND convert(date, ?)
             ORDER BY ObservationDate
             """
 
@@ -212,8 +212,8 @@ class BreakoutDataService:
                 SUM([Value]) AS TotalValue,
                 CAST(SUM([Value])/SUM(Volume) AS DECIMAL(10, 4)) AS AveragePrice
             FROM [{self.db_name}].[StockData].[BrokerTradeTransaction]
-            WHERE ObservationDate = ?
-            AND ASXCode = ?
+            WHERE ObservationDate = convert(date, ?)
+            AND ASXCode = convert(varchar(10), ?)
             GROUP BY
                 ObservationDate,
                 ASXCode,

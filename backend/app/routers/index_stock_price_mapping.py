@@ -41,8 +41,8 @@ def _load_latest_spx_30m_price() -> Dict[str, Any] | None:
             [Close] AS Price,
             TimeIntervalStart
         FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame]
-        WHERE ASXCode = ?
-          AND TimeFrame = ?
+        WHERE ASXCode = convert(varchar(10), ?)
+          AND TimeFrame = convert(varchar(10), ?)
         ORDER BY TimeIntervalStart DESC
         """,
         ("SPXW.US", "30M"),

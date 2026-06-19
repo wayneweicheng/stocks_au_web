@@ -243,8 +243,8 @@ def reprice_sto_limit(
         Theo,
         DATEDIFF(day, ?, ExpiryDate) as DTE
     FROM [StockData].[v_OptionDelayedQuote_V2]
-    WHERE ASXCode = ?
-      AND ObservationDate = ?
+    WHERE ASXCode = convert(varchar(10), ?)
+      AND ObservationDate = convert(date, ?)
       AND PorC = 'P'
       AND DATEDIFF(day, ?, ExpiryDate) BETWEEN ? AND ?
       AND Bid IS NOT NULL
@@ -277,7 +277,7 @@ def reprice_sto_limit(
         DATEDIFF(day, ?, ExpiryDate) as DTE
     FROM [StockData].[v_OptionDelayedQuote_V2]
     WHERE OptionSymbol = ?
-      AND ObservationDate = ?
+      AND ObservationDate = convert(date, ?)
       AND PorC = 'P'
     """
 

@@ -33,7 +33,7 @@ def get_stock_codes(
                 query = """
                     SELECT ASXCode, MAX(ObservationDate) as LatestObservationDate
                     FROM StockDB_US.StockData.v_OptionTrade
-                    WHERE CAST(ObservationDate AS date) = ?
+                    WHERE ObservationDate = convert(date, ?)
                       AND Size > 300
                     GROUP BY ASXCode
                     ORDER BY ASXCode
@@ -53,7 +53,7 @@ def get_stock_codes(
                 query = """
                     SELECT ASXCode, MAX(ObservationDate) as LatestObservationDate
                     FROM StockDB_US.Analysis.GEX_Features
-                    WHERE CAST(ObservationDate AS date) = ?
+                    WHERE ObservationDate = convert(date, ?)
                     GROUP BY ASXCode
                     ORDER BY ASXCode
                 """

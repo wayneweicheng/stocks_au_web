@@ -401,13 +401,13 @@ class MarketCommandService:
             """
             SELECT TOP 1 *
             FROM StockDB_US.Analysis.GEX_Features
-            WHERE UPPER(REPLACE(REPLACE(ASXCode, '.US', ''), '.AX', '')) IN ('SPXW', 'SPX', 'SPY')
-              AND ObservationDate <= ?
+            WHERE ASXCode IN ('SPXW', 'SPXW.US', 'SPXW.AX', 'SPX', 'SPX.US', 'SPX.AX', 'SPY', 'SPY.US', 'SPY.AX')
+              AND ObservationDate <= convert(date, ?)
             ORDER BY
                 ObservationDate DESC,
-                CASE UPPER(REPLACE(REPLACE(ASXCode, '.US', ''), '.AX', ''))
-                    WHEN 'SPXW' THEN 0
-                    WHEN 'SPX' THEN 1
+                CASE
+                    WHEN ASXCode IN ('SPXW', 'SPXW.US', 'SPXW.AX') THEN 0
+                    WHEN ASXCode IN ('SPX', 'SPX.US', 'SPX.AX') THEN 1
                     ELSE 2
                 END
             """,
@@ -422,7 +422,7 @@ class MarketCommandService:
             FROM StockDB_US.Transform.LeadingBreath AS lb
             LEFT JOIN StockDB_US.Transform.BreathLine AS bl
               ON lb.ObservationDate = bl.ObservationDate
-            WHERE lb.ObservationDate <= ?
+            WHERE lb.ObservationDate <= convert(date, ?)
             ORDER BY lb.ObservationDate DESC
             """,
             (observation_date,),
@@ -434,7 +434,7 @@ class MarketCommandService:
                 PercentageAboveSMA50,
                 PercentageAboveSMA200
             FROM StockDB_US.StockData.SPX500Overview
-            WHERE ObservationDate <= ?
+            WHERE ObservationDate <= convert(date, ?)
             ORDER BY ObservationDate DESC
             """,
             (observation_date,),
@@ -443,7 +443,7 @@ class MarketCommandService:
             """
             SELECT TOP 1 *
             FROM StockDB_US.Transform.MarketCLVTrend
-            WHERE ObservationDate <= ?
+            WHERE ObservationDate <= convert(date, ?)
             ORDER BY ObservationDate DESC, NumObservation DESC
             """,
             (observation_date,),
@@ -530,7 +530,7 @@ class MarketCommandService:
             """
             SELECT TOP 1 *
             FROM StockDB.Transform.MarketCLVTrend
-            WHERE ObservationDate <= ?
+            WHERE ObservationDate <= convert(date, ?)
             ORDER BY ObservationDate DESC, NumObservation DESC
             """,
             (observation_date,),
@@ -544,7 +544,7 @@ class MarketCommandService:
                 AVG(CASE WHEN [Close] > MovingAverage20d THEN 1.0 ELSE 0.0 END) AS AboveSMA20Ratio,
                 AVG(CASE WHEN [Close] > MovingAverage60d THEN 1.0 ELSE 0.0 END) AS AboveSMA60Ratio
             FROM StockDB.Alert.StockStatsHistoryPlusCurrent
-            WHERE ObservationDate <= ?
+            WHERE ObservationDate <= convert(date, ?)
             GROUP BY ObservationDate
             ORDER BY ObservationDate DESC
             """,
@@ -554,7 +554,7 @@ class MarketCommandService:
             """
             SELECT TOP 1 *
             FROM StockDB.StockData.v_DarkPoolIndex
-            WHERE ObservationDate <= ? AND IndexCode IN ('XJO', 'XAO')
+            WHERE ObservationDate <= convert(date, ?) AND IndexCode IN ('XJO', 'XAO')
             ORDER BY CASE WHEN IndexCode = 'XJO' THEN 0 ELSE 1 END, ObservationDate DESC
             """,
             (observation_date,),
@@ -712,7 +712,7 @@ class MarketCommandService:
             WHERE ObservationDate = (
                 SELECT MAX(ObservationDate)
                 FROM StockDB.Transform.BreakoutWatchlist
-                WHERE ObservationDate <= ?
+                WHERE ObservationDate <= convert(date, ?)
             )
             """,
             (observation_date,),
@@ -739,7 +739,7 @@ class MarketCommandService:
             WHERE ObservationDate = (
                 SELECT MAX(ObservationDate)
                 FROM StockDB.Transform.GapUpWatchlist
-                WHERE ObservationDate <= ?
+                WHERE ObservationDate <= convert(date, ?)
             )
             """,
             (observation_date,),
@@ -768,7 +768,7 @@ class MarketCommandService:
             WHERE MeetsCriteria = 1 AND ObservationDate = (
                 SELECT MAX(ObservationDate)
                 FROM StockDB.Analysis.v_PLLRSScannerResults
-                WHERE ObservationDate <= ?
+                WHERE ObservationDate <= convert(date, ?)
             )
             ORDER BY TradeValue DESC
             """,
@@ -853,7 +853,7 @@ class MarketCommandService:
             WHERE ObservationDate = (
                 SELECT MAX(ObservationDate)
                 FROM StockDB_US.Analysis.SignalStrength
-                WHERE ObservationDate <= ?
+                WHERE ObservationDate <= convert(date, ?)
             )
             """,
             (observation_date,),
@@ -881,7 +881,7 @@ class MarketCommandService:
             WHERE ObservationDate = (
                 SELECT MAX(ObservationDate)
                 FROM StockDB_US.Analysis.GEX_Features
-                WHERE ObservationDate <= ?
+                WHERE ObservationDate <= convert(date, ?)
             ) AND ASXCode <> 'SPXW'
             """,
             (observation_date,),

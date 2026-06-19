@@ -36,7 +36,7 @@ def get_recent_data_us(observation_date: date, max_price: float = MAX_PRICE) -> 
 			PriceChangeVsPrevClose,
 			ROW_NUMBER() OVER(PARTITION BY ASXCode ORDER BY ObservationDate DESC) as rn
 		FROM StockDB_US.[Transform].[PriceHistory]
-		WHERE [Close] <= ? AND ObservationDate <= ?
+		WHERE [Close] <= ? AND ObservationDate <= convert(date, ?)
 	)
 	SELECT * FROM RankedData
 	WHERE rn <= 25

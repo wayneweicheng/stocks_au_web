@@ -104,13 +104,28 @@ function Start-BackendOnce {
     $outLog = Join-Path $AbsoluteLogPath "backend-out-$scriptTimestamp.log"
     $errLog = $outLog -replace '\.log$','-error.log'
     $args = @("-m","uvicorn","app.main:app","--host","127.0.0.1","--port",$Port)
+    $previousBackendErrorLogFile = $env:BACKEND_ERROR_LOG_FILE
 
     try {
+        $env:BACKEND_ERROR_LOG_FILE = $errLog
         $proc = Start-Process -FilePath $python -ArgumentList $args -WorkingDirectory $backendWD -PassThru -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+        if ($null -eq $previousBackendErrorLogFile) {
+            Remove-Item Env:\BACKEND_ERROR_LOG_FILE -ErrorAction SilentlyContinue
+        } else {
+            $env:BACKEND_ERROR_LOG_FILE = $previousBackendErrorLogFile
+        }
         if ($Job -ne [IntPtr]::Zero) { [JobHelper]::AddPid($Job, $proc.Id) | Out-Null }
         Write-Log "Backend PID $($proc.Id) started"
         return $proc
-    } catch { Write-Log "ERROR: failed to start backend: $($_.Exception.Message)"; return $null }
+    } catch {
+        if ($null -eq $previousBackendErrorLogFile) {
+            Remove-Item Env:\BACKEND_ERROR_LOG_FILE -ErrorAction SilentlyContinue
+        } else {
+            $env:BACKEND_ERROR_LOG_FILE = $previousBackendErrorLogFile
+        }
+        Write-Log "ERROR: failed to start backend: $($_.Exception.Message)"
+        return $null
+    }
 }
 
 $restartCount = 0

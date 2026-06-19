@@ -45,7 +45,7 @@ def list_research_links(
         filters = []
         params: List[Any] = []
         if q:
-            filters.append("StockCode LIKE ?")
+            filters.append("StockCode LIKE convert(varchar(100), ?)")
             params.append(f"%{q}%")
 
         where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
@@ -112,7 +112,7 @@ def create_research_link(
                 CONVERT(varchar(19), AddedAt, 126) as added_at,
                 AddedBy as added_by
             FROM [Research].[ResearchLink]
-            WHERE StockCode = ? AND AddedBy = ?
+            WHERE StockCode = convert(varchar(20), ?) AND AddedBy = ?
             ORDER BY AddedAt DESC
             """,
             (payload.stock_code.strip().upper(), username),
@@ -217,4 +217,3 @@ def delete_research_link(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete research link: {str(e)}")
-

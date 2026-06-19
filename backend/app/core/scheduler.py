@@ -239,14 +239,8 @@ def start_scheduler():
         misfire_grace_time=3600,
     )
 
-    scheduler.add_job(
-        bet_odds_monitor_job,
-        trigger=IntervalTrigger(minutes=1),
-        id="bet_odds_monitor",
-        name="TAB Bet Odds Monitor",
-        replace_existing=True,
-        misfire_grace_time=60,
-    )
+    # Bet odds monitor scans are manual-only. Keep bet_odds_monitor_job available
+    # for explicit calls, but do not run automatic background checks.
 
     scheduler.start()
     _is_running = True

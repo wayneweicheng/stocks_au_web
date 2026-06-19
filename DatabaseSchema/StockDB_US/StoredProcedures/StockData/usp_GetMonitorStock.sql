@@ -433,7 +433,7 @@ BEGIN --Proc
 			from
 			(
 				select case when ASXCode = '_SPX.US' then 'SPX.US' else ASXCode end as ASXCode
-				from LookupRef.StocksToCheck
+				from LookupRef.v_StockToCheck
 			) as x
 			where 1 = 1 
 			--and x.ASXCode in ('QQQ.US', 'SPY.US', 'AMD.US', 'AVGO.US', 'GDX.US', 'IWM.US', 'META.US', 'MU.US', 'SLV.US', 'GLD.US', 'TSLA.US', 'TQQQ.US', 'SQQQ.US', 'AMZN.US', 'KWEB.US', 'META.US', 'OXY.US', 'DIA.US', 'SOXL.US')
@@ -473,7 +473,7 @@ BEGIN --Proc
 						a.[ASXCode] as ASXCode,
 						substring(a.ASXCode, 1, charindex('.', a.ASXCode, 0) - 1) as StockCode,
 						100 as RunOrder
-					from LookupRef.StocksToCheck as a
+					from LookupRef.v_StockToCheck as a
 				) as x
 				order by x.RunOrder
 			end
@@ -714,7 +714,7 @@ BEGIN --Proc
 						from Analysis.MostTradedStock
 						union
 						select ASXCode
-						from LookupRef.StocksToCheck
+						from LookupRef.v_StockToCheck
 					) as i
 					--union
 					--select 
@@ -923,7 +923,7 @@ BEGIN --Proc
 					from
 					(
 						select ASXCode
-						from LookupRef.StocksToCheck
+						from LookupRef.v_StockToCheck
 					) as a
 
 					--if object_id(N'Tempdb.dbo.#TempMostOptionTradedStocks') is not null
@@ -971,7 +971,7 @@ BEGIN --Proc
 					--		) AS MyList(ASXCode)
 					--		union
 					--		select ASXCode
-					--		from LookupRef.StocksToCheck
+					--		from LookupRef.v_StockToCheck
 					--	) as i
 					--	union
 					--	select 
@@ -1075,7 +1075,7 @@ BEGIN --Proc
 								select '_VIX.US' as ASXCode
 								union
 								select ASXCode
-								from LookupRef.StocksToCheck
+								from LookupRef.v_StockToCheck
 							) as i
 							union
 							select 
@@ -1188,7 +1188,7 @@ BEGIN --Proc
 					select 'TLT.US' as ASXCode
 					union
 					select ASXCode
-					from LookupRef.StocksToCheck
+					from LookupRef.v_StockToCheck
 				) as i
 				union
 				select 

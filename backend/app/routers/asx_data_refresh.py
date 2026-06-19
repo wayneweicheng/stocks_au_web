@@ -268,14 +268,14 @@ def _get_job_row(job_id: int) -> Optional[Dict[str, Any]]:
             OUTER APPLY (
                 SELECT TOP 1 r.ReportID, r.Model, r.ProcessedAt
                 FROM [Research].[StockAnalysisReport] r
-                WHERE UPPER(r.StockCode) IN (UPPER(j.StockCode), UPPER(j.StockCode + '.AX'))
+                WHERE r.StockCode IN (j.StockCode, j.StockCode + '.AX')
                   AND r.ObservationDate = j.ObservationDate
                 ORDER BY r.ProcessedAt DESC
             ) rpt
             OUTER APPLY (
                 SELECT TOP 1 p.ProcessingID, p.Status
                 FROM [Research].[StockAnalysisProcessing] p
-                WHERE UPPER(p.StockCode) IN (UPPER(j.StockCode), UPPER(j.StockCode + '.AX'))
+                WHERE p.StockCode IN (j.StockCode, j.StockCode + '.AX')
                   AND p.ObservationDate = j.ObservationDate
                   AND p.Status IN ('Pending', 'Processing')
                 ORDER BY p.ProcessingID DESC
@@ -467,8 +467,8 @@ def _get_latest_trading_date(stock_code: str, observation_date: str) -> str:
             """
             SELECT CONVERT(varchar(10), MAX(ph.ObservationDate), 23) AS trading_date
             FROM [StockData].[PriceHistory] ph
-            WHERE UPPER(ph.ASXCode) IN (UPPER(?), UPPER(?))
-              AND ph.ObservationDate <= ?;
+            WHERE ph.ASXCode IN (convert(varchar(10), ?), convert(varchar(10), ?))
+              AND ph.ObservationDate <= convert(date, ?);
             """,
             (stock_code, f"{stock_code}.AX", observation_date),
         )
@@ -637,7 +637,7 @@ def list_refresh_jobs(
             """
             SELECT JobID
             FROM [Research].[ASXDataRefreshJob]
-            WHERE ObservationDate = ?
+            WHERE ObservationDate = convert(date, ?)
             ORDER BY CreatedAt DESC, JobID DESC;
             """,
             (target_date,),

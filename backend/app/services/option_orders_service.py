@@ -195,8 +195,8 @@ def _latest_delayed_quotes(symbol: str, expiry: str) -> Dict[str, Dict[str, Any]
                     ORDER BY ObservationDate DESC
                 ) AS RowNumber
             FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
-            WHERE ASXCode = ?
-              AND ExpiryDate = ?
+            WHERE ASXCode = convert(varchar(10), ?)
+              AND ExpiryDate = convert(date, ?)
         )
         SELECT OptionSymbol, ObservationDate, Bid, Ask, Volume, IV
         FROM LatestQuotes
@@ -242,7 +242,7 @@ def _latest_delayed_chain_rows(
     db_symbol = f"{_base_symbol(symbol)}.US"
     expiry_date = _expiry_date(expiry).isoformat()
     rights = ["P", "C"] if right.upper() == "ALL" else [right.upper()]
-    placeholders = ", ".join("?" for _ in rights)
+    placeholders = ", ".join("convert(char(1), ?)" for _ in rights)
     params: List[Any] = [db_symbol, expiry_date, *rights]
     strike_filter = ""
     if low_strike is not None and high_strike is not None:
@@ -267,8 +267,8 @@ def _latest_delayed_chain_rows(
                     ORDER BY ObservationDate DESC
                 ) AS RowNumber
             FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
-            WHERE ASXCode = ?
-              AND ExpiryDate = ?
+            WHERE ASXCode = convert(varchar(10), ?)
+              AND ExpiryDate = convert(date, ?)
               AND PorC IN ({placeholders})
               {strike_filter}
         )

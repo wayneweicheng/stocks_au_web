@@ -173,12 +173,12 @@ class SignalStrengthDBService:
                             FROM (
                                 SELECT ph.ASXCode, ph.[High], ph.[Low]
                                 FROM StockDB_US.Transform.PriceHistory24Month ph
-                                WHERE ph.ObservationDate < ?
-                                  AND ph.ObservationDate > DATEADD(day, -20, ?)
+                                WHERE ph.ObservationDate < convert(date, ?)
+                                  AND ph.ObservationDate > DATEADD(day, -20, convert(date, ?))
                             ) ph10
                             GROUP BY ph10.ASXCode
                         ) price_range ON s.StockCode + '.US' = price_range.ASXCode
-                        WHERE s.ObservationDate = ? AND s.SourceType = ?
+                        WHERE s.ObservationDate = convert(date, ?) AND s.SourceType = convert(varchar(20), ?)
                         ORDER BY s.StockCode
                     """
                     cursor.execute(query, (observation_date, observation_date, observation_date, source_type))
@@ -189,7 +189,7 @@ class SignalStrengthDBService:
                     query = f"""
                         SELECT StockCode, SignalStrengthLevel, SourceType, CreatedAt, UpdatedAt
                         FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
-                        WHERE ObservationDate = ? AND SourceType = ?
+                        WHERE ObservationDate = convert(date, ?) AND SourceType = convert(varchar(20), ?)
                         ORDER BY StockCode
                     """
                     cursor.execute(query, (observation_date, source_type))
@@ -213,12 +213,12 @@ class SignalStrengthDBService:
                             FROM (
                                 SELECT ph.ASXCode, ph.[High], ph.[Low]
                                 FROM StockDB_US.Transform.PriceHistory24Month ph
-                                WHERE ph.ObservationDate < ?
-                                  AND ph.ObservationDate > DATEADD(day, -20, ?)
+                                WHERE ph.ObservationDate < convert(date, ?)
+                                  AND ph.ObservationDate > DATEADD(day, -20, convert(date, ?))
                             ) ph10
                             GROUP BY ph10.ASXCode
                         ) price_range ON s.StockCode + '.US' = price_range.ASXCode
-                        WHERE s.ObservationDate = ?
+                        WHERE s.ObservationDate = convert(date, ?)
                         ORDER BY s.StockCode
                     """
                     cursor.execute(query, (observation_date, observation_date, observation_date))
@@ -229,7 +229,7 @@ class SignalStrengthDBService:
                     query = f"""
                         SELECT StockCode, SignalStrengthLevel, SourceType, CreatedAt, UpdatedAt
                         FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
-                        WHERE ObservationDate = ?
+                        WHERE ObservationDate = convert(date, ?)
                         ORDER BY StockCode
                     """
                     cursor.execute(query, (observation_date,))
@@ -312,7 +312,7 @@ class SignalStrengthDBService:
             query = f"""
                 SELECT SignalStrengthLevel
                 FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
-                WHERE ObservationDate = ? AND StockCode = ? AND SourceType = ?
+                WHERE ObservationDate = convert(date, ?) AND StockCode = convert(varchar(20), ?) AND SourceType = convert(varchar(20), ?)
             """
 
             cursor.execute(query, (observation_date, stock_code, source_type))
@@ -354,7 +354,7 @@ class SignalStrengthDBService:
 
             delete_query = f"""
                 DELETE FROM {SignalStrengthDBService.SCHEMA}.{SignalStrengthDBService.TABLE}
-                WHERE ObservationDate = ? AND StockCode = ? AND SourceType = ?
+                WHERE ObservationDate = convert(date, ?) AND StockCode = convert(varchar(20), ?) AND SourceType = convert(varchar(20), ?)
             """
 
             cursor.execute(delete_query, (observation_date, stock_code, source_type))

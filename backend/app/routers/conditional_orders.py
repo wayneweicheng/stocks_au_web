@@ -301,7 +301,7 @@ def get_stock_price_history(stock_code: str) -> Dict[str, Any]:
                 TomorrowChange as Next1DChange,
                 Next2DaysChange as Next2DChange
             FROM StockDB.Transform.PriceHistory24Month
-            WHERE ASXCode = ?
+            WHERE ASXCode = convert(varchar(10), ?)
             and Volume > 0
             ORDER BY ObservationDate DESC
             """,

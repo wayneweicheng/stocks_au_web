@@ -1,5 +1,7 @@
+import logging
 from datetime import date, datetime
 from decimal import Decimal
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,6 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.db import get_sql_model
 from app.routers.auth import verify_credentials
 
+
+logger = logging.getLogger("app.calculated_gex")
 
 router = APIRouter(
     prefix="/api/calculated-gex",
@@ -87,12 +91,14 @@ def get_calculated_gex(
                Prev1Close, Prev2Close, FormattedPrev1GEX, SwingIndicator, PotentialSwingIndicator,
                GEXChange, ClosePriceChange
         from StockDB_US.StockData.v_CalculatedGEXPlus_V2
-        where UPPER(ASXCode) = UPPER(?)
-          and ObservationDate >= ?
-          and ObservationDate <= ?
+        where ASXCode = convert(varchar(10), ?)
+          and ObservationDate >= convert(date, ?)
+          and ObservationDate <= convert(date, ?)
         order by ObservationDate asc
+        option (recompile)
     """
 
+    started = perf_counter()
     try:
         model = get_sql_model()
         rows = model.execute_read_query(
@@ -101,7 +107,17 @@ def get_calculated_gex(
         ) or []
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load calculated GEX data: {exc}")
+    query_elapsed = perf_counter() - started
+    logger.info(
+        "calculated_gex query stock_code=%s date_from=%s date_to=%s rows=%s elapsed_ms=%.1f",
+        normalized_code,
+        date_from.isoformat(),
+        date_to.isoformat(),
+        len(rows),
+        query_elapsed * 1000.0,
+    )
 
+    processing_started = perf_counter()
     data = [_normalize_row(row) for row in rows]
     _calculate_rsi(data)
 
@@ -116,6 +132,13 @@ def get_calculated_gex(
         gex_std = variance ** 0.5
     else:
         gex_std = 0.0 if gex_values else None
+    processing_elapsed = perf_counter() - processing_started
+    logger.info(
+        "calculated_gex processing stock_code=%s rows=%s elapsed_ms=%.1f",
+        normalized_code,
+        len(data),
+        processing_elapsed * 1000.0,
+    )
 
     return {
         "stock_code": normalized_code,

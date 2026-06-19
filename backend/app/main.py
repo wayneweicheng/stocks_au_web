@@ -51,6 +51,8 @@ from app.routers.market_theme_reports import router as market_theme_reports_rout
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 from contextlib import asynccontextmanager
 import logging
+import os
+from pathlib import Path
 import sys
 import time
 from fastapi.responses import JSONResponse
@@ -74,6 +76,15 @@ from fastapi.responses import JSONResponse
 # ---------------------------------------------------------------------------
 _LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
+
+class _BelowLevelFilter(logging.Filter):
+    def __init__(self, level: int):
+        super().__init__()
+        self.level = level
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno < self.level
+
 # Reconfigure stdout/stderr to UTF-8 so Unicode characters in log messages
 # (e.g. checkmarks) don't cause UnicodeEncodeError on Windows cp1252 consoles.
 if hasattr(sys.stdout, "reconfigure"):
@@ -95,12 +106,29 @@ _stderr_handler = logging.StreamHandler(sys.stderr)
 _stderr_handler.setLevel(logging.WARNING)
 _stderr_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
 
+_error_log_file = os.environ.get("BACKEND_ERROR_LOG_FILE")
+if not _error_log_file:
+    repo_root = Path(__file__).resolve().parents[2]
+    log_dir = repo_root / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    _error_log_file = str(log_dir / f"backend-out-{time.strftime('%Y%m%d-%H%M%S')}-error.log")
+
+_error_file_handler = logging.FileHandler(_error_log_file, encoding="utf-8")
+_error_file_handler.setLevel(logging.ERROR)
+_error_file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+
+# When stderr is redirected to the same error log by the launcher, keep stderr
+# for warnings and non-logging process output while routing logging errors
+# through the explicit file handler.
+_stderr_handler.addFilter(_BelowLevelFilter(logging.ERROR))
+
 # Configure the root logger so all loggers (uvicorn, app, etc.) inherit this.
 _root_logger = logging.getLogger()
 if not _root_logger.handlers:
     _root_logger.setLevel(logging.INFO)
     _root_logger.addHandler(_stdout_handler)
     _root_logger.addHandler(_stderr_handler)
+    _root_logger.addHandler(_error_file_handler)
 else:
     # Handlers already present (e.g. uvicorn configured them) – replace them
     # so we control where output goes.
@@ -108,6 +136,7 @@ else:
     _root_logger.setLevel(logging.INFO)
     _root_logger.addHandler(_stdout_handler)
     _root_logger.addHandler(_stderr_handler)
+    _root_logger.addHandler(_error_file_handler)
 
 # Suppress overly verbose third-party loggers that add noise at INFO level.
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
@@ -166,6 +195,14 @@ async def request_logging_middleware(request: Request, call_next):
         )
         return JSONResponse(status_code=500, content={"detail": f"{exc_type}: {exc}"})
     duration_ms = (time.perf_counter() - start_time) * 1000.0
+    if response.status_code >= 500:
+        logger.error(
+            "ERR %s %s after %.1fms [%s]",
+            request.method,
+            path,
+            duration_ms,
+            response.status_code,
+        )
     logger.info("RES %s %s %s %.1fms", request.method, path, response.status_code, duration_ms)
     return response
 

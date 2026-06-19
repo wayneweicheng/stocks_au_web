@@ -81,15 +81,17 @@ function pointsFor(
   min: number,
   max: number,
   width: number,
+  left: number,
   top: number,
   height: number
 ) {
   const spread = max - min || 1;
+  const plotWidth = width - left * 2;
   return rows
     .map((row, index) => {
       const value = numberValue(row[key] as number | null);
       if (value === null) return null;
-      const x = rows.length === 1 ? width / 2 : (index / (rows.length - 1)) * width;
+      const x = rows.length === 1 ? width / 2 : left + (index / (rows.length - 1)) * plotWidth;
       const y = top + height - ((value - min) / spread) * height;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
@@ -100,10 +102,13 @@ function pointsFor(
 function Chart({ data }: { data: GexResponse }) {
   const rows = data.rows;
   const width = 1000;
+  const plotInset = 22;
+  const plotWidth = width - plotInset * 2;
   const priceTop = 24;
   const priceHeight = 320;
   const rsiTop = 410;
   const rsiHeight = 150;
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   const priceValues = rows.map((r) => numberValue(r.Close)).filter((v): v is number => v !== null);
   const gexValues = rows
@@ -115,55 +120,114 @@ function Chart({ data }: { data: GexResponse }) {
   const gexMax = Math.max(...gexValues);
   const pricePad = (priceMax - priceMin || Math.max(Math.abs(priceMax), 1)) * 0.08;
   const gexPad = (gexMax - gexMin || Math.max(Math.abs(gexMax), 1)) * 0.08;
-  const pricePath = pointsFor(rows, "Close", priceMin - pricePad, priceMax + pricePad, width, priceTop, priceHeight);
-  const gexPath = pointsFor(rows, "GEX", gexMin - gexPad, gexMax + gexPad, width, priceTop, priceHeight);
-  const rsiPath = pointsFor(rows, "RSI", 0, 100, width, rsiTop, rsiHeight);
+  const pricePath = pointsFor(rows, "Close", priceMin - pricePad, priceMax + pricePad, width, plotInset, priceTop, priceHeight);
+  const gexPath = pointsFor(rows, "GEX", gexMin - gexPad, gexMax + gexPad, width, plotInset, priceTop, priceHeight);
+  const rsiPath = pointsFor(rows, "RSI", 0, 100, width, plotInset, rsiTop, rsiHeight);
   const rsi70 = rsiTop + rsiHeight - 0.7 * rsiHeight;
   const rsi30 = rsiTop + rsiHeight - 0.3 * rsiHeight;
   const gexScale = (value: number) => priceTop + priceHeight - ((value - (gexMin - gexPad)) / ((gexMax + gexPad) - (gexMin - gexPad) || 1)) * priceHeight;
+  const priceScale = (value: number) => priceTop + priceHeight - ((value - (priceMin - pricePad)) / ((priceMax + pricePad) - (priceMin - pricePad) || 1)) * priceHeight;
+  const rsiScale = (value: number) => rsiTop + rsiHeight - (value / 100) * rsiHeight;
+  const xFor = (index: number) => rows.length === 1 ? width / 2 : plotInset + (index / (rows.length - 1)) * plotWidth;
   const upperY = data.upper_bound === null ? null : gexScale(data.upper_bound);
   const lowerY = data.lower_bound === null ? null : gexScale(data.lower_bound);
+  const activeRow = activeIndex === null ? null : rows[activeIndex];
+  const activeX = activeIndex === null ? null : xFor(activeIndex);
+  const updateActiveIndex = (event: any) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const chartX = ((event.clientX - rect.left) / rect.width) * width;
+    const clampedX = Math.max(plotInset, Math.min(width - plotInset, chartX));
+    const index = Math.round(((clampedX - plotInset) / plotWidth) * (rows.length - 1));
+    setActiveIndex(Math.max(0, Math.min(rows.length - 1, index)));
+  };
 
   if (!rows.length || !priceValues.length || !gexValues.length) {
     return <div className="py-16 text-center text-sm text-slate-500">Not enough numeric data to draw the chart.</div>;
   }
 
   return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${width} 600`} className="h-[520px] min-w-[900px] w-full" role="img" aria-label="Price, GEX and RSI chart">
-        <rect x="0" y="0" width={width} height="600" fill="white" />
-        <line x1="0" x2={width} y1={priceTop + priceHeight} y2={priceTop + priceHeight} stroke="#e2e8f0" />
-        <line x1="0" x2={width} y1={rsiTop + rsiHeight} y2={rsiTop + rsiHeight} stroke="#e2e8f0" />
-        {[0.25, 0.5, 0.75].map((ratio) => (
-          <line key={ratio} x1="0" x2={width} y1={priceTop + ratio * priceHeight} y2={priceTop + ratio * priceHeight} stroke="#f1f5f9" />
-        ))}
-        <polyline points={pricePath} fill="none" stroke="#2563eb" strokeWidth="2.5" />
-        <polyline points={gexPath} fill="none" stroke="#dc2626" strokeWidth="2.2" />
-        {upperY !== null ? <line x1="0" x2={width} y1={upperY} y2={upperY} stroke="#f97316" strokeDasharray="8 8" /> : null}
-        {lowerY !== null ? <line x1="0" x2={width} y1={lowerY} y2={lowerY} stroke="#7c3aed" strokeDasharray="8 8" /> : null}
-        {rows.map((row, index) => {
-          const close = numberValue(row.Close);
-          const swing = String(row.SwingIndicator || "").toLowerCase();
-          if (close === null || (swing !== "swing up" && swing !== "swing down")) return null;
-          const x = rows.length === 1 ? width / 2 : (index / (rows.length - 1)) * width;
-          const y = priceTop + priceHeight - ((close - (priceMin - pricePad)) / ((priceMax + pricePad) - (priceMin - pricePad) || 1)) * priceHeight;
-          const up = swing === "swing up";
-          return (
-            <path
-              key={`${row.ObservationDate}-${swing}`}
-              d={up ? `M ${x} ${y - 8} L ${x - 8} ${y + 8} L ${x + 8} ${y + 8} Z` : `M ${x} ${y + 8} L ${x - 8} ${y - 8} L ${x + 8} ${y - 8} Z`}
-              fill={up ? "#059669" : "#dc2626"}
-            />
-          );
-        })}
-        <line x1="0" x2={width} y1={rsi70} y2={rsi70} stroke="#dc2626" strokeDasharray="6 7" />
-        <line x1="0" x2={width} y1={rsi30} y2={rsi30} stroke="#059669" strokeDasharray="6 7" />
-        <polyline points={rsiPath} fill="none" stroke="#16a34a" strokeWidth="2.2" />
-        <text x="0" y="18" fill="#475569" fontSize="13">Close Price and GEX</text>
-        <text x="0" y={rsiTop - 12} fill="#475569" fontSize="13">RSI(4)</text>
-        <text x="0" y="588" fill="#64748b" fontSize="12">{dateLabel(rows[0].ObservationDate)}</text>
-        <text x={width} y="588" textAnchor="end" fill="#64748b" fontSize="12">{dateLabel(rows[rows.length - 1].ObservationDate)}</text>
-      </svg>
+    <div>
+      <div className="space-y-4">
+        <div className="overflow-x-auto">
+          <svg
+            viewBox={`0 0 ${width} 600`}
+            className="min-w-[900px] w-full cursor-crosshair select-none touch-pan-x"
+            role="img"
+            aria-label="Price, GEX and RSI chart"
+            onPointerMove={updateActiveIndex}
+            onPointerLeave={() => setActiveIndex(null)}
+          >
+            <rect x="0" y="0" width={width} height="600" fill="white" />
+            <line x1={plotInset} x2={width - plotInset} y1={priceTop + priceHeight} y2={priceTop + priceHeight} stroke="#e2e8f0" />
+            <line x1={plotInset} x2={width - plotInset} y1={rsiTop + rsiHeight} y2={rsiTop + rsiHeight} stroke="#e2e8f0" />
+            {[0.25, 0.5, 0.75].map((ratio) => (
+              <line key={ratio} x1={plotInset} x2={width - plotInset} y1={priceTop + ratio * priceHeight} y2={priceTop + ratio * priceHeight} stroke="#f1f5f9" />
+            ))}
+            <polyline points={pricePath} fill="none" stroke="#2563eb" strokeWidth="2.5" />
+            <polyline points={gexPath} fill="none" stroke="#dc2626" strokeWidth="2.2" />
+            {upperY !== null ? <line x1={plotInset} x2={width - plotInset} y1={upperY} y2={upperY} stroke="#f97316" strokeDasharray="8 8" /> : null}
+            {lowerY !== null ? <line x1={plotInset} x2={width - plotInset} y1={lowerY} y2={lowerY} stroke="#7c3aed" strokeDasharray="8 8" /> : null}
+            {rows.map((row, index) => {
+              const close = numberValue(row.Close);
+              const swing = String(row.SwingIndicator || "").toLowerCase();
+              if (close === null || (swing !== "swing up" && swing !== "swing down")) return null;
+              const x = xFor(index);
+              const y = priceTop + priceHeight - ((close - (priceMin - pricePad)) / ((priceMax + pricePad) - (priceMin - pricePad) || 1)) * priceHeight;
+              const up = swing === "swing up";
+              const markerSize = 5;
+              return (
+                <path
+                  key={`${row.ObservationDate}-${swing}`}
+                  d={up ? `M ${x} ${y - markerSize} L ${x - markerSize} ${y + markerSize} L ${x + markerSize} ${y + markerSize} Z` : `M ${x} ${y + markerSize} L ${x - markerSize} ${y - markerSize} L ${x + markerSize} ${y - markerSize} Z`}
+                  fill={up ? "#059669" : "#dc2626"}
+                />
+              );
+            })}
+            <line x1={plotInset} x2={width - plotInset} y1={rsi70} y2={rsi70} stroke="#dc2626" strokeDasharray="6 7" />
+            <line x1={plotInset} x2={width - plotInset} y1={rsi30} y2={rsi30} stroke="#059669" strokeDasharray="6 7" />
+            <polyline points={rsiPath} fill="none" stroke="#16a34a" strokeWidth="2.2" />
+            {activeRow && activeX !== null ? (
+              <g pointerEvents="none">
+                <line x1={activeX} x2={activeX} y1={priceTop} y2={rsiTop + rsiHeight} stroke="#334155" strokeDasharray="4 5" opacity="0.45" />
+                {numberValue(activeRow.Close) !== null ? <circle cx={activeX} cy={priceScale(numberValue(activeRow.Close) as number)} r="5" fill="#2563eb" stroke="white" strokeWidth="2" /> : null}
+                {numberValue(activeRow.GEX) !== null ? <circle cx={activeX} cy={gexScale(numberValue(activeRow.GEX) as number)} r="5" fill="#dc2626" stroke="white" strokeWidth="2" /> : null}
+                {numberValue(activeRow.RSI) !== null ? <circle cx={activeX} cy={rsiScale(numberValue(activeRow.RSI) as number)} r="5" fill="#16a34a" stroke="white" strokeWidth="2" /> : null}
+              </g>
+            ) : null}
+            <rect x={plotInset} y={priceTop} width={plotWidth} height={rsiTop + rsiHeight - priceTop} fill="transparent" />
+            <text x={plotInset} y="18" fill="#475569" fontSize="13">Close Price and GEX</text>
+            <text x={plotInset} y={rsiTop - 12} fill="#475569" fontSize="13">RSI(4)</text>
+            <text x={plotInset} y="588" fill="#64748b" fontSize="12">{dateLabel(rows[0].ObservationDate)}</text>
+            <text x={width - plotInset} y="588" textAnchor="end" fill="#64748b" fontSize="12">{dateLabel(rows[rows.length - 1].ObservationDate)}</text>
+          </svg>
+        </div>
+        <aside className="min-h-[96px] rounded-md bg-slate-950 p-4 text-sm text-slate-100" aria-live="polite">
+          {activeRow ? (
+            <div className="grid gap-3 md:grid-cols-[minmax(140px,0.7fr)_repeat(3,minmax(120px,1fr))_minmax(160px,1fr)] md:items-center">
+              <div className="font-semibold">{dateLabel(activeRow.ObservationDate)}</div>
+              <dl className="contents">
+                <div className="flex items-center justify-between gap-4 md:block">
+                  <dt className="text-blue-200">Close</dt>
+                  <dd className="font-medium text-blue-100">{compactNumber(activeRow.Close)}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-4 md:block">
+                  <dt className="text-red-200">GEX</dt>
+                  <dd className="font-medium text-red-100">{activeRow.FormattedGEX || compactNumber(activeRow.GEX)}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-4 md:block">
+                  <dt className="text-green-200">RSI(4)</dt>
+                  <dd className="font-medium text-green-100">{compactNumber(activeRow.RSI, 1)}</dd>
+                </div>
+              </dl>
+              {activeRow.SwingIndicator || activeRow.PotentialSwingIndicator ? (
+                <div className="text-xs text-slate-300 md:text-right">{activeRow.SwingIndicator || activeRow.PotentialSwingIndicator}</div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex min-h-[64px] items-center text-xs text-slate-400">Hover the chart to inspect a data point.</div>
+          )}
+        </aside>
+      </div>
       <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-600">
         <span><span className="mr-1 inline-block h-2 w-6 rounded bg-blue-600" />Close</span>
         <span><span className="mr-1 inline-block h-2 w-6 rounded bg-red-600" />GEX</span>

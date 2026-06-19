@@ -324,28 +324,28 @@ def list_tipped_stocks_for_analysis(observation_date: Optional[date] = None) -> 
             OUTER APPLY (
                 SELECT MAX(ph.ObservationDate) AS lastPriceDate
                 FROM [StockData].[PriceHistory] ph
-                WHERE UPPER(REPLACE(ph.ASXCode, '.AX', '')) = UPPER(REPLACE(srs.StockCode, '.AX', ''))
-                  AND ph.ObservationDate <= ?
+                WHERE ph.ASXCode IN (srs.StockCode, REPLACE(srs.StockCode, '.AX', ''), REPLACE(srs.StockCode, '.AX', '') + '.AX')
+                  AND ph.ObservationDate <= convert(date, ?)
             ) price_latest
             OUTER APPLY (
                 SELECT AVG(CAST(recent_prices.[Value] AS decimal(20, 4))) AS avg_trade_value_20d
                 FROM (
                     SELECT TOP 20 ph.[Value]
                     FROM [StockData].[PriceHistory] ph
-                    WHERE UPPER(REPLACE(ph.ASXCode, '.AX', '')) = UPPER(REPLACE(srs.StockCode, '.AX', ''))
-                      AND ph.ObservationDate <= ?
+                    WHERE ph.ASXCode IN (srs.StockCode, REPLACE(srs.StockCode, '.AX', ''), REPLACE(srs.StockCode, '.AX', '') + '.AX')
+                      AND ph.ObservationDate <= convert(date, ?)
                       AND ph.[Value] IS NOT NULL
                     ORDER BY ph.ObservationDate DESC
                 ) recent_prices
             ) price_stats
             LEFT JOIN [Research].[StockAnalysisReport] rpt
-                ON UPPER(rpt.StockCode) = UPPER(srs.StockCode)
-                AND rpt.ObservationDate = ?
+                ON rpt.StockCode = srs.StockCode
+                AND rpt.ObservationDate = convert(date, ?)
             LEFT JOIN [Research].[StockAnalysisReportRating] rating
                 ON rating.ReportID = rpt.ReportID
             LEFT JOIN [Research].[StockAnalysisProcessing] processing
-                ON UPPER(processing.StockCode) = UPPER(srs.StockCode)
-                AND processing.ObservationDate = ?
+                ON processing.StockCode = srs.StockCode
+                AND processing.ObservationDate = convert(date, ?)
                 AND processing.Status IN ('Pending', 'Processing')
             ORDER BY srs.bullish_count DESC, srs.total_ratings DESC, srs.StockCode ASC
             """,
@@ -385,22 +385,22 @@ def list_tipped_stocks_for_analysis(observation_date: Optional[date] = None) -> 
             OUTER APPLY (
                 SELECT MAX(ph.ObservationDate) AS lastPriceDate
                 FROM [StockData].[PriceHistory] ph
-                WHERE UPPER(REPLACE(ph.ASXCode, '.AX', '')) = UPPER(REPLACE(srs.StockCode, '.AX', ''))
+                WHERE ph.ASXCode IN (srs.StockCode, REPLACE(srs.StockCode, '.AX', ''), REPLACE(srs.StockCode, '.AX', '') + '.AX')
             ) price_latest
             OUTER APPLY (
                 SELECT AVG(CAST(recent_prices.[Value] AS decimal(20, 4))) AS avg_trade_value_20d
                 FROM (
                     SELECT TOP 20 ph.[Value]
                     FROM [StockData].[PriceHistory] ph
-                    WHERE UPPER(REPLACE(ph.ASXCode, '.AX', '')) = UPPER(REPLACE(srs.StockCode, '.AX', ''))
+                    WHERE ph.ASXCode IN (srs.StockCode, REPLACE(srs.StockCode, '.AX', ''), REPLACE(srs.StockCode, '.AX', '') + '.AX')
                       AND ph.[Value] IS NOT NULL
                     ORDER BY ph.ObservationDate DESC
                 ) recent_prices
             ) price_stats
             LEFT JOIN LatestReports lr
-                ON UPPER(lr.StockCode) = UPPER(srs.StockCode)
+                ON lr.StockCode = srs.StockCode
             LEFT JOIN [Research].[StockAnalysisReport] rpt
-                ON UPPER(rpt.StockCode) = UPPER(srs.StockCode)
+                ON rpt.StockCode = srs.StockCode
                 AND rpt.ObservationDate = lr.MaxObservationDate
             LEFT JOIN [Research].[StockAnalysisReportRating] rating
                 ON rating.ReportID = rpt.ReportID
@@ -427,8 +427,8 @@ def get_active_processing(stock_code: str, observation_date: date) -> Optional[D
             RequestedBy AS requested_by,
             Model AS model
         FROM [Research].[StockAnalysisProcessing]
-        WHERE UPPER(StockCode) = UPPER(?)
-          AND ObservationDate = ?
+        WHERE StockCode = convert(varchar(20), ?)
+          AND ObservationDate = convert(date, ?)
           AND Status IN ('Pending', 'Processing')
         ORDER BY ProcessingID DESC
         """,
@@ -566,7 +566,7 @@ def get_processing_status(processing_id: int) -> Optional[Dict[str, Any]]:
                 WHEN EXISTS (
                     SELECT 1
                     FROM [Research].[StockAnalysisReport] r
-                    WHERE UPPER(r.StockCode) = UPPER(p.StockCode)
+                    WHERE r.StockCode = p.StockCode
                       AND r.ObservationDate = p.ObservationDate
                 ) THEN CAST(1 AS bit)
                 ELSE CAST(0 AS bit)
@@ -610,7 +610,7 @@ def upsert_report(
                     CAST(? AS varchar(20)) AS StockCode,
                     CAST(? AS date) AS ObservationDate
             ) AS source
-            ON UPPER(target.StockCode) = UPPER(source.StockCode)
+            ON target.StockCode = source.StockCode
                AND target.ObservationDate = source.ObservationDate
             WHEN MATCHED THEN
                 UPDATE SET
@@ -797,8 +797,8 @@ def get_report(stock_code: str, observation_date: date) -> Optional[Dict[str, An
             TokensUsed AS tokens_used,
             ProcessingTimeSeconds AS processing_time_seconds
         FROM [Research].[StockAnalysisReport]
-        WHERE UPPER(StockCode) = UPPER(?)
-          AND ObservationDate = ?
+        WHERE StockCode = convert(varchar(20), ?)
+          AND ObservationDate = convert(date, ?)
         ORDER BY ReportID DESC
         """,
         (normalized_code, observation_date),

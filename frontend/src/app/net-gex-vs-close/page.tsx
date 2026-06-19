@@ -40,6 +40,7 @@ function DualLineChart({ rows }: { rows: Row[] }) {
   const width = 1000;
   const height = 420;
   const pad = 32;
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const closeValues = rows.map((r) => num(r.Close)).filter((v): v is number => v !== null);
   const gexValues = rows.map((r) => num(r.TotalNetGamma)).filter((v): v is number => v !== null);
   if (!rows.length || !closeValues.length || !gexValues.length) return <div className="py-12 text-center text-sm text-slate-500">No chart data.</div>;
@@ -54,17 +55,47 @@ function DualLineChart({ rows }: { rows: Row[] }) {
     if (v === null) return null;
     return `${xFor(i).toFixed(1)},${yFor(v, min, max).toFixed(1)}`;
   }).filter(Boolean).join(" ");
+  const activeRow = activeIndex === null ? null : rows[activeIndex];
+  const activeX = activeIndex === null ? null : xFor(activeIndex);
+  const updateActiveIndex = (event: any) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const chartX = ((event.clientX - rect.left) / rect.width) * width;
+    const clampedX = Math.max(pad, Math.min(width - pad, chartX));
+    const index = Math.round(((clampedX - pad) / (width - pad * 2)) * (rows.length - 1));
+    setActiveIndex(Math.max(0, Math.min(rows.length - 1, index)));
+  };
   return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[420px] min-w-[900px] w-full" role="img" aria-label="Net GEX vs Close">
-        <rect width={width} height={height} fill="white" />
-        {[0.25, 0.5, 0.75].map((r) => <line key={r} x1={pad} x2={width - pad} y1={pad + r * (height - pad * 2)} y2={pad + r * (height - pad * 2)} stroke="#f1f5f9" />)}
-        <polyline points={path("Close", closeMin, closeMax)} fill="none" stroke="#2563eb" strokeWidth="2.4" />
-        <polyline points={path("TotalNetGamma", gexMin, gexMax)} fill="none" stroke="#dc2626" strokeWidth="2.4" />
-        <text x={pad} y="18" fill="#475569" fontSize="13">Close and total net gamma</text>
-        <text x={pad} y={height - 8} fill="#64748b" fontSize="12">{dateLabel(rows[0].ObservationDate)}</text>
-        <text x={width - pad} y={height - 8} textAnchor="end" fill="#64748b" fontSize="12">{dateLabel(rows[rows.length - 1].ObservationDate)}</text>
-      </svg>
+    <div>
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[900px] w-full cursor-crosshair select-none touch-pan-x" role="img" aria-label="Net GEX vs Close" onPointerMove={updateActiveIndex} onPointerLeave={() => setActiveIndex(null)}>
+          <rect width={width} height={height} fill="white" />
+          {[0.25, 0.5, 0.75].map((r) => <line key={r} x1={pad} x2={width - pad} y1={pad + r * (height - pad * 2)} y2={pad + r * (height - pad * 2)} stroke="#f1f5f9" />)}
+          <polyline points={path("Close", closeMin, closeMax)} fill="none" stroke="#2563eb" strokeWidth="2.4" />
+          <polyline points={path("TotalNetGamma", gexMin, gexMax)} fill="none" stroke="#dc2626" strokeWidth="2.4" />
+          {activeRow && activeX !== null ? (
+            <g pointerEvents="none">
+              <line x1={activeX} x2={activeX} y1={pad} y2={height - pad} stroke="#334155" strokeDasharray="4 5" opacity="0.45" />
+              {num(activeRow.Close) !== null ? <circle cx={activeX} cy={yFor(num(activeRow.Close) as number, closeMin, closeMax)} r="5" fill="#2563eb" stroke="white" strokeWidth="2" /> : null}
+              {num(activeRow.TotalNetGamma) !== null ? <circle cx={activeX} cy={yFor(num(activeRow.TotalNetGamma) as number, gexMin, gexMax)} r="5" fill="#dc2626" stroke="white" strokeWidth="2" /> : null}
+            </g>
+          ) : null}
+          <rect x={pad} y={pad} width={width - pad * 2} height={height - pad * 2} fill="transparent" />
+          <text x={pad} y="18" fill="#475569" fontSize="13">Close and total net gamma</text>
+          <text x={pad} y={height - 8} fill="#64748b" fontSize="12">{dateLabel(rows[0].ObservationDate)}</text>
+          <text x={width - pad} y={height - 8} textAnchor="end" fill="#64748b" fontSize="12">{dateLabel(rows[rows.length - 1].ObservationDate)}</text>
+        </svg>
+      </div>
+      <aside className="mt-3 min-h-[82px] rounded-md bg-slate-950 p-4 text-sm text-slate-100" aria-live="polite">
+        {activeRow ? (
+          <div className="grid gap-3 md:grid-cols-[minmax(140px,0.7fr)_repeat(2,minmax(160px,1fr))] md:items-center">
+            <div className="font-semibold">{dateLabel(String(activeRow.ObservationDate))}</div>
+            <div className="flex items-center justify-between gap-4 md:block"><div className="text-blue-200">Close</div><div className="font-medium text-blue-100">{fmt(activeRow.Close)}</div></div>
+            <div className="flex items-center justify-between gap-4 md:block"><div className="text-red-200">Total Net Gamma</div><div className="font-medium text-red-100">{fmt(activeRow.TotalNetGamma, 0)}</div></div>
+          </div>
+        ) : (
+          <div className="flex min-h-[50px] items-center text-xs text-slate-400">Hover the chart to inspect a data point.</div>
+        )}
+      </aside>
       <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-600"><span><span className="mr-1 inline-block h-2 w-6 rounded bg-blue-600" />Close</span><span><span className="mr-1 inline-block h-2 w-6 rounded bg-red-600" />Total Net Gamma</span></div>
     </div>
   );

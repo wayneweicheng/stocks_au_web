@@ -75,7 +75,7 @@ def get_gap_up_watchlist(
             Next5DaysChange AS [5dChange],
             Next10DaysChange AS [10dChange]
         FROM StockDB.Transform.GapUpWatchlist
-        WHERE ObservationDate = ?
+        WHERE ObservationDate = convert(date, ?)
         ORDER BY GapUpPercent DESC
         """
 

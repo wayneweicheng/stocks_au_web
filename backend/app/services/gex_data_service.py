@@ -63,8 +63,8 @@ class GEXDataService:
             SELECT * FROM (
                 SELECT TOP ({days}) *
                 FROM [{self.db_name}].[{self.schema}].[{self.table}]
-                WHERE ASXCode = ?
-                AND CAST(ObservationDate AS date) <= ?
+                WHERE ASXCode = convert(varchar(10), ?)
+                AND ObservationDate <= convert(date, ?)
                 ORDER BY ObservationDate DESC
             ) AS LatestRecords
             ORDER BY ObservationDate ASC
@@ -105,8 +105,8 @@ class GEXDataService:
             sql = f"""
             SELECT TOP (1) CAST(ObservationDate AS date) AS ObservationDate
             FROM [{self.db_name}].[{self.schema}].[{self.table}]
-            WHERE ASXCode = ?
-              AND CAST(ObservationDate AS date) <= ?
+            WHERE ASXCode = convert(varchar(10), ?)
+              AND ObservationDate <= convert(date, ?)
             ORDER BY ObservationDate DESC
             """
             params = (db_stock_code, as_of_date.isoformat())
@@ -281,8 +281,8 @@ class GEXDataService:
             SELECT Underlying, OptionSymbol, SaleTime, ExpiryDate, Strike,
                    PorC AS PutOrCall, Price, Size, Exchange, SpecialConditions
             FROM StockDB_US.[StockData].[v_OptionTrade]
-            WHERE ObservationDate = ?
-            AND ASXCode = ?
+            WHERE ObservationDate = convert(date, ?)
+            AND ASXCode = convert(varchar(10), ?)
             AND Size > 300
             ORDER BY SaleTime
             """
@@ -324,9 +324,9 @@ class GEXDataService:
             sql = """
             SELECT TimeIntervalStart, [Open], [High], [Low], [Close], Volume, NumOfSale, VWAP
             FROM StockDB_US.[StockData].[PriceHistoryTimeFrame]
-            WHERE TimeIntervalStart >= DATEADD(day, -?, ?)
-            AND TimeIntervalStart <= DATEADD(hour, 23, CAST(? AS datetime))
-            AND ASXCode = ?
+            WHERE TimeIntervalStart >= DATEADD(day, -?, convert(datetime, ?))
+            AND TimeIntervalStart <= DATEADD(hour, 23, convert(datetime, ?))
+            AND ASXCode = convert(varchar(10), ?)
             AND TimeFrame = '30M'
             ORDER BY TimeIntervalStart
             """
@@ -366,8 +366,8 @@ class GEXDataService:
             sql = """
             SELECT TimeIntervalStart, [Open], [High], [Low], [Close], Volume, NumOfSale, VWAP
             FROM StockDB_US.[StockData].[PriceHistoryTimeFrame]
-            WHERE ObservationDate = ?
-            AND ASXCode = ?
+            WHERE ObservationDate = convert(date, ?)
+            AND ASXCode = convert(varchar(10), ?)
             AND TimeFrame = '5M'
             ORDER BY TimeIntervalStart
             """
@@ -489,15 +489,15 @@ class GEXDataService:
             (
                 SELECT *
                 FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
-                WHERE ObservationDate = ?
-                AND ASXCode = ?
+                WHERE ObservationDate = convert(date, ?)
+                AND ASXCode = convert(varchar(10), ?)
             ) as x
             INNER JOIN
             (
                 SELECT *
                 FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
-                WHERE ObservationDate = Common.DateAddBusinessDay_Plus(-1, ?)
-                AND ASXCode = ?
+                WHERE ObservationDate = Common.DateAddBusinessDay_Plus(-1, convert(date, ?))
+                AND ASXCode = convert(varchar(10), ?)
             ) as y
             ON x.OptionSymbol = y.OptionSymbol
             WHERE x.OpenInterest != y.OpenInterest
@@ -601,9 +601,9 @@ class GEXDataService:
             sql = f"""
             SELECT TOP ({limit}) *
             FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
-            WHERE ObservationDate = ?
-            AND ASXCode = ?
-            AND DATEADD(day, 90, ?) > ExpiryDate
+            WHERE ObservationDate = convert(date, ?)
+            AND ASXCode = convert(varchar(10), ?)
+            AND DATEADD(day, 90, convert(date, ?)) > ExpiryDate
             ORDER BY OpenInterest DESC
             """
 
@@ -682,11 +682,12 @@ class GEXDataService:
                    UserName, Content, CreateDate,
                    CAST(TimeStamp_USEst AS datetime) as TimeStamp_USEst
             FROM StockDB_US.Discord.v_DiscordMessages
-            WHERE CAST(TimeStamp AS date) = CAST(? AS date)
+            WHERE TimeStamp >= convert(datetime, ?)
+              AND TimeStamp < DATEADD(day, 1, convert(datetime, ?))
             ORDER BY TimeStamp DESC
             """
 
-            params = (observation_date.isoformat(),)
+            params = (observation_date.isoformat(), observation_date.isoformat())
             logger.info(f"Querying Discord messages for {observation_date}")
 
             rows = model.execute_read_query(sql, params) or []
@@ -713,8 +714,8 @@ class GEXDataService:
                    UserName, Content, CreateDate,
                    CAST(TimeStamp_USEst AS datetime) as TimeStamp_USEst
             FROM StockDB_US.Discord.v_DiscordMessages
-            WHERE CAST(TimeStamp AS datetime) >= ?
-              AND CAST(TimeStamp AS datetime) < ?
+            WHERE TimeStamp >= convert(datetime, ?)
+              AND TimeStamp < convert(datetime, ?)
             ORDER BY TimeStamp DESC
             """
 
@@ -760,8 +761,8 @@ class GEXDataService:
                    UserName, Content, CreateDate,
                    CAST(TimeStamp_USEst AS datetime) as TimeStamp_USEst
             FROM StockDB_US.Discord.v_DiscordMessages
-            WHERE CAST(TimeStamp AS datetime) >= ?
-              AND CAST(TimeStamp AS datetime) < ?
+            WHERE TimeStamp >= convert(datetime, ?)
+              AND TimeStamp < convert(datetime, ?)
               AND UserName IN ({placeholders})
             ORDER BY TimeStamp DESC
             """
@@ -815,12 +816,13 @@ class GEXDataService:
                    UserName, Content, CreateDate,
                    CAST(TimeStamp_USEst AS datetime) as TimeStamp_USEst
             FROM StockDB_US.Discord.v_DiscordMessages
-            WHERE CAST(TimeStamp AS date) = CAST(? AS date)
+            WHERE TimeStamp >= convert(datetime, ?)
+              AND TimeStamp < DATEADD(day, 1, convert(datetime, ?))
               AND UserName IN ({placeholders})
             ORDER BY TimeStamp DESC
             """
 
-            params = [observation_date.isoformat(), *usernames]
+            params = [observation_date.isoformat(), observation_date.isoformat(), *usernames]
             logger.info(f"Querying Discord messages for {observation_date} (users: {len(usernames)})")
 
             rows = model.execute_read_query(sql, params) or []

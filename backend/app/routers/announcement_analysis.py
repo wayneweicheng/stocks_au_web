@@ -51,7 +51,7 @@ def _get_latest_research_link(stock_code: str) -> Optional[str]:
 		sql = """
 			SELECT TOP 1 Url
 			FROM [Research].[ResearchLink]
-			WHERE UPPER(StockCode) = UPPER(?)
+			WHERE StockCode = convert(varchar(20), ?)
 			ORDER BY AddedAt DESC
 		"""
 		rows = db.execute_read_query(sql, (stock_code,)) or []
@@ -71,7 +71,7 @@ def _get_latest_research_markdown_from_db(stock_code: str, max_chars: int = 2000
 		sql = """
 			SELECT TOP 1 Content
 			FROM [Research].[ResearchLink]
-			WHERE UPPER(StockCode) = UPPER(?)
+			WHERE StockCode = convert(varchar(20), ?)
 			ORDER BY AddedAt DESC
 		"""
 		rows = db.execute_read_query(sql, (stock_code,)) or []
@@ -270,7 +270,7 @@ def list_announcements(
 			"""
 			SELECT COUNT(*) AS total
 			FROM [StockData].[Announcement]
-			WHERE UPPER(ASXCode) = UPPER(?) OR UPPER(ASXCode) = UPPER(?)
+			WHERE ASXCode = convert(varchar(10), ?) OR ASXCode = convert(varchar(10), ?)
 			""",
 			(normalized, normalized + ".AX"),
 		) or []
@@ -288,7 +288,7 @@ def list_announcements(
 				AnnDescr,
 				CASE WHEN AnnContent IS NULL OR LEN(AnnContent) = 0 THEN 0 ELSE 1 END AS has_content
 			FROM [StockData].[Announcement]
-			WHERE UPPER(ASXCode) = UPPER(?) OR UPPER(ASXCode) = UPPER(?)
+			WHERE ASXCode = convert(varchar(10), ?) OR ASXCode = convert(varchar(10), ?)
 			ORDER BY AnnDateTime DESC
 			OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
 			""",

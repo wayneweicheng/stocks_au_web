@@ -19,6 +19,7 @@ function dateLabel(value: string) { const d = new Date(value); return Number.isN
 
 function StackedBarLineChart({ rows, yKey, title, threshold }: { rows: Row[]; yKey: string; title: string; threshold?: number }) {
   const width = 1000, height = 420, pad = 36;
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const dates = Array.from(new Set(rows.map((r) => String(r.ObservationDate))));
   const caps = Array.from(new Set(rows.map((r) => String(r.CapitalType || "-"))));
   const closeByDate = new Map<string, number>();
@@ -37,34 +38,79 @@ function StackedBarLineChart({ rows, yKey, title, threshold }: { rows: Row[]; yK
   const xFor = (i: number) => pad + i * step + step / 2;
   const closePath = dates.map((d, i) => { const c = closeByDate.get(d); return c === undefined ? null : `${xFor(i).toFixed(1)},${yClose(c).toFixed(1)}`; }).filter(Boolean).join(" ");
   const thresholdY = threshold === undefined ? null : yBar(threshold);
+  const activeDate = activeIndex === null ? null : dates[activeIndex];
+  const activeX = activeIndex === null ? null : xFor(activeIndex);
+  const activeSegments = activeDate === null ? [] : caps.map((cap) => ({
+    cap,
+    value: rows.filter((r) => String(r.ObservationDate) === activeDate && String(r.CapitalType || "-") === cap).reduce((s, r) => s + Math.max(0, num(r[yKey]) || 0), 0),
+  }));
+  const activeTotal = activeSegments.reduce((sum, item) => sum + item.value, 0);
+  const activeClose = activeDate === null ? undefined : closeByDate.get(activeDate);
+  const updateActiveIndex = (event: any) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const chartX = ((event.clientX - rect.left) / rect.width) * width;
+    const clampedX = Math.max(pad, Math.min(width - pad, chartX));
+    const index = Math.round((clampedX - pad - step / 2) / step);
+    setActiveIndex(Math.max(0, Math.min(dates.length - 1, index)));
+  };
   return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[420px] min-w-[900px] w-full" role="img" aria-label={title}>
-        <rect width={width} height={height} fill="white" />
-        {thresholdY !== null ? <line x1={pad} x2={width - pad} y1={thresholdY} y2={thresholdY} stroke="#dc2626" strokeDasharray="7 7" /> : null}
-        {dates.map((d, i) => {
-          let acc = 0;
-          const x = pad + i * step + (step - barW) / 2;
-          return caps.map((cap, ci) => {
-            const v = rows.filter((r) => String(r.ObservationDate) === d && String(r.CapitalType || "-") === cap).reduce((s, r) => s + Math.max(0, num(r[yKey]) || 0), 0);
-            if (!v) return null;
-            const y0 = yBar(acc);
-            acc += v;
-            const y1 = yBar(acc);
-            return <rect key={`${d}-${cap}`} x={x} y={y1} width={barW} height={Math.max(0, y0 - y1)} fill={colors[ci % colors.length]} opacity="0.82" />;
-          });
-        })}
-        <polyline points={closePath} fill="none" stroke="#6d28d9" strokeWidth="2.3" />
-        {rows.filter((r) => r.Swing === 0 || r.Swing === 1).map((r) => {
-          const i = dates.indexOf(String(r.ObservationDate));
-          const c = num(r.Close);
-          if (i < 0 || c === null) return null;
-          return <circle key={`${r.ObservationDate}-${r.CapitalType}-${r.Swing}`} cx={xFor(i)} cy={yClose(c)} r="4" fill={r.Swing === 1 ? "#84cc16" : "#fde047"} stroke="#334155" strokeWidth="0.8" />;
-        })}
-        <text x={pad} y="18" fill="#475569" fontSize="13">{title}</text>
-        <text x={pad} y={height - 8} fill="#64748b" fontSize="12">{dateLabel(dates[0])}</text>
-        <text x={width - pad} y={height - 8} textAnchor="end" fill="#64748b" fontSize="12">{dateLabel(dates[dates.length - 1])}</text>
-      </svg>
+    <div>
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[900px] w-full cursor-crosshair select-none touch-pan-x" role="img" aria-label={title} onPointerMove={updateActiveIndex} onPointerLeave={() => setActiveIndex(null)}>
+          <rect width={width} height={height} fill="white" />
+          {thresholdY !== null ? <line x1={pad} x2={width - pad} y1={thresholdY} y2={thresholdY} stroke="#dc2626" strokeDasharray="7 7" /> : null}
+          {dates.map((d, i) => {
+            let acc = 0;
+            const x = pad + i * step + (step - barW) / 2;
+            return caps.map((cap, ci) => {
+              const v = rows.filter((r) => String(r.ObservationDate) === d && String(r.CapitalType || "-") === cap).reduce((s, r) => s + Math.max(0, num(r[yKey]) || 0), 0);
+              if (!v) return null;
+              const y0 = yBar(acc);
+              acc += v;
+              const y1 = yBar(acc);
+              return <rect key={`${d}-${cap}`} x={x} y={y1} width={barW} height={Math.max(0, y0 - y1)} fill={colors[ci % colors.length]} opacity={activeIndex === i ? "0.96" : "0.82"} stroke={activeIndex === i ? "#334155" : "none"} strokeWidth="0.8" />;
+            });
+          })}
+          <polyline points={closePath} fill="none" stroke="#6d28d9" strokeWidth="2.3" />
+          {rows.filter((r) => r.Swing === 0 || r.Swing === 1).map((r) => {
+            const i = dates.indexOf(String(r.ObservationDate));
+            const c = num(r.Close);
+            if (i < 0 || c === null) return null;
+            return <circle key={`${r.ObservationDate}-${r.CapitalType}-${r.Swing}`} cx={xFor(i)} cy={yClose(c)} r="3" fill={r.Swing === 1 ? "#84cc16" : "#fde047"} stroke="#334155" strokeWidth="0.7" />;
+          })}
+          {activeDate && activeX !== null ? (
+            <g pointerEvents="none">
+              <line x1={activeX} x2={activeX} y1={pad} y2={height - pad} stroke="#334155" strokeDasharray="4 5" opacity="0.45" />
+              {activeClose !== undefined ? <circle cx={activeX} cy={yClose(activeClose)} r="5" fill="#6d28d9" stroke="white" strokeWidth="2" /> : null}
+            </g>
+          ) : null}
+          <rect x={pad} y={pad} width={width - pad * 2} height={height - pad * 2} fill="transparent" />
+          <text x={pad} y="18" fill="#475569" fontSize="13">{title}</text>
+          <text x={pad} y={height - 8} fill="#64748b" fontSize="12">{dateLabel(dates[0])}</text>
+          <text x={width - pad} y={height - 8} textAnchor="end" fill="#64748b" fontSize="12">{dateLabel(dates[dates.length - 1])}</text>
+        </svg>
+      </div>
+      <aside className="mt-3 min-h-[96px] rounded-md bg-slate-950 p-4 text-sm text-slate-100" aria-live="polite">
+        {activeDate ? (
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-[minmax(130px,0.6fr)_repeat(2,minmax(130px,1fr))] md:items-center">
+              <div className="font-semibold">{dateLabel(activeDate)}</div>
+              <div className="flex items-center justify-between gap-4 md:block"><div className="text-violet-200">Close</div><div className="font-medium text-violet-100">{fmt(activeClose)}</div></div>
+              <div className="flex items-center justify-between gap-4 md:block"><div className="text-slate-300">Total</div><div className="font-medium text-slate-100">{fmt(activeTotal, yKey === "GEXDeltaPerc" ? 2 : 0)}</div></div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {activeSegments.map(({ cap, value }, i) => (
+                <div key={cap} className="flex items-center justify-between gap-4 rounded border border-slate-800 px-3 py-2">
+                  <div className="flex items-center gap-2 text-slate-300"><span className="inline-block h-2 w-5 rounded" style={{ backgroundColor: colors[i % colors.length] }} />{cap}</div>
+                  <div className="font-medium text-slate-100">{fmt(value, yKey === "GEXDeltaPerc" ? 2 : 0)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-[64px] items-center text-xs text-slate-400">Hover the chart to inspect a data point.</div>
+        )}
+      </aside>
       <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">{caps.map((cap, i) => <span key={cap}><span className="mr-1 inline-block h-2 w-5 rounded" style={{ backgroundColor: colors[i % colors.length] }} />{cap}</span>)}<span><span className="mr-1 inline-block h-2 w-5 rounded bg-violet-700" />Close</span></div>
     </div>
   );

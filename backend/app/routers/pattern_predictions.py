@@ -90,15 +90,15 @@ def get_pattern_predictions(
         if not date_col:
             raise HTTPException(status_code=400, detail="No date column found to filter on")
         logger.info(f"Using date column: {date_col} for filter in /pattern-predictions")
-        where_clauses.append(f"CAST([{date_col}] AS date) = ?")
-        params.append(prediction_date)
+        where_clauses.append(f"[{date_col}] >= convert(date, ?) AND [{date_col}] < dateadd(day, 1, convert(date, ?))")
+        params.extend([prediction_date, prediction_date])
 
     code_list: Optional[List[str]] = None
     if codes:
         code_list = [c.strip().upper() for c in codes.split(',') if c.strip()]
         if code_list:
-            placeholders = ",".join(["?"] * len(code_list))
-            where_clauses.append(f"UPPER(ASXCode) IN ({placeholders})")
+            placeholders = ",".join(["convert(varchar(10), ?)"] * len(code_list))
+            where_clauses.append(f"ASXCode IN ({placeholders})")
             params.extend(code_list)
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
@@ -121,5 +121,3 @@ def get_pattern_predictions(
     except Exception as e:
         logger.exception(f"Unexpected error in /pattern-predictions: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
-
-

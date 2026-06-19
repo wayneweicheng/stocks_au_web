@@ -372,7 +372,7 @@ def get_30m_support_resistance(
             CAST(TimeIntervalStart AS date) AS TradingDate
         FROM StockDB_US.StockData.PriceHistoryTimeFrame
         WHERE TimeFrame = '30M'
-          AND CAST(TimeIntervalStart AS date) <= ?
+          AND TimeIntervalStart < DATEADD(day, 1, convert(datetime, ?))
         ORDER BY TradingDate DESC
         """,
         (market_today.isoformat(),),
@@ -401,15 +401,15 @@ def get_30m_support_resistance(
     stock_filter = ""
     stock_filter_params: tuple[Any, ...] = ()
     if filtered_stock_codes:
-        stock_filter = f" AND ASXCode IN ({','.join(['?'] * len(filtered_stock_codes))})"
+        stock_filter = f" AND ASXCode IN ({','.join(['convert(varchar(10), ?)'] * len(filtered_stock_codes))})"
         stock_filter_params = tuple(filtered_stock_codes)
 
     rows = model.execute_read_query(
         f"""
         SELECT ASXCode, TimeIntervalStart, [High], [Low], [Close], Volume
         FROM StockDB_US.StockData.PriceHistoryTimeFrame
-        WHERE TimeIntervalStart >= DATEADD(day, -?, ?)
-          AND TimeIntervalStart <= DATEADD(hour, 23, CAST(? AS datetime))
+        WHERE TimeIntervalStart >= DATEADD(day, -?, convert(datetime, ?))
+          AND TimeIntervalStart <= DATEADD(hour, 23, convert(datetime, ?))
           AND TimeFrame = '30M'
           {stock_filter}
         ORDER BY ASXCode, TimeIntervalStart
@@ -433,8 +433,8 @@ def get_30m_support_resistance(
         f"""
         SELECT ASXCode, ObservationDate, [High], [Low], [Close]
         FROM StockDB_US.StockData.PriceHistory
-        WHERE ObservationDate >= DATEADD(day, -45, ?)
-          AND ObservationDate <= ?
+        WHERE ObservationDate >= DATEADD(day, -45, convert(date, ?))
+          AND ObservationDate <= convert(date, ?)
           {stock_filter}
         ORDER BY ASXCode, ObservationDate
         """,
@@ -461,9 +461,9 @@ def get_30m_support_resistance(
             SUM(COALESCE(OpenInterest, 0)) AS OpenInterest,
             MIN(ExpiryDate) AS NearestExpiry
         FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
-        WHERE ObservationDate = ?
-          AND ExpiryDate >= ?
-          AND ExpiryDate <= DATEADD(day, 30, ?)
+        WHERE ObservationDate = convert(date, ?)
+          AND ExpiryDate >= convert(date, ?)
+          AND ExpiryDate <= DATEADD(day, 30, convert(date, ?))
           AND PorC IN ('P', 'C')
           AND OpenInterest > 0
           {stock_filter}

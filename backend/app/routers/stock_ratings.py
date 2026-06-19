@@ -89,7 +89,7 @@ def list_stock_ratings(
         params: List[Any] = []
 
         if stock_code:
-            filters.append("sr.StockCode = ?")
+            filters.append("sr.StockCode = convert(varchar(20), ?)")
             params.append(stock_code.strip().upper())
 
         if commenter_id:
@@ -227,7 +227,7 @@ def get_stock_summary(
                 sr.AddedBy as added_by
             FROM [Research].[StockRating] sr
             INNER JOIN [Research].[Commenter] c ON sr.CommenterID = c.CommenterID
-            WHERE sr.StockCode = ?
+            WHERE sr.StockCode = convert(varchar(20), ?)
             ORDER BY sr.RatingDate DESC, sr.AddedAt DESC
             """,
             (normalized_code,),
@@ -306,7 +306,7 @@ def create_stock_rating(
                 sr.AddedBy as added_by
             FROM [Research].[StockRating] sr
             INNER JOIN [Research].[Commenter] c ON sr.CommenterID = c.CommenterID
-            WHERE sr.StockCode = ? AND sr.CommenterID = ?
+            WHERE sr.StockCode = convert(varchar(20), ?) AND sr.CommenterID = ?
             ORDER BY sr.AddedAt DESC
             """,
             (normalized_code, payload.commenter_id),
@@ -444,7 +444,7 @@ def delete_tipped_stock(
 
         # Ensure the stock exists in ratings
         exists_rows = db.execute_read_usp(
-            "SELECT TOP 1 1 as exists_flag FROM [Research].[StockRating] WHERE StockCode = ?",
+            "SELECT TOP 1 1 as exists_flag FROM [Research].[StockRating] WHERE StockCode = convert(varchar(20), ?)",
             (normalized_code,),
         ) or []
         if not exists_rows:
@@ -452,11 +452,11 @@ def delete_tipped_stock(
 
         # Delete research links first, then ratings
         db.execute_update_usp(
-            "DELETE FROM [Research].[ResearchLink] WHERE StockCode = ?",
+            "DELETE FROM [Research].[ResearchLink] WHERE StockCode = convert(varchar(20), ?)",
             (normalized_code,),
         )
         db.execute_update_usp(
-            "DELETE FROM [Research].[StockRating] WHERE StockCode = ?",
+            "DELETE FROM [Research].[StockRating] WHERE StockCode = convert(varchar(20), ?)",
             (normalized_code,),
         )
 

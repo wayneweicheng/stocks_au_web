@@ -40,34 +40,73 @@ function MultiLineChart({ rows, yKey, groupKey, title }: { rows: Row[]; yKey: st
   const width = 1000;
   const height = 340;
   const pad = 28;
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const values = rows.map((r) => num(r[yKey])).filter((v): v is number => v !== null);
   if (!rows.length || !values.length) return <div className="py-12 text-center text-sm text-slate-500">No chart data.</div>;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const spread = max - min || 1;
   const groups = groupKey ? Array.from(new Set(rows.map((r) => String(r[groupKey] || "-")))) : [title];
+  const dates = Array.from(new Set(rows.map((r) => String(r.ObservationDate))));
   const colors = ["#dc2626", "#0891b2", "#2563eb", "#16a34a", "#9333ea", "#f97316"];
   const xFor = (i: number, count: number) => pad + (count <= 1 ? 0.5 : i / (count - 1)) * (width - pad * 2);
   const yFor = (v: number) => pad + (height - pad * 2) - ((v - min) / spread) * (height - pad * 2);
+  const activeDate = activeIndex === null ? null : dates[activeIndex];
+  const activeX = activeIndex === null ? null : xFor(activeIndex, dates.length);
+  const tooltipRows = activeDate === null ? [] : groups.map((group) => {
+    const row = groupKey ? rows.find((r) => String(r.ObservationDate) === activeDate && String(r[groupKey] || "-") === group) : rows.find((r) => String(r.ObservationDate) === activeDate);
+    return { group, row, value: row ? num(row[yKey]) : null };
+  });
+  const updateActiveIndex = (event: any) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const chartX = ((event.clientX - rect.left) / rect.width) * width;
+    const clampedX = Math.max(pad, Math.min(width - pad, chartX));
+    const index = Math.round(((clampedX - pad) / (width - pad * 2)) * (dates.length - 1));
+    setActiveIndex(Math.max(0, Math.min(dates.length - 1, index)));
+  };
   return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[340px] min-w-[860px] w-full" role="img" aria-label={title}>
-        <rect width={width} height={height} fill="white" />
-        {[0.25, 0.5, 0.75].map((r) => <line key={r} x1={pad} x2={width - pad} y1={pad + r * (height - pad * 2)} y2={pad + r * (height - pad * 2)} stroke="#f1f5f9" />)}
-        {min < 0 && max > 0 ? <line x1={pad} x2={width - pad} y1={yFor(0)} y2={yFor(0)} stroke="#cbd5e1" /> : null}
-        {groups.map((g, gi) => {
-          const groupRows = groupKey ? rows.filter((r) => String(r[groupKey] || "-") === g) : rows;
-          const points = groupRows.map((r, i) => {
-            const v = num(r[yKey]);
-            if (v === null) return null;
-            return `${xFor(i, groupRows.length).toFixed(1)},${yFor(v).toFixed(1)}`;
-          }).filter(Boolean).join(" ");
-          return <polyline key={g} points={points} fill="none" stroke={colors[gi % colors.length]} strokeWidth="2.2" />;
-        })}
-        <text x={pad} y="18" fill="#475569" fontSize="13">{title}</text>
-        <text x={pad} y={height - 6} fill="#64748b" fontSize="12">{dateLabel(rows[0].ObservationDate)}</text>
-        <text x={width - pad} y={height - 6} textAnchor="end" fill="#64748b" fontSize="12">{dateLabel(rows[rows.length - 1].ObservationDate)}</text>
-      </svg>
+    <div>
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[860px] w-full cursor-crosshair select-none touch-pan-x" role="img" aria-label={title} onPointerMove={updateActiveIndex} onPointerLeave={() => setActiveIndex(null)}>
+          <rect width={width} height={height} fill="white" />
+          {[0.25, 0.5, 0.75].map((r) => <line key={r} x1={pad} x2={width - pad} y1={pad + r * (height - pad * 2)} y2={pad + r * (height - pad * 2)} stroke="#f1f5f9" />)}
+          {min < 0 && max > 0 ? <line x1={pad} x2={width - pad} y1={yFor(0)} y2={yFor(0)} stroke="#cbd5e1" /> : null}
+          {groups.map((g, gi) => {
+            const groupRows = groupKey ? rows.filter((r) => String(r[groupKey] || "-") === g) : rows;
+            const points = groupRows.map((r, i) => {
+              const v = num(r[yKey]);
+              if (v === null) return null;
+              return `${xFor(i, groupRows.length).toFixed(1)},${yFor(v).toFixed(1)}`;
+            }).filter(Boolean).join(" ");
+            return <polyline key={g} points={points} fill="none" stroke={colors[gi % colors.length]} strokeWidth="2.2" />;
+          })}
+          {activeDate && activeX !== null ? (
+            <g pointerEvents="none">
+              <line x1={activeX} x2={activeX} y1={pad} y2={height - pad} stroke="#334155" strokeDasharray="4 5" opacity="0.45" />
+              {tooltipRows.map(({ group, value }, i) => value === null ? null : <circle key={group} cx={activeX} cy={yFor(value)} r="4.5" fill={colors[i % colors.length]} stroke="white" strokeWidth="2" />)}
+            </g>
+          ) : null}
+          <rect x={pad} y={pad} width={width - pad * 2} height={height - pad * 2} fill="transparent" />
+          <text x={pad} y="18" fill="#475569" fontSize="13">{title}</text>
+          <text x={pad} y={height - 6} fill="#64748b" fontSize="12">{dateLabel(rows[0].ObservationDate)}</text>
+          <text x={width - pad} y={height - 6} textAnchor="end" fill="#64748b" fontSize="12">{dateLabel(rows[rows.length - 1].ObservationDate)}</text>
+        </svg>
+      </div>
+      <aside className="mt-3 min-h-[82px] rounded-md bg-slate-950 p-4 text-sm text-slate-100" aria-live="polite">
+        {activeDate ? (
+          <div className="grid gap-3 md:grid-cols-[minmax(130px,0.6fr)_repeat(auto-fit,minmax(120px,1fr))] md:items-center">
+            <div className="font-semibold">{dateLabel(activeDate)}</div>
+            {tooltipRows.map(({ group, value }, i) => (
+              <div key={group} className="flex items-center justify-between gap-4 md:block">
+                <div className="flex items-center gap-2 text-slate-300"><span className="inline-block h-2 w-5 rounded" style={{ backgroundColor: colors[i % colors.length] }} />{group}</div>
+                <div className="font-medium text-slate-100">{fmt(value, yKey === "SPX" ? 2 : 4)}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-[50px] items-center text-xs text-slate-400">Hover the chart to inspect a data point.</div>
+        )}
+      </aside>
       <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">
         {groups.map((g, i) => <span key={g}><span className="mr-1 inline-block h-2 w-5 rounded" style={{ backgroundColor: colors[i % colors.length] }} />{g}</span>)}
       </div>

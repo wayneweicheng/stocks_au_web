@@ -257,6 +257,9 @@ function Start-ServiceWithMonitoring {
         [string]$LogFile = ""
     )
 
+    $previousBackendErrorLogFile = $null
+    $backendErrorLogFileWasSet = $false
+
     Write-Log "Starting $ServiceName..."
 
     # Check if port is already in use
@@ -280,10 +283,22 @@ function Start-ServiceWithMonitoring {
 
         if ($LogFile) {
             $errorLogFile = $LogFile -replace '\.log$', '-error.log'
+            $previousBackendErrorLogFile = $env:BACKEND_ERROR_LOG_FILE
+            if ($ServiceName -eq "Backend") {
+                $env:BACKEND_ERROR_LOG_FILE = $errorLogFile
+                $backendErrorLogFileWasSet = $true
+            }
             if ($NoNewWindows) {
                 $process = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -PassThru -NoNewWindow -RedirectStandardOutput $LogFile -RedirectStandardError $errorLogFile
             } else {
                 $process = Start-Process -FilePath $Command -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -PassThru -RedirectStandardOutput $LogFile -RedirectStandardError $errorLogFile
+            }
+            if ($ServiceName -eq "Backend") {
+                if ($null -eq $previousBackendErrorLogFile) {
+                    Remove-Item Env:\BACKEND_ERROR_LOG_FILE -ErrorAction SilentlyContinue
+                } else {
+                    $env:BACKEND_ERROR_LOG_FILE = $previousBackendErrorLogFile
+                }
             }
         } else {
             # No logging, start directly
@@ -324,6 +339,13 @@ function Start-ServiceWithMonitoring {
         }
     }
     catch {
+        if ($backendErrorLogFileWasSet) {
+            if ($null -eq $previousBackendErrorLogFile) {
+                Remove-Item Env:\BACKEND_ERROR_LOG_FILE -ErrorAction SilentlyContinue
+            } else {
+                $env:BACKEND_ERROR_LOG_FILE = $previousBackendErrorLogFile
+            }
+        }
         Write-Log "ERROR: Exception starting $ServiceName - $($_.Exception.Message)"
         # Ensure we return to previous location even on error
         if ($previousLocation) {

@@ -157,7 +157,7 @@ def _fallback_db_quote_us(code: str) -> Dict[str, Any] | None:
         sql = """
             SELECT TOP 1 ASXCode, ObservationDate, [Close]
             FROM StockDB_US.StockData.PriceHistory
-            WHERE LOWER(ASXCode) = LOWER(?)
+            WHERE ASXCode = convert(varchar(10), ?)
             ORDER BY ObservationDate DESC
         """
 
@@ -1418,7 +1418,7 @@ def get_position(stock_code: str) -> Dict[str, Any]:
             FROM StockDB.StockData.CurrentHoldings
             WHERE SourceSystem = 'IB'
               AND AccountName = 'huanw2114'
-              AND UPPER(ASXCode) = UPPER(?)
+              AND ASXCode = convert(varchar(10), ?)
             ORDER BY CreateDate DESC
         """
         with get_db_connection() as conn:
