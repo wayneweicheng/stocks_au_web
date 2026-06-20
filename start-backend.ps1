@@ -103,7 +103,7 @@ function Start-BackendOnce {
     $scriptTimestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $outLog = Join-Path $AbsoluteLogPath "backend-out-$scriptTimestamp.log"
     $errLog = $outLog -replace '\.log$','-error.log'
-    $args = @("-m","uvicorn","app.main:app","--host","127.0.0.1","--port",$Port)
+    $args = @("-m","uvicorn","app.main:app","--host","0.0.0.0","--port",$Port)
     $previousBackendErrorLogFile = $env:BACKEND_ERROR_LOG_FILE
 
     try {

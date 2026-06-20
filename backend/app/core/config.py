@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # IB simple order service (proxy target)
     ib_order_service_url: str = Field(default="http://127.0.0.1:8123", validation_alias=AliasChoices("ib_order_service_url", "IB_ORDER_SERVICE_URL"))
 
+    # Skill runner service (proxy target)
+    skill_runner_api_base_url: str = Field(default="http://192.168.20.122:3205", validation_alias=AliasChoices("skill_runner_api_base_url", "SKILL_RUNNER_API_BASE_URL"))
+    skill_runner_api_token: str = Field(default="", validation_alias=AliasChoices("skill_runner_api_token", "SKILL_RUNNER_API_TOKEN"))
+
 
 settings = Settings()
 
@@ -69,5 +73,4 @@ os.environ.setdefault("SQL_SERVER_PORT", str(settings.sqlserver_port))
 os.environ.setdefault("SQL_SERVER_DATABASE", settings.sqlserver_database)
 os.environ.setdefault("SQL_SERVER_USER", settings.sqlserver_username)
 os.environ.setdefault("SQL_SERVER_PASSWORD", settings.sqlserver_password)
-
 
