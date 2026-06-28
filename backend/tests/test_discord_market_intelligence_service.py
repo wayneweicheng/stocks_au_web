@@ -151,6 +151,53 @@ Markets were mixed.
     assert digest["what_changed"] == "Tone improved from neutral."
 
 
+def test_dashboard_digest_preserves_stock_and_index_tips(tmp_path: Path):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "DISCORD_20260613.md").write_text(
+        """## Dashboard Intelligence
+```json
+{
+  "market": "US",
+  "stance": "NEUTRAL_BULLISH",
+  "confidence": "MEDIUM",
+  "headline": "Followers favor selective risk.",
+  "dominant_narrative": "Stock ideas and index timing are separated.",
+  "stock_tips": [
+    {
+      "symbol": "NVDA",
+      "source": "Janeyu0714",
+      "bias": "BULLISH",
+      "reason": "AI hardware leadership remains intact.",
+      "timeframe": "Swing",
+      "shared_at": "2026-06-13 10:15:00"
+    }
+  ],
+  "index_tips": [
+    {
+      "symbol": "QQQ",
+      "source": "741852",
+      "bias": "BULLISH",
+      "reason": "Index pullback held support.",
+      "level": "Support held",
+      "timeframe": "Intraday",
+      "shared_at": "2026-06-13 11:30:00"
+    }
+  ]
+}
+```""",
+        encoding="utf-8",
+    )
+    service = DiscordMarketIntelligenceService(cache_dir=str(cache))
+
+    digest = service.get_dashboard_digest(date(2026, 6, 13))
+
+    assert digest["stock_tips"][0]["symbol"] == "NVDA"
+    assert digest["stock_tips"][0]["source"] == "Janeyu0714"
+    assert digest["index_tips"][0]["symbol"] == "QQQ"
+    assert digest["index_tips"][0]["source"] == "741852"
+
+
 def test_dashboard_digest_requires_an_exact_summary_date(tmp_path: Path):
     cache = tmp_path / "cache"
     cache.mkdir()

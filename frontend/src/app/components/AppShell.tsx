@@ -46,6 +46,8 @@ const NAV: NavGroup[] = [
       { href: "/research-reports", label: "Research Reports" },
       { href: "/market-theme-reports", label: "Market Theme Reports" },
       { href: "/us-equity-analysis-reports", label: "US Equity Analysis" },
+      { href: "/shiso-leaf-stock-hunter-reports", label: "Shiso Leaf Hunter" },
+      { href: "/stock-social-sentiment-reports", label: "Social Sentiment" },
       { href: "/discord-summary", label: "Discord Summary" },
     ],
   },

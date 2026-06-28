@@ -34,6 +34,18 @@ type ProxyResponse = {
   data: Record<string, unknown>;
 };
 
+type SavedJob = {
+  job_id: string;
+  label: string;
+  submitted_at: string;
+  status?: string;
+  last_checked_at?: string;
+  response?: Record<string, unknown>;
+};
+
+const JOB_HISTORY_KEY = "stocks_au_us_equity_analysis_jobs";
+const MAX_SAVED_JOBS = 25;
+
 function formatDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -62,6 +74,22 @@ function statusVariant(status: string): "default" | "success" | "warning" | "dan
   return "info";
 }
 
+function loadSavedJobs(): SavedJob[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const value = window.localStorage.getItem(JOB_HISTORY_KEY);
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedJobs(jobs: SavedJob[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(JOB_HISTORY_KEY, JSON.stringify(jobs.slice(0, MAX_SAVED_JOBS)));
+}
+
 export default function UsEquityAnalysisReportsPage() {
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
@@ -82,6 +110,7 @@ export default function UsEquityAnalysisReportsPage() {
   const [jobError, setJobError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -149,6 +178,14 @@ export default function UsEquityAnalysisReportsPage() {
     }
   }, [baseUrl, loadDetail, selectedJobId]);
 
+  const saveJob = useCallback((job: SavedJob) => {
+    setSavedJobs((current) => {
+      const next = [job, ...current.filter((item) => item.job_id !== job.job_id)].slice(0, MAX_SAVED_JOBS);
+      persistSavedJobs(next);
+      return next;
+    });
+  }, []);
+
   const submitJob = useCallback(async () => {
     if (!baseUrl) {
       setJobError("NEXT_PUBLIC_BACKEND_URL is not configured.");
@@ -181,20 +218,29 @@ export default function UsEquityAnalysisReportsPage() {
       const data = (payload as ProxyResponse).data || {};
       setJobResponse(data);
       const returnedJobId = getJobId(data);
-      if (returnedJobId) setJobId(returnedJobId);
+      if (returnedJobId) {
+        setJobId(returnedJobId);
+        saveJob({
+          job_id: returnedJobId,
+          label: `${symbol} ${reportDetail}`,
+          submitted_at: new Date().toISOString(),
+          status: getStatus(data) || "submitted",
+          response: data,
+        });
+      }
     } catch (e: unknown) {
       setJobError(e instanceof Error ? e.message : "Failed to submit job");
     } finally {
       setSubmitting(false);
     }
-  }, [baseUrl, reportDetail, stockCode]);
+  }, [baseUrl, reportDetail, saveJob, stockCode]);
 
-  const checkStatus = useCallback(async () => {
+  const checkStatusFor = useCallback(async (jobIdToCheck: string) => {
     if (!baseUrl) {
       setJobError("NEXT_PUBLIC_BACKEND_URL is not configured.");
       return;
     }
-    const currentJobId = jobId.trim();
+    const currentJobId = jobIdToCheck.trim();
     if (!currentJobId) {
       setJobError("Enter or submit a job id first.");
       return;
@@ -210,17 +256,36 @@ export default function UsEquityAnalysisReportsPage() {
       if (!res.ok) {
         throw new Error(payload.detail || `HTTP ${res.status}`);
       }
-      setJobStatus((payload as ProxyResponse).data || {});
+      const data = (payload as ProxyResponse).data || {};
+      setJobStatus(data);
+      setJobId(currentJobId);
+      const existing = savedJobs.find((item) => item.job_id === currentJobId);
+      saveJob({
+        job_id: currentJobId,
+        label: existing?.label || currentJobId,
+        submitted_at: existing?.submitted_at || new Date().toISOString(),
+        status: getStatus(data) || existing?.status,
+        last_checked_at: new Date().toISOString(),
+        response: data,
+      });
     } catch (e: unknown) {
       setJobError(e instanceof Error ? e.message : "Failed to check job status");
     } finally {
       setChecking(false);
     }
-  }, [baseUrl, jobId]);
+  }, [baseUrl, saveJob, savedJobs]);
+
+  const checkStatus = useCallback(async () => {
+    await checkStatusFor(jobId);
+  }, [checkStatusFor, jobId]);
 
   useEffect(() => {
     void loadReports();
   }, [loadReports]);
+
+  useEffect(() => {
+    setSavedJobs(loadSavedJobs());
+  }, []);
 
   const visibleJobStatus = jobStatus ? getStatus(jobStatus) : jobResponse ? getStatus(jobResponse) : "";
 
@@ -420,6 +485,46 @@ export default function UsEquityAnalysisReportsPage() {
               ) : null}
 
               {jobError ? <Alert variant="danger">{jobError}</Alert> : null}
+
+              <div className="border-t border-slate-200 pt-4">
+                <div className="mb-2 text-sm font-medium text-slate-700">Job History</div>
+                {savedJobs.length === 0 ? (
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+                    Submitted jobs will be saved here in this browser.
+                  </div>
+                ) : (
+                  <div className="max-h-72 space-y-2 overflow-y-auto">
+                    {savedJobs.map((savedJob) => (
+                      <div key={savedJob.job_id} className="rounded-md border border-slate-200 p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-mono text-xs text-slate-700">{savedJob.job_id}</div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {savedJob.label} | submitted {formatDate(savedJob.submitted_at)}
+                            </div>
+                            {savedJob.last_checked_at ? (
+                              <div className="mt-1 text-xs text-slate-400">
+                                checked {formatDate(savedJob.last_checked_at)}
+                              </div>
+                            ) : null}
+                          </div>
+                          {savedJob.status ? (
+                            <Badge variant={statusVariant(savedJob.status)}>{savedJob.status}</Badge>
+                          ) : null}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button type="button" size="sm" variant="secondary" onClick={() => void checkStatusFor(savedJob.job_id)} disabled={checking}>
+                            Check Status
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setJobId(savedJob.job_id)}>
+                            Use Job Id
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
 

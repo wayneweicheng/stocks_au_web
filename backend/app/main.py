@@ -49,6 +49,7 @@ from app.routers.bet_odds_monitors import router as bet_odds_monitors_router
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status, trigger_job_now
 from app.routers.market_theme_reports import router as market_theme_reports_router
 from app.routers.us_equity_analysis_reports import router as us_equity_analysis_reports_router
+from app.routers.skill_report_pages import router as skill_report_pages_router
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 from contextlib import asynccontextmanager
 import logging
@@ -259,6 +260,7 @@ app.include_router(market_command_router)
 app.include_router(bet_odds_monitors_router)
 app.include_router(market_theme_reports_router)
 app.include_router(us_equity_analysis_reports_router)
+app.include_router(skill_report_pages_router)
 
 
 @app.get("/api/scheduler/status")

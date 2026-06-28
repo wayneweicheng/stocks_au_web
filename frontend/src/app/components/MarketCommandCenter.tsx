@@ -98,6 +98,16 @@ interface MarketIntelligenceWatchItem {
   reason?: string;
 }
 
+interface MarketIntelligenceTipItem {
+  symbol: string;
+  source?: string;
+  bias?: string;
+  reason?: string;
+  level?: string;
+  timeframe?: string;
+  shared_at?: string | null;
+}
+
 interface MarketIntelligenceContributorView {
   source: string;
   stance?: string;
@@ -124,6 +134,8 @@ interface MarketIntelligenceInsight {
   contributor_views?: MarketIntelligenceContributorView[];
   contributors_analyzed?: number | null;
   watchlist?: Array<MarketIntelligenceWatchItem | string>;
+  stock_tips?: MarketIntelligenceTipItem[];
+  index_tips?: MarketIntelligenceTipItem[];
   what_changed?: string;
   source: string;
   source_status?: string;
@@ -234,6 +246,8 @@ function MarketIntelligenceCard({ insight }: { insight: MarketIntelligenceInsigh
 
   const stance = insight.stance || "NEUTRAL";
   const watchlist = insight.watchlist || [];
+  const stockTips = insight.stock_tips || [];
+  const indexTips = insight.index_tips || [];
 
   return (
     <Card>
@@ -295,6 +309,51 @@ function MarketIntelligenceCard({ insight }: { insight: MarketIntelligenceInsigh
             </ul>
           </div>
         </div>
+
+        {stockTips.length || indexTips.length ? (
+          <div className="mt-4 grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-2">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Stock Tips
+              </div>
+              <div className="mt-2 space-y-2">
+                {stockTips.map((item, index) => (
+                  <div key={`${item.symbol}-${item.source || "stock"}-${index}`} className="rounded-md border border-emerald-100 bg-emerald-50/50 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-900">{item.symbol}</span>
+                      {item.bias ? <Badge variant={badgeVariant(item.bias)}>{item.bias.replaceAll("_", " ")}</Badge> : null}
+                      {item.source ? <span className="text-[11px] text-slate-500">{item.source}</span> : null}
+                    </div>
+                    {item.reason ? <p className="mt-1 text-xs leading-5 text-slate-700">{item.reason}</p> : null}
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      {[item.timeframe, item.shared_at].filter(Boolean).join(" | ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                Index Calls
+              </div>
+              <div className="mt-2 space-y-2">
+                {indexTips.map((item, index) => (
+                  <div key={`${item.symbol}-${item.source || "index"}-${index}`} className="rounded-md border border-indigo-100 bg-indigo-50/50 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-900">{item.symbol}</span>
+                      {item.bias ? <Badge variant={badgeVariant(item.bias)}>{item.bias.replaceAll("_", " ")}</Badge> : null}
+                      {item.source ? <span className="text-[11px] text-slate-500">{item.source}</span> : null}
+                    </div>
+                    {item.reason ? <p className="mt-1 text-xs leading-5 text-slate-700">{item.reason}</p> : null}
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      {[item.level, item.timeframe, item.shared_at].filter(Boolean).join(" | ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {insight.contributor_views?.length ? (
           <div className="mt-4 border-t border-slate-100 pt-4">

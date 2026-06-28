@@ -43,6 +43,7 @@ Analysis Requirements:
    - Technical analysis observations (support/resistance, patterns, indicators)
    - Fundamental catalysts or macro drivers mentioned
    - Options flow or unusual activity referenced
+   - Separate single-stock/sector trade ideas from index or broad-market timing calls
 
 5. **Predictions & Forecasts (With Attribution)**
    - **CRITICAL:** When predictions or forecasts are shared, you MUST record:
@@ -65,6 +66,7 @@ Output Format:
 - **Opinion Shared At (US Eastern):** The matching timestamp copied exactly from `TimeStamp_USEst`
 - **Market News & Events:** Bullet points with timestamps
 - **Stocks, Sectors & Trade Ideas:** Detailed bullets with levels/targets if available
+- **Index & Broad-Market Calls:** SPY, QQQ, SPX, IWM, VIX, sector ETF, or futures calls with direction, level, and timeframe where available
 - **Predictions & Forecasts:** `WHEN | PREDICTION`
 - **Sentiment & Conviction:** Bullish/Bearish/Neutral, confidence and rationale
 - **Notable Quotes & Insights:** Concise quotes or paraphrases
@@ -93,6 +95,27 @@ After the individual follower sections, synthesize them into exactly one valid J
   "watchlist": [
     {"symbol": "SPY", "bias": "BULLISH|BEARISH|MIXED", "reason": "Short reason"}
   ],
+  "stock_tips": [
+    {
+      "symbol": "NVDA",
+      "source": "Follower username",
+      "bias": "BULLISH|BEARISH|MIXED",
+      "reason": "Why this is actionable",
+      "timeframe": "Intraday|Swing|Multi-week|Unknown",
+      "shared_at": "Supporting TimeStamp_Sydney value"
+    }
+  ],
+  "index_tips": [
+    {
+      "symbol": "QQQ",
+      "source": "Follower username",
+      "bias": "BULLISH|BEARISH|MIXED",
+      "reason": "Index or broad-market timing rationale",
+      "level": "Key level or blank",
+      "timeframe": "Intraday|Swing|Multi-week|Unknown",
+      "shared_at": "Supporting TimeStamp_Sydney value"
+    }
+  ],
   "contributors_analyzed": 0,
   "what_changed": "The most important intraday change in collective tone, if established"
 }
@@ -101,6 +124,9 @@ After the individual follower sections, synthesize them into exactly one valid J
 Include every follower who was analyzed in `contributor_views`, even when their stance matches the collective
 rating. Do not select only dissenters or the most active people. Preserve each person's distinct reasoning and
 attribution. Put only genuinely shared views in `consensus`.
+Use `stock_tips` only for actionable single-stock or sector/industry ETF ideas. Use `index_tips` only for SPY,
+QQQ, SPX, IWM, VIX, futures, or broad-market timing calls. Do not duplicate a broad-market index call into
+`stock_tips`.
 For each opinion, use the latest message that materially supports the summarized view. Copy both timestamps
 exactly from that same input row; never infer or convert a timestamp.
 

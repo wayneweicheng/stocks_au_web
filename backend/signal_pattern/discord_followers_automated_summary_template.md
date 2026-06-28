@@ -22,9 +22,10 @@ Analysis Requirements:
 2. Ignore off-topic chatter and focus on actionable market intelligence.
 3. Summarize trading style, risk posture, market stance, and conviction.
 4. Track stocks, ETFs, sectors, catalysts, technical levels, entries, exits, targets, options activity, and timeframes.
-5. Record predictions with the exact user, timestamp, direction, target, and timeframe when available.
-6. Distinguish factual reporting, analysis-backed predictions, and casual speculation.
-7. Highlight changes in sentiment or positioning during the 24-hour window.
+5. Separate single-stock/sector trade ideas from index or broad-market timing calls.
+6. Record predictions with the exact user, timestamp, direction, target, and timeframe when available.
+7. Distinguish factual reporting, analysis-backed predictions, and casual speculation.
+8. Highlight changes in sentiment or positioning during the 24-hour window.
 
 Output Format:
 
@@ -36,6 +37,7 @@ Output Format:
 - **Opinion Shared At (US Eastern):** The matching timestamp copied exactly from `TimeStamp_USEst`
 - **Market News & Events:** Timestamped bullet points
 - **Stocks, Sectors & Trade Ideas:** Detailed bullets with levels and targets where available
+- **Index & Broad-Market Calls:** SPY, QQQ, SPX, IWM, VIX, sector ETF, or futures calls with direction, level, and timeframe where available
 - **Predictions & Forecasts:** `WHEN | PREDICTION`
 - **Sentiment & Conviction:** Bullish/Bearish/Neutral, confidence, and rationale
 - **Notable Insights:** Concise, actionable observations
@@ -66,6 +68,27 @@ After the individual follower sections, synthesize them into exactly one valid J
   "watchlist": [
     {"symbol": "SPY", "bias": "BULLISH|BEARISH|MIXED", "reason": "Short reason"}
   ],
+  "stock_tips": [
+    {
+      "symbol": "NVDA",
+      "source": "Follower username",
+      "bias": "BULLISH|BEARISH|MIXED",
+      "reason": "Why this is actionable",
+      "timeframe": "Intraday|Swing|Multi-week|Unknown",
+      "shared_at": "Supporting TimeStamp_Sydney value"
+    }
+  ],
+  "index_tips": [
+    {
+      "symbol": "QQQ",
+      "source": "Follower username",
+      "bias": "BULLISH|BEARISH|MIXED",
+      "reason": "Index or broad-market timing rationale",
+      "level": "Key level or blank",
+      "timeframe": "Intraday|Swing|Multi-week|Unknown",
+      "shared_at": "Supporting TimeStamp_Sydney value"
+    }
+  ],
   "contributors_analyzed": 0,
   "what_changed": "The most important intraday change in collective tone, if established"
 }
@@ -74,6 +97,9 @@ After the individual follower sections, synthesize them into exactly one valid J
 Include every follower who was analyzed in `contributor_views`, even when their stance matches the collective
 rating. Do not select only dissenters or the most active people. Preserve each person's distinct reasoning and
 attribution. Put only genuinely shared views in `consensus`.
+Use `stock_tips` only for actionable single-stock or sector/industry ETF ideas. Use `index_tips` only for SPY,
+QQQ, SPX, IWM, VIX, futures, or broad-market timing calls. Do not duplicate a broad-market index call into
+`stock_tips`.
 For each opinion, use the latest message that materially supports the summarized view. Copy both timestamps
 exactly from that same input row; never infer or convert a timestamp.
 

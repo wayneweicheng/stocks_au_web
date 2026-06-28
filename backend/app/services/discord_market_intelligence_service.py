@@ -20,16 +20,23 @@ SYDNEY_TIMEZONE = ZoneInfo("Australia/Sydney")
 US_EASTERN_TIMEZONE = ZoneInfo("America/New_York")
 DEFAULT_DISCORD_SUMMARY_MODEL = "google/gemma-4-26b-a4b-it"
 FOLLOWER_USERNAMES = [
-    "Fanfansd",
-    "Williambayc6866",
-    "A_beelining_capybara",
-    "Ming09082",
-    "Will01138",
-    "Lancebao",
-    "Royalflush88888",
-    "Jayoscar2238",
-    "Sr5772",
     "Yuanzidan",
+    "Lancebao",
+    "Janeyu0714",
+    "741852",
+    "Mcfore",
+    "Fubeimanyi",
+    "Siterlee",
+    "Billdc",
+    "Danielgao",
+    "Royalflush88888",
+    "Eateggking",
+    "Linn03219",
+    "Sr5772",
+    "Yiyi085177",
+    "Zy1248",
+    ".miniya",
+    "Jensonpaul",
 ]
 STANCE_SCORES = {
     "BULLISH": 75,
@@ -420,6 +427,12 @@ class DiscordMarketIntelligenceService:
                 {"symbol": symbol, "bias": "MIXED"}
                 for symbol, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:8]
             ]
+        stock_tips = structured.get("stock_tips")
+        if not isinstance(stock_tips, list):
+            stock_tips = []
+        index_tips = structured.get("index_tips")
+        if not isinstance(index_tips, list):
+            index_tips = []
 
         confidence = str(structured.get("confidence") or "").upper()
         if confidence not in {"LOW", "MEDIUM", "HIGH"}:
@@ -503,6 +516,8 @@ class DiscordMarketIntelligenceService:
             "catalysts": [_truncate(str(value), 220) for value in catalysts[:3]],
             "risks": [_truncate(str(value), 220) for value in risks[:3]],
             "watchlist": watchlist[:8],
+            "stock_tips": stock_tips[:8],
+            "index_tips": index_tips[:6],
             "consensus": [_truncate(str(value), 220) for value in consensus[:3]],
             "contributor_views": contributor_views,
             "contributors_analyzed": len(profiles) or structured.get("contributors_analyzed"),
