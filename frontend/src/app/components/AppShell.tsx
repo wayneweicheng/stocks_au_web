@@ -11,6 +11,12 @@ type NavGroup = { label: string; items: NavItem[] };
 
 const NAV: NavGroup[] = [
   {
+    label: "Analysis",
+    items: [
+      { href: "/support-resistance", label: "Support / Resistance" },
+    ],
+  },
+  {
     label: "Trading",
     items: [
       { href: "/portfolio-risk", label: "Portfolio Risk" },

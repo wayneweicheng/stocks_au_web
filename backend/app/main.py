@@ -39,6 +39,7 @@ from app.routers.trading_orders import router as trading_orders_router
 from app.routers.option_recommendations import router as option_recommendations_router
 from app.routers.option_orders import router as option_orders_router
 from app.routers.price_levels_30m import router as price_levels_30m_router
+from app.routers.support_resistance import router as support_resistance_router
 from app.routers.calculated_gex import router as calculated_gex_router
 from app.routers.us_market_dashboards import router as us_market_dashboards_router
 from app.routers.stock_analysis import router as stock_analysis_router
@@ -251,6 +252,7 @@ app.include_router(trading_orders_router)
 app.include_router(option_recommendations_router)
 app.include_router(option_orders_router)
 app.include_router(price_levels_30m_router)
+app.include_router(support_resistance_router)
 app.include_router(calculated_gex_router)
 app.include_router(us_market_dashboards_router)
 app.include_router(stock_analysis_router)

@@ -31,6 +31,18 @@ def _timestamp(value: Any) -> datetime:
     return datetime.fromisoformat(str(value))
 
 
+def _stock_code_aliases(stock_code: str) -> List[str]:
+    code = (stock_code or "").strip().upper()
+    if not code:
+        return []
+    base_code = code[:-3] if code.endswith(".US") else code
+    aliases: List[str] = []
+    for candidate in [code, base_code, f"{base_code}.US"]:
+        if candidate and candidate not in aliases:
+            aliases.append(candidate)
+    return aliases
+
+
 def _should_use_live_prices(
     observation_date: date,
     market_today: date,
@@ -154,6 +166,7 @@ def _select_reasonable_levels(
     atr_daily: float,
     minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
     maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
+    max_levels: int = 2,
 ) -> List[Dict[str, Any]]:
     selected: List[Dict[str, Any]] = []
     for level in levels:
@@ -181,7 +194,9 @@ def _select_reasonable_levels(
         )
 
     selected.sort(key=quality_key)
-    return selected[:2]
+    for rank, level in enumerate(selected, start=1):
+        level["strength_rank"] = rank
+    return selected[:max_levels]
 
 
 def _calculate_levels(
@@ -193,6 +208,7 @@ def _calculate_levels(
     price_source: str = "30m_close",
     minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
     maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
+    max_levels: int = 2,
 ) -> Optional[Dict[str, Any]]:
     clean_bars: List[Dict[str, Any]] = []
     for row in bars:
@@ -297,6 +313,7 @@ def _calculate_levels(
         atr_daily,
         minimum_distance_atr,
         maximum_distance_atr,
+        max_levels,
     )
     resistances = _select_reasonable_levels(
         resistances,
@@ -304,6 +321,7 @@ def _calculate_levels(
         atr_daily,
         minimum_distance_atr,
         maximum_distance_atr,
+        max_levels,
     )
 
     def format_level(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -316,6 +334,7 @@ def _calculate_levels(
             "touches": int(item["touches"]),
             "distance_pct": round(distance_pct, 2),
             "distance_atr": round(item["distance_atr"], 2),
+            "strength_rank": int(item.get("strength_rank") or 0),
             "latest_touch": item["latest_touch"].isoformat() if item.get("latest_touch") else None,
             "sources": item.get("sources", ["30m"]),
             "gamma_wall": (
@@ -346,8 +365,8 @@ def _calculate_levels(
             "minimum": minimum_distance_atr,
             "maximum": maximum_distance_atr,
         },
-        "supports": [format_level(item) for item in supports[:2]],
-        "resistances": [format_level(item) for item in resistances[:2]],
+        "supports": [format_level(item) for item in supports],
+        "resistances": [format_level(item) for item in resistances],
     }
 
 
@@ -358,13 +377,22 @@ def get_30m_support_resistance(
     maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
     stock_codes: Optional[List[str]] = None,
     group: Optional[Dict[str, Any]] = None,
+    max_levels: int = 2,
+    enable_live_prices: bool = True,
 ) -> Dict[str, Any]:
     if minimum_distance_atr > maximum_distance_atr:
         raise ValueError("Minimum ATR distance cannot exceed maximum ATR distance")
 
     model = get_sql_model()
     market_today = datetime.now(US_EASTERN).date()
-    filtered_stock_codes = sorted({code.strip().upper() for code in (stock_codes or []) if code.strip()})
+    filtered_stock_codes = sorted(
+        {
+            alias
+            for code in (stock_codes or [])
+            if str(code).strip()
+            for alias in _stock_code_aliases(str(code))
+        }
+    )
 
     date_rows = model.execute_read_query(
         """
@@ -518,7 +546,7 @@ def get_30m_support_resistance(
         if row.get("ASXCode")
     }
 
-    use_live_prices = _should_use_live_prices(
+    use_live_prices = enable_live_prices and _should_use_live_prices(
         observation_date,
         market_today,
         recent_trading_dates,
@@ -545,6 +573,7 @@ def get_30m_support_resistance(
             price_source=str(live_quote.get("source")) if live_quote else "30m_close",
             minimum_distance_atr=minimum_distance_atr,
             maximum_distance_atr=maximum_distance_atr,
+            max_levels=max_levels,
         )
         if result is not None:
             stored_snapshot = snapshots_by_stock.get(code) or {}
@@ -605,4 +634,98 @@ def get_30m_support_resistance(
         "group": group,
         "count": len(stocks),
         "stocks": stocks,
+    }
+
+
+def get_30m_support_resistance_for_stock(
+    stock_code: str,
+    observation_date: Optional[date] = None,
+    lookback_days: int = 10,
+    minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
+    maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
+    max_levels: int = 5,
+    enable_live_prices: bool = False,
+) -> Dict[str, Any]:
+    if minimum_distance_atr > maximum_distance_atr:
+        raise ValueError("Minimum ATR distance cannot exceed maximum ATR distance")
+    code = (stock_code or "").strip().upper()
+    if not code:
+        raise ValueError("stock_code is required")
+
+    aliases = _stock_code_aliases(code)
+
+    result = get_30m_support_resistance(
+        observation_date=observation_date,
+        lookback_days=lookback_days,
+        minimum_distance_atr=minimum_distance_atr,
+        maximum_distance_atr=maximum_distance_atr,
+        stock_codes=aliases,
+        group=None,
+        max_levels=max_levels,
+        enable_live_prices=enable_live_prices,
+    )
+
+    if not result.get("stocks"):
+        raise ValueError(f"No 30-minute prices found for {code}")
+
+    stocks = result["stocks"]
+    stock = next(
+        (
+            item
+            for alias in aliases
+            for item in stocks
+            if str(item.get("database_code") or "").upper() == alias
+        ),
+        stocks[0],
+    )
+    model = get_sql_model()
+    raw_bars = model.execute_read_query(
+        """
+        SELECT TimeIntervalStart, [Open], [High], [Low], [Close], Volume
+        FROM StockDB_US.StockData.PriceHistoryTimeFrame
+        WHERE TimeIntervalStart >= DATEADD(day, -?, convert(datetime, ?))
+          AND TimeIntervalStart <= DATEADD(hour, 23, convert(datetime, ?))
+          AND TimeFrame = '30M'
+          AND ASXCode = convert(varchar(10), ?)
+        ORDER BY TimeIntervalStart
+        """,
+        (
+            lookback_days,
+            result["observation_date"],
+            result["observation_date"],
+            stock["database_code"],
+        ),
+    ) or []
+
+    bars: List[Dict[str, Any]] = []
+    for row in raw_bars:
+        open_price = _number(row.get("Open"))
+        high = _number(row.get("High"))
+        low = _number(row.get("Low"))
+        close = _number(row.get("Close"))
+        volume = _number(row.get("Volume"))
+        if open_price is None or high is None or low is None or close is None:
+            continue
+        bars.append(
+            {
+                "time": _timestamp(row.get("TimeIntervalStart")).isoformat(),
+                "open": open_price,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume if volume is not None else 0.0,
+            }
+        )
+
+    return {
+        "observation_date": result["observation_date"],
+        "latest_available_date": result["latest_available_date"],
+        "recent_trading_dates": result["recent_trading_dates"],
+        "live_price_check": result["live_price_check"],
+        "live_price_missing": result["live_price_missing"],
+        "lookback_days": lookback_days,
+        "atr_range": result["atr_range"],
+        "stock_code": stock["stock_code"],
+        "stock": stock,
+        "bars": bars,
     }
