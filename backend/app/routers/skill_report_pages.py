@@ -26,6 +26,14 @@ SKILLS = {
         "title": "Stock Social Sentiment",
         "route": "stock-social-sentiment",
     },
+    "analyze-option-flow": {
+        "title": "Option Flow Analysis",
+        "route": "analyze-option-flow",
+    },
+    "find-index-bottoms": {
+        "title": "Find Index Bottoms",
+        "route": "find-index-bottoms",
+    },
 }
 
 
@@ -59,6 +67,20 @@ class StockSocialSentimentJobCreate(BaseModel):
     timeout_minutes: int = Field(default=75, ge=1, le=240)
 
 
+class OptionFlowAnalysisJobCreate(BaseModel):
+    observation_date: str = Field(..., min_length=10, max_length=10)
+    ticker: Optional[str] = Field(default=None, max_length=20)
+    top_n: int = Field(default=10, ge=1, le=100)
+    timeout_minutes: int = Field(default=90, ge=1, le=240)
+    model: Optional[str] = Field(default=None, max_length=200)
+
+
+class FindIndexBottomsJobCreate(BaseModel):
+    as_at: Optional[str] = Field(default=None, max_length=80)
+    timeout_minutes: int = Field(default=90, ge=1, le=240)
+    model: Optional[str] = Field(default=None, max_length=200)
+
+
 class SkillJobResponse(BaseModel):
     data: Any
 
@@ -71,7 +93,7 @@ def _skill_config(job_type: str) -> Dict[str, str]:
 
 
 def _default_title(job_type: str, item: Dict[str, Any], job_id: str) -> str:
-    title = get_first_value(item, ["title", "report_title", "name"])
+    title = get_first_value(item, ["title", "report_title", "name", "label"])
     if title:
         return str(title)
 
@@ -204,6 +226,94 @@ def create_stock_social_sentiment_job(
 
 @router.get("/stock-social-sentiment/jobs/{job_id}", response_model=SkillJobResponse)
 def get_stock_social_sentiment_job(
+    job_id: str,
+    username: str = Depends(verify_credentials),
+) -> SkillJobResponse:
+    data = call_skill_runner("GET", f"/api/jobs/{job_id}")
+    return SkillJobResponse(data=data)
+
+
+@router.get("/option-flow-analysis-reports", response_model=SkillReportPage)
+def list_option_flow_analysis_reports(username: str = Depends(verify_credentials)) -> SkillReportPage:
+    return _list_skill_reports("analyze-option-flow")
+
+
+@router.get("/option-flow-analysis-reports/{job_id}", response_model=SkillReportDetail)
+def get_option_flow_analysis_report(
+    job_id: str,
+    username: str = Depends(verify_credentials),
+) -> SkillReportDetail:
+    return _get_skill_report("analyze-option-flow", job_id)
+
+
+@router.post("/option-flow-analysis/jobs", response_model=SkillJobResponse)
+def create_option_flow_analysis_job(
+    payload: OptionFlowAnalysisJobCreate,
+    username: str = Depends(verify_credentials),
+) -> SkillJobResponse:
+    observation_date = payload.observation_date.strip()
+    if not observation_date:
+        raise HTTPException(status_code=400, detail="observation_date is required")
+
+    runner_payload: Dict[str, Any] = {
+        "observation_date": observation_date,
+        "top_n": payload.top_n,
+        "timeout_minutes": payload.timeout_minutes,
+    }
+    ticker = (payload.ticker or "").strip().upper()
+    if ticker:
+        runner_payload["ticker"] = ticker
+    model = (payload.model or "").strip()
+    if model:
+        runner_payload["model"] = model
+
+    data = call_skill_runner("POST", "/api/jobs/analyze-option-flow", runner_payload)
+    return SkillJobResponse(data=data)
+
+
+@router.get("/option-flow-analysis/jobs/{job_id}", response_model=SkillJobResponse)
+def get_option_flow_analysis_job(
+    job_id: str,
+    username: str = Depends(verify_credentials),
+) -> SkillJobResponse:
+    data = call_skill_runner("GET", f"/api/jobs/{job_id}")
+    return SkillJobResponse(data=data)
+
+
+@router.get("/find-index-bottoms-reports", response_model=SkillReportPage)
+def list_find_index_bottoms_reports(username: str = Depends(verify_credentials)) -> SkillReportPage:
+    return _list_skill_reports("find-index-bottoms")
+
+
+@router.get("/find-index-bottoms-reports/{job_id}", response_model=SkillReportDetail)
+def get_find_index_bottoms_report(
+    job_id: str,
+    username: str = Depends(verify_credentials),
+) -> SkillReportDetail:
+    return _get_skill_report("find-index-bottoms", job_id)
+
+
+@router.post("/find-index-bottoms/jobs", response_model=SkillJobResponse)
+def create_find_index_bottoms_job(
+    payload: FindIndexBottomsJobCreate,
+    username: str = Depends(verify_credentials),
+) -> SkillJobResponse:
+    runner_payload: Dict[str, Any] = {
+        "timeout_minutes": payload.timeout_minutes,
+    }
+    as_at = (payload.as_at or "").strip()
+    if as_at:
+        runner_payload["as_at"] = as_at
+    model = (payload.model or "").strip()
+    if model:
+        runner_payload["model"] = model
+
+    data = call_skill_runner("POST", "/api/jobs/find-index-bottoms", runner_payload)
+    return SkillJobResponse(data=data)
+
+
+@router.get("/find-index-bottoms/jobs/{job_id}", response_model=SkillJobResponse)
+def get_find_index_bottoms_job(
     job_id: str,
     username: str = Depends(verify_credentials),
 ) -> SkillJobResponse:

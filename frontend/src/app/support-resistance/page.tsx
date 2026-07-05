@@ -252,7 +252,7 @@ export default function SupportResistancePage() {
       // Support zones
       for (const [index, zone] of supports.entries()) {
         const lineColor = supportColors[Math.min(index, supportColors.length - 1)];
-        const supportHover = `<b>Support Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>ATR Distance: ${zone.distance_atr.toFixed(2)}<extra></extra>`;
+        const supportHover = `<b>Support Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>Change From Last Close: ${zone.distance_pct > 0 ? "+" : ""}${zone.distance_pct.toFixed(2)}%<br>ATR Distance: ${zone.distance_atr.toFixed(2)}<extra></extra>`;
         traces.push({
           x: [bars[0].time, bars[bars.length - 1].time],
           y: [zone.price, zone.price],
@@ -288,7 +288,7 @@ export default function SupportResistancePage() {
       // Resistance zones
       for (const [index, zone] of resistances.entries()) {
         const lineColor = resistanceColors[Math.min(index, resistanceColors.length - 1)];
-        const resistanceHover = `<b>Resistance Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>ATR Distance: ${zone.distance_atr.toFixed(2)}<extra></extra>`;
+        const resistanceHover = `<b>Resistance Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>Change From Last Close: ${zone.distance_pct > 0 ? "+" : ""}${zone.distance_pct.toFixed(2)}%<br>ATR Distance: ${zone.distance_atr.toFixed(2)}<extra></extra>`;
         traces.push({
           x: [bars[0].time, bars[bars.length - 1].time],
           y: [zone.price, zone.price],

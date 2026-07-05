@@ -37,6 +37,7 @@ type TextField = {
   multiline?: boolean;
   defaultValue?: string;
   required?: boolean;
+  omitWhenBlank?: boolean;
 };
 
 type NumberField = {
@@ -120,7 +121,7 @@ export default function SkillReportPage({
   const initialValues = useMemo(() => {
     const values: Record<string, string | number> = {};
     fields.forEach((field) => {
-      values[field.name] = "defaultValue" in field ? field.defaultValue : "";
+      values[field.name] = "defaultValue" in field ? field.defaultValue ?? "" : "";
     });
     return values;
   }, [fields]);
@@ -226,10 +227,17 @@ export default function SkillReportPage({
     setJobResponse(null);
     setJobStatus(null);
     try {
+      const requestValues = Object.fromEntries(
+        Object.entries(values).filter(([name, value]) => {
+          const field = fields.find((item) => item.name === name);
+          const omitWhenBlank = !!field && "omitWhenBlank" in field && field.omitWhenBlank;
+          return !(omitWhenBlank && !String(value || "").trim());
+        })
+      );
       const res = await authenticatedFetch(`${baseUrl}${jobsEndpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify(requestValues),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.detail || `HTTP ${res.status}`);
