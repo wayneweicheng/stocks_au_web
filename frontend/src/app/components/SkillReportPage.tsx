@@ -117,7 +117,7 @@ export default function SkillReportPage({
   fields,
   makeJobLabel,
 }: Props) {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const initialValues = useMemo(() => {
     const values: Record<string, string | number> = {};
     fields.forEach((field) => {
@@ -165,7 +165,7 @@ export default function SkillReportPage({
 
   const loadDetail = useCallback(
     async (jobIdToLoad: string) => {
-      if (!baseUrl || !jobIdToLoad) return;
+      if (!jobIdToLoad) return;
       setLoadingDetail(true);
       setViewerError("");
       try {
@@ -185,10 +185,6 @@ export default function SkillReportPage({
   );
 
   const loadReports = useCallback(async () => {
-    if (!baseUrl) {
-      setViewerError("NEXT_PUBLIC_BACKEND_URL is not configured.");
-      return;
-    }
     setLoadingList(true);
     setViewerError("");
     try {
@@ -212,10 +208,6 @@ export default function SkillReportPage({
   }, [baseUrl, loadDetail, reportsEndpoint, selectedJobId]);
 
   const submitJob = useCallback(async () => {
-    if (!baseUrl) {
-      setJobError("NEXT_PUBLIC_BACKEND_URL is not configured.");
-      return;
-    }
     const missing = fields.find((field) => "required" in field && field.required && !String(values[field.name] || "").trim());
     if (missing) {
       setJobError(`${missing.label} is required.`);
@@ -262,10 +254,6 @@ export default function SkillReportPage({
 
   const checkStatusFor = useCallback(
     async (jobIdToCheck: string) => {
-      if (!baseUrl) {
-        setJobError("NEXT_PUBLIC_BACKEND_URL is not configured.");
-        return;
-      }
       const currentJobId = jobIdToCheck.trim();
       if (!currentJobId) {
         setJobError("Enter or submit a job id first.");

@@ -233,7 +233,7 @@ function chooseAutoExpiry(expirations: ExpirationRow[]) {
 }
 
 export default function OptionOrdersPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const prefillStarted = useRef(false);
   const [symbol, setSymbol] = useState("AVGO");
   const [right, setRight] = useState<Right>("P");
@@ -264,7 +264,7 @@ export default function OptionOrdersPage() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
-    if (!baseUrl || prefillStarted.current) return;
+    if (prefillStarted.current) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("auto") !== "1") return;
 
@@ -444,7 +444,6 @@ export default function OptionOrdersPage() {
   }, [action, bracketExitPct, limitPrice]);
 
   const loadExpirations = async () => {
-    if (!baseUrl) return;
     setLoadingChain(true);
     setError("");
     setEstimateError("");
@@ -479,7 +478,6 @@ export default function OptionOrdersPage() {
   };
 
   const loadChain = async () => {
-    if (!baseUrl) return;
     if (!selectedExpiry) {
       setError("Load expiries and select an expiry first.");
       return;
@@ -528,7 +526,7 @@ export default function OptionOrdersPage() {
   };
 
   const estimatePrice = async () => {
-    if (!baseUrl || !selectedRow) return;
+    if (!selectedRow) return;
     const target = parsePositive(targetUnderlying);
     if (!target) {
       setEstimateError("Enter a valid target underlying price.");
@@ -563,7 +561,7 @@ export default function OptionOrdersPage() {
   };
 
   const placeOrder = async () => {
-    if (!baseUrl || !selectedRow) return;
+    if (!selectedRow) return;
     const qty = parsePositive(quantity);
     const price = parsePositive(limitPrice);
     if (!qty || !Number.isInteger(qty)) {

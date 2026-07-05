@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Path, Body
+from fastapi import APIRouter, HTTPException, Path, Body, Depends
 from typing import List, Dict, Any, Optional
 from app.core.db import get_sql_model
+from app.routers.auth import verify_credentials
 
 
-router = APIRouter(prefix="/api/monitor-stocks", tags=["monitor-stocks"])
+router = APIRouter(prefix="/api/monitor-stocks", tags=["monitor-stocks"], dependencies=[Depends(verify_credentials)])
 
 
 def exec_read(sql: str, params: tuple = ()) -> List[Dict[str, Any]]:

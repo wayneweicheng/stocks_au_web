@@ -115,7 +115,7 @@ function MultiLineChart({ rows, yKey, groupKey, title }: { rows: Row[]; yKey: st
 }
 
 export default function MarketClvTrendPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [dateFrom, setDateFrom] = useState(defaultFromDate);
   const [dateTo, setDateTo] = useState(() => isoDate(new Date()));
   const [selectedCaps, setSelectedCaps] = useState<string[]>([]);
@@ -124,7 +124,6 @@ export default function MarketClvTrendPage() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    if (!baseUrl) return;
     setLoading(true);
     setError("");
     try {

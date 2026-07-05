@@ -182,7 +182,7 @@ function LevelCell({
 }
 
 export default function PriceLevels30mPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const initialLoadStarted = useRef(false);
   const [data, setData] = useState<LevelsResponse | null>(null);
   const [activeView, setActiveView] = useState<"levels" | "admin">("levels");
@@ -206,7 +206,6 @@ export default function PriceLevels30mPage() {
   const [adminMessage, setAdminMessage] = useState("");
 
   const loadGroups = useCallback(async () => {
-    if (!baseUrl) return [];
     setGroupsLoading(true);
     try {
       const response = await authenticatedFetch(`${baseUrl}/api/price-levels-30m/groups`, {
@@ -223,7 +222,6 @@ export default function PriceLevels30mPage() {
   }, [baseUrl]);
 
   const loadAvailableStocks = useCallback(async () => {
-    if (!baseUrl) return;
     const response = await authenticatedFetch(`${baseUrl}/api/price-levels-30m/available-stocks`, {
       cache: "no-store",
     });
@@ -233,7 +231,6 @@ export default function PriceLevels30mPage() {
   }, [baseUrl]);
 
   const loadLevels = useCallback(async (groupId = selectedGroupId) => {
-    if (!baseUrl) return;
     setLoading(true);
     setError("");
     try {
@@ -316,7 +313,6 @@ export default function PriceLevels30mPage() {
   }
 
   async function saveGroup() {
-    if (!baseUrl) return;
     setSavingGroup(true);
     setError("");
     setAdminMessage("");
@@ -352,7 +348,7 @@ export default function PriceLevels30mPage() {
   }
 
   async function deleteGroup(group: PriceLevelGroup) {
-    if (!baseUrl || !window.confirm(`Delete ${group.name}?`)) return;
+    if (!window.confirm(`Delete ${group.name}?`)) return;
     setError("");
     setAdminMessage("");
     const response = await authenticatedFetch(`${baseUrl}/api/price-levels-30m/groups/${group.id}`, {

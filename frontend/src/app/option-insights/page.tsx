@@ -47,7 +47,7 @@ export default function OptionInsightsPage() {
   >([]);
   const [signalStrengthsLoading, setSignalStrengthsLoading] = useState(false);
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   // Fetch stock codes for the selected observation date
   useEffect(() => {

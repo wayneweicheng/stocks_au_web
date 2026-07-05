@@ -244,7 +244,7 @@ export default function BrokerAnalysisPage() {
     return inputDate(date);
   }, [today]);
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [activeTab, setActiveTab] = useState<TabKey>("buySuggestion");
   const [brokerCodes, setBrokerCodes] = useState<BrokerCode[]>([]);
   const [brokerCode, setBrokerCode] = useState("Macqua");
@@ -263,7 +263,6 @@ export default function BrokerAnalysisPage() {
   const [percLoading, setPercLoading] = useState(false);
 
   useEffect(() => {
-    if (!baseUrl) return;
     authenticatedFetch(`${baseUrl}/api/broker-analysis/defaults`)
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -281,7 +280,6 @@ export default function BrokerAnalysisPage() {
   }, [baseUrl]);
 
   useEffect(() => {
-    if (!baseUrl) return;
     authenticatedFetch(`${baseUrl}/api/broker-analysis/broker-codes`)
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -299,7 +297,7 @@ export default function BrokerAnalysisPage() {
   }, [baseUrl]);
 
   useEffect(() => {
-    if (!baseUrl || !brokerCode || !suggestionStartDate || !suggestionEndDate) return;
+    if (!brokerCode || !suggestionStartDate || !suggestionEndDate) return;
     setSuggestionLoading(true);
     setError("");
     const params = new URLSearchParams({
@@ -319,7 +317,7 @@ export default function BrokerAnalysisPage() {
   }, [baseUrl, brokerCode, suggestionSort, suggestionStartDate, suggestionEndDate]);
 
   useEffect(() => {
-    if (!baseUrl || !brokerCode) return;
+    if (!brokerCode) return;
     if (!percStartDate || !percEndDate) return;
 
     const controller = new AbortController();

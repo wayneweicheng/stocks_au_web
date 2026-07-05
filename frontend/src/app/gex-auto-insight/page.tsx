@@ -65,7 +65,7 @@ export default function GEXAutoInsightPage() {
   const [editPriority, setEditPriority] = useState("");
   const [editActive, setEditActive] = useState(true);
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const fetchStocks = useCallback(async () => {
     try {

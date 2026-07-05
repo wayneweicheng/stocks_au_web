@@ -57,7 +57,7 @@ export default function DiscordSummaryPage() {
     messageCount: number;
   } | null>(null);
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const fetchSummary = useCallback(
     async (forceRegenerate: boolean = false) => {
@@ -96,7 +96,6 @@ export default function DiscordSummaryPage() {
   );
 
   useEffect(() => {
-    if (!baseUrl) return;
 
     const loadLatestSummary = async () => {
       setFollowersLoading(true);

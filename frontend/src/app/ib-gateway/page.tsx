@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 export default function IBGatewayPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ running: boolean; pids: number[]; api_ready?: boolean; open_ports?: number[]; host?: string; db_heartbeat_success?: number | null; db_heartbeat_updated?: string | null; db_heartbeat_ok?: boolean | null } | null>(null);
   const [error, setError] = useState<string>("");

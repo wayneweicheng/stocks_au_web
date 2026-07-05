@@ -1,12 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Any, Dict
 import os
 import pyodbc
 from app.core.db import get_sql_model
 from app.core.config import settings
+from app.routers.auth import verify_credentials
 
 
-router = APIRouter(prefix="/debug", tags=["diagnostics"])
+router = APIRouter(prefix="/debug", tags=["diagnostics"], dependencies=[Depends(verify_credentials)])
 
 
 @router.get("/info")

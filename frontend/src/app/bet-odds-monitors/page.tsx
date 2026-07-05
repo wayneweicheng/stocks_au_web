@@ -114,7 +114,7 @@ async function responseError(response: Response) {
 }
 
 export default function BetOddsMonitorsPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [discovery, setDiscovery] = useState<Discovery | null>(null);

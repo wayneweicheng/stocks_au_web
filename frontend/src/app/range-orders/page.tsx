@@ -73,7 +73,7 @@ export default function RangeOrdersPage() {
   const [pegasusPlaceResult, setPegasusPlaceResult] = useState<any | null>(null);
   const [supportBounceStrategyId, setSupportBounceStrategyId] = useState<number | null>(null);
   const [pegasusStrategyError, setPegasusStrategyError] = useState<string>("");
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [quoteClose, setQuoteClose] = useState<number | null>(null);
   const [quoteLast, setQuoteLast] = useState<number | null>(null);
   const [quoteMid, setQuoteMid] = useState<number | null>(null);
@@ -258,9 +258,8 @@ export default function RangeOrdersPage() {
     let cancelled = false;
     const loadSupportBounceStrategy = async () => {
       setPegasusStrategyError("");
-      if (!baseUrl) return;
-      try {
-        const res = await fetch(`${baseUrl}/api/trading-orders/strategies`);
+        try {
+        const res = await authenticatedFetch(`${baseUrl}/api/trading-orders/strategies`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
@@ -295,8 +294,7 @@ export default function RangeOrdersPage() {
     const loadQuoteFromDb = async () => {
       setQuoteError("");
       try {
-        if (!baseUrl) return;
-        const sc = normalizeUsSymbol(stockCode);
+            const sc = normalizeUsSymbol(stockCode);
         if (!sc) return;
 
         // Fetch DB price only (no IB calls)
@@ -360,7 +358,7 @@ export default function RangeOrdersPage() {
 
   // Load position when Close Position mode is selected or stock code changes
   const loadPosition = async () => {
-    if (!baseUrl || !stockCode || stockCode.trim().length === 0) {
+    if (!stockCode || stockCode.trim().length === 0) {
       setCurrentPosition(null);
       setPositionType(null);
       return;
@@ -535,7 +533,7 @@ export default function RangeOrdersPage() {
   };
 
   const canPlacePegasusOrders = useMemo(() => {
-    if (!baseUrl || !generated || generated.length === 0) return false;
+    if (!generated || generated.length === 0) return false;
     if (!supportBounceStrategyId || !Number.isFinite(supportBounceStrategyId)) return false;
     if (positionMode !== "open") return false;
     if (!enableBracket || !enableStopLoss) return false;
@@ -623,7 +621,7 @@ export default function RangeOrdersPage() {
   }, [totals, quoteLast]);
 
   const onPlaceOrders = async () => {
-    if (!generated || !baseUrl) return;
+    if (!generated) return;
 
     // Validate at least one option is selected
     if (!placeDayOrders && !placeOvernightOrders) {
@@ -748,7 +746,7 @@ export default function RangeOrdersPage() {
   };
 
   const onPlacePegasusOrders = async () => {
-    if (!generated || !baseUrl) return;
+    if (!generated) return;
     setPegasusPlaceError("");
     setPegasusPlaceResult(null);
 
@@ -814,7 +812,7 @@ export default function RangeOrdersPage() {
     try {
       const results = await Promise.all(
         payloads.map(async (payload) => {
-          const res = await fetch(`${baseUrl}/api/trading-orders`, {
+          const res = await authenticatedFetch(`${baseUrl}/api/trading-orders`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -836,7 +834,7 @@ export default function RangeOrdersPage() {
   };
 
   const onCancelAllOrders = async () => {
-    if (!baseUrl || !stockCode || !cancelSide) return;
+    if (!stockCode || !cancelSide) return;
     setCancelling(true);
     setCancelError("");
     setCancelResult(null);
@@ -1005,15 +1003,15 @@ export default function RangeOrdersPage() {
                 }`}
               />
               {positionMode === "close" && (
-                <p className="text-xs text-slate-500 mt-1">Computed from volume × average price</p>
+                <p className="text-xs text-slate-500 mt-1">Computed from volume Ã— average price</p>
               )}
               {estTotalAtLast != null && totals && (
                 <div className="text-xs text-slate-500 mt-1">
                   <div>Est. at Last (${formatNA(quoteLast, 2)}): {currency} {estTotalAtLast.toLocaleString()}</div>
                   <div className="mt-0.5">
                     {positionMode === "open" && side === "Buy" && parsed.total
-                      ? <>Δ vs entered: {currency} {(round2(estTotalAtLast - (parsed.total ?? 0))).toLocaleString()}</>
-                      : <>Δ vs generated: {currency} {(round2(estTotalAtLast - (totals?.sumValue ?? 0))).toLocaleString()}</>
+                      ? <>Î” vs entered: {currency} {(round2(estTotalAtLast - (parsed.total ?? 0))).toLocaleString()}</>
+                      : <>Î” vs generated: {currency} {(round2(estTotalAtLast - (totals?.sumValue ?? 0))).toLocaleString()}</>
                     }
                   </div>
                 </div>
@@ -1059,7 +1057,7 @@ export default function RangeOrdersPage() {
               />
               {quoteLast != null && startVsLast && (
                 <p className="text-xs mt-1">
-                  <span className="text-slate-500">Δ vs Last (${formatNA(quoteLast, 2)}): </span>
+                  <span className="text-slate-500">Î” vs Last (${formatNA(quoteLast, 2)}): </span>
                   <span className={startVsLast.abs >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
                     {startVsLast.abs >= 0 ? "+" : ""}{startVsLast.abs.toFixed(2)} ({startVsLast.pct >= 0 ? "+" : ""}{startVsLast.pct.toFixed(2)}%)
                   </span>
@@ -1081,7 +1079,7 @@ export default function RangeOrdersPage() {
               />
               {quoteLast != null && endVsLast && (
                 <p className="text-xs mt-1">
-                  <span className="text-slate-500">Δ vs Last (${formatNA(quoteLast, 2)}): </span>
+                  <span className="text-slate-500">Î” vs Last (${formatNA(quoteLast, 2)}): </span>
                   <span className={endVsLast.abs >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
                     {endVsLast.abs >= 0 ? "+" : ""}{endVsLast.abs.toFixed(2)} ({endVsLast.pct >= 0 ? "+" : ""}{endVsLast.pct.toFixed(2)}%)
                   </span>
@@ -1352,8 +1350,8 @@ export default function RangeOrdersPage() {
               </h2>
               <p className="text-sm text-slate-600 mt-1">
                 Range {Math.min(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} - {Math.max(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} | Total Amount: {currency} {round2((side === "Buy" ? (parsed.total ?? 0) : (totals?.sumValue ?? 0))).toLocaleString()} | Prev Close: {formatNA(quoteClose)} | Last: {formatNA(quoteLast)}
-                {startVsLast && ` | ΔStart vs Last: ${startVsLast.abs >= 0 ? "+" : ""}${startVsLast.abs.toFixed(2)} (${startVsLast.pct >= 0 ? "+" : ""}${startVsLast.pct.toFixed(2)}%)`}
-                {endVsLast && ` | ΔEnd vs Last: ${endVsLast.abs >= 0 ? "+" : ""}${endVsLast.abs.toFixed(2)} (${endVsLast.pct >= 0 ? "+" : ""}${endVsLast.pct.toFixed(2)}%)`}
+                {startVsLast && ` | Î”Start vs Last: ${startVsLast.abs >= 0 ? "+" : ""}${startVsLast.abs.toFixed(2)} (${startVsLast.pct >= 0 ? "+" : ""}${startVsLast.pct.toFixed(2)}%)`}
+                {endVsLast && ` | Î”End vs Last: ${endVsLast.abs >= 0 ? "+" : ""}${endVsLast.abs.toFixed(2)} (${endVsLast.pct >= 0 ? "+" : ""}${endVsLast.pct.toFixed(2)}%)`}
               </p>
               <p className="text-xs text-slate-500 mt-2">
                 Note: Volume is rounded up to the next integer. Actual total may exceed the requested amount due to rounding.
@@ -1368,7 +1366,7 @@ export default function RangeOrdersPage() {
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">#</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Side</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Price</th>
-                    <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Δ vs Close</th>
+                    <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Î” vs Close</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Weight</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Allocated {currency}</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Volume</th>
@@ -1527,7 +1525,7 @@ export default function RangeOrdersPage() {
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
-                    disabled={placing || !baseUrl}
+                    disabled={placing}
                     onClick={onPlaceOrders}
                     className="self-start rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >

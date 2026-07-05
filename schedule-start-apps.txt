@@ -1,6 +1,10 @@
 
-Add arguments: -ExecutionPolicy Bypass -File "C:\Repo\stocks_au_web\start-apps.ps1" -NoNewWindows
+Register/update the Windows scheduled task:
 
-Start in: C:\Repo\stocks_au_web
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Repo\stocks_au_web\scripts\register_pegasus_scheduler.ps1"
 
-Program/Script: powershell.exe
+Default registered task:
+\pegasus\Pegasus Apps
+
+The task action starts the whole app:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Repo\stocks_au_web\start-apps.ps1" -BackendPort 3101 -FrontendPort 3100 -LogPath "C:\Repo\stocks_au_web\logs" -NoNewWindows

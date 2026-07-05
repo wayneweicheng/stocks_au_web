@@ -240,7 +240,7 @@ function Chart({ data }: { data: GexResponse }) {
 }
 
 export default function CalculatedGexPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [stockCode, setStockCode] = useState("QQQ.US");
   const [dateFrom, setDateFrom] = useState(defaultFromDate);
   const [dateTo, setDateTo] = useState(() => isoDate(new Date()));
@@ -250,7 +250,6 @@ export default function CalculatedGexPage() {
   const [page, setPage] = useState(1);
 
   const loadData = useCallback(async () => {
-    if (!baseUrl) return;
     setLoading(true);
     setError("");
     try {

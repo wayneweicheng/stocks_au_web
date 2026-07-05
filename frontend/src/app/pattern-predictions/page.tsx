@@ -8,7 +8,7 @@ interface PredictionRow {
 }
 
 export default function PatternPredictionsPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL as string;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "") as string;
 
   const [rows, setRows] = useState<PredictionRow[]>([]);
   const [loading, setLoading] = useState(false);

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
@@ -28,7 +28,7 @@ type Row = {
 export default function UserSubscriptionsPage({ params }: { params: Promise<{ userId: string }> }) {
   const { userId: userIdParam } = use(params);
   const userId = Number(userIdParam);
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [rows, setRows] = useState<Row[]>([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);

@@ -117,7 +117,7 @@ function StackedBarLineChart({ rows, yKey, title, threshold }: { rows: Row[]; yK
 }
 
 export default function OptionGexDeltaCapitalTypePage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [stockCode, setStockCode] = useState("QQQ.US");
   const [dateFrom, setDateFrom] = useState(defaultFromDate);
   const [dateTo, setDateTo] = useState(() => isoDate(new Date()));
@@ -128,7 +128,6 @@ export default function OptionGexDeltaCapitalTypePage() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    if (!baseUrl) return;
     setLoading(true); setError("");
     try {
       const params = new URLSearchParams({ stock_code: stockCode.trim().toUpperCase(), date_from: dateFrom, date_to: dateTo });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 type Row = Record<string, any>;
 
@@ -19,11 +20,11 @@ export default function MonitorStocksPage() {
   const [editPriority, setEditPriority] = useState<string>("");
   const [editNotes, setEditNotes] = useState("");
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${baseUrl}/api/monitor-stocks`)
+    authenticatedFetch(`${baseUrl}/api/monitor-stocks`)
       .then(r => r.ok ? r.json() : [])
       .then((a) => { setList(a||[]); })
       .catch(e => setError(String(e)))
@@ -37,7 +38,7 @@ export default function MonitorStocksPage() {
 
   const refresh = () => {
     setLoading(true);
-    fetch(`${baseUrl}/api/monitor-stocks`)
+    authenticatedFetch(`${baseUrl}/api/monitor-stocks`)
       .then(r => r.ok ? r.json() : [])
       .then((a) => { setList(a||[]); })
       .catch(e => setError(String(e)))
@@ -48,7 +49,7 @@ export default function MonitorStocksPage() {
     setError(""); setInfo("");
     if (!newCode.trim()) return;
     const code = newCode.trim();
-    const res = await fetch(`${baseUrl}/api/monitor-stocks`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ code })});
+    const res = await authenticatedFetch(`${baseUrl}/api/monitor-stocks`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ code })});
     if (!res.ok) {
       const msg = await res.text().catch(()=>"");
       setError(`Add failed: HTTP ${res.status}${msg?` - ${msg}`:""}`);
@@ -72,7 +73,7 @@ export default function MonitorStocksPage() {
     const codeKey = getCodeKey(rows);
     const original = String(row[codeKey]);
     const payload = { codeNew: editCode || null, priorityLevel: editPriority!=="" ? Number(editPriority) : null, notes: editNotes || null };
-    const res = await fetch(`${baseUrl}/api/monitor-stocks/${encodeURIComponent(original)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const res = await authenticatedFetch(`${baseUrl}/api/monitor-stocks/${encodeURIComponent(original)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     if (!res.ok) {
       const msg = await res.text().catch(()=>"");
       setError(`Update failed: HTTP ${res.status}${msg?` - ${msg}`:""}`);
@@ -89,7 +90,7 @@ export default function MonitorStocksPage() {
     const codeKey = getCodeKey(rows);
     const code = String(row[codeKey]);
     if (!window.confirm(`Delete ${code.toUpperCase()} from watchlist?`)) return;
-    const res = await fetch(`${baseUrl}/api/monitor-stocks/${encodeURIComponent(code)}`, {method:'DELETE'});
+    const res = await authenticatedFetch(`${baseUrl}/api/monitor-stocks/${encodeURIComponent(code)}`, {method:'DELETE'});
     if (!res.ok) { const msg = await res.text().catch(()=>""); setError(`Delete failed: HTTP ${res.status}${msg?` - ${msg}`:""}`); return; }
     setInfo(`Deleted ${code.toUpperCase()} from watchlist`); refresh();
   };

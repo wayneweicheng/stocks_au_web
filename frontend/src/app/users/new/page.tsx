@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -22,7 +22,7 @@ type Payload = {
 };
 
 export default function NewUserPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [payload, setPayload] = useState<Payload>({
     email: "",
     display_name: "",

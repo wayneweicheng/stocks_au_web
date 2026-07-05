@@ -31,7 +31,7 @@ export default function BreakoutConsolidationAnalysisPage() {
   const [promptError, setPromptError] = useState<string>("");
   const [promptCopied, setPromptCopied] = useState(false);
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   // Fetch consolidation stock codes when observation date changes
   useEffect(() => {

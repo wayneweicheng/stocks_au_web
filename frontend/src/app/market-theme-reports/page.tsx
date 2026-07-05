@@ -102,7 +102,7 @@ function persistSavedJobs(jobs: SavedJob[]) {
 }
 
 export default function MarketThemeReportsPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const [activeTab, setActiveTab] = useState<TabKey>("viewer");
   const [items, setItems] = useState<MarketThemeReportSummary[]>([]);
@@ -133,7 +133,7 @@ export default function MarketThemeReportsPage() {
 
   const loadDetail = useCallback(
     async (jobIdToLoad: string) => {
-      if (!baseUrl || !jobIdToLoad) return;
+      if (!jobIdToLoad) return;
       setLoadingDetail(true);
       setError("");
       try {
@@ -158,10 +158,6 @@ export default function MarketThemeReportsPage() {
   );
 
   const loadReports = useCallback(async () => {
-    if (!baseUrl) {
-      setError("NEXT_PUBLIC_BACKEND_URL is not configured.");
-      return;
-    }
     setLoadingList(true);
     setError("");
     try {
@@ -198,10 +194,6 @@ export default function MarketThemeReportsPage() {
   }, []);
 
   const submitJob = useCallback(async () => {
-    if (!baseUrl) {
-      setJobError("NEXT_PUBLIC_BACKEND_URL is not configured.");
-      return;
-    }
 
     setSubmitting(true);
     setJobError("");
@@ -237,10 +229,6 @@ export default function MarketThemeReportsPage() {
   }, [baseUrl, saveJob]);
 
   const checkStatusFor = useCallback(async (jobIdToCheck: string) => {
-    if (!baseUrl) {
-      setJobError("NEXT_PUBLIC_BACKEND_URL is not configured.");
-      return;
-    }
     const currentJobId = jobIdToCheck.trim();
     if (!currentJobId) {
       setJobError("Enter or submit a job id first.");

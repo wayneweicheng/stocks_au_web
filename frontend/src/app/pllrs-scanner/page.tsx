@@ -6,7 +6,7 @@ import { authenticatedFetch } from "../utils/authenticatedFetch";
 interface Row { [key: string]: any }
 
 export default function PLLRSScannerPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL as string;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "") as string;
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);

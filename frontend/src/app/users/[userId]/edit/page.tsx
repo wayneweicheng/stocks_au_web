@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
@@ -25,7 +25,7 @@ type UserOut = {
 export default function EditUserPage({ params }: { params: Promise<{ userId: string }> }) {
   const { userId: userIdParam } = use(params);
   const userId = Number(userIdParam);
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [form, setForm] = useState<UserOut | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>("");

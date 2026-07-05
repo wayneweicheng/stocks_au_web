@@ -218,7 +218,7 @@ export default function ResearchHubPage() {
     }
     setAnnSearchLoading(true);
     try {
-      const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/announcements?asx_code=${encodeURIComponent(
+      const url = `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/announcements?asx_code=${encodeURIComponent(
         code
       )}&page=${nextPage}&page_size=${ANN_SEARCH_PAGE_SIZE}`;
       const res = await authenticatedFetch(url);
@@ -239,7 +239,7 @@ export default function ResearchHubPage() {
     setCommenterLoading(true);
     try {
       const res = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/commenters`
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/commenters`
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: CommenterList = await res.json();
@@ -256,7 +256,7 @@ export default function ResearchHubPage() {
     setTippedStocksLoading(true);
     try {
       const res = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/stock-ratings/tipped-stocks?page=${nextPage}&page_size=${TIPPED_PAGE_SIZE}&sort_by=${encodeURIComponent(
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/stock-ratings/tipped-stocks?page=${nextPage}&page_size=${TIPPED_PAGE_SIZE}&sort_by=${encodeURIComponent(
           sortBy
         )}&sort_dir=${encodeURIComponent(sortDir)}`
       );
@@ -275,7 +275,7 @@ export default function ResearchHubPage() {
   async function fetchLinks(nextPage: number, q: string) {
     setLinkLoading(true);
     try {
-      const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/research-links?page=${nextPage}&page_size=${ITEMS_PER_PAGE}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+      const url = `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/research-links?page=${nextPage}&page_size=${ITEMS_PER_PAGE}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
       const res = await authenticatedFetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: ResearchLinkPage = await res.json();
@@ -326,7 +326,7 @@ export default function ResearchHubPage() {
     }
     try {
       const res = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/commenters`,
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/commenters`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -364,7 +364,7 @@ export default function ResearchHubPage() {
     try {
       setRatingLoading(true);
       const res = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/stock-ratings`,
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/stock-ratings`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -408,7 +408,7 @@ export default function ResearchHubPage() {
     }
     try {
       const res = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/research-links`,
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/research-links`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -448,7 +448,7 @@ export default function ResearchHubPage() {
     setAnnPrompt("");
     setAnnPromptMeta(null);
     try {
-      const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/announcement/${idNum}`;
+      const url = `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/announcement/${idNum}`;
       const res = await authenticatedFetch(url);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -470,7 +470,7 @@ export default function ResearchHubPage() {
     setAnnPromptCopied(false);
     try {
       const params = new URLSearchParams({ announcement_id: String(announcementIdInput) });
-      const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/announcement-analysis-prompt?${params}`;
+      const url = `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/announcement-analysis-prompt?${params}`;
       const res = await authenticatedFetch(url);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -504,7 +504,7 @@ export default function ResearchHubPage() {
         regenerate: String(forceRegenerate),
         model: annSelectedModel,
       });
-      const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/announcement-analysis?${params}`;
+      const url = `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/announcement-analysis?${params}`;
       const res = await authenticatedFetch(url);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -580,7 +580,7 @@ export default function ResearchHubPage() {
     try {
       // Fetch ratings summary
       const ratingsRes = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/stock-ratings/summary/${encodeURIComponent(stock)}`
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/stock-ratings/summary/${encodeURIComponent(stock)}`
       );
       if (!ratingsRes.ok) throw new Error(`HTTP ${ratingsRes.status}`);
       const summary: StockSummary = await ratingsRes.json();
@@ -588,7 +588,7 @@ export default function ResearchHubPage() {
 
       // Fetch research links for this stock
       const linksRes = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/research-links?q=${encodeURIComponent(stock)}&page_size=100`
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/research-links?q=${encodeURIComponent(stock)}&page_size=100`
       );
       if (linksRes.ok) {
         const linksData: ResearchLinkPage = await linksRes.json();
@@ -613,7 +613,7 @@ export default function ResearchHubPage() {
     setDeleteError("");
     try {
       const res = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/stock-ratings/tipped-stocks/${encodeURIComponent(deleteTargetCode)}`,
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/stock-ratings/tipped-stocks/${encodeURIComponent(deleteTargetCode)}`,
         { method: "DELETE" }
       );
       if (!res.ok) {
@@ -639,7 +639,7 @@ export default function ResearchHubPage() {
     setLinkDeleteError("");
     try {
       const res = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/research-links/${linkDeleteTargetId}`,
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/research-links/${linkDeleteTargetId}`,
         { method: "DELETE" }
       );
       if (!res.ok) {
@@ -675,7 +675,7 @@ export default function ResearchHubPage() {
     setEditError("");
     try {
       const res = await authenticatedFetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/research-links/${editingReport.id}`,
+        `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/research-links/${editingReport.id}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

@@ -128,7 +128,7 @@ function getOverallRatingBadgeColor(rating?: string | null) {
 }
 
 export default function StockAnalysisTab() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const [stocks, setStocks] = useState<TippedStock[]>([]);
   const [stocksLoading, setStocksLoading] = useState(false);

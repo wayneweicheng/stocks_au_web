@@ -16,7 +16,7 @@ export default function PegasusInvestOpportunitiesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   useEffect(() => {
     if (!observationDate) return;

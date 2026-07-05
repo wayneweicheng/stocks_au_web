@@ -826,7 +826,7 @@ function OpportunityDetails({ item }: { item: Opportunity }) {
 }
 
 export default function MarketCommandCenter({ market }: { market: Market }) {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [selectedDate, setSelectedDate] = useState(localIsoDate);
   const [data, setData] = useState<SummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -834,7 +834,6 @@ export default function MarketCommandCenter({ market }: { market: Market }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!baseUrl) return;
     setLoading(true);
     setError("");
     try {

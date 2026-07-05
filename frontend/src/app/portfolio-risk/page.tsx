@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -143,7 +143,7 @@ function StatCard({
 }
 
 export default function PortfolioRiskPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [data, setData] = useState<AccountRiskResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

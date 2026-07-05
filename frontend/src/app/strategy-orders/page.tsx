@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 interface StrategyOrderType { id: number; name: string; raw: string }
 
@@ -27,7 +28,7 @@ const OPTION_BUY_SELL = ["N/A", "SELL", "BUY"] as const;
 const BUY_CONDITION_TYPES = ["N/A", "SMA_UPTURN", "DRAGONFLY", "DROP_WINDOW_REVERSAL"] as const;
 
 export default function StrategyOrdersPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const [types, setTypes] = useState<StrategyOrderType[]>([]);
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
@@ -73,7 +74,7 @@ export default function StrategyOrdersPage() {
   useEffect(() => {
     const loadTypes = async () => {
       try {
-        const res = await fetch(`${baseUrl}/api/strategy-orders/types`);
+        const res = await authenticatedFetch(`${baseUrl}/api/strategy-orders/types`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setTypes(data);
@@ -96,7 +97,7 @@ export default function StrategyOrdersPage() {
       const tsSep = query ? "&" : "?";
       const url = `${baseUrl}/api/strategy-orders${query}${tsSep}_ts=${Date.now()}`;
       const requestId = ++latestRequestId.current;
-      const res = await fetch(url, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
+      const res = await authenticatedFetch(url, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (requestId === latestRequestId.current) {
@@ -133,13 +134,13 @@ export default function StrategyOrdersPage() {
 
       let res: Response;
       if (editingId) {
-        res = await fetch(`${baseUrl}/api/strategy-orders/${editingId}`, {
+        res = await authenticatedFetch(`${baseUrl}/api/strategy-orders/${editingId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
       } else {
-        res = await fetch(`${baseUrl}/api/strategy-orders`, {
+        res = await authenticatedFetch(`${baseUrl}/api/strategy-orders`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -209,7 +210,7 @@ export default function StrategyOrdersPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this strategy order?")) return;
     try {
-      const res = await fetch(`${baseUrl}/api/strategy-orders/${id}`, { method: "DELETE" });
+      const res = await authenticatedFetch(`${baseUrl}/api/strategy-orders/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const result = await res.json();
       setMessage(result.message || "Deleted");
@@ -503,5 +504,4 @@ export default function StrategyOrdersPage() {
     </div>
   );
 }
-
 

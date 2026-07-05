@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -33,7 +33,7 @@ const EVENT_GROUPS = [
 export default function NewSubscriptionPage({ params }: { params: Promise<{ userId: string }> }) {
   const { userId: userIdParam } = use(params);
   const userId = Number(userIdParam);
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [eventType, setEventType] = useState<string>("announcement");
   const [types, setTypes] = useState<SubType[]>([]);
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);

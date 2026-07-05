@@ -12,7 +12,7 @@ export default function BreakoutWatchlistUSPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const changeKeys = new Set(["Change%", "1dChange", "2dChange", "5dChange", "10dChange"]);
   const changeClassFor = (n: number) => {

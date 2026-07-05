@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
@@ -11,7 +11,7 @@ export default function TradingHaltPage() {
   const [error, setError] = useState<string>("");
   const [sortBy, setSortBy] = useState<SortOption>("Ann Date");
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const fetchData = () => {
     setLoading(true);

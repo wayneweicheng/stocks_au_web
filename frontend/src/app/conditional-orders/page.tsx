@@ -90,7 +90,7 @@ export default function ConditionalOrdersPage() {
     valid_until: "",
   });
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   useEffect(() => {
     const getDefaultValidUntil = () => {
@@ -104,7 +104,7 @@ export default function ConditionalOrdersPage() {
     const load = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${baseUrl}/api/conditional-orders`);
+        const response = await authenticatedFetch(`${baseUrl}/api/conditional-orders`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         setOrders(data);
@@ -116,7 +116,7 @@ export default function ConditionalOrdersPage() {
     };
     const loadOrderTypes = async () => {
       try {
-        const res = await fetch(`${baseUrl}/api/conditional-orders/order-types`);
+        const res = await authenticatedFetch(`${baseUrl}/api/conditional-orders/order-types`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         // Filter out any placeholder type like All Orders (id -1)
@@ -194,7 +194,7 @@ export default function ConditionalOrdersPage() {
   const loadOrders = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${baseUrl}/api/conditional-orders`);
+      const response = await authenticatedFetch(`${baseUrl}/api/conditional-orders`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       setOrders(data);
@@ -224,14 +224,14 @@ export default function ConditionalOrdersPage() {
 
       if (editingOrderId) {
         // Update existing order - call PUT endpoint
-        response = await fetch(`${baseUrl}/api/conditional-orders/${editingOrderId}`, {
+        response = await authenticatedFetch(`${baseUrl}/api/conditional-orders/${editingOrderId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
       } else {
         // Create new order - call POST endpoint
-        response = await fetch(`${baseUrl}/api/conditional-orders`, {
+        response = await authenticatedFetch(`${baseUrl}/api/conditional-orders`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -344,7 +344,7 @@ export default function ConditionalOrdersPage() {
     if (!confirm("Are you sure you want to delete this conditional order?")) return;
 
     try {
-      const response = await fetch(`${baseUrl}/api/conditional-orders/${orderId}`, {
+      const response = await authenticatedFetch(`${baseUrl}/api/conditional-orders/${orderId}`, {
         method: "DELETE",
       });
 
@@ -408,7 +408,7 @@ export default function ConditionalOrdersPage() {
       } else {
         // AUD: use ASX history endpoint
         const asxCode = hasSuffix ? normalizedRaw : `${normalizedRaw}.AX`;
-        const response = await fetch(`${baseUrl}/api/conditional-orders/stock-price/${asxCode}`);
+        const response = await authenticatedFetch(`${baseUrl}/api/conditional-orders/stock-price/${asxCode}`);
         if (response.ok) {
           const data: StockPriceData = await response.json();
           setStockPriceData(data);

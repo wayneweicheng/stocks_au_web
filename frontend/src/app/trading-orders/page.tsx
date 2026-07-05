@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 interface StrategyOption {
   strategy_id: number;
@@ -96,7 +97,7 @@ function formatDate(value?: string) {
 }
 
 export default function TradingOrdersPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const [mode, setMode] = useState<"live" | "backtest">("live");
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("ACTIVE");
@@ -145,9 +146,9 @@ export default function TradingOrdersPage() {
     const loadLookups = async () => {
       try {
         const [strategyRes, signalRes, backtestRes] = await Promise.all([
-          fetch(`${baseUrl}/api/trading-orders/strategies`),
-          fetch(`${baseUrl}/api/trading-orders/signal-types`),
-          fetch(`${baseUrl}/api/trading-orders/backtest-runs`),
+          authenticatedFetch(`${baseUrl}/api/trading-orders/strategies`),
+          authenticatedFetch(`${baseUrl}/api/trading-orders/signal-types`),
+          authenticatedFetch(`${baseUrl}/api/trading-orders/backtest-runs`),
         ]);
 
         if (strategyRes.ok) {
@@ -198,7 +199,7 @@ export default function TradingOrdersPage() {
         params.set("backtest_run_id", backtestFilter);
       }
       params.set("_ts", String(Date.now()));
-      const res = await fetch(`${baseUrl}/api/trading-orders?${params.toString()}`);
+      const res = await authenticatedFetch(`${baseUrl}/api/trading-orders?${params.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setOrders(Array.isArray(data) ? data : []);
@@ -287,13 +288,13 @@ export default function TradingOrdersPage() {
       setSubmitting(true);
       let res: Response;
       if (editingId) {
-        res = await fetch(`${baseUrl}/api/trading-orders/${editingId}`, {
+        res = await authenticatedFetch(`${baseUrl}/api/trading-orders/${editingId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
       } else {
-        res = await fetch(`${baseUrl}/api/trading-orders`, {
+        res = await authenticatedFetch(`${baseUrl}/api/trading-orders`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -359,7 +360,7 @@ export default function TradingOrdersPage() {
   const handleCancelOrder = async (orderId: number) => {
     if (!confirm("Cancel this order?")) return;
     try {
-      const res = await fetch(`${baseUrl}/api/trading-orders/${orderId}`, { method: "DELETE" });
+      const res = await authenticatedFetch(`${baseUrl}/api/trading-orders/${orderId}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const result = await res.json();
       setMessage(result.message || "Cancelled");

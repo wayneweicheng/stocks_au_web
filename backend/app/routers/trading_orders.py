@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
+from app.routers.auth import verify_credentials
 import logging
 
 
-router = APIRouter(prefix="/api", tags=["trading-orders"])
+router = APIRouter(prefix="/api", tags=["trading-orders"], dependencies=[Depends(verify_credentials)])
 logger = logging.getLogger("app.trading_orders")
 
 DB_NAME = "StockDB_US"

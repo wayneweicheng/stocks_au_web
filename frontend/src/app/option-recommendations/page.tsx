@@ -140,7 +140,7 @@ function formatPriceInput(value: unknown): string {
 }
 
 export default function OptionRecommendationsPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const [tradingDate, setTradingDate] = useState<string>("");
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -167,7 +167,6 @@ export default function OptionRecommendationsPage() {
     let cancelled = false;
 
     async function loadDates() {
-      if (!baseUrl) return;
       setLoadingDates(true);
       setError("");
       try {
@@ -202,7 +201,7 @@ export default function OptionRecommendationsPage() {
     let cancelled = false;
 
     async function loadRows() {
-      if (!baseUrl || !tradingDate) return;
+      if (!tradingDate) return;
       setLoadingRows(true);
       setError("");
       try {
@@ -330,8 +329,6 @@ export default function OptionRecommendationsPage() {
   const maxDate = availableDates.length > 0 ? availableDates[0] : undefined;
 
   const requestRepriceSTO = async (rowIndex: number, row: OptionRecommendationRow, targetPriceInput: string) => {
-    if (!baseUrl) return;
-
     const recommendationId = parsePriceInput(row["RecommendationID"]);
     const targetPrice = parsePriceInput(targetPriceInput);
     if (!recommendationId || !targetPrice || targetPrice <= 0) {
@@ -404,8 +401,6 @@ export default function OptionRecommendationsPage() {
   };
 
   const handleCheckLivePrice = async (rowIndex: number, row: OptionRecommendationRow) => {
-    if (!baseUrl) return;
-
     // Debug: Log all available columns and their values
     console.log("Row data:", row);
     console.log("Available columns:", Object.keys(row));
@@ -468,8 +463,6 @@ export default function OptionRecommendationsPage() {
   };
 
   const handlePlaceSTOOrder = async (rowIndex: number, row: OptionRecommendationRow) => {
-    if (!baseUrl) return;
-
     // Debug: Log all available columns and their values
     console.log("Row data for order:", row);
     console.log("Available columns:", Object.keys(row));

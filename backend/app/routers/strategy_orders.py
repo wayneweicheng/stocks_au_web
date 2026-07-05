@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
+from app.routers.auth import verify_credentials
 import json
 
 
-router = APIRouter(prefix="/api", tags=["strategy-orders"])
+router = APIRouter(prefix="/api", tags=["strategy-orders"], dependencies=[Depends(verify_credentials)])
 
 
 DEFAULT_ACCOUNT = "huanw2114"

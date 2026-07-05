@@ -375,7 +375,7 @@ export default function GexSignalsPage() {
   // Tab state
   const [activeTab, setActiveTab] = useState<"overview" | "optionoverview" | "optiontradesinsights" | "autoinsight">("overview");
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const canonicalStock = (stockCode || "").toUpperCase().split(".")[0] || "SPXW";
 
   useEffect(() => {

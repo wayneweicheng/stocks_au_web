@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
@@ -42,7 +42,7 @@ export default function ResearchReportsPage() {
   async function fetchPage(nextPage: number, q: string) {
     setLoading(true);
     try {
-      const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/research-links?page=${nextPage}&page_size=${ITEMS_PER_PAGE}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+      const url = `${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/research-links?page=${nextPage}&page_size=${ITEMS_PER_PAGE}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
       const res = await authenticatedFetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: ResearchLinkPage = await res.json();
@@ -83,7 +83,7 @@ export default function ResearchReportsPage() {
       return;
     }
     try {
-      const res = await authenticatedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/research-links`, {
+      const res = await authenticatedFetch(`${(process.env.NEXT_PUBLIC_BACKEND_URL || "")}/api/research-links`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stock_code: stock, url }),

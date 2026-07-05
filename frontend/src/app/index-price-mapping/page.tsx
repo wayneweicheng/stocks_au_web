@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -126,7 +126,7 @@ export default function IndexPriceMappingPage() {
     setLoading(true);
     setError("");
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+      const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
       const suffix = forceRefresh ? "?refresh=true" : "";
       const response = await authenticatedFetch(
         `${backendUrl}/api/index-stock-price-mapping${suffix}`,

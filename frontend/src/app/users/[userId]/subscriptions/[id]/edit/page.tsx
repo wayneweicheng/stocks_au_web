@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -25,7 +25,7 @@ export default function EditSubscriptionPage({ params }: { params: Promise<{ use
   const { userId: userIdParam, id: idParam } = use(params);
   const userId = Number(userIdParam);
   const id = Number(idParam);
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const [types, setTypes] = useState<SubType[]>([]);
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);

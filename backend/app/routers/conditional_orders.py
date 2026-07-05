@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Dict, Any, Optional
 from datetime import date, datetime
 from pydantic import BaseModel
 from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
+from app.routers.auth import verify_credentials
 
 
-router = APIRouter(prefix="/api", tags=["conditional-orders"])
+router = APIRouter(prefix="/api", tags=["conditional-orders"], dependencies=[Depends(verify_credentials)])
 
 
 def rows_to_dicts(cursor) -> List[Dict[str, Any]]:

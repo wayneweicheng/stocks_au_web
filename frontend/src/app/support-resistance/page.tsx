@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -134,7 +134,7 @@ function LevelActions({
 }
 
 export default function SupportResistancePage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const initialLoadStarted = useRef(false);
   const plotRef = useRef<HTMLDivElement>(null);
   const activeRequest = useRef<AbortController | null>(null);
@@ -150,10 +150,6 @@ export default function SupportResistancePage() {
     async (code: string) => {
       if (!code.trim()) {
         setError("Stock code is required");
-        return;
-      }
-      if (!baseUrl) {
-        setError("NEXT_PUBLIC_BACKEND_URL is not configured.");
         return;
       }
       setLoading(true);
@@ -198,14 +194,14 @@ export default function SupportResistancePage() {
   );
 
   useEffect(() => {
-    if (!initialLoadStarted.current && baseUrl) {
+    if (!initialLoadStarted.current) {
       initialLoadStarted.current = true;
       const params = new URLSearchParams(window.location.search);
       const initialCode = params.get("stock") || "QQQ";
       setStockCode(initialCode);
       loadData(initialCode);
     }
-  }, [baseUrl, loadData]);
+  }, [loadData]);
 
   useEffect(() => {
     return () => activeRequest.current?.abort();

@@ -91,7 +91,7 @@ function persistSavedJobs(jobs: SavedJob[]) {
 }
 
 export default function UsEquityAnalysisReportsPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
 
   const [activeTab, setActiveTab] = useState<TabKey>("viewer");
   const [items, setItems] = useState<ReportSummary[]>([]);
@@ -122,7 +122,7 @@ export default function UsEquityAnalysisReportsPage() {
 
   const loadDetail = useCallback(
     async (jobIdToLoad: string) => {
-      if (!baseUrl || !jobIdToLoad) return;
+      if (!jobIdToLoad) return;
       setLoadingDetail(true);
       setViewerError("");
       try {
@@ -147,10 +147,6 @@ export default function UsEquityAnalysisReportsPage() {
   );
 
   const loadReports = useCallback(async () => {
-    if (!baseUrl) {
-      setViewerError("NEXT_PUBLIC_BACKEND_URL is not configured.");
-      return;
-    }
     setLoadingList(true);
     setViewerError("");
     try {
@@ -187,10 +183,6 @@ export default function UsEquityAnalysisReportsPage() {
   }, []);
 
   const submitJob = useCallback(async () => {
-    if (!baseUrl) {
-      setJobError("NEXT_PUBLIC_BACKEND_URL is not configured.");
-      return;
-    }
 
     const symbol = stockCode.trim().toUpperCase();
     if (!symbol) {
@@ -236,10 +228,6 @@ export default function UsEquityAnalysisReportsPage() {
   }, [baseUrl, reportDetail, saveJob, stockCode]);
 
   const checkStatusFor = useCallback(async (jobIdToCheck: string) => {
-    if (!baseUrl) {
-      setJobError("NEXT_PUBLIC_BACKEND_URL is not configured.");
-      return;
-    }
     const currentJobId = jobIdToCheck.trim();
     if (!currentJobId) {
       setJobError("Enter or submit a job id first.");

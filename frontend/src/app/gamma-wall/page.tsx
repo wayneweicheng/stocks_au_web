@@ -97,7 +97,7 @@ function BarChart({ rows, xKey, title }: { rows: Row[]; xKey: string; title: str
 }
 
 export default function GammaWallPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const [stockCode, setStockCode] = useState("QQQ.US");
   const [observationDate, setObservationDate] = useState("");
   const [data, setData] = useState<{ stock_code: string; observation_date: string | null; close: number | null; by_strike: Row[]; by_expiry: Row[] } | null>(null);
@@ -107,7 +107,6 @@ export default function GammaWallPage() {
   const [strikeMax, setStrikeMax] = useState("");
 
   const load = useCallback(async () => {
-    if (!baseUrl) return;
     setLoading(true);
     setError("");
     try {

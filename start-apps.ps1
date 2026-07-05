@@ -161,10 +161,10 @@ public static class JobHelper {
 }
 
 function Add-ProcessToJobObject {
-    param([int]$Pid)
+    param([int]$ProcessId)
     if (-not $global:JobHandle) { return }
     try {
-        $null = [JobHelper]::AddProcessToJob($global:JobHandle, $Pid)
+        $null = [JobHelper]::AddProcessToJob($global:JobHandle, $ProcessId)
     } catch { }
 }
 
@@ -173,7 +173,7 @@ function Add-ProcessTreeToJobObject {
     try {
         $root = Get-Process -Id $RootPid -ErrorAction SilentlyContinue
         if (-not $root) { return }
-        Add-ProcessToJobObject -Pid $RootPid
+        Add-ProcessToJobObject -ProcessId $RootPid
         $queue = New-Object System.Collections.Generic.Queue[System.Diagnostics.Process]
         $queue.Enqueue($root)
         while ($queue.Count -gt 0) {
@@ -183,7 +183,7 @@ function Add-ProcessTreeToJobObject {
                 try {
                     $cp = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
                     if ($cp) {
-                        Add-ProcessToJobObject -Pid $cp.Id
+                        Add-ProcessToJobObject -ProcessId $cp.Id
                         $queue.Enqueue($cp)
                     }
                 } catch {}
@@ -264,7 +264,7 @@ function Start-ServiceWithMonitoring {
 
     # Check if port is already in use
     if ($Port -gt 0) {
-        $portCheck = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
+        $portCheck = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
         if ($portCheck) {
             Write-Log "WARNING: Port $Port is already in use. $ServiceName may fail to start."
         }
@@ -311,7 +311,7 @@ function Start-ServiceWithMonitoring {
 
         if ($process) {
             Write-Log "$ServiceName started successfully (PID: $($process.Id))"
-            Add-ProcessToJobObject -Pid $process.Id
+            Add-ProcessToJobObject -ProcessId $process.Id
             # Also assign immediate children that may spawn quickly
             Start-Sleep -Milliseconds 200
             Add-ProcessTreeToJobObject -RootPid $process.Id
@@ -359,12 +359,20 @@ function Test-ServiceHealth {
     param([string]$ServiceName, [int]$Port)
 
     if ($Port -gt 0) {
+        $client = $null
         try {
-            $connection = Test-NetConnection -ComputerName "localhost" -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue
-            return $connection
+            $client = [System.Net.Sockets.TcpClient]::new()
+            $connectTask = $client.ConnectAsync("127.0.0.1", $Port)
+            return $connectTask.Wait(3000) -and $client.Connected
         }
         catch {
             return $false
+        }
+        finally {
+            if ($client) {
+                $client.Close()
+                $client.Dispose()
+            }
         }
     }
     return $true
@@ -374,11 +382,11 @@ function Stop-ProcessOnPort {
     param([int]$Port, [string]$ServiceName)
 
     Write-Log "Checking for processes on port $Port for $ServiceName..."
+    $killedAny = $false
 
     try {
         $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
         if ($connections) {
-            $killedAny = $false
             foreach ($connection in $connections) {
                 $processId = $connection.OwningProcess
                 if ($processId -gt 0) {
@@ -395,20 +403,8 @@ function Stop-ProcessOnPort {
                     }
                 }
             }
-            if ($killedAny) {
-                Write-Log "Waiting for port $Port to be released..."
-                Start-Sleep -Seconds 5
-                # Verify port is now free
-                $stillInUse = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-                if ($stillInUse) {
-                    Write-Log "WARNING: Port $Port may still be in use after cleanup"
-                } else {
-                    Write-Log "Port $Port is now free for $ServiceName"
-                }
-            }
         } else {
             # Fallback to netstat parsing if Get-NetTCPConnection returned nothing
-            $killedAny = $false
             try {
                 $lines = netstat -ano -p tcp | Select-String ":$Port" | ForEach-Object { $_.ToString() }
                 foreach ($line in $lines) {
@@ -422,14 +418,21 @@ function Stop-ProcessOnPort {
                         }
                     }
                 }
-                if ($killedAny) {
-                    Start-Sleep -Seconds 3
-                } else {
-                    Write-Log "Port $Port is free for $ServiceName"
-                }
             } catch {
                 Write-Log "Fallback netstat check failed for port $Port"
             }
+        }
+
+        if ($killedAny) {
+            Write-Log "Waiting for port $Port to be released..."
+            Start-Sleep -Seconds 5
+        }
+
+        $stillInUse = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+        if ($stillInUse) {
+            Write-Log "WARNING: Port $Port may still be in use after cleanup"
+        } else {
+            Write-Log "Port $Port is free for $ServiceName"
         }
     }
     catch {
@@ -631,8 +634,16 @@ Write-Log "Frontend will run on port $FrontendPort"
 Write-Log "Max restarts per service: $MaxRestarts"
 Write-Log "Restart cooldown: $RestartCooldown seconds"
 
+# Keep browser API calls same-origin while letting the Next.js server proxy to
+# the private FastAPI backend. Start-Process inherits these values.
+$env:BACKEND_URL = "http://127.0.0.1:$BackendPort"
+$env:NEXT_PUBLIC_BACKEND_URL = ""
+$env:NEXT_PUBLIC_CHART_BASE_URL = "/charts"
+Write-Log "Frontend proxy BACKEND_URL=$env:BACKEND_URL"
+
 # Ensure only one supervisor instance runs
 try {
+    $createdNew = $false
     $global:SupervisorMutex = New-Object System.Threading.Mutex($true, "Global/StocksAUWebSupervisor", [ref]$createdNew)
     if (-not $createdNew) {
         Write-Log "Another supervisor instance is already running. Exiting."
@@ -702,7 +713,7 @@ Stop-ProcessOnPort -Port $BackendPort -ServiceName "Backend"
 $backendLogFile = Join-Path $AbsoluteLogPath "backend-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 Write-Log "Backend logs will be written to: $backendLogFile"
 
-$backendArgs = @("-m", "uvicorn", "app.main:app", "--reload", "--reload-dir", "app", "--host", "0.0.0.0", "--port", $BackendPort, "--timeout-keep-alive", "620")
+$backendArgs = @("-m", "uvicorn", "app.main:app", "--reload", "--reload-dir", "app", "--host", "127.0.0.1", "--port", $BackendPort, "--timeout-keep-alive", "620")
 $backendSuccess = Start-ServiceWithMonitoring -ServiceName "Backend" -WorkingDirectory $backendWD -Command $python -Arguments $backendArgs -Port $BackendPort -LogFile $backendLogFile
 
 if ($backendSuccess) {

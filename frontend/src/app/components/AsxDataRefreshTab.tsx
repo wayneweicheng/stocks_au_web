@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -104,7 +104,7 @@ function isActive(job: RefreshJob) {
 }
 
 export default function AsxDataRefreshTab() {
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const pollingRef = useRef<number | null>(null);
   const [stockCode, setStockCode] = useState("");
   const [observationDate, setObservationDate] = useState(localIsoDate);
