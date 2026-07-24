@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from math import erf, exp, log, sqrt
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from app.core.config import settings
 from app.core.db import get_sql_model
@@ -30,6 +30,8 @@ MAX_IV_SHIFT = 0.10
 MAX_UNDERLYING_IV_ADJUSTMENT = 0.03
 UNDERLYING_IV_ADJUSTMENT_WEIGHT = 0.25
 DEFAULT_FALLBACK_IV = 0.35
+MAX_MARKET_CALIBRATION_RATIO = 4.0
+MAX_BULK_CHAIN_LIVE_QUOTES = 20
 
 
 @dataclass
@@ -144,6 +146,27 @@ def _option_quote_to_payload(quote: Optional[OptionQuote]) -> Optional[Dict[str,
     }
 
 
+def _option_quote_from_payload(payload: Optional[Dict[str, Any]]) -> Optional[OptionQuote]:
+    if not payload:
+        return None
+    volume = _clean(payload.get("volume"))
+    market_data_type = payload.get("market_data_type")
+    return OptionQuote(
+        bid=_positive_price(payload.get("bid")),
+        ask=_positive_price(payload.get("ask")),
+        last=_positive_price(payload.get("last")),
+        close=_positive_price(payload.get("close")),
+        mid=_positive_price(payload.get("mid")),
+        iv=_normalize_iv(payload.get("iv")),
+        delta=_clean(payload.get("delta")),
+        gamma=_clean(payload.get("gamma")),
+        theta=_clean(payload.get("theta")),
+        vega=_clean(payload.get("vega")),
+        market_data_type=int(market_data_type) if market_data_type in {1, 2, 3, 4} else None,
+        volume=int(volume) if volume is not None else None,
+    )
+
+
 def _merge_option_quote(
     delayed_quote: Optional[Dict[str, Any]],
     live_quote: Optional[OptionQuote],
@@ -229,6 +252,46 @@ def _latest_delayed_quotes(symbol: str, expiry: str) -> Dict[str, Dict[str, Any]
             ),
         }
     return quotes
+
+
+def _quote_observation_date(quote_payload: Optional[Dict[str, Any]]) -> Optional[date]:
+    raw_value = (quote_payload or {}).get("observation_date")
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, datetime):
+        return raw_value.date()
+    if isinstance(raw_value, date):
+        return raw_value
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return datetime.strptime(text[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+
+def _matched_underlying_close(symbol: str, observation_date: Optional[date]) -> Optional[float]:
+    if observation_date is None:
+        return None
+    model = get_sql_model()
+    db_symbol = f"{_base_symbol(symbol)}.US"
+    rows = model.execute_read_query(
+        """
+        SELECT TOP 1 [Close]
+        FROM StockDB_US.StockData.v_PriceHistory
+        WHERE ASXCode = convert(varchar(10), ?)
+          AND ObservationDate <= convert(date, ?)
+        ORDER BY ObservationDate DESC
+        """,
+        (db_symbol, observation_date.isoformat()),
+    ) or []
+    if not rows:
+        return None
+    return _positive_price(rows[0].get("Close"))
 
 
 def _latest_delayed_chain_rows(
@@ -775,7 +838,16 @@ def get_option_chain(
 
         valid_keys = {_contract_key(contract): contract for contract in valid_contracts}
         delayed_quotes = _latest_delayed_quotes(symbol, expirations[0]) if len(expirations) == 1 else {}
-        live_quotes = _quote_option_contracts(ib, valid_contracts) if market_status["is_live_market"] else {}
+        live_quotes = {}
+        if market_status["is_live_market"] and len(valid_contracts) <= MAX_BULK_CHAIN_LIVE_QUOTES:
+            live_quotes = _quote_option_contracts(ib, valid_contracts)
+        elif market_status["is_live_market"] and valid_contracts:
+            logger.info(
+                "Option orders: skipping bulk live chain quote for %s %s (%s contracts); selected-contract estimate will fetch live quote",
+                symbol,
+                expirations[0] if len(expirations) == 1 else ",".join(str(expiry) for expiry in expirations),
+                len(valid_contracts),
+            )
         rows: List[Dict[str, Any]] = []
         for row in candidate_rows:
             key = (row["expiry"], round(float(row["strike"]), 4), row["right"])
@@ -791,7 +863,7 @@ def get_option_chain(
             next_row["quote"] = _merge_option_quote(
                 delayed_quote,
                 live_quote,
-                prefer_live=market_status["is_live_market"],
+                prefer_live=bool(live_quote),
             )
             rows.append(next_row)
 
@@ -862,12 +934,68 @@ def _skew_slope(points: List[tuple[float, float]]) -> float:
     return 0.0 if abs(denominator) < 1e-10 else numerator / denominator
 
 
+def _quote_anchor_for_action(quote: OptionQuote, action: Optional[str]) -> Optional[float]:
+    normalized_action = (action or "").strip().upper()
+    if normalized_action == "SELL":
+        return (
+            _positive_price(quote.bid)
+            or _positive_price(quote.mid)
+            or _positive_price(quote.last)
+            or _positive_price(quote.close)
+        )
+    if normalized_action == "BUY":
+        return (
+            _positive_price(quote.ask)
+            or _positive_price(quote.mid)
+            or _positive_price(quote.last)
+            or _positive_price(quote.close)
+        )
+    return (
+        _positive_price(quote.mid)
+        or _positive_price(quote.last)
+        or _positive_price(quote.close)
+        or _positive_price(quote.bid)
+        or _positive_price(quote.ask)
+    )
+
+
+def _market_calibrated_price(
+    target_model_price: float,
+    anchor_model_price: float,
+    market_anchor_price: Optional[float],
+) -> Optional[float]:
+    if market_anchor_price is None or market_anchor_price <= 0 or anchor_model_price <= 0:
+        return None
+    raw_ratio = target_model_price / anchor_model_price
+    ratio = max(1 / MAX_MARKET_CALIBRATION_RATIO, min(raw_ratio, MAX_MARKET_CALIBRATION_RATIO))
+    return max(0.01, market_anchor_price * ratio)
+
+
+def _quote_anchor_underlying_price(
+    quote: OptionQuote,
+    current_underlying_price: float,
+    matched_underlying_price: Optional[float] = None,
+) -> Optional[float]:
+    has_quote_price = any(
+        _positive_price(value) is not None
+        for value in (quote.bid, quote.ask, quote.mid, quote.last, quote.close)
+    )
+    if not has_quote_price:
+        return None
+    if matched_underlying_price is not None and matched_underlying_price > 0:
+        return matched_underlying_price
+    if quote.market_data_type not in {1, 2, 3, 4}:
+        return None
+    return current_underlying_price
+
+
 def estimate_option_price(
     symbol: str,
     expiry: str,
     strike: float,
     right: str,
     target_underlying_price: float,
+    action: Optional[Literal["BUY", "SELL"]] = None,
 ) -> Dict[str, Any]:
     ib, _loop = _connect_ib()
     try:
@@ -1018,6 +1146,47 @@ def estimate_option_price(
         base_case = _price_option(right, strike, target_underlying_price, adjusted_iv, dte)
         optimistic = _price_option(right, strike, target_underlying_price, max(adjusted_iv - 0.02, 0.05), dte)
         conservative = _price_option(right, strike, target_underlying_price, adjusted_iv + 0.02, dte)
+        current_base_case = _price_option(right, strike, current_price, pricing_iv, dte)
+        effective_quote_payload = _merge_option_quote(
+            delayed_quote,
+            selected_quote,
+            prefer_live=market_status["is_live_market"],
+        )
+        anchor_quote = _option_quote_from_payload(effective_quote_payload) or selected_quote
+        matched_underlying_price = (
+            _matched_underlying_close(symbol, _quote_observation_date(effective_quote_payload))
+            if (effective_quote_payload or {}).get("source") == "database"
+            else None
+        )
+        if (effective_quote_payload or {}).get("source") == "database" and matched_underlying_price is None:
+            warnings.append(
+                "Database option quote did not have a matching underlying close; "
+                "market calibration fell back to the model estimate."
+            )
+        market_anchor_price = _quote_anchor_for_action(anchor_quote, action)
+        quote_anchor_underlying_price = _quote_anchor_underlying_price(
+            anchor_quote,
+            current_price,
+            matched_underlying_price,
+        )
+        anchor_base_case = (
+            _price_option(right, strike, quote_anchor_underlying_price, pricing_iv, dte)
+            if quote_anchor_underlying_price is not None
+            else None
+        )
+        market_calibrated = _market_calibrated_price(
+            base_case,
+            anchor_base_case,
+            market_anchor_price,
+        ) if anchor_base_case is not None else None
+        estimated_price = market_calibrated if market_calibrated is not None else conservative
+        estimate_basis = (
+            f"market-calibrated {str(action).lower()} quote"
+            if market_calibrated is not None and action
+            else "market-calibrated quote"
+            if market_calibrated is not None
+            else "model conservative"
+        )
         selected_live_quote_payload = _option_quote_to_payload(selected_quote)
 
         return {
@@ -1050,17 +1219,19 @@ def estimate_option_price(
                 "spread_pct": _spread_pct(selected_quote.bid, selected_quote.ask),
             },
             "selected_live_quote": selected_live_quote_payload,
-            "effective_quote": _merge_option_quote(
-                delayed_quote,
-                selected_quote,
-                prefer_live=market_status["is_live_market"],
-            ),
+            "effective_quote": effective_quote_payload,
             "delayed_quote": delayed_quote,
             "warnings": warnings,
-            "estimated_price": round(conservative, 2),
+            "estimated_price": round(estimated_price, 2),
             "base_case": round(base_case, 4),
             "optimistic": round(optimistic, 4),
             "conservative": round(conservative, 4),
+            "current_base_case": round(current_base_case, 4),
+            "anchor_base_case": _round(anchor_base_case, 4),
+            "quote_anchor_underlying_price": _round(quote_anchor_underlying_price, 4),
+            "market_anchor_price": _round(market_anchor_price, 4),
+            "market_calibrated": _round(market_calibrated, 4),
+            "estimate_basis": estimate_basis,
             "adjusted_iv": round(adjusted_iv, 6),
             "contract_iv": round(pricing_iv, 6),
             "iv_source": iv_source,

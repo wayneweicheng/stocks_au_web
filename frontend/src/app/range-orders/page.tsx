@@ -31,6 +31,12 @@ function formatPriceInput(value: string): string {
   return Number.isFinite(parsed) && parsed > 0 ? parsed.toFixed(2) : value;
 }
 
+function shiftPriceInput(value: string, amount: number): string {
+  const parsed = Number(value);
+  const current = Number.isFinite(parsed) ? parsed : 0;
+  return Math.max(0, round2(current + amount)).toFixed(2);
+}
+
 function ceilInt(n: number): number {
   return Math.ceil(n);
 }
@@ -129,6 +135,11 @@ export default function RangeOrdersPage() {
     const r = rRaw && rRaw > 0 ? Math.max(0.75, Math.min(1.5, rRaw)) : 1; // clamp to [0.75,1.5]
     return { total, tv, sp, ep, n, r };
   }, [totalAmount, totalVolume, startPrice, endPrice, numOrders, ratio]);
+
+  const shiftPriceRange = (amount: number) => {
+    setStartPrice((value) => shiftPriceInput(value, amount));
+    setEndPrice((value) => shiftPriceInput(value, amount));
+  };
 
   const canGenerate = useMemo(() => {
     const hasPrices = !!parsed.sp && parsed.sp! > 0 && !!parsed.ep && parsed.ep! > 0;
@@ -1085,6 +1096,28 @@ export default function RangeOrdersPage() {
                   </span>
                 </p>
               )}
+            </div>
+
+            <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
+              <span className="text-sm text-slate-600">Move price range</span>
+              <button
+                type="button"
+                onClick={() => shiftPriceRange(0.25)}
+                title="Move start and end price up by $0.25"
+                aria-label="Move start and end price up by 25 cents"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-lg font-semibold leading-none text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => shiftPriceRange(-0.25)}
+                title="Move start and end price down by $0.25"
+                aria-label="Move start and end price down by 25 cents"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-lg font-semibold leading-none text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-400/40"
+              >
+                ↓
+              </button>
             </div>
 
             <div>

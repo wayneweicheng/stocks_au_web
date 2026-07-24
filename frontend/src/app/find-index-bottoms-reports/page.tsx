@@ -2,13 +2,38 @@
 
 import SkillReportPage from "../components/SkillReportPage";
 
+function getCurrentDateTimeInTimezone(timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+    .formatToParts(new Date())
+    .reduce<Record<string, string>>((current, part) => {
+      current[part.type] = part.value;
+      return current;
+    }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ${timeZone}`;
+}
+
 const fields = [
   {
     name: "as_at",
     label: "Historical as-at",
-    placeholder: "2026-06-22 16:00 America/New_York",
+    inputType: "datetime-timezone" as const,
     defaultValue: "",
-    omitWhenBlank: true,
+    clientDefaultValue: () => getCurrentDateTimeInTimezone("America/New_York"),
+    timezones: [
+      { label: "US EST", value: "America/New_York" },
+      { label: "AU Sydney", value: "Australia/Sydney" },
+    ],
+    defaultTimezone: "America/New_York",
+    required: true,
   },
   {
     name: "timeout_minutes",

@@ -3,10 +3,16 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
+import logging
+import time
 
 from fastapi import HTTPException
 
 from app.core.config import settings
+
+
+SKILL_RUNNER_REQUEST_TIMEOUT_SECONDS = 180
+logger = logging.getLogger(__name__)
 
 
 def call_skill_runner(method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Any:
@@ -25,10 +31,20 @@ def call_skill_runner(method: str, path: str, payload: Optional[Dict[str, Any]] 
 
     base_url = settings.skill_runner_api_base_url.rstrip("/")
     request = Request(f"{base_url}{path}", data=body, headers=headers, method=method)
+    started = time.perf_counter()
     try:
-        with urlopen(request, timeout=60) as response:
+        with urlopen(request, timeout=SKILL_RUNNER_REQUEST_TIMEOUT_SECONDS) as response:
             raw = response.read().decode("utf-8")
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            logger.info(
+                "Skill runner %s %s -> %s %.1fms",
+                method,
+                path,
+                response.status,
+                elapsed_ms,
+            )
     except HTTPError as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
         raw = exc.read().decode("utf-8", errors="replace")
         detail: Any = raw
         try:
@@ -36,11 +52,26 @@ def call_skill_runner(method: str, path: str, payload: Optional[Dict[str, Any]] 
             detail = detail_data.get("detail") or detail_data
         except Exception:
             pass
+        logger.error(
+            "Skill runner %s %s -> %s %.1fms detail=%r",
+            method,
+            path,
+            exc.code,
+            elapsed_ms,
+            detail,
+        )
         raise HTTPException(status_code=exc.code, detail=detail)
     except URLError as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        logger.error("Skill runner %s %s connection failed after %.1fms: %s", method, path, elapsed_ms, exc.reason)
         raise HTTPException(status_code=502, detail=f"Skill runner connection failed: {exc.reason}")
     except TimeoutError:
-        raise HTTPException(status_code=504, detail="Skill runner request timed out")
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        logger.error("Skill runner %s %s timed out after %.1fms", method, path, elapsed_ms)
+        raise HTTPException(
+            status_code=504,
+            detail=f"Skill runner request timed out after {SKILL_RUNNER_REQUEST_TIMEOUT_SECONDS} seconds",
+        )
 
     if not raw:
         return {}

@@ -374,7 +374,7 @@ def net_gex_vs_price_change(
 
 @router.get("/option-gex-delta-capital-type")
 def option_gex_delta_capital_type(
-    stock_code: str = Query("QQQ.US", min_length=1, max_length=40),
+    stock_code: str = Query("SPXW.US", min_length=1, max_length=40),
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     capital_type: List[str] = Query(default=[]),

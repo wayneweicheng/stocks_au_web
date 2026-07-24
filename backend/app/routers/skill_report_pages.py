@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+import json
+import threading
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -16,6 +19,8 @@ from app.services.skill_runner_client import (
 
 
 router = APIRouter(prefix="/api", tags=["skill-report-pages"])
+DELETED_REPORTS_PATH = Path(__file__).resolve().parents[2] / "data" / "deleted_skill_reports.json"
+_DELETED_REPORTS_LOCK = threading.Lock()
 
 SKILLS = {
     "shiso-leaf-stock-hunter": {
@@ -85,6 +90,58 @@ class SkillJobResponse(BaseModel):
     data: Any
 
 
+class DeleteReportResponse(BaseModel):
+    deleted: bool
+    job_id: str
+    data: Any = Field(default_factory=dict)
+
+
+def _load_deleted_report_data() -> Dict[str, List[str]]:
+    if not DELETED_REPORTS_PATH.exists():
+        return {}
+
+    try:
+        with DELETED_REPORTS_PATH.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    normalized: Dict[str, List[str]] = {}
+    for job_type, job_ids in data.items():
+        if not isinstance(job_type, str) or not isinstance(job_ids, list):
+            continue
+        normalized[job_type] = [str(job_id) for job_id in job_ids if job_id is not None]
+    return normalized
+
+
+def _save_deleted_report_data(data: Dict[str, List[str]]) -> None:
+    DELETED_REPORTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = DELETED_REPORTS_PATH.with_suffix(".tmp")
+    with temp_path.open("w", encoding="utf-8") as file:
+        json.dump(data, file, indent=2, sort_keys=True)
+    temp_path.replace(DELETED_REPORTS_PATH)
+
+
+def _deleted_report_ids(job_type: str) -> Set[str]:
+    return set(_load_deleted_report_data().get(job_type, []))
+
+
+def _is_skill_report_deleted(job_type: str, job_id: str) -> bool:
+    return job_id in _deleted_report_ids(job_type)
+
+
+def _mark_skill_report_deleted(job_type: str, job_id: str) -> None:
+    with _DELETED_REPORTS_LOCK:
+        data = _load_deleted_report_data()
+        ids = set(data.get(job_type, []))
+        ids.add(job_id)
+        data[job_type] = sorted(ids)
+        _save_deleted_report_data(data)
+
+
 def _skill_config(job_type: str) -> Dict[str, str]:
     config = SKILLS.get(job_type)
     if not config:
@@ -126,16 +183,20 @@ def _normalize_report_summary(job_type: str, item: Dict[str, Any]) -> Optional[S
 
 def _list_skill_reports(job_type: str) -> SkillReportPage:
     data = list_reports(job_type)
+    deleted_ids = _deleted_report_ids(job_type)
     summaries = [
         summary
         for summary in (_normalize_report_summary(job_type, item) for item in extract_report_items(data))
-        if summary is not None
+        if summary is not None and summary.job_id not in deleted_ids
     ]
     summaries.sort(key=lambda item: item.created_at or "", reverse=True)
     return SkillReportPage(items=summaries)
 
 
 def _get_skill_report(job_type: str, job_id: str) -> SkillReportDetail:
+    if _is_skill_report_deleted(job_type, job_id):
+        raise HTTPException(status_code=404, detail="Report has been deleted")
+
     summaries = _list_skill_reports(job_type).items
     summary = next((item for item in summaries if item.job_id == job_id), None)
     data = get_job_report(job_id)
@@ -244,6 +305,15 @@ def get_option_flow_analysis_report(
     username: str = Depends(verify_credentials),
 ) -> SkillReportDetail:
     return _get_skill_report("analyze-option-flow", job_id)
+
+
+@router.delete("/option-flow-analysis-reports/{job_id}", response_model=DeleteReportResponse)
+def delete_option_flow_analysis_report(
+    job_id: str,
+    username: str = Depends(verify_credentials),
+) -> DeleteReportResponse:
+    _mark_skill_report_deleted("analyze-option-flow", job_id)
+    return DeleteReportResponse(deleted=True, job_id=job_id)
 
 
 @router.post("/option-flow-analysis/jobs", response_model=SkillJobResponse)

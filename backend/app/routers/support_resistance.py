@@ -26,7 +26,7 @@ def support_resistance(
     minimum_distance_atr: float = Query(default=MIN_ZONE_DISTANCE_ATR, ge=0, le=10),
     maximum_distance_atr: float = Query(default=MAX_ZONE_DISTANCE_ATR, ge=0, le=10),
     max_levels: int = Query(default=5, ge=1, le=10),
-    enable_live_prices: bool = Query(default=False),
+    enable_live_prices: bool = Query(default=True),
 ) -> dict:
     if minimum_distance_atr > maximum_distance_atr:
         raise HTTPException(

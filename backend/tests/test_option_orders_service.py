@@ -15,14 +15,144 @@ from app.services.option_orders_service import (
     OptionQuote,
     _dte,
     _latest_delayed_chain_rows,
+    _matched_underlying_close,
+    _market_calibrated_price,
     _market_status_from_context,
     _merge_option_quote,
+    _option_quote_from_payload,
+    _quote_observation_date,
+    _quote_anchor_for_action,
+    _quote_anchor_underlying_price,
     _select_option_chain,
     _today_us_market_date,
 )
 
 
 class OptionOrdersServiceTests(unittest.TestCase):
+    def test_quote_anchor_for_action_uses_bid_for_sell_and_ask_for_buy(self):
+        quote = OptionQuote(
+            bid=6.24,
+            ask=6.31,
+            last=6.28,
+            close=6.10,
+            mid=6.275,
+            iv=0.286,
+            delta=-0.239,
+            gamma=None,
+            theta=None,
+            vega=None,
+            market_data_type=1,
+        )
+
+        self.assertEqual(_quote_anchor_for_action(quote, "SELL"), 6.24)
+        self.assertEqual(_quote_anchor_for_action(quote, "BUY"), 6.31)
+
+    def test_market_calibrated_price_anchors_unchanged_target_to_live_quote(self):
+        calibrated = _market_calibrated_price(
+            target_model_price=6.1889,
+            anchor_model_price=6.1889,
+            market_anchor_price=6.24,
+        )
+
+        self.assertAlmostEqual(calibrated, 6.24)
+
+    def test_market_calibrated_price_applies_model_relative_move_from_live_quote(self):
+        calibrated = _market_calibrated_price(
+            target_model_price=7.5,
+            anchor_model_price=6.0,
+            market_anchor_price=6.24,
+        )
+
+        self.assertAlmostEqual(calibrated, 7.8)
+
+    def test_quote_anchor_underlying_price_requires_quote_price(self):
+        quote = OptionQuote(
+            bid=None,
+            ask=None,
+            last=None,
+            close=None,
+            mid=None,
+            iv=0.286,
+            delta=-0.239,
+            gamma=None,
+            theta=None,
+            vega=None,
+            market_data_type=1,
+        )
+
+        self.assertIsNone(_quote_anchor_underlying_price(quote, 708.3))
+
+    def test_quote_anchor_underlying_price_uses_underlying_from_quote_request(self):
+        quote = OptionQuote(
+            bid=6.24,
+            ask=6.31,
+            last=6.28,
+            close=6.10,
+            mid=6.275,
+            iv=0.286,
+            delta=-0.239,
+            gamma=None,
+            theta=None,
+            vega=None,
+            market_data_type=1,
+        )
+
+        self.assertEqual(_quote_anchor_underlying_price(quote, 708.3), 708.3)
+
+    def test_quote_anchor_underlying_price_prefers_matched_database_close(self):
+        quote = OptionQuote(
+            bid=43.0,
+            ask=45.05,
+            last=None,
+            close=None,
+            mid=44.025,
+            iv=1.02,
+            delta=None,
+            gamma=None,
+            theta=None,
+            vega=None,
+            market_data_type=None,
+        )
+
+        self.assertEqual(_quote_anchor_underlying_price(quote, 969.04, 937.0), 937.0)
+
+    def test_quote_observation_date_parses_database_timestamp(self):
+        payload = {"observation_date": "2026-07-13T15:59:00"}
+
+        self.assertEqual(_quote_observation_date(payload), date(2026, 7, 13))
+
+    def test_option_quote_from_payload_preserves_database_bid_ask_for_sell_anchor(self):
+        quote = _option_quote_from_payload(
+            {
+                "bid": 43.0,
+                "ask": 45.05,
+                "mid": 44.025,
+                "iv": 1.023,
+                "source": "database",
+                "market_data_type": None,
+            }
+        )
+
+        self.assertIsNotNone(quote)
+        self.assertEqual(_quote_anchor_for_action(quote, "SELL"), 43.0)
+
+    def test_matched_underlying_close_uses_latest_close_on_or_before_quote_date(self):
+        class FakeModel:
+            def execute_read_query(self, _sql, params):
+                self.params = params
+                return [{"Close": 937.0}]
+
+        fake_model = FakeModel()
+        original_get_sql_model = option_orders_service.get_sql_model
+        option_orders_service.get_sql_model = lambda: fake_model
+        try:
+            matched_close = _matched_underlying_close("MU", date(2026, 7, 13))
+        finally:
+            option_orders_service.get_sql_model = original_get_sql_model
+
+        self.assertEqual(matched_close, 937.0)
+        self.assertEqual(fake_model.params, ("MU.US", "2026-07-13"))
+
     def test_select_option_chain_prefers_base_trading_class_over_adjusted_chain(self):
         adjusted = types.SimpleNamespace(exchange="SMART", tradingClass="2GOOG", expirations={"20260807"})
         regular = types.SimpleNamespace(

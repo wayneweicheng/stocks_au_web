@@ -16,6 +16,7 @@ class EstimateOptionRequest(BaseModel):
     strike: float = Field(..., gt=0)
     right: Literal["P", "C"]
     target_underlying_price: float = Field(..., gt=0)
+    action: Literal["BUY", "SELL"] | None = None
 
     @field_validator("symbol")
     @classmethod
@@ -26,6 +27,11 @@ class EstimateOptionRequest(BaseModel):
     @classmethod
     def normalize_right(cls, value: str) -> str:
         return value.upper()
+
+    @field_validator("action")
+    @classmethod
+    def normalize_action(cls, value: str | None) -> str | None:
+        return value.upper() if value else None
 
 
 @router.get("/expirations")
@@ -65,6 +71,7 @@ def estimate_option(payload: EstimateOptionRequest) -> Dict[str, Any]:
             strike=payload.strike,
             right=payload.right,
             target_underlying_price=payload.target_underlying_price,
+            action=payload.action,
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Failed to estimate option price: {exc}")

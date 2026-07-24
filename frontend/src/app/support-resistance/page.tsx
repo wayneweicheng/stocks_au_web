@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -8,6 +8,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/Card"
 import Input from "../components/ui/Input";
 import PageHeader from "../components/PageHeader";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
+
+const LOOKBACK_DAY_OPTIONS = ["3", "5", "10", "20", "30", "60"];
+const SUPPORT_RESISTANCE_REQUEST_TIMEOUT_MS = 60000;
+
+function formatPrice(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(4)}` : "n/a";
+}
+
+function priceSourceLabel(source: string) {
+  if (source === "ib_live") return "IB live";
+  if (source === "ib_delayed") return "IB delayed";
+  return "Latest 30M close";
+}
 
 interface PriceBar {
   time: string;
@@ -40,6 +53,7 @@ interface StockLevel {
   database_code: string;
   latest_close: number;
   reference_price: number;
+  distance_reference_price?: number;
   price_source: string;
   latest_bar_time: string;
   bar_count: number;
@@ -143,8 +157,8 @@ export default function SupportResistancePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [lookbackDays, setLookbackDays] = useState("10");
-  const [minimumAtr, setMinimumAtr] = useState(0.33);
-  const [maximumAtr, setMaximumAtr] = useState(3);
+  const [minimumAtr, setMinimumAtr] = useState("0.1");
+  const [maximumAtr, setMaximumAtr] = useState("3");
 
   const loadData = useCallback(
     async (code: string) => {
@@ -157,15 +171,17 @@ export default function SupportResistancePage() {
       activeRequest.current?.abort();
       const controller = new AbortController();
       activeRequest.current = controller;
-      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+      const timeoutId = window.setTimeout(() => controller.abort(), SUPPORT_RESISTANCE_REQUEST_TIMEOUT_MS);
       try {
+        const minAtr = Number(minimumAtr);
+        const maxAtr = Number(maximumAtr);
         const params = new URLSearchParams({
           stock_code: code.trim().toUpperCase(),
-          lookback_days: String(Math.max(3, Math.min(30, Number(lookbackDays) || 10))),
-          minimum_distance_atr: minimumAtr.toFixed(2),
-          maximum_distance_atr: maximumAtr.toFixed(2),
+          lookback_days: String(Math.max(3, Math.min(60, Number(lookbackDays) || 10))),
+          minimum_distance_atr: (Number.isFinite(minAtr) ? minAtr : 0.1).toFixed(2),
+          maximum_distance_atr: (Number.isFinite(maxAtr) ? maxAtr : 3).toFixed(2),
           max_levels: "5",
-          enable_live_prices: "false",
+          enable_live_prices: "true",
         });
         const response = await authenticatedFetch(`${baseUrl}/api/support-resistance?${params}`, {
           cache: "no-store",
@@ -177,7 +193,7 @@ export default function SupportResistancePage() {
         setStockCode(body.stock_code);
       } catch (exc: any) {
         if (exc?.name === "AbortError") {
-          setError("Request timed out after 20 seconds. The support/resistance service is taking too long.");
+          setError("Request timed out after 60 seconds. The support/resistance service is taking too long.");
         } else {
           setError(exc?.message || String(exc));
         }
@@ -248,7 +264,7 @@ export default function SupportResistancePage() {
       // Support zones
       for (const [index, zone] of supports.entries()) {
         const lineColor = supportColors[Math.min(index, supportColors.length - 1)];
-        const supportHover = `<b>Support Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>Change From Last Close: ${zone.distance_pct > 0 ? "+" : ""}${zone.distance_pct.toFixed(2)}%<br>ATR Distance: ${zone.distance_atr.toFixed(2)}<extra></extra>`;
+        const supportHover = `<b>Support Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>Change From Reference Price: ${zone.distance_pct > 0 ? "+" : ""}${zone.distance_pct.toFixed(2)}%<br>ATR Distance: ${zone.distance_atr.toFixed(2)}<extra></extra>`;
         traces.push({
           x: [bars[0].time, bars[bars.length - 1].time],
           y: [zone.price, zone.price],
@@ -284,7 +300,7 @@ export default function SupportResistancePage() {
       // Resistance zones
       for (const [index, zone] of resistances.entries()) {
         const lineColor = resistanceColors[Math.min(index, resistanceColors.length - 1)];
-        const resistanceHover = `<b>Resistance Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>Change From Last Close: ${zone.distance_pct > 0 ? "+" : ""}${zone.distance_pct.toFixed(2)}%<br>ATR Distance: ${zone.distance_atr.toFixed(2)}<extra></extra>`;
+        const resistanceHover = `<b>Resistance Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>Change From Reference Price: ${zone.distance_pct > 0 ? "+" : ""}${zone.distance_pct.toFixed(2)}%<br>ATR Distance: ${zone.distance_atr.toFixed(2)}<extra></extra>`;
         traces.push({
           x: [bars[0].time, bars[bars.length - 1].time],
           y: [zone.price, zone.price],
@@ -324,16 +340,34 @@ export default function SupportResistancePage() {
           type: "category",
           rangeslider: { visible: false },
         },
-        yaxis: { title: "Price (USD)", side: "left" },
+        yaxis: {
+          title: "Price (USD)",
+          side: "left",
+          domain: [0.22, 1],
+          fixedrange: false,
+        },
         yaxis2: {
           title: "Volume",
-          overlaying: "y",
+          domain: [0, 0.14],
           side: "right",
+          rangemode: "tozero",
+          showgrid: false,
+          tickformat: "~s",
+        },
+        legend: {
+          x: 1.02,
+          xanchor: "left",
+          y: 1,
+          yanchor: "top",
+          bgcolor: "rgba(255,255,255,0.85)",
+          bordercolor: "rgba(148,163,184,0.35)",
+          borderwidth: 1,
+          font: { size: 11 },
         },
         hovermode: "closest",
         template: "plotly_white",
         height: 860,
-        margin: { l: 56, r: 56, t: 64, b: 56 },
+        margin: { l: 64, r: 190, t: 64, b: 64 },
       };
 
       Plotly.newPlot(plotRef.current, traces, layout, { responsive: true });
@@ -380,14 +414,15 @@ export default function SupportResistancePage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="text-sm font-medium text-slate-700">Lookback Days</label>
-                <Input
-                  type="number"
-                  min="3"
-                  max="30"
+                <select
                   value={lookbackDays}
                   onChange={(e) => setLookbackDays(e.target.value)}
-                  className="mt-1"
-                />
+                  className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                >
+                  {LOOKBACK_DAY_OPTIONS.map((days) => (
+                    <option key={days} value={days}>{days}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700">Min ATR Distance</label>
@@ -397,7 +432,7 @@ export default function SupportResistancePage() {
                   min="0"
                   max="10"
                   value={minimumAtr}
-                  onChange={(e) => setMinimumAtr(parseFloat(e.target.value) || 0.33)}
+                  onChange={(e) => setMinimumAtr(e.target.value)}
                   className="mt-1"
                 />
               </div>
@@ -409,13 +444,18 @@ export default function SupportResistancePage() {
                   min="0"
                   max="10"
                   value={maximumAtr}
-                  onChange={(e) => setMaximumAtr(parseFloat(e.target.value) || 3)}
+                  onChange={(e) => setMaximumAtr(e.target.value)}
                   className="mt-1"
                 />
               </div>
             </div>
 
             {error ? <Alert variant="danger">Error: {error}</Alert> : null}
+            {data?.live_price_check && data.live_price_missing?.length ? (
+              <Alert variant="warning">
+                IB did not return a current price; using the latest 30-minute close as the reference price.
+              </Alert>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -427,10 +467,16 @@ export default function SupportResistancePage() {
               <CardTitle>Chart Data</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                 <div>
-                  <div className="text-slate-500">Latest Close</div>
-                  <div className="font-semibold">${data.stock.latest_close.toFixed(4)}</div>
+                  <div className="text-slate-500">Reference Price</div>
+                  <div className="font-semibold">{formatPrice(data.stock.reference_price)}</div>
+                  <div className="text-xs text-slate-500">{priceSourceLabel(data.stock.price_source)}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Latest 30M Close</div>
+                  <div className="font-semibold">{formatPrice(data.stock.latest_close)}</div>
+                  <div className="text-xs text-slate-500">{new Date(data.stock.latest_bar_time).toLocaleString()}</div>
                 </div>
                 <div>
                   <div className="text-slate-500">Bar Count</div>
@@ -521,3 +567,4 @@ export default function SupportResistancePage() {
     </div>
   );
 }
+

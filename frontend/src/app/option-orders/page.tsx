@@ -87,6 +87,12 @@ interface EstimateResponse {
   base_case: number;
   optimistic: number;
   conservative: number;
+  current_base_case?: number | null;
+  anchor_base_case?: number | null;
+  quote_anchor_underlying_price?: number | null;
+  market_anchor_price?: number | null;
+  market_calibrated?: number | null;
+  estimate_basis?: string | null;
   adjusted_iv: number;
   contract_iv: number;
   iv_source: string;
@@ -232,6 +238,29 @@ function chooseAutoExpiry(expirations: ExpirationRow[]) {
   return future || sorted[0] || null;
 }
 
+async function readApiResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  let payload: any = null;
+
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      const message = text.slice(0, 300) || response.statusText || "Non-JSON response";
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${message}`);
+      }
+      throw new Error(`Expected JSON response but received: ${message}`);
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(payload?.detail || payload?.error || `HTTP ${response.status}`);
+  }
+
+  return payload as T;
+}
+
 export default function OptionOrdersPage() {
   const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const prefillStarted = useRef(false);
@@ -303,10 +332,7 @@ export default function OptionOrdersPage() {
           `${baseUrl}/api/option-orders/expirations?${expirationParams.toString()}`,
           { cache: "no-store" },
         );
-        const expirationData: ExpirationsResponse = await expirationResponse.json();
-        if (!expirationResponse.ok) {
-          throw new Error((expirationData as any)?.detail || `HTTP ${expirationResponse.status}`);
-        }
+        const expirationData = await readApiResponse<ExpirationsResponse>(expirationResponse);
 
         const availableExpirations = Array.isArray(expirationData.expirations)
           ? expirationData.expirations
@@ -330,10 +356,7 @@ export default function OptionOrdersPage() {
           `${baseUrl}/api/option-orders/chain?${chainParams.toString()}`,
           { cache: "no-store" },
         );
-        const chainData: ChainResponse = await chainResponse.json();
-        if (!chainResponse.ok) {
-          throw new Error((chainData as any)?.detail || `HTTP ${chainResponse.status}`);
-        }
+        const chainData = await readApiResponse<ChainResponse>(chainResponse);
         setChain(chainData);
         setMarketStatus(chainData.market_status || expirationData.market_status || null);
         setExpiryFilter(chosenExpiry.expiry);
@@ -360,12 +383,10 @@ export default function OptionOrdersPage() {
             strike: chosenContract.strike,
             right: chosenContract.right,
             target_underlying_price: requestedTarget,
+            action: requestedAction,
           }),
         });
-        const estimateData: EstimateResponse = await estimateResponse.json();
-        if (!estimateResponse.ok) {
-          throw new Error((estimateData as any)?.detail || `HTTP ${estimateResponse.status}`);
-        }
+        const estimateData = await readApiResponse<EstimateResponse>(estimateResponse);
         setEstimate(estimateData);
         setMarketStatus(estimateData.market_status || chainData.market_status || expirationData.market_status || null);
         setLimitPrice(Number(estimateData.estimated_price).toFixed(2));
@@ -460,8 +481,7 @@ export default function OptionOrdersPage() {
       const response = await authenticatedFetch(`${baseUrl}/api/option-orders/expirations?${params.toString()}`, {
         cache: "no-store",
       });
-      const data: ExpirationsResponse = await response.json();
-      if (!response.ok) throw new Error((data as any)?.detail || `HTTP ${response.status}`);
+      const data = await readApiResponse<ExpirationsResponse>(response);
       setExpirations(Array.isArray(data.expirations) ? data.expirations : []);
       setMarketStatus(data.market_status || null);
       setTargetUnderlying(
@@ -499,8 +519,7 @@ export default function OptionOrdersPage() {
       const response = await authenticatedFetch(`${baseUrl}/api/option-orders/chain?${params.toString()}`, {
         cache: "no-store",
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
+      const data = await readApiResponse<ChainResponse>(response);
       setChain(data);
       setMarketStatus(data.market_status || null);
       setTargetUnderlying(
@@ -545,10 +564,10 @@ export default function OptionOrdersPage() {
           strike: selectedRow.strike,
           right: selectedRow.right,
           target_underlying_price: target,
+          action,
         }),
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
+      const data = await readApiResponse<EstimateResponse>(response);
       setEstimate(data);
       setMarketStatus(data.market_status || marketStatus);
       setLimitPrice(Number(data.estimated_price).toFixed(2));
@@ -586,12 +605,8 @@ export default function OptionOrdersPage() {
           bracket_exit_price: bracketExitPrice,
         }),
       });
-      const data = await response.json();
-      if (!response.ok) {
-        setOrderResult({ ok: false, error: data?.detail || data?.error || `HTTP ${response.status}` });
-      } else {
-        setOrderResult(data);
-      }
+      const data = await readApiResponse<OrderResult>(response);
+      setOrderResult(data);
     } catch (exc: any) {
       setOrderResult({ ok: false, error: exc?.message || String(exc) });
     } finally {
@@ -826,6 +841,9 @@ export default function OptionOrdersPage() {
                   <div className="rounded-md border border-slate-200 p-3">
                     <div className="text-xs uppercase text-slate-500">Limit Default</div>
                     <div className="mt-1 text-xl font-semibold">{money(estimate.estimated_price)}</div>
+                    {estimate.estimate_basis ? (
+                      <div className="mt-1 text-xs text-slate-500">{estimate.estimate_basis}</div>
+                    ) : null}
                   </div>
                   <div className="rounded-md border border-slate-200 p-3">
                     <div className="text-xs uppercase text-slate-500">IV</div>
@@ -869,7 +887,11 @@ export default function OptionOrdersPage() {
                   })()}
                   <div>Delta: {num(estimate.quote.delta, 3)}</div>
                   <div>Base: {money(estimate.base_case, 4)}</div>
-                  <div>Conservative: {money(estimate.conservative, 4)}</div>
+                  <div>Anchor underlying: {money(estimate.quote_anchor_underlying_price, 2)}</div>
+                  <div>Anchor model: {money(estimate.anchor_base_case, 4)}</div>
+                  <div>Market anchor: {money(estimate.market_anchor_price, 4)}</div>
+                  <div>Market calibrated: {money(estimate.market_calibrated, 4)}</div>
+                  <div>Model high: {money(estimate.conservative, 4)}</div>
                   <div className="col-span-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
                     <div className="mb-2 font-semibold text-slate-700">IV evidence</div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1">

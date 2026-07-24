@@ -64,7 +64,7 @@ class PriceLevels30mTests(unittest.TestCase):
             _should_use_live_prices(date(2026, 6, 9), market_today, recent_trading_dates)
         )
 
-    def test_live_price_drives_sides_while_last_close_drives_distances(self):
+    def test_live_price_drives_sides_and_distances(self):
         result = _calculate_levels(
             "TEST.US",
             _bars(),
@@ -81,14 +81,15 @@ class PriceLevels30mTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["latest_close"], 100)
         self.assertEqual(result["reference_price"], 106)
+        self.assertEqual(result["distance_reference_price"], 106)
         self.assertEqual(result["price_source"], "ib_live")
         self.assertTrue(all(level["price"] < 106 for level in result["supports"]))
         self.assertTrue(all(level["price"] > 106 for level in result["resistances"]))
-        self.assertTrue(any(level["distance_pct"] > 0 for level in result["supports"]))
+        self.assertTrue(all(level["distance_pct"] < 0 for level in result["supports"]))
         for level in result["supports"] + result["resistances"]:
-            expected_pct = round((level["price"] - result["latest_close"]) / result["latest_close"] * 100, 2)
+            expected_pct = round((level["price"] - result["reference_price"]) / result["reference_price"] * 100, 2)
             expected_atr = round(
-                abs(level["price"] - result["latest_close"]) / result["atr_daily"],
+                abs(level["price"] - result["reference_price"]) / result["atr_daily"],
                 2,
             )
             self.assertEqual(level["distance_pct"], expected_pct)
@@ -112,7 +113,7 @@ class PriceLevels30mTests(unittest.TestCase):
 
         selected = _select_reasonable_levels(
             levels,
-            latest_close=100,
+            reference_price=100,
             atr_daily=2,
             minimum_distance_atr=0.25,
             maximum_distance_atr=0.75,
@@ -148,7 +149,7 @@ class PriceLevels30mTests(unittest.TestCase):
 
         selected = _select_reasonable_levels(
             levels,
-            latest_close=100,
+            reference_price=100,
             atr_daily=2,
             minimum_distance_atr=0,
             maximum_distance_atr=1,
@@ -181,7 +182,7 @@ class PriceLevels30mTests(unittest.TestCase):
 
         selected = _select_reasonable_levels(
             levels,
-            latest_close=100,
+            reference_price=100,
             atr_daily=2,
             minimum_distance_atr=0,
             maximum_distance_atr=1,

@@ -10,7 +10,7 @@ from app.core.db import get_sql_model
 from app.services.live_stock_price_service import get_live_stock_prices
 
 ATR_PERIOD = 14
-MIN_ZONE_DISTANCE_ATR = 0.33
+MIN_ZONE_DISTANCE_ATR = 0.1
 MAX_ZONE_DISTANCE_ATR = 3.0
 US_EASTERN = ZoneInfo("America/New_York")
 logger = logging.getLogger("app.price_levels_30m_service")
@@ -162,7 +162,7 @@ def _calculate_atr(bars: List[Dict[str, Any]], period: int = ATR_PERIOD) -> floa
 
 def _select_reasonable_levels(
     levels: List[Dict[str, Any]],
-    latest_close: float,
+    reference_price: float,
     atr_daily: float,
     minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
     maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
@@ -170,7 +170,7 @@ def _select_reasonable_levels(
 ) -> List[Dict[str, Any]]:
     selected: List[Dict[str, Any]] = []
     for level in levels:
-        distance_atr = abs(level["price"] - latest_close) / atr_daily if atr_daily > 0 else None
+        distance_atr = abs(level["price"] - reference_price) / atr_daily if atr_daily > 0 else None
         if distance_atr is None:
             continue
         if minimum_distance_atr <= distance_atr <= maximum_distance_atr:
@@ -309,7 +309,7 @@ def _calculate_levels(
     )
     supports = _select_reasonable_levels(
         supports,
-        latest_close,
+        current_price,
         atr_daily,
         minimum_distance_atr,
         maximum_distance_atr,
@@ -317,7 +317,7 @@ def _calculate_levels(
     )
     resistances = _select_reasonable_levels(
         resistances,
-        latest_close,
+        current_price,
         atr_daily,
         minimum_distance_atr,
         maximum_distance_atr,
@@ -325,7 +325,7 @@ def _calculate_levels(
     )
 
     def format_level(item: Dict[str, Any]) -> Dict[str, Any]:
-        distance_pct = (item["price"] - latest_close) / latest_close * 100 if latest_close else 0.0
+        distance_pct = (item["price"] - current_price) / current_price * 100 if current_price else 0.0
         wall = item.get("gamma_wall")
         return {
             "price": round(item["price"], 4),
@@ -355,6 +355,7 @@ def _calculate_levels(
         "database_code": stock_code,
         "latest_close": round(latest_close, 4),
         "reference_price": round(current_price, 4),
+        "distance_reference_price": round(current_price, 4),
         "price_source": price_source if has_reference_price else "30m_close",
         "latest_bar_time": latest["time"].isoformat(),
         "bar_count": len(clean_bars),
@@ -393,17 +394,23 @@ def get_30m_support_resistance(
             for alias in _stock_code_aliases(str(code))
         }
     )
+    stock_filter = ""
+    stock_filter_params: tuple[Any, ...] = ()
+    if filtered_stock_codes:
+        stock_filter = f" AND ASXCode IN ({','.join(['convert(varchar(10), ?)'] * len(filtered_stock_codes))})"
+        stock_filter_params = tuple(filtered_stock_codes)
 
     date_rows = model.execute_read_query(
-        """
+        f"""
         SELECT DISTINCT TOP (3)
             CAST(TimeIntervalStart AS date) AS TradingDate
         FROM StockDB_US.StockData.PriceHistoryTimeFrame
         WHERE TimeFrame = '30M'
           AND TimeIntervalStart < DATEADD(day, 1, convert(datetime, ?))
+          {stock_filter}
         ORDER BY TradingDate DESC
         """,
-        (market_today.isoformat(),),
+        (market_today.isoformat(), *stock_filter_params),
     ) or []
     recent_trading_dates = [
         value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
@@ -425,12 +432,6 @@ def get_30m_support_resistance(
     latest_available_date = recent_trading_dates[0]
     if observation_date is None:
         observation_date = latest_available_date
-
-    stock_filter = ""
-    stock_filter_params: tuple[Any, ...] = ()
-    if filtered_stock_codes:
-        stock_filter = f" AND ASXCode IN ({','.join(['convert(varchar(10), ?)'] * len(filtered_stock_codes))})"
-        stock_filter_params = tuple(filtered_stock_codes)
 
     rows = model.execute_read_query(
         f"""
@@ -644,7 +645,7 @@ def get_30m_support_resistance_for_stock(
     minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
     maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
     max_levels: int = 5,
-    enable_live_prices: bool = False,
+    enable_live_prices: bool = True,
 ) -> Dict[str, Any]:
     if minimum_distance_atr > maximum_distance_atr:
         raise ValueError("Minimum ATR distance cannot exceed maximum ATR distance")

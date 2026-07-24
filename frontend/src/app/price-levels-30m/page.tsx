@@ -31,6 +31,7 @@ interface StockLevels {
   database_code: string;
   latest_close: number;
   reference_price: number;
+  distance_reference_price?: number;
   price_source: "ib_live" | "ib_delayed" | "30m_close";
   latest_bar_time: string;
   bar_count: number;
@@ -170,7 +171,7 @@ function LevelCell({
         {level.distance_pct > 0 ? "+" : ""}{level.distance_pct.toFixed(2)}%, {level.distance_atr.toFixed(2)} ATR
         {level.touches > 0 ? `, ${level.touches} touch${level.touches === 1 ? "" : "es"}` : ""}
       </div>
-      <div className="mt-1 text-[11px] text-slate-400">Distance from last close</div>
+      <div className="mt-1 text-[11px] text-slate-400">Distance from reference price</div>
       <div className="mt-1 text-xs font-medium text-indigo-600">{source}</div>
       {level.gamma_wall ? (
         <div className="mt-1 text-xs text-slate-500">
@@ -534,11 +535,11 @@ export default function PriceLevels30mPage() {
         <CardHeader>
           <CardTitle>Price Levels</CardTitle>
           <p className="mt-1 text-sm text-slate-600">
-            Live price determines direction: supports must be below it and resistances above it. Last close is the
-            baseline for the displayed percentage and ATR distance. The table currently shows the best two levels
+            Live price determines direction and distance. If IB is unavailable, the latest 30-minute close is used as
+            the reference price. The table currently shows the best two levels
             between{" "}
             {(data?.atr_range.minimum ?? minimumAtr).toFixed(2)} and{" "}
-            {(data?.atr_range.maximum ?? maximumAtr).toFixed(2)} times the 14-day daily ATR from last close.
+            {(data?.atr_range.maximum ?? maximumAtr).toFixed(2)} times the 14-day daily ATR from the reference price.
             Eligible zones are ranked by 30M-plus-gamma confluence, touch count, gamma open interest, and recency;
             distance is only a final tie-breaker.
           </p>
@@ -567,13 +568,16 @@ export default function PriceLevels30mPage() {
                   <tr key={stock.database_code} className="align-top hover:bg-slate-50">
                     <td className="px-3 py-3 font-semibold text-slate-900">{stock.stock_code}</td>
                     <td className="px-3 py-3 text-right font-medium">
-                      <div>Last Close {price(stock.latest_close)}</div>
+                      <div>{price(stock.reference_price)}</div>
                       <div className="mt-1 text-xs font-normal text-slate-500">
                         {stock.price_source === "ib_live"
-                          ? `IB Live ${price(stock.reference_price)}`
+                          ? "IB Live"
                           : stock.price_source === "ib_delayed"
-                            ? `IB Delayed ${price(stock.reference_price)}`
-                            : `30M Close ${price(stock.reference_price)}`}
+                            ? "IB Delayed"
+                            : "30M Close"}
+                      </div>
+                      <div className="mt-1 text-[11px] font-normal text-slate-400">
+                        Latest 30M close {price(stock.latest_close)}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right text-slate-600">{price(stock.atr_daily)}</td>

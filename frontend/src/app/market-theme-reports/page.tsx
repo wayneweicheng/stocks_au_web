@@ -112,6 +112,7 @@ export default function MarketThemeReportsPage() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [lookupJobId, setLookupJobId] = useState("");
 
   const [jobId, setJobId] = useState("");
   const [jobResponse, setJobResponse] = useState<Record<string, unknown> | null>(null);
@@ -147,6 +148,17 @@ export default function MarketThemeReportsPage() {
         const data: MarketThemeReportDetail = await res.json();
         setDetail(data);
         setSelectedJobId(data.job_id);
+        setItems((current) => {
+          const summary: MarketThemeReportSummary = {
+            job_id: data.job_id,
+            title: data.title,
+            created_at: data.created_at,
+            status: data.status,
+            raw: data.raw,
+          };
+          const next = [summary, ...current.filter((item) => item.job_id !== data.job_id)];
+          return next.sort((left, right) => (right.created_at || "").localeCompare(left.created_at || ""));
+        });
       } catch (e: any) {
         setDetail(null);
         setError(e.message || "Failed to load market theme report");
@@ -333,6 +345,27 @@ export default function MarketThemeReportsPage() {
               placeholder="Title, status or job id"
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
+            <label className="mb-1 mt-4 block text-xs font-medium text-slate-600">
+              Open by job id
+            </label>
+            <div className="flex gap-2">
+              <input
+                value={lookupJobId}
+                onChange={(event) => setLookupJobId(event.target.value)}
+                placeholder="Paste job id"
+                className="h-10 min-w-0 flex-1 rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void loadDetail(lookupJobId.trim())}
+                disabled={!lookupJobId.trim() || loadingDetail}
+                className="shrink-0"
+              >
+                Open
+              </Button>
+            </div>
           </div>
 
           <div className="max-h-[calc(100vh-260px)] min-h-72 overflow-y-auto p-2">

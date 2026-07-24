@@ -326,6 +326,7 @@ function Start-ServiceWithMonitoring {
                 PortOwnerPid = 0
                 RestartCount = 0
                 LastRestartTime = $null
+                HealthFailureCount = 0
                 StartTime = Get-Date
             }
             # Return to previous location
@@ -546,8 +547,16 @@ function Monitor-Services {
                 elseif ($serviceInfo.Port -gt 0) {
                     $isHealthy = Test-ServiceHealth -ServiceName $serviceName -Port $serviceInfo.Port
                     if (-not $isHealthy) {
-                        Write-Log "WARNING: $serviceName is running but not responding on port $($serviceInfo.Port)"
-                        # Optional: could restart here if persistent
+                        $previousFailures = if ($serviceInfo.ContainsKey("HealthFailureCount")) { [int]$serviceInfo.HealthFailureCount } else { 0 }
+                        $serviceInfo.HealthFailureCount = $previousFailures + 1
+                        if ($serviceInfo.HealthFailureCount -eq 3) {
+                            Write-Log "WARNING: $serviceName is running but failed $($serviceInfo.HealthFailureCount) consecutive health checks on port $($serviceInfo.Port)"
+                        } elseif ($serviceInfo.HealthFailureCount -gt 3) {
+                            Write-Log "WARNING: $serviceName is still not responding on port $($serviceInfo.Port) after $($serviceInfo.HealthFailureCount) consecutive health checks"
+                        }
+                    } elseif ($serviceInfo.ContainsKey("HealthFailureCount") -and $serviceInfo.HealthFailureCount -gt 0) {
+                        Write-Log "$serviceName health check recovered on port $($serviceInfo.Port) after $($serviceInfo.HealthFailureCount) failed check(s)"
+                        $serviceInfo.HealthFailureCount = 0
                     }
                 }
             } catch {

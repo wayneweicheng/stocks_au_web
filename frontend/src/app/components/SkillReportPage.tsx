@@ -6,6 +6,7 @@ import Alert from "./ui/Alert";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
+import Select from "./ui/Select";
 import MarkdownRenderer from "./MarkdownRenderer";
 import PageHeader from "./PageHeader";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
@@ -16,11 +17,31 @@ type ReportSummary = {
   created_at?: string | null;
   stock_code?: string | null;
   status?: string | null;
+  raw?: Record<string, unknown>;
 };
 
 type ReportDetail = ReportSummary & { content: string };
 type ReportPageResponse = { items: ReportSummary[] };
 type ProxyResponse = { data: Record<string, unknown> };
+type OptionCountAggregate = {
+  ASXCode?: string;
+  asx_code?: string;
+  NumRecords?: number;
+  num_records?: number;
+  NumOptions?: number;
+  num_options?: number;
+};
+type OptionCountAggregatesResponse = {
+  trades?: OptionCountAggregate[];
+  bidask?: OptionCountAggregate[];
+};
+type OptionCountRow = {
+  code: string;
+  tradeRecords: number;
+  tradeOptions: number;
+  bidAskRecords: number;
+  bidAskOptions: number;
+};
 
 type SavedJob = {
   job_id: string;
@@ -33,11 +54,24 @@ type SavedJob = {
 type TextField = {
   name: string;
   label: string;
+  inputType?: "text" | "date";
   placeholder?: string;
   multiline?: boolean;
   defaultValue?: string;
   required?: boolean;
   omitWhenBlank?: boolean;
+};
+
+type DateTimeTimezoneField = {
+  name: string;
+  label: string;
+  inputType: "datetime-timezone";
+  defaultValue?: string;
+  clientDefaultValue?: () => string;
+  required?: boolean;
+  omitWhenBlank?: boolean;
+  timezones: Array<{ label: string; value: string }>;
+  defaultTimezone: string;
 };
 
 type NumberField = {
@@ -56,11 +90,25 @@ type Props = {
   storageKey: string;
   submitLabel: string;
   emptyLabel: string;
-  fields: Array<TextField | NumberField>;
+  fields: Array<TextField | DateTimeTimezoneField | NumberField>;
   makeJobLabel: (values: Record<string, string | number>) => string;
+  buildReportPrompt?: (detail: ReportDetail) => string;
+  reportPromptLabel?: string;
+  copyPromptLabel?: string;
+  getReportDate?: (report: ReportSummary) => string;
+  optionCountsEndpoint?: string;
+  optionCountsTitle?: string;
+  optionCountsObservationDateField?: string;
+  canDeleteReports?: boolean;
 };
 
 const MAX_SAVED_JOBS = 25;
+const DATE_TIME_TIMEZONE_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2})?(?:\s+(.+))?$/;
+
+function resolveDefaultValue(field: TextField | DateTimeTimezoneField | NumberField) {
+  if (!("defaultValue" in field)) return "";
+  return field.defaultValue ?? "";
+}
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -106,6 +154,38 @@ function persistSavedJobs(storageKey: string, jobs: SavedJob[]) {
   window.localStorage.setItem(storageKey, JSON.stringify(jobs.slice(0, MAX_SAVED_JOBS)));
 }
 
+function getAggregateCode(row: OptionCountAggregate) {
+  return String(row.ASXCode ?? row.asx_code ?? "").trim().toUpperCase();
+}
+
+function getAggregateRecords(row: OptionCountAggregate) {
+  return Number(row.NumRecords ?? row.num_records ?? 0);
+}
+
+function getAggregateOptions(row: OptionCountAggregate) {
+  return Number(row.NumOptions ?? row.num_options ?? 0);
+}
+
+function isNumberField(field: TextField | DateTimeTimezoneField | NumberField): field is NumberField {
+  return typeof field.defaultValue === "number";
+}
+
+function isDateTimeTimezoneField(field: TextField | DateTimeTimezoneField | NumberField): field is DateTimeTimezoneField {
+  return "inputType" in field && field.inputType === "datetime-timezone";
+}
+
+function splitDateTimeTimezone(value: string | number, fallbackTimezone: string) {
+  const rawValue = String(value || "").trim();
+  const match = rawValue.match(DATE_TIME_TIMEZONE_PATTERN);
+  if (!match) return { dateTime: rawValue.replace(" ", "T"), timezone: fallbackTimezone };
+  return { dateTime: `${match[1]}T${match[2]}`, timezone: (match[3] || fallbackTimezone).trim() };
+}
+
+function combineDateTimeTimezone(dateTime: string, timezone: string) {
+  if (!dateTime.trim()) return "";
+  return `${dateTime.replace("T", " ")} ${timezone}`.trim();
+}
+
 export default function SkillReportPage({
   title,
   subtitle,
@@ -116,12 +196,20 @@ export default function SkillReportPage({
   emptyLabel,
   fields,
   makeJobLabel,
+  buildReportPrompt,
+  reportPromptLabel = "Get Prompt",
+  copyPromptLabel = "Copy Prompt",
+  getReportDate,
+  optionCountsEndpoint,
+  optionCountsTitle = "Option Counts by Stock Code",
+  optionCountsObservationDateField = "observation_date",
+  canDeleteReports = false,
 }: Props) {
   const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const initialValues = useMemo(() => {
     const values: Record<string, string | number> = {};
     fields.forEach((field) => {
-      values[field.name] = "defaultValue" in field ? field.defaultValue ?? "" : "";
+      values[field.name] = resolveDefaultValue(field);
     });
     return values;
   }, [fields]);
@@ -134,7 +222,12 @@ export default function SkillReportPage({
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [viewerError, setViewerError] = useState("");
+  const [deletingJobId, setDeletingJobId] = useState("");
   const [search, setSearch] = useState("");
+  const [selectedReportDate, setSelectedReportDate] = useState("");
+  const [reportPrompt, setReportPrompt] = useState("");
+  const [reportPromptCopied, setReportPromptCopied] = useState(false);
+  const [reportPromptError, setReportPromptError] = useState("");
 
   const [jobId, setJobId] = useState("");
   const [jobResponse, setJobResponse] = useState<Record<string, unknown> | null>(null);
@@ -143,14 +236,64 @@ export default function SkillReportPage({
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(false);
   const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
+  const [aggregates, setAggregates] = useState<OptionCountAggregatesResponse | null>(null);
+  const [loadingAggregates, setLoadingAggregates] = useState(false);
+  const [aggregatesError, setAggregatesError] = useState("");
+  const optionCountsObservationDate = String(values[optionCountsObservationDateField] || "").trim();
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return items;
-    return items.filter((item) =>
-      `${item.title} ${item.job_id} ${item.stock_code || ""} ${item.status || ""}`.toLowerCase().includes(query)
-    );
-  }, [items, search]);
+    return items.filter((item) => {
+      if (selectedReportDate && getReportDate?.(item) !== selectedReportDate) return false;
+      if (!query) return true;
+      return `${item.title} ${item.job_id} ${item.stock_code || ""} ${item.status || ""}`.toLowerCase().includes(query);
+    });
+  }, [getReportDate, items, search, selectedReportDate]);
+
+  const reportDateCards = useMemo(() => {
+    if (!getReportDate) return [];
+    const counts = new Map<string, number>();
+    items.forEach((item) => {
+      const reportDate = getReportDate(item);
+      if (!reportDate) return;
+      counts.set(reportDate, (counts.get(reportDate) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([date, count]) => ({ date, count }))
+      .sort((left, right) => right.date.localeCompare(left.date))
+      .slice(0, 9);
+  }, [getReportDate, items]);
+
+  const optionCountRows = useMemo<OptionCountRow[]>(() => {
+    if (!aggregates) return [];
+
+    const rowsByCode = new Map<string, OptionCountRow>();
+    const getOrCreateRow = (code: string) => {
+      const existing = rowsByCode.get(code);
+      if (existing) return existing;
+      const row = { code, tradeRecords: 0, tradeOptions: 0, bidAskRecords: 0, bidAskOptions: 0 };
+      rowsByCode.set(code, row);
+      return row;
+    };
+
+    (aggregates.trades || []).forEach((item) => {
+      const code = getAggregateCode(item);
+      if (!code) return;
+      const row = getOrCreateRow(code);
+      row.tradeRecords = getAggregateRecords(item);
+      row.tradeOptions = getAggregateOptions(item);
+    });
+
+    (aggregates.bidask || []).forEach((item) => {
+      const code = getAggregateCode(item);
+      if (!code) return;
+      const row = getOrCreateRow(code);
+      row.bidAskRecords = getAggregateRecords(item);
+      row.bidAskOptions = getAggregateOptions(item);
+    });
+
+    return Array.from(rowsByCode.values()).sort((left, right) => left.code.localeCompare(right.code));
+  }, [aggregates]);
 
   const saveJob = useCallback(
     (job: SavedJob) => {
@@ -174,8 +317,14 @@ export default function SkillReportPage({
         if (!res.ok) throw new Error(payload.detail || `HTTP ${res.status}`);
         setDetail(payload as ReportDetail);
         setSelectedJobId((payload as ReportDetail).job_id);
+        setReportPrompt("");
+        setReportPromptCopied(false);
+        setReportPromptError("");
       } catch (e: unknown) {
         setDetail(null);
+        setReportPrompt("");
+        setReportPromptCopied(false);
+        setReportPromptError("");
         setViewerError(e instanceof Error ? e.message : "Failed to load report");
       } finally {
         setLoadingDetail(false);
@@ -206,6 +355,94 @@ export default function SkillReportPage({
       setLoadingList(false);
     }
   }, [baseUrl, loadDetail, reportsEndpoint, selectedJobId]);
+
+  const selectReportDate = useCallback(
+    (reportDate: string) => {
+      setSelectedReportDate(reportDate);
+      setSearch("");
+      if (!reportDate) return;
+      const firstMatch = items.find((item) => getReportDate?.(item) === reportDate);
+      if (firstMatch) {
+        void loadDetail(firstMatch.job_id);
+      }
+    },
+    [getReportDate, items, loadDetail]
+  );
+
+  const prepareReportPrompt = useCallback(() => {
+    if (!detail || !buildReportPrompt) return;
+    try {
+      const prompt = buildReportPrompt(detail);
+      setReportPrompt(prompt);
+      setReportPromptCopied(false);
+      setReportPromptError("");
+    } catch (e: unknown) {
+      setReportPrompt("");
+      setReportPromptCopied(false);
+      setReportPromptError(e instanceof Error ? e.message : "Failed to build prompt");
+    }
+  }, [buildReportPrompt, detail]);
+
+  const copyReportPrompt = useCallback(() => {
+    if (!reportPrompt) return;
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = reportPrompt;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "0";
+      textarea.setAttribute("readonly", "readonly");
+      document.body.appendChild(textarea);
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textarea);
+
+      if (!copied) {
+        throw new Error("Copy command was not accepted");
+      }
+
+      setReportPromptCopied(true);
+      setReportPromptError("");
+      setTimeout(() => setReportPromptCopied(false), 2500);
+    } catch {
+      setReportPromptCopied(false);
+      setReportPromptError("Failed to copy. Please select and copy manually.");
+    }
+  }, [reportPrompt]);
+
+  const deleteReport = useCallback(
+    async (report: ReportDetail) => {
+      if (!canDeleteReports) return;
+      const confirmed = window.confirm(`Delete "${report.title}"?\n\nThis will remove report job ${report.job_id}.`);
+      if (!confirmed) return;
+
+      setDeletingJobId(report.job_id);
+      setViewerError("");
+      try {
+        const res = await authenticatedFetch(`${baseUrl}${reportsEndpoint}/${encodeURIComponent(report.job_id)}`, {
+          method: "DELETE",
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.detail || `HTTP ${res.status}`);
+
+        setItems((current) => current.filter((item) => item.job_id !== report.job_id));
+        if (selectedJobId === report.job_id) {
+          setSelectedJobId("");
+          setDetail(null);
+          setReportPrompt("");
+          setReportPromptCopied(false);
+          setReportPromptError("");
+        }
+        await loadReports();
+      } catch (e: unknown) {
+        setViewerError(e instanceof Error ? e.message : "Failed to delete report");
+      } finally {
+        setDeletingJobId("");
+      }
+    },
+    [baseUrl, canDeleteReports, loadReports, reportsEndpoint, selectedJobId]
+  );
 
   const submitJob = useCallback(async () => {
     const missing = fields.find((field) => "required" in field && field.required && !String(values[field.name] || "").trim());
@@ -286,8 +523,16 @@ export default function SkillReportPage({
   );
 
   useEffect(() => {
-    setValues(initialValues);
-  }, [initialValues]);
+    setValues(() => {
+      const nextValues = { ...initialValues };
+      fields.forEach((field) => {
+        if (isDateTimeTimezoneField(field) && field.clientDefaultValue) {
+          nextValues[field.name] = field.clientDefaultValue();
+        }
+      });
+      return nextValues;
+    });
+  }, [fields, initialValues]);
 
   useEffect(() => {
     setSavedJobs(loadSavedJobs(storageKey));
@@ -296,6 +541,35 @@ export default function SkillReportPage({
   useEffect(() => {
     void loadReports();
   }, [loadReports]);
+
+  useEffect(() => {
+    if (activeTab !== "runner" || !optionCountsEndpoint || !optionCountsObservationDate) {
+      setAggregates(null);
+      setAggregatesError("");
+      return;
+    }
+
+    let cancelled = false;
+    const load = async () => {
+      setLoadingAggregates(true);
+      setAggregatesError("");
+      try {
+        const res = await authenticatedFetch(`${baseUrl}${optionCountsEndpoint}?observation_date=${encodeURIComponent(optionCountsObservationDate)}`);
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.detail || `HTTP ${res.status}`);
+        if (!cancelled) setAggregates(payload as OptionCountAggregatesResponse);
+      } catch (e: unknown) {
+        if (!cancelled) setAggregatesError(e instanceof Error ? e.message : "Failed to load aggregates");
+      } finally {
+        if (!cancelled) setLoadingAggregates(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, baseUrl, optionCountsEndpoint, optionCountsObservationDate]);
 
   const visibleJobStatus = jobStatus ? getStatus(jobStatus) : jobResponse ? getStatus(jobResponse) : "";
 
@@ -326,6 +600,39 @@ export default function SkillReportPage({
       {activeTab === "viewer" ? (
         <div className="space-y-4">
           {viewerError ? <Alert variant="danger">{viewerError}</Alert> : null}
+          {reportDateCards.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+              <button
+                type="button"
+                onClick={() => selectReportDate("")}
+                className={[
+                  "rounded-lg border p-3 text-left shadow-sm transition-colors",
+                  selectedReportDate === ""
+                    ? "border-indigo-500 bg-indigo-50 text-indigo-900"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                ].join(" ")}
+              >
+                <span className="block text-sm font-semibold">All dates</span>
+                <span className="mt-1 block text-xs text-slate-500">{items.length.toLocaleString()} reports</span>
+              </button>
+              {reportDateCards.map((card) => (
+                <button
+                  key={card.date}
+                  type="button"
+                  onClick={() => selectReportDate(card.date)}
+                  className={[
+                    "rounded-lg border p-3 text-left shadow-sm transition-colors",
+                    selectedReportDate === card.date
+                      ? "border-indigo-500 bg-indigo-50 text-indigo-900"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                >
+                  <span className="block text-sm font-semibold">{card.date}</span>
+                  <span className="mt-1 block text-xs text-slate-500">{card.count.toLocaleString()} reports</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
             <aside className="rounded-lg border border-slate-200 bg-white">
               <div className="border-b border-slate-200 p-4">
@@ -374,14 +681,51 @@ export default function SkillReportPage({
                         {detail.stock_code ? ` | ${detail.stock_code}` : ""}
                       </div>
                     </div>
-                    <Button type="button" variant="secondary" size="sm" onClick={() => void loadDetail(detail.job_id)} disabled={loadingDetail}>
-                      {loadingDetail ? "Loading..." : "Reload"}
-                    </Button>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      {buildReportPrompt ? (
+                        <>
+                          <Button type="button" variant="secondary" size="sm" onClick={prepareReportPrompt}>
+                            {reportPromptLabel}
+                          </Button>
+                          {reportPrompt ? (
+                            <Button type="button" size="sm" onClick={copyReportPrompt}>
+                              {copyPromptLabel}
+                            </Button>
+                          ) : null}
+                        </>
+                      ) : null}
+                      <Button type="button" variant="secondary" size="sm" onClick={() => void loadDetail(detail.job_id)} disabled={loadingDetail}>
+                        {loadingDetail ? "Loading..." : "Reload"}
+                      </Button>
+                      {canDeleteReports ? (
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
+                          onClick={() => void deleteReport(detail)}
+                          disabled={deletingJobId === detail.job_id || loadingDetail}
+                        >
+                          {deletingJobId === detail.job_id ? "Deleting..." : "Delete"}
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                 ) : (
                   <h2 className="text-lg font-semibold text-slate-900">Report Preview</h2>
                 )}
               </div>
+              {(reportPromptCopied || reportPromptError) && (
+                <div className="border-b border-slate-200 px-5 py-3">
+                  {reportPromptCopied ? (
+                    <div className="text-sm text-emerald-600">
+                      Prompt copied. About {Math.ceil(reportPrompt.length / 4).toLocaleString()} tokens.
+                    </div>
+                  ) : null}
+                  {reportPromptError ? (
+                    <div className="text-sm text-red-600">Error: {reportPromptError}</div>
+                  ) : null}
+                </div>
+              )}
               <div className="min-h-[520px] p-5">
                 {loadingDetail && !detail ? (
                   <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500">Loading report...</div>
@@ -401,7 +745,41 @@ export default function SkillReportPage({
               {fields.map((field) => (
                 <div key={field.name}>
                   <label className="mb-1 block text-sm font-medium text-slate-700">{field.label}</label>
-                  {"multiline" in field && field.multiline ? (
+                  {isDateTimeTimezoneField(field) ? (
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px]">
+                      <Input
+                        type="datetime-local"
+                        value={splitDateTimeTimezone(values[field.name], field.defaultTimezone).dateTime}
+                        onChange={(event) =>
+                          setValues((current) => {
+                            const currentParts = splitDateTimeTimezone(current[field.name], field.defaultTimezone);
+                            return {
+                              ...current,
+                              [field.name]: combineDateTimeTimezone(event.target.value, currentParts.timezone),
+                            };
+                          })
+                        }
+                      />
+                      <Select
+                        value={splitDateTimeTimezone(values[field.name], field.defaultTimezone).timezone}
+                        onChange={(event) =>
+                          setValues((current) => {
+                            const currentParts = splitDateTimeTimezone(current[field.name], field.defaultTimezone);
+                            return {
+                              ...current,
+                              [field.name]: combineDateTimeTimezone(currentParts.dateTime, event.target.value),
+                            };
+                          })
+                        }
+                      >
+                        {field.timezones.map((timezone) => (
+                          <option key={timezone.value} value={timezone.value}>
+                            {timezone.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  ) : "multiline" in field && field.multiline ? (
                     <textarea
                       value={String(values[field.name] || "")}
                       onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
@@ -411,14 +789,14 @@ export default function SkillReportPage({
                     />
                   ) : (
                     <Input
-                      type={"min" in field ? "number" : "text"}
-                      min={"min" in field ? field.min : undefined}
-                      max={"max" in field ? field.max : undefined}
+                      type={isNumberField(field) ? "number" : field.inputType || "text"}
+                      min={isNumberField(field) ? field.min : undefined}
+                      max={isNumberField(field) ? field.max : undefined}
                       value={values[field.name]}
                       onChange={(event) =>
                         setValues((current) => ({
                           ...current,
-                          [field.name]: "min" in field ? Number(event.target.value) : event.target.value,
+                          [field.name]: isNumberField(field) ? Number(event.target.value) : event.target.value,
                         }))
                       }
                       placeholder={"placeholder" in field ? field.placeholder : undefined}
@@ -469,6 +847,54 @@ export default function SkillReportPage({
               </div>
             </div>
           </section>
+
+          {optionCountsEndpoint ? (
+            <section className="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                <h2 className="text-lg font-semibold text-slate-900">{optionCountsTitle}</h2>
+              </div>
+              <div className="space-y-4 p-5">
+                {loadingAggregates ? (
+                  <div className="text-sm text-slate-500">Loading counts...</div>
+                ) : aggregatesError ? (
+                  <Alert variant="danger">{aggregatesError}</Alert>
+                ) : aggregates ? (
+                  optionCountRows.length > 0 ? (
+                    <div className="max-h-96 overflow-auto">
+                      <table className="w-full table-auto text-sm">
+                        <thead className="sticky top-0 bg-white">
+                          <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-500">
+                            <th className="px-2 py-2">Stock Code</th>
+                            <th className="px-2 py-2 text-right">Trade Records</th>
+                            <th className="px-2 py-2 text-right">Trade Options</th>
+                            <th className="px-2 py-2 text-right">Bid/Ask Records</th>
+                            <th className="px-2 py-2 text-right">Bid/Ask Options</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {optionCountRows.map((row) => (
+                            <tr key={row.code} className="border-t border-slate-100">
+                              <td className="px-2 py-2 font-medium text-slate-700">{row.code}</td>
+                              <td className="px-2 py-2 text-right text-slate-600">{row.tradeRecords.toLocaleString()}</td>
+                              <td className="px-2 py-2 text-right text-slate-600">{row.tradeOptions.toLocaleString()}</td>
+                              <td className="px-2 py-2 text-right text-slate-600">{row.bidAskRecords.toLocaleString()}</td>
+                              <td className="px-2 py-2 text-right text-slate-600">{row.bidAskOptions.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+                      No option counts found for this observation date.
+                    </div>
+                  )
+                ) : (
+                  <div className="text-sm text-slate-500">Choose an observation date to load counts.</div>
+                )}
+              </div>
+            </section>
+          ) : null}
 
           <section className="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 bg-slate-50 px-5 py-4"><h2 className="text-lg font-semibold text-slate-900">Job Response</h2></div>
