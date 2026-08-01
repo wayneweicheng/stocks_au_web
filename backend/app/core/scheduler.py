@@ -2,11 +2,10 @@
 Background Scheduler for Automated Tasks
 
 Uses APScheduler to run background jobs within the FastAPI application.
-Currently handles automatic GEX insight processing every 5 minutes.
+Currently handles scheduled background tasks.
 """
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from datetime import date, datetime
@@ -217,14 +216,7 @@ def start_scheduler():
     # Add event listener
     scheduler.add_listener(job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
 
-    # Add GEX Auto Insight job - runs every 5 minutes
-    scheduler.add_job(
-        gex_auto_insight_job,
-        trigger=IntervalTrigger(minutes=5),
-        id='gex_auto_insight',
-        name='GEX Auto Insight Processor',
-        replace_existing=True
-    )
+    # GEX Auto Insight processing is manual-only from the market-flow admin tab.
 
     scheduler.add_job(
         discord_market_intelligence_job,

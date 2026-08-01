@@ -373,6 +373,7 @@ def _calculate_levels(
 
 def get_30m_support_resistance(
     observation_date: Optional[date] = None,
+    observation_datetime: Optional[datetime] = None,
     lookback_days: int = 10,
     minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
     maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
@@ -383,9 +384,13 @@ def get_30m_support_resistance(
 ) -> Dict[str, Any]:
     if minimum_distance_atr > maximum_distance_atr:
         raise ValueError("Minimum ATR distance cannot exceed maximum ATR distance")
+    if observation_date is not None and observation_datetime is not None:
+        raise ValueError("Use either observation_date or observation_datetime, not both")
 
     model = get_sql_model()
     market_today = datetime.now(US_EASTERN).date()
+    if observation_datetime is not None:
+        observation_date = observation_datetime.date()
     filtered_stock_codes = sorted(
         {
             alias
@@ -420,6 +425,7 @@ def get_30m_support_resistance(
     if not recent_trading_dates:
         return {
             "observation_date": None,
+            "observation_datetime": None,
             "lookback_days": lookback_days,
             "atr_range": {
                 "minimum": minimum_distance_atr,
@@ -432,13 +438,24 @@ def get_30m_support_resistance(
     latest_available_date = recent_trading_dates[0]
     if observation_date is None:
         observation_date = latest_available_date
+    observation_end_datetime = (
+        observation_datetime.isoformat()
+        if observation_datetime is not None
+        else observation_date.isoformat()
+    )
+    observation_end_sql = (
+        "convert(datetime, ?)"
+        if observation_datetime is not None
+        else "DATEADD(hour, 23, convert(datetime, ?))"
+    )
+    observation_end_operator = "<" if observation_datetime is not None else "<="
 
     rows = model.execute_read_query(
         f"""
         SELECT ASXCode, TimeIntervalStart, [High], [Low], [Close], Volume
         FROM StockDB_US.StockData.PriceHistoryTimeFrame
         WHERE TimeIntervalStart >= DATEADD(day, -?, convert(datetime, ?))
-          AND TimeIntervalStart <= DATEADD(hour, 23, convert(datetime, ?))
+          AND TimeIntervalStart {observation_end_operator} {observation_end_sql}
           AND TimeFrame = '30M'
           {stock_filter}
         ORDER BY ASXCode, TimeIntervalStart
@@ -446,7 +463,7 @@ def get_30m_support_resistance(
         (
             lookback_days,
             observation_date.isoformat(),
-            observation_date.isoformat(),
+            observation_end_datetime,
             *stock_filter_params,
         ),
     ) or []
@@ -547,7 +564,7 @@ def get_30m_support_resistance(
         if row.get("ASXCode")
     }
 
-    use_live_prices = enable_live_prices and _should_use_live_prices(
+    use_live_prices = observation_datetime is None and enable_live_prices and _should_use_live_prices(
         observation_date,
         market_today,
         recent_trading_dates,
@@ -571,7 +588,13 @@ def get_30m_support_resistance(
             daily_by_stock.get(code, []),
             walls_by_stock.get(code),
             reference_price=_number(live_quote.get("price")) if live_quote else None,
-            price_source=str(live_quote.get("source")) if live_quote else "30m_close",
+            price_source=(
+                str(live_quote.get("source"))
+                if live_quote
+                else "as_at_30m_close"
+                if observation_datetime is not None
+                else "30m_close"
+            ),
             minimum_distance_atr=minimum_distance_atr,
             maximum_distance_atr=maximum_distance_atr,
             max_levels=max_levels,
@@ -623,6 +646,7 @@ def get_30m_support_resistance(
 
     return {
         "observation_date": observation_date.isoformat(),
+        "observation_datetime": observation_datetime.isoformat() if observation_datetime else None,
         "latest_available_date": latest_available_date.isoformat(),
         "recent_trading_dates": [item.isoformat() for item in recent_trading_dates],
         "live_price_check": use_live_prices,
@@ -641,6 +665,7 @@ def get_30m_support_resistance(
 def get_30m_support_resistance_for_stock(
     stock_code: str,
     observation_date: Optional[date] = None,
+    observation_datetime: Optional[datetime] = None,
     lookback_days: int = 10,
     minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
     maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
@@ -649,6 +674,8 @@ def get_30m_support_resistance_for_stock(
 ) -> Dict[str, Any]:
     if minimum_distance_atr > maximum_distance_atr:
         raise ValueError("Minimum ATR distance cannot exceed maximum ATR distance")
+    if observation_date is not None and observation_datetime is not None:
+        raise ValueError("Use either observation_date or observation_datetime, not both")
     code = (stock_code or "").strip().upper()
     if not code:
         raise ValueError("stock_code is required")
@@ -657,6 +684,7 @@ def get_30m_support_resistance_for_stock(
 
     result = get_30m_support_resistance(
         observation_date=observation_date,
+        observation_datetime=observation_datetime,
         lookback_days=lookback_days,
         minimum_distance_atr=minimum_distance_atr,
         maximum_distance_atr=maximum_distance_atr,
@@ -680,12 +708,21 @@ def get_30m_support_resistance_for_stock(
         stocks[0],
     )
     model = get_sql_model()
+    observation_end_datetime = (
+        result["observation_datetime"] or result["observation_date"]
+    )
+    observation_end_sql = (
+        "convert(datetime, ?)"
+        if result.get("observation_datetime")
+        else "DATEADD(hour, 23, convert(datetime, ?))"
+    )
+    observation_end_operator = "<" if result.get("observation_datetime") else "<="
     raw_bars = model.execute_read_query(
-        """
+        f"""
         SELECT TimeIntervalStart, [Open], [High], [Low], [Close], Volume
         FROM StockDB_US.StockData.PriceHistoryTimeFrame
         WHERE TimeIntervalStart >= DATEADD(day, -?, convert(datetime, ?))
-          AND TimeIntervalStart <= DATEADD(hour, 23, convert(datetime, ?))
+          AND TimeIntervalStart {observation_end_operator} {observation_end_sql}
           AND TimeFrame = '30M'
           AND ASXCode = convert(varchar(10), ?)
         ORDER BY TimeIntervalStart
@@ -693,7 +730,7 @@ def get_30m_support_resistance_for_stock(
         (
             lookback_days,
             result["observation_date"],
-            result["observation_date"],
+            observation_end_datetime,
             stock["database_code"],
         ),
     ) or []
@@ -720,6 +757,7 @@ def get_30m_support_resistance_for_stock(
 
     return {
         "observation_date": result["observation_date"],
+        "observation_datetime": result["observation_datetime"],
         "latest_available_date": result["latest_available_date"],
         "recent_trading_dates": result["recent_trading_dates"],
         "live_price_check": result["live_price_check"],

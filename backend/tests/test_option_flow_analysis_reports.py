@@ -167,9 +167,16 @@ def test_option_flow_ticker_drilldown_job_submit(monkeypatch):
 def test_option_flow_aggregates_returns_trade_and_bidask_counts(monkeypatch):
     calls = []
 
+    class FakeCursor:
+        def __init__(self):
+            self.timeout = None
+
     class FakeSqlModel:
+        def __init__(self):
+            self.cursor = FakeCursor()
+
         def execute_read_query(self, query, params):
-            calls.append((query, params))
+            calls.append((query, params, self.cursor.timeout))
             if "v_OptionTrade" in query:
                 return [
                     {"ASXCode": "MU", "NumRecords": 12, "NumOptions": 5},
@@ -195,5 +202,7 @@ def test_option_flow_aggregates_returns_trade_and_bidask_counts(monkeypatch):
     assert len(calls) == 2
     assert calls[0][1][0].isoformat() == "2026-07-10"
     assert calls[1][1][0].isoformat() == "2026-07-10"
+    assert calls[0][2] == 60
+    assert calls[1][2] == 60
     assert "WITH (NOLOCK)" in calls[0][0]
     assert "WITH (NOLOCK)" in calls[1][0]

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
 from app.routers.auth import verify_credentials
 import logging
+import json
 
 
 router = APIRouter(prefix="/api", tags=["trading-orders"], dependencies=[Depends(verify_credentials)])
@@ -13,7 +14,7 @@ DB_NAME = "StockDB_US"
 
 ALLOWED_SIDES = {"B", "S"}
 ALLOWED_ORDER_SOURCE_TYPES = {"MANUAL", "SIGNAL"}
-ALLOWED_ENTRY_TYPES = {"LIMIT", "MARKET"}
+ALLOWED_ENTRY_TYPES = {"LIMIT", "MARKET", "LIMIT_MID"}
 ALLOWED_STATUSES = {"PENDING", "PLACED", "OPEN", "CLOSED", "CANCELLED"}
 ALLOWED_MODES = {"live", "backtest", "all"}
 
@@ -59,7 +60,7 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
     if order_source_type not in ALLOWED_ORDER_SOURCE_TYPES:
         raise HTTPException(status_code=400, detail="OrderSourceType must be 'MANUAL' or 'SIGNAL'.")
     if entry_type not in ALLOWED_ENTRY_TYPES:
-        raise HTTPException(status_code=400, detail="EntryType must be 'LIMIT' or 'MARKET'.")
+        raise HTTPException(status_code=400, detail="EntryType must be 'LIMIT', 'LIMIT_MID', or 'MARKET'.")
     if status not in ALLOWED_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid Status value.")
 
@@ -78,6 +79,18 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="TimeFrame is required.")
 
     stop_loss_mode = (order.stop_loss_mode or "BAR_CLOSE").strip().upper()
+    entry_price = None if entry_type in {"MARKET", "LIMIT_MID"} else order.entry_price
+    meta: Dict[str, Any] = {}
+    if entry_type == "LIMIT_MID":
+        meta["EntryPriceMode"] = "MID"
+    if signal_type == "SMA_CROSS":
+        meta.update(
+            {
+                "SignalDescription": "Simple moving average cross",
+                "SmaPeriod": 10,
+                "SmaTimeFrame": time_frame,
+            }
+        )
 
     return {
         "strategy_id": order.strategy_id,
@@ -87,14 +100,144 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
         "signal_type": signal_type,
         "time_frame": time_frame,
         "entry_type": entry_type,
-        "entry_price": order.entry_price,
+        "entry_price": entry_price,
         "quantity": order.quantity,
         "profit_target_price": order.profit_target_price,
         "stop_loss_price": order.stop_loss_price,
         "stop_loss_mode": stop_loss_mode,
         "status": status,
         "backtest_run_id": order.backtest_run_id,
+        "meta_json": json.dumps(meta) if meta else None,
     }
+
+
+def _load_order_signal_audits(model: SQLServerModel, order_ids: List[Any]) -> Dict[Any, List[Dict[str, Any]]]:
+    clean_order_ids = [order_id for order_id in order_ids if order_id is not None]
+    if not clean_order_ids:
+        return {}
+
+    placeholders = ",".join(["?"] * len(clean_order_ids))
+    rows = model.execute_read_query(
+        f"""
+        SELECT
+            OrderSignalAuditId,
+            OrderId,
+            StrategyId,
+            StockCode,
+            Side,
+            TimeFrame,
+            IntendedAction,
+            SignalType,
+            SignalKey,
+            TriggeredAt,
+            ValidationStatus,
+            ValidationResult,
+            ValidationDecision,
+            ValidationJobId,
+            RequestPayloadJson,
+            ResponsePayloadJson
+        FROM Trading.OrderSignalAudit
+        WHERE OrderId IN ({placeholders})
+        ORDER BY TriggeredAt DESC, OrderSignalAuditId DESC
+        """,
+        tuple(clean_order_ids),
+    ) or []
+
+    audits_by_order: Dict[Any, List[Dict[str, Any]]] = {}
+    for r in rows:
+        order_id = r.get("OrderId")
+        audits_by_order.setdefault(order_id, []).append(
+            {
+                "order_signal_audit_id": r.get("OrderSignalAuditId"),
+                "order_id": order_id,
+                "strategy_id": r.get("StrategyId"),
+                "stock_code": r.get("StockCode"),
+                "side": r.get("Side"),
+                "time_frame": r.get("TimeFrame"),
+                "intended_action": r.get("IntendedAction"),
+                "signal_type": r.get("SignalType"),
+                "signal_key": r.get("SignalKey"),
+                "triggered_at": r.get("TriggeredAt"),
+                "validation_status": r.get("ValidationStatus"),
+                "validation_result": r.get("ValidationResult"),
+                "validation_decision": r.get("ValidationDecision"),
+                "validation_job_id": r.get("ValidationJobId"),
+                "request_payload_json": r.get("RequestPayloadJson"),
+                "response_payload_json": r.get("ResponsePayloadJson"),
+            }
+        )
+    return audits_by_order
+
+
+def _load_order_fill_summaries(model: SQLServerModel, order_ids: List[Any]) -> Dict[Any, Dict[str, Any]]:
+    clean_order_ids = [order_id for order_id in order_ids if order_id is not None]
+    if not clean_order_ids:
+        return {}
+
+    placeholders = ",".join(["?"] * len(clean_order_ids))
+    rows = model.execute_read_query(
+        f"""
+        SELECT
+            FillId,
+            OrderId,
+            FillTime,
+            FillPrice,
+            FillQty,
+            FillType,
+            Reason
+        FROM Trading.OrderFills
+        WHERE OrderId IN ({placeholders})
+        ORDER BY FillTime ASC, FillId ASC
+        """,
+        tuple(clean_order_ids),
+    ) or []
+
+    def fill_bucket(fill_type: Any, reason: Any) -> Optional[str]:
+        normalized_type = str(fill_type or "").strip().upper().replace(" ", "_")
+        normalized_reason = str(reason or "").strip().upper().replace(" ", "_")
+
+        if normalized_type == "ENTRY":
+            return "entry"
+        if normalized_type in {"STOPLOSS", "STOP_LOSS", "SL"}:
+            return "stoploss"
+        if normalized_type == "EXIT" and "STOP" in normalized_reason:
+            return "stoploss"
+        if normalized_type == "EXIT":
+            return "exit"
+        return None
+
+    fills_by_order: Dict[Any, Dict[str, Any]] = {}
+    for r in rows:
+        order_id = r.get("OrderId")
+        bucket = fill_bucket(r.get("FillType"), r.get("Reason"))
+        if order_id is None or bucket is None:
+            continue
+
+        summary = fills_by_order.setdefault(order_id, {}).setdefault(
+            bucket,
+            {
+                "fill_time": None,
+                "fill_price": None,
+                "fill_qty": 0,
+                "fill_count": 0,
+                "_notional": 0.0,
+            },
+        )
+        fill_qty = int(r.get("FillQty") or 0)
+        fill_price = float(r.get("FillPrice") or 0)
+        summary["fill_qty"] += fill_qty
+        summary["fill_count"] += 1
+        summary["_notional"] += fill_price * fill_qty
+        summary["fill_time"] = r.get("FillTime")
+
+    for summaries in fills_by_order.values():
+        for summary in summaries.values():
+            fill_qty = summary.get("fill_qty") or 0
+            if fill_qty:
+                summary["fill_price"] = summary["_notional"] / fill_qty
+            summary.pop("_notional", None)
+
+    return fills_by_order
 
 
 @router.get("/trading-orders/strategies")
@@ -131,7 +274,7 @@ def get_signal_types() -> List[Dict[str, Any]]:
         """,
         ()
     ) or []
-    return [
+    signal_types = [
         {
             "signal_type": r.get("SignalType"),
             "description": r.get("Description"),
@@ -139,6 +282,15 @@ def get_signal_types() -> List[Dict[str, Any]]:
         }
         for r in rows
     ]
+    if not any((s.get("signal_type") or "").upper() == "SMA_CROSS" for s in signal_types):
+        signal_types.append(
+            {
+                "signal_type": "SMA_CROSS",
+                "description": "Simple moving average cross",
+                "is_active": True,
+            }
+        )
+    return signal_types
 
 
 @router.get("/trading-orders/backtest-runs")
@@ -241,6 +393,9 @@ def get_trading_orders(
 
     model = SQLServerModel(database=DB_NAME)
     rows = model.execute_read_query(query, tuple(params)) or []
+    order_ids = [r.get("OrderId") for r in rows]
+    audits_by_order = _load_order_signal_audits(model, order_ids)
+    fills_by_order = _load_order_fill_summaries(model, order_ids)
     return [
         {
             "order_id": r.get("OrderId"),
@@ -260,13 +415,20 @@ def get_trading_orders(
             "status": r.get("Status"),
             "backtest_run_id": r.get("BacktestRunId"),
             "entry_placed_at": r.get("EntryPlacedAt"),
-            "entry_filled_at": r.get("EntryFilledAt"),
+            "entry_filled_at": (fills_by_order.get(r.get("OrderId"), {}).get("entry") or {}).get("fill_time") or r.get("EntryFilledAt"),
+            "entry_fill_price": (fills_by_order.get(r.get("OrderId"), {}).get("entry") or {}).get("fill_price"),
+            "entry_fill_qty": (fills_by_order.get(r.get("OrderId"), {}).get("entry") or {}).get("fill_qty"),
             "exit_placed_at": r.get("ExitPlacedAt"),
-            "exit_filled_at": r.get("ExitFilledAt"),
+            "exit_filled_at": (fills_by_order.get(r.get("OrderId"), {}).get("exit") or {}).get("fill_time") or r.get("ExitFilledAt"),
+            "exit_fill_price": (fills_by_order.get(r.get("OrderId"), {}).get("exit") or {}).get("fill_price"),
+            "exit_fill_qty": (fills_by_order.get(r.get("OrderId"), {}).get("exit") or {}).get("fill_qty"),
             "stoploss_placed_at": r.get("StoplossPlacedAt"),
-            "stoploss_filled_at": r.get("StoplossFilledAt"),
+            "stoploss_filled_at": (fills_by_order.get(r.get("OrderId"), {}).get("stoploss") or {}).get("fill_time") or r.get("StoplossFilledAt"),
+            "stoploss_fill_price": (fills_by_order.get(r.get("OrderId"), {}).get("stoploss") or {}).get("fill_price"),
+            "stoploss_fill_qty": (fills_by_order.get(r.get("OrderId"), {}).get("stoploss") or {}).get("fill_qty"),
             "created_at": r.get("CreatedAt"),
             "updated_at": r.get("UpdatedAt"),
+            "signal_audits": audits_by_order.get(r.get("OrderId"), []),
         }
         for r in rows
     ]
@@ -305,15 +467,16 @@ def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
         normalized["stop_loss_mode"],
         normalized["status"],
         normalized["backtest_run_id"],
+        normalized["meta_json"],
     )
     try:
         model.execute_update_usp(
             """
             INSERT INTO Trading.Orders
                 (StrategyId, StockCode, Side, OrderSourceType, SignalType, TimeFrame, EntryType, EntryPrice, Quantity,
-                 ProfitTargetPrice, StopLossPrice, StopLossMode, Status, BacktestRunId, CreatedAt, UpdatedAt)
+                 ProfitTargetPrice, StopLossPrice, StopLossMode, Status, BacktestRunId, MetaJson, CreatedAt, UpdatedAt)
             VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
             """,
             params,
         )
@@ -347,6 +510,7 @@ def update_trading_order(order_id: int, order: TradingOrderUpdate) -> Dict[str, 
         normalized["stop_loss_mode"],
         normalized["status"],
         normalized["backtest_run_id"],
+        normalized["meta_json"],
         order_id,
     )
     model.execute_update_usp(
@@ -366,6 +530,7 @@ def update_trading_order(order_id: int, order: TradingOrderUpdate) -> Dict[str, 
             StopLossMode = ?,
             Status = ?,
             BacktestRunId = ?,
+            MetaJson = ?,
             UpdatedAt = GETDATE()
         WHERE OrderId = ?
           AND Status IN ('PENDING', 'PLACED');

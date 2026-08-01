@@ -24,6 +24,25 @@ interface BacktestRun {
   order_source_mode?: string;
 }
 
+interface OrderSignalAudit {
+  order_signal_audit_id?: number;
+  order_id?: number;
+  strategy_id?: number;
+  stock_code?: string;
+  side?: "B" | "S";
+  time_frame?: string;
+  intended_action?: string;
+  signal_type?: string;
+  signal_key?: string;
+  triggered_at?: string;
+  validation_status?: string;
+  validation_result?: number | boolean | null;
+  validation_decision?: string;
+  validation_job_id?: string;
+  request_payload_json?: string | Record<string, unknown> | null;
+  response_payload_json?: string | Record<string, unknown> | null;
+}
+
 interface TradingOrder {
   order_id?: number;
   strategy_id: number;
@@ -33,7 +52,7 @@ interface TradingOrder {
   order_source_type: "MANUAL" | "SIGNAL";
   signal_type?: string | null;
   time_frame: string;
-  entry_type: "LIMIT" | "MARKET";
+  entry_type: "LIMIT" | "LIMIT_MID" | "MARKET";
   entry_price?: number | null;
   quantity: number;
   profit_target_price?: number | null;
@@ -43,12 +62,19 @@ interface TradingOrder {
   backtest_run_id?: string | null;
   entry_placed_at?: string;
   entry_filled_at?: string;
+  entry_fill_price?: number | null;
+  entry_fill_qty?: number | null;
   exit_placed_at?: string;
   exit_filled_at?: string;
+  exit_fill_price?: number | null;
+  exit_fill_qty?: number | null;
   stoploss_placed_at?: string;
   stoploss_filled_at?: string;
+  stoploss_fill_price?: number | null;
+  stoploss_fill_qty?: number | null;
   created_at?: string;
   updated_at?: string;
+  signal_audits?: OrderSignalAudit[];
 }
 
 interface TradingOrderForm {
@@ -58,7 +84,7 @@ interface TradingOrderForm {
   order_source_type: "MANUAL" | "SIGNAL";
   signal_type: string;
   time_frame: string;
-  entry_type: "LIMIT" | "MARKET";
+  entry_type: "LIMIT" | "LIMIT_MID" | "MARKET";
   entry_price: string;
   quantity: string;
   profit_target_price: string;
@@ -68,12 +94,27 @@ interface TradingOrderForm {
   backtest_run_id: string;
 }
 
-const ENTRY_TYPES = ["LIMIT", "MARKET"] as const;
+interface OrderTimelineStage {
+  key: string;
+  label: string;
+  description: string;
+  timestamp?: string;
+  sourceTimeZone?: string;
+  price?: number | null;
+  priceLabel?: string;
+  quantity?: number | null;
+  state: "done" | "current" | "waiting";
+}
+
+const ENTRY_TYPES = ["LIMIT", "LIMIT_MID", "MARKET"] as const;
+const DEFAULT_ENTRY_TYPE = "LIMIT";
 const SIDES = ["B", "S"] as const;
 const ORDER_SOURCE_TYPES = ["MANUAL", "SIGNAL"] as const;
 const TIME_FRAMES = ["1M", "5M", "15M", "30M", "1H", "4H", "1D"] as const;
 const STOP_LOSS_MODES = ["BAR_CLOSE"] as const;
 const STATUS_FILTERS = ["ACTIVE", "PENDING", "PLACED", "OPEN", "CLOSED", "CANCELLED", "ALL"] as const;
+const SYDNEY_TIME_ZONE = "Australia/Sydney";
+const US_EASTERN_TIME_ZONE = "America/New_York";
 
 function normalizeStockCode(symbol: string): string {
   const s = (symbol || "").trim().toUpperCase();
@@ -89,11 +130,223 @@ function toOptionalFloat(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatDate(value?: string) {
+function hasTimezoneOffset(value: string): boolean {
+  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value.trim());
+}
+
+function parseDateTimeParts(value: string) {
+  const match = value
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?/);
+  if (!match) return null;
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+    second: Number(match[6] || 0),
+  };
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const zonedTimeAsUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  );
+  return zonedTimeAsUtc - date.getTime();
+}
+
+function zonedDateTimeToDate(value: string, sourceTimeZone: string): Date | null {
+  const parts = parseDateTimeParts(value);
+  if (!parts) return null;
+
+  const utcGuess = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  const firstOffset = getTimeZoneOffsetMs(new Date(utcGuess), sourceTimeZone);
+  const firstDate = new Date(utcGuess - firstOffset);
+  const secondOffset = getTimeZoneOffsetMs(firstDate, sourceTimeZone);
+
+  return new Date(utcGuess - secondOffset);
+}
+
+function formatSydneyDate(value?: string, sourceTimeZone = SYDNEY_TIME_ZONE) {
   if (!value) return "-";
-  const d = new Date(value);
+  const d = hasTimezoneOffset(value)
+    ? new Date(value)
+    : zonedDateTimeToDate(value, sourceTimeZone) || new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleString();
+  return d.toLocaleString("en-AU", {
+    timeZone: SYDNEY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZoneName: "short",
+  });
+}
+
+function formatPrice(value?: number | null): string {
+  if (value == null) return "-";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return String(value);
+  return numeric.toLocaleString("en-AU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+}
+
+function formatEntryType(entryType: string): string {
+  return entryType === "LIMIT_MID" ? "LIMIT @ MID" : entryType;
+}
+
+function formatPayloadJson(value?: string | Record<string, unknown> | null): string {
+  if (value == null || value === "") return "-";
+  if (typeof value !== "string") return JSON.stringify(value, null, 2);
+
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
+}
+
+function getApiValidationCounts(audits?: OrderSignalAudit[]) {
+  const safeAudits = audits || [];
+  return safeAudits.reduce(
+    (counts, audit) => {
+      const action = (audit.intended_action || "").toLowerCase();
+      if (action.includes("entry")) counts.entry += 1;
+      if (action.includes("exit")) counts.exit += 1;
+      counts.total += 1;
+      return counts;
+    },
+    { total: 0, entry: 0, exit: 0 },
+  );
+}
+
+function buildOrderTimeline(order: TradingOrder): OrderTimelineStage[] {
+  const status = (order.status || "").toUpperCase();
+  const stageState = (
+    timestamp: string | undefined,
+    currentWhen: boolean,
+  ): OrderTimelineStage["state"] => {
+    if (timestamp) return "done";
+    return currentWhen ? "current" : "waiting";
+  };
+
+  const stages: OrderTimelineStage[] = [
+    {
+      key: "created",
+      label: "Order pending",
+      description: "Website order created and waiting for the engine.",
+      timestamp: order.created_at,
+      sourceTimeZone: SYDNEY_TIME_ZONE,
+      state: stageState(order.created_at, status === "PENDING"),
+    },
+    {
+      key: "entry_placed",
+      label: "Entry order placed",
+      description: "Entry order submitted to the broker or backtest engine.",
+      timestamp: order.entry_placed_at,
+      sourceTimeZone: US_EASTERN_TIME_ZONE,
+      price: order.entry_price,
+      priceLabel: "Placed price",
+      state: stageState(order.entry_placed_at, status === "PLACED"),
+    },
+    {
+      key: "entry_filled",
+      label: "Entry order filled",
+      description: "Position opened after the entry order was filled.",
+      timestamp: order.entry_filled_at,
+      sourceTimeZone: SYDNEY_TIME_ZONE,
+      price: order.entry_fill_price,
+      priceLabel: "Execution price",
+      quantity: order.entry_fill_qty,
+      state: stageState(order.entry_filled_at, status === "OPEN"),
+    },
+    {
+      key: "exit_placed",
+      label: "Exit order placed",
+      description: "Profit target or normal exit order submitted.",
+      timestamp: order.exit_placed_at,
+      sourceTimeZone: US_EASTERN_TIME_ZONE,
+      state: stageState(order.exit_placed_at, false),
+    },
+    {
+      key: "exit_filled",
+      label: "Exit order filled",
+      description: "Position closed by the exit order.",
+      timestamp: order.exit_filled_at,
+      sourceTimeZone: SYDNEY_TIME_ZONE,
+      price: order.exit_fill_price,
+      priceLabel: "Execution price",
+      quantity: order.exit_fill_qty,
+      state: stageState(order.exit_filled_at, status === "CLOSED" && !order.stoploss_filled_at),
+    },
+  ];
+
+  if (order.stop_loss_price != null || order.stoploss_placed_at || order.stoploss_filled_at) {
+    stages.push(
+      {
+        key: "stoploss_placed",
+        label: "Stop loss placed",
+        description: "Protective stop-loss order submitted.",
+        timestamp: order.stoploss_placed_at,
+        sourceTimeZone: US_EASTERN_TIME_ZONE,
+        state: stageState(order.stoploss_placed_at, false),
+      },
+      {
+        key: "stoploss_filled",
+        label: "Stop loss filled",
+        description: "Position closed by the stop-loss order.",
+        timestamp: order.stoploss_filled_at,
+        sourceTimeZone: SYDNEY_TIME_ZONE,
+        price: order.stoploss_fill_price,
+        priceLabel: "Execution price",
+        quantity: order.stoploss_fill_qty,
+        state: stageState(order.stoploss_filled_at, status === "CLOSED" && !order.exit_filled_at),
+      },
+    );
+  }
+
+  if (status === "CANCELLED") {
+    stages.push({
+      key: "cancelled",
+      label: "Order cancelled",
+      description: "Order cancelled before the remaining lifecycle completed.",
+      timestamp: order.updated_at,
+      sourceTimeZone: SYDNEY_TIME_ZONE,
+      state: "done",
+    });
+  }
+
+  return stages;
 }
 
 export default function TradingOrdersPage() {
@@ -114,6 +367,7 @@ export default function TradingOrdersPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<TradingOrder | null>(null);
 
   const [form, setForm] = useState<TradingOrderForm>({
     strategy_id: "",
@@ -122,7 +376,7 @@ export default function TradingOrdersPage() {
     order_source_type: "MANUAL",
     signal_type: "",
     time_frame: "5M",
-    entry_type: "LIMIT",
+    entry_type: DEFAULT_ENTRY_TYPE,
     entry_price: "",
     quantity: "",
     profit_target_price: "",
@@ -142,6 +396,7 @@ export default function TradingOrdersPage() {
     return match?.strategy_code || "";
   }, [strategies, form.strategy_id]);
   const isTripleBeacon = selectedStrategyCode.trim().toUpperCase() === "TRIPLE_BEACON";
+  const isNewton = selectedStrategyCode.trim().toUpperCase() === "NEWTON";
   useEffect(() => {
     const loadLookups = async () => {
       try {
@@ -228,12 +483,25 @@ export default function TradingOrdersPage() {
     if (!isTripleBeacon) return;
     setForm((prev) => ({
       ...prev,
-      entry_type: "MARKET",
+      entry_type: DEFAULT_ENTRY_TYPE,
       entry_price: "",
       profit_target_price: "",
       stop_loss_price: "",
     }));
   }, [isTripleBeacon]);
+
+  useEffect(() => {
+    if (!isNewton) return;
+    setForm((prev) => ({
+      ...prev,
+      order_source_type: "SIGNAL",
+      signal_type: "SMA_CROSS",
+      time_frame: "5M",
+      entry_type: DEFAULT_ENTRY_TYPE,
+      entry_price: "",
+      stop_loss_mode: "BAR_CLOSE",
+    }));
+  }, [isNewton]);
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -274,11 +542,11 @@ export default function TradingOrdersPage() {
       order_source_type: form.order_source_type,
       signal_type: form.order_source_type === "SIGNAL" ? form.signal_type.trim() : null,
       time_frame: form.time_frame,
-      entry_type: isTripleBeacon ? "MARKET" : form.entry_type,
-      entry_price: isTripleBeacon || form.entry_type === "MARKET" ? null : toOptionalFloat(form.entry_price),
+      entry_type: form.entry_type,
+      entry_price: form.entry_type === "MARKET" || form.entry_type === "LIMIT_MID" ? null : toOptionalFloat(form.entry_price),
       quantity: qty,
-      profit_target_price: isTripleBeacon ? null : toOptionalFloat(form.profit_target_price),
-      stop_loss_price: isTripleBeacon ? null : toOptionalFloat(form.stop_loss_price),
+      profit_target_price: toOptionalFloat(form.profit_target_price),
+      stop_loss_price: toOptionalFloat(form.stop_loss_price),
       stop_loss_mode: form.stop_loss_mode || "BAR_CLOSE",
       status: form.status,
       backtest_run_id: mode === "backtest" ? form.backtest_run_id : null,
@@ -307,6 +575,7 @@ export default function TradingOrdersPage() {
       setForm((prev) => ({
         ...prev,
         stock_code: "",
+        entry_type: DEFAULT_ENTRY_TYPE,
         entry_price: "",
         quantity: "",
         profit_target_price: "",
@@ -332,7 +601,7 @@ export default function TradingOrdersPage() {
       order_source_type: order.order_source_type,
       signal_type: order.signal_type || "",
       time_frame: order.time_frame || "5M",
-      entry_type: order.entry_type || "LIMIT",
+      entry_type: order.entry_type || DEFAULT_ENTRY_TYPE,
       entry_price: order.entry_price != null ? String(order.entry_price) : "",
       quantity: order.quantity != null ? String(order.quantity) : "",
       profit_target_price: order.profit_target_price != null ? String(order.profit_target_price) : "",
@@ -349,6 +618,7 @@ export default function TradingOrdersPage() {
     setForm((prev) => ({
       ...prev,
       stock_code: "",
+      entry_type: DEFAULT_ENTRY_TYPE,
       entry_price: "",
       quantity: "",
       profit_target_price: "",
@@ -372,7 +642,7 @@ export default function TradingOrdersPage() {
 
   // Real-time validation effect
   useEffect(() => {
-    if (isTripleBeacon || form.entry_type === "MARKET") {
+    if (form.entry_type === "MARKET" || form.entry_type === "LIMIT_MID") {
       setValidationErrors({});
       return;
     }
@@ -403,7 +673,7 @@ export default function TradingOrdersPage() {
     }
 
     setValidationErrors(errors);
-  }, [form.entry_price, form.profit_target_price, form.stop_loss_price, form.side, form.entry_type, isTripleBeacon]);
+  }, [form.entry_price, form.profit_target_price, form.stop_loss_price, form.side, form.entry_type]);
 
   const profitStats = useMemo(() => {
     const qty = Number(form.quantity || 0);
@@ -434,6 +704,10 @@ export default function TradingOrdersPage() {
 
     return { potentialLoss, potentialProfit, lossPercent, profitPercent, ratio };
   }, [form.quantity, form.entry_price, form.stop_loss_price, form.profit_target_price]);
+
+  const selectedOrderTimeline = selectedOrder ? buildOrderTimeline(selectedOrder) : [];
+  const selectedSignalAudits = selectedOrder?.signal_audits || [];
+
   return (
     <div className="min-h-screen text-slate-800">
       <div className="mx-auto max-w-7xl px-6 py-10">
@@ -583,6 +857,7 @@ export default function TradingOrdersPage() {
               <select
                 value={form.order_source_type}
                 onChange={(e) => setForm({ ...form, order_source_type: e.target.value as any })}
+                disabled={isNewton}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               >
                 {ORDER_SOURCE_TYPES.map((s) => (
@@ -604,6 +879,9 @@ export default function TradingOrdersPage() {
                 }`}
               >
                 <option value="">Select signal</option>
+                {form.signal_type === "SMA_CROSS" && !signalTypes.some((s) => s.signal_type === "SMA_CROSS") && (
+                  <option value="SMA_CROSS">SMA_CROSS - Simple moving average cross</option>
+                )}
                 {signalTypes.map((s) => (
                   <option key={s.signal_type} value={s.signal_type}>
                     {s.signal_type}{s.description ? ` - ${s.description}` : ""}
@@ -617,7 +895,12 @@ export default function TradingOrdersPage() {
               <select
                 value={form.time_frame}
                 onChange={(e) => setForm({ ...form, time_frame: e.target.value })}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                disabled={isNewton}
+                className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  isNewton
+                    ? "border-slate-200 bg-slate-100 text-slate-500"
+                    : "border-slate-300 bg-white focus:ring-blue-400/40 focus:border-blue-400/40"
+                }`}
               >
                 {TIME_FRAMES.map((tf) => (
                   <option key={tf} value={tf}>{tf}</option>
@@ -628,21 +911,16 @@ export default function TradingOrdersPage() {
             <div>
               <label className="block text-sm mb-1 text-slate-600">Entry Type</label>
               <select
-                value={isTripleBeacon ? "MARKET" : form.entry_type}
+                value={form.entry_type}
                 onChange={(e) => setForm({ ...form, entry_type: e.target.value as any })}
-                disabled={isTripleBeacon}
-                className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                  isTripleBeacon
-                    ? "border-slate-200 bg-slate-100 text-slate-500"
-                    : "border-slate-300 bg-white focus:ring-blue-400/40 focus:border-blue-400/40"
-                }`}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               >
                 {ENTRY_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>{formatEntryType(t)}</option>
                 ))}
               </select>
-              {isTripleBeacon && (
-                <p className="mt-0.5 text-xs text-slate-500">Triple Beacon uses market orders only.</p>
+              {isNewton && (
+                <p className="mt-0.5 text-xs text-slate-500">NEWTON defaults to a limit entry.</p>
               )}
             </div>
 
@@ -653,9 +931,10 @@ export default function TradingOrdersPage() {
                 step="0.01"
                 value={form.entry_price}
                 onChange={(e) => setForm({ ...form, entry_price: e.target.value })}
-                disabled={isTripleBeacon || form.entry_type === "MARKET"}
+                disabled={form.entry_type === "MARKET" || form.entry_type === "LIMIT_MID"}
+                placeholder={form.entry_type === "LIMIT_MID" ? "MID" : undefined}
                 className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                  isTripleBeacon || form.entry_type === "MARKET"
+                  form.entry_type === "MARKET" || form.entry_type === "LIMIT_MID"
                     ? "border-slate-200 bg-slate-100 text-slate-500"
                     : "border-slate-300 bg-white focus:ring-blue-400/40 focus:border-blue-400/40"
                 }`}
@@ -859,6 +1138,7 @@ export default function TradingOrdersPage() {
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Side</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Source</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Signal</th>
+                  <th className="px-3 py-3 text-left font-medium whitespace-nowrap">API Validations</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Entry</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Qty</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Target</th>
@@ -872,8 +1152,14 @@ export default function TradingOrdersPage() {
               <tbody>
                 {orders.map((o, i) => {
                   const canEdit = o.status === "PENDING" || o.status === "PLACED";
+                  const validationCounts = getApiValidationCounts(o.signal_audits);
                   return (
-                    <tr key={o.order_id || i} className={`transition-colors ${i % 2 ? "bg-slate-50" : ""} hover:bg-blue-50/40`}>
+                    <tr
+                      key={o.order_id || i}
+                      onClick={() => setSelectedOrder(o)}
+                      className={`cursor-pointer transition-colors ${i % 2 ? "bg-slate-50" : ""} hover:bg-blue-50/40`}
+                      title="View order history"
+                    >
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.order_id}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.strategy_code || o.strategy_id}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100 font-medium">{o.stock_code}</td>
@@ -889,19 +1175,36 @@ export default function TradingOrdersPage() {
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.order_source_type}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.signal_type || "-"}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
-                        {o.entry_type} {o.entry_price != null ? `@ ${o.entry_price}` : ""}
+                        <div className="flex items-center gap-2">
+                          <span className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                            validationCounts.total > 0
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-slate-100 text-slate-500"
+                          }`}>
+                            {validationCounts.total}
+                          </span>
+                          <span className="text-xs text-slate-500">
+                            E {validationCounts.entry} / X {validationCounts.exit}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
+                        {formatEntryType(o.entry_type)} {o.entry_price != null ? `@ ${o.entry_price}` : ""}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.quantity}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.profit_target_price ?? "-"}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.stop_loss_price ?? "-"}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.status}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.backtest_run_id ? "Backtest" : "Live"}</td>
-                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{formatDate(o.created_at)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{formatSydneyDate(o.created_at)}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
                         {o.order_id && (
                           <div className="flex gap-1">
                             <button
-                              onClick={() => canEdit && handleEdit(o)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (canEdit) handleEdit(o);
+                              }}
                               title={canEdit ? "Edit order" : "Only PENDING/PLACED orders can be edited"}
                               className={`p-1.5 rounded transition-colors ${
                                 canEdit ? "hover:bg-blue-50 text-blue-600 hover:text-blue-700" : "text-slate-400 cursor-not-allowed"
@@ -912,7 +1215,10 @@ export default function TradingOrdersPage() {
                               </svg>
                             </button>
                             <button
-                              onClick={() => canEdit && handleCancelOrder(o.order_id!)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (canEdit) handleCancelOrder(o.order_id!);
+                              }}
                               title={canEdit ? "Cancel order" : "Only PENDING/PLACED orders can be cancelled"}
                               className={`p-1.5 rounded transition-colors ${
                                 canEdit ? "hover:bg-red-50 text-red-600 hover:text-red-700" : "text-slate-400 cursor-not-allowed"
@@ -932,6 +1238,209 @@ export default function TradingOrdersPage() {
             </table>
           )}
         </div>
+
+        {selectedOrder && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6"
+            onClick={() => setSelectedOrder(null)}
+          >
+            <div
+              className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg bg-white shadow-xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-6 py-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900">
+                    Order {selectedOrder.order_id} History
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {selectedOrder.strategy_code || selectedOrder.strategy_id} / {selectedOrder.stock_code} / {selectedOrder.backtest_run_id ? "Backtest" : "Live"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrder(null)}
+                  className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="px-6 py-5">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-6 text-sm">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
+                    <div className="font-medium text-slate-900">{selectedOrder.status}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Side</div>
+                    <div className="font-medium text-slate-900">{selectedOrder.side === "S" ? "Short" : "Long"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Entry</div>
+                    <div className="font-medium text-slate-900">
+                      {formatEntryType(selectedOrder.entry_type)} {selectedOrder.entry_price != null ? `@ ${selectedOrder.entry_price}` : ""}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Quantity</div>
+                    <div className="font-medium text-slate-900">{selectedOrder.quantity}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Source</div>
+                    <div className="font-medium text-slate-900">{selectedOrder.order_source_type}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Signal</div>
+                    <div className="font-medium text-slate-900">{selectedOrder.signal_type || "-"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Target</div>
+                    <div className="font-medium text-slate-900">{selectedOrder.profit_target_price ?? "-"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Stop</div>
+                    <div className="font-medium text-slate-900">{selectedOrder.stop_loss_price ?? "-"}</div>
+                  </div>
+                </div>
+
+                <div className="space-y-0">
+                  {selectedOrderTimeline.map((stage, index) => {
+                    const isDone = stage.state === "done";
+                    const isCurrent = stage.state === "current";
+                    return (
+                      <div key={stage.key} className="relative flex gap-4 pb-5 last:pb-0">
+                        {index < selectedOrderTimeline.length - 1 && (
+                          <div className="absolute left-[11px] top-6 h-full w-px bg-slate-200" />
+                        )}
+                        <div
+                          className={`relative z-[1] mt-1 h-6 w-6 rounded-full border-2 ${
+                            isDone
+                              ? "border-green-500 bg-green-500 text-white"
+                              : isCurrent
+                              ? "border-blue-500 bg-blue-50 text-blue-700"
+                              : "border-slate-300 bg-white text-slate-400"
+                          }`}
+                        />
+                        <div className="min-w-0 flex-1 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="font-medium text-slate-900">{stage.label}</div>
+                            <span
+                              className={`rounded px-2 py-0.5 text-xs font-medium ${
+                                isDone
+                                  ? "bg-green-100 text-green-700"
+                                  : isCurrent
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-slate-100 text-slate-500"
+                              }`}
+                            >
+                              {isDone ? "Done" : isCurrent ? "Current" : "Waiting"}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-sm text-slate-600">{stage.description}</div>
+                          <div className="mt-2 grid gap-1 text-xs text-slate-500 sm:grid-cols-2">
+                            <div>
+                              Time: <span className="font-medium text-slate-700">{formatSydneyDate(stage.timestamp, stage.sourceTimeZone)}</span>
+                            </div>
+                            {stage.price != null && (
+                              <div>
+                                {stage.priceLabel || "Price"}: <span className="font-medium text-slate-700">{formatPrice(stage.price)}</span>
+                              </div>
+                            )}
+                            {stage.quantity != null && (
+                              <div>
+                                Filled qty: <span className="font-medium text-slate-700">{stage.quantity}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-6">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base font-semibold text-slate-900">Signal API Audit</h3>
+                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                      {selectedSignalAudits.length} {selectedSignalAudits.length === 1 ? "entry" : "entries"}
+                    </span>
+                  </div>
+
+                  {selectedSignalAudits.length === 0 ? (
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      No signal API audit entries found for this order.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {selectedSignalAudits.map((audit, index) => (
+                        <div
+                          key={audit.order_signal_audit_id || `${audit.signal_key || "audit"}-${index}`}
+                          className="rounded-md border border-slate-200 bg-white"
+                        >
+                          <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="font-medium text-slate-900">
+                                {audit.signal_type || "Signal"} {audit.intended_action ? `/ ${audit.intended_action}` : ""}
+                              </div>
+                              <span
+                                className={`rounded px-2 py-0.5 text-xs font-medium ${
+                                  String(audit.validation_status || "").toUpperCase() === "REJECTED"
+                                    ? "bg-red-100 text-red-700"
+                                    : String(audit.validation_status || "").toUpperCase() === "ACCEPTED"
+                                    ? "bg-green-100 text-green-700"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {audit.validation_status || "Unknown"}
+                              </span>
+                            </div>
+                            <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                              <div>
+                                Triggered: <span className="font-medium text-slate-800">{formatSydneyDate(audit.triggered_at, US_EASTERN_TIME_ZONE)}</span>
+                              </div>
+                              <div>
+                                Decision: <span className="font-medium text-slate-800">{audit.validation_decision || "-"}</span>
+                              </div>
+                              <div>
+                                Result: <span className="font-medium text-slate-800">{audit.validation_result ?? "-"}</span>
+                              </div>
+                              <div>
+                                Job: <span className="font-medium text-slate-800 break-all">{audit.validation_job_id || "-"}</span>
+                              </div>
+                              <div className="sm:col-span-2">
+                                Signal key: <span className="font-medium text-slate-800 break-all">{audit.signal_key || "-"}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 px-4 py-3 lg:grid-cols-2">
+                            <div>
+                              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Request</div>
+                              <pre className="max-h-72 overflow-auto rounded border border-slate-200 bg-slate-950 p-3 text-xs leading-relaxed text-slate-100 whitespace-pre-wrap break-words">
+                                {formatPayloadJson(audit.request_payload_json)}
+                              </pre>
+                            </div>
+                            <div>
+                              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Response</div>
+                              <pre className="max-h-72 overflow-auto rounded border border-slate-200 bg-slate-950 p-3 text-xs leading-relaxed text-slate-100 whitespace-pre-wrap break-words">
+                                {formatPayloadJson(audit.response_payload_json)}
+                              </pre>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-5 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                  Last updated: <span className="font-medium text-slate-800">{formatSydneyDate(selectedOrder.updated_at)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

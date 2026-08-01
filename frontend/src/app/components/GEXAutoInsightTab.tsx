@@ -296,31 +296,6 @@ export default function GEXAutoInsightTab() {
     }
   };
 
-  const runSchedulerJobNow = async (jobId: string) => {
-    setProcessing(true);
-    setError("");
-    setInfo("");
-
-    try {
-      const res = await authenticatedFetch(`${baseUrl}/api/scheduler/jobs/${encodeURIComponent(jobId)}/run-now`, {
-        method: "POST",
-      });
-
-      if (!res.ok) {
-        const msg = await res.text().catch(() => "");
-        setError(`Scheduler trigger failed: ${msg || res.statusText}`);
-        return;
-      }
-
-      setInfo("Scheduler job queued to run now. Refreshing status...");
-      setTimeout(() => refreshAll(), 1500);
-    } catch (e) {
-      setError(`Scheduler trigger failed: ${e}`);
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   const processSingleStock = async (code: string) => {
     setProcessing(true);
     setError("");
@@ -426,16 +401,6 @@ export default function GEXAutoInsightTab() {
                     <div className="font-medium text-slate-800">{job.name}</div>
                     <div>Next run: {job.next_run_time ? new Date(job.next_run_time).toLocaleString() : "N/A"}</div>
                   </div>
-                  {job.id === "gex_auto_insight" && (
-                    <button
-                      type="button"
-                      onClick={() => runSchedulerJobNow(job.id)}
-                      disabled={processing}
-                      className="rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-                    >
-                      Run now
-                    </button>
-                  )}
                 </div>
                 {job.state && Object.keys(job.state).length > 0 && (
                   <div className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
@@ -461,6 +426,11 @@ export default function GEXAutoInsightTab() {
                 )}
               </div>
             ))}
+            {!schedulerStatus.jobs.some((job) => job.id === "gex_auto_insight") && (
+              <p className="mt-3 text-xs text-slate-500">
+                GEX auto insight processing is manual-only. Use the process buttons below when needed.
+              </p>
+            )}
           </div>
         ) : (
           <p className="text-sm text-slate-500">Loading scheduler status...</p>

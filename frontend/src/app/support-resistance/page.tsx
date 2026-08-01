@@ -19,7 +19,37 @@ function formatPrice(value: number | null | undefined) {
 function priceSourceLabel(source: string) {
   if (source === "ib_live") return "IB live";
   if (source === "ib_delayed") return "IB delayed";
+  if (source === "as_at_30m_close") return "Closest earlier 30M close";
   return "Latest 30M close";
+}
+
+function getHtmlTitle(text: string) {
+  const match = text.match(/<title[^>]*>(.*?)<\/title>/is);
+  return match?.[1]?.replace(/\s+/g, " ").trim() || "";
+}
+
+function summarizeNonJsonResponse(text: string) {
+  const title = getHtmlTitle(text);
+  const stripped = text
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return title || stripped.slice(0, 180) || "The server returned a non-JSON response.";
+}
+
+function normalizeDateTimeLocal(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return trimmed;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join("-") + `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
 }
 
 interface PriceBar {
@@ -75,6 +105,7 @@ interface StockLevel {
 
 interface SupportResistanceResponse {
   observation_date: string;
+  observation_datetime: string | null;
   latest_available_date: string;
   recent_trading_dates: string[];
   live_price_check: boolean;
@@ -159,9 +190,10 @@ export default function SupportResistancePage() {
   const [lookbackDays, setLookbackDays] = useState("10");
   const [minimumAtr, setMinimumAtr] = useState("0.1");
   const [maximumAtr, setMaximumAtr] = useState("3");
+  const [observationDateTime, setObservationDateTime] = useState("");
 
   const loadData = useCallback(
-    async (code: string) => {
+    async (code: string, asAtDateTime = observationDateTime) => {
       if (!code.trim()) {
         setError("Stock code is required");
         return;
@@ -183,11 +215,28 @@ export default function SupportResistancePage() {
           max_levels: "5",
           enable_live_prices: "true",
         });
+        const normalizedAsAtDateTime = normalizeDateTimeLocal(asAtDateTime);
+        if (normalizedAsAtDateTime) {
+          params.set("observation_datetime", normalizedAsAtDateTime);
+          params.set("enable_live_prices", "false");
+        }
         const response = await authenticatedFetch(`${baseUrl}/api/support-resistance?${params}`, {
           cache: "no-store",
           signal: controller.signal,
         });
-        const body = await response.json();
+        const responseText = await response.text();
+        const contentType = response.headers.get("content-type") || "";
+        let body: any = null;
+        if (responseText && contentType.toLowerCase().includes("application/json")) {
+          body = JSON.parse(responseText);
+        } else if (responseText) {
+          try {
+            body = JSON.parse(responseText);
+          } catch {
+            const summary = summarizeNonJsonResponse(responseText);
+            throw new Error(`HTTP ${response.status} returned HTML instead of JSON: ${summary}`);
+          }
+        }
         if (!response.ok) throw new Error(body?.detail || `HTTP ${response.status}`);
         setData(body);
         setStockCode(body.stock_code);
@@ -206,7 +255,7 @@ export default function SupportResistancePage() {
         setLoading(false);
       }
     },
-    [baseUrl, lookbackDays, minimumAtr, maximumAtr]
+    [baseUrl, lookbackDays, minimumAtr, maximumAtr, observationDateTime]
   );
 
   useEffect(() => {
@@ -214,8 +263,10 @@ export default function SupportResistancePage() {
       initialLoadStarted.current = true;
       const params = new URLSearchParams(window.location.search);
       const initialCode = params.get("stock") || "QQQ";
+      const initialDateTime = params.get("observation_datetime") || params.get("as_at") || "";
+      setObservationDateTime(initialDateTime);
       setStockCode(initialCode);
-      loadData(initialCode);
+      loadData(initialCode, initialDateTime);
     }
   }, [loadData]);
 
@@ -388,7 +439,7 @@ export default function SupportResistancePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Support / Resistance" description="Interactive 30-minute candlestick chart with support/resistance zones" />
+      <PageHeader title="Support / Resistance" subtitle="Interactive 30-minute candlestick chart with support/resistance zones" />
 
       <Card>
         <CardHeader>
@@ -411,7 +462,22 @@ export default function SupportResistancePage() {
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="text-sm font-medium text-slate-700">As At</label>
+                <div className="mt-1 flex gap-2">
+                  <Input
+                    type="datetime-local"
+                    value={observationDateTime}
+                    onChange={(e) => setObservationDateTime(e.target.value)}
+                  />
+                  {observationDateTime ? (
+                    <Button type="button" variant="secondary" onClick={() => setObservationDateTime("")}>
+                      Clear
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
               <div>
                 <label className="text-sm font-medium text-slate-700">Lookback Days</label>
                 <select
@@ -488,7 +554,9 @@ export default function SupportResistancePage() {
                 </div>
                 <div>
                   <div className="text-slate-500">Observation Date</div>
-                  <div className="font-semibold text-xs">{data.observation_date}</div>
+                  <div className="font-semibold text-xs">
+                    {data.observation_datetime ? new Date(data.observation_datetime).toLocaleString() : data.observation_date}
+                  </div>
                 </div>
               </div>
             </CardContent>

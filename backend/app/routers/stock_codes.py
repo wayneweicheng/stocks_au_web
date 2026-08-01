@@ -8,6 +8,7 @@ import logging
 
 router = APIRouter(prefix="/api", tags=["stock-codes"])
 logger = logging.getLogger("app.stock_codes")
+OPTION_FLOW_AGGREGATE_QUERY_TIMEOUT_SECONDS = 60
 
 
 class OptionFlowAggregateRow(BaseModel):
@@ -19,6 +20,12 @@ class OptionFlowAggregateRow(BaseModel):
 class OptionFlowAggregatesResponse(BaseModel):
     trades: List[OptionFlowAggregateRow]
     bidask: List[OptionFlowAggregateRow]
+
+
+def _set_option_flow_aggregate_query_timeout(sql_model) -> None:
+    cursor = getattr(sql_model, "cursor", None)
+    if cursor is not None and hasattr(cursor, "timeout"):
+        cursor.timeout = OPTION_FLOW_AGGREGATE_QUERY_TIMEOUT_SECONDS
 
 
 @router.get("/stock-codes")
@@ -124,6 +131,7 @@ def get_option_flow_aggregates(
     """
     try:
         sql_model = get_sql_model()
+        _set_option_flow_aggregate_query_timeout(sql_model)
 
         query_trades = """
             SELECT ASXCode, COUNT(*) AS NumRecords, COUNT(DISTINCT OptionSymbol) AS NumOptions
