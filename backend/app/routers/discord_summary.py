@@ -170,7 +170,7 @@ def get_discord_summary_for_user(
     observation_date: date,
     username_filter: str,
     regenerate: bool = False,
-    model: str = "deepseek/deepseek-v4-flash",
+    model: str = "deepseek/deepseek-v4-flash-0731",
     username: str = Depends(verify_credentials)
 ) -> Dict:
     """
@@ -386,7 +386,7 @@ def get_discord_summary_user_prompt(
 def get_discord_summary_followers(
     observation_date: date,
     regenerate: bool = False,
-    model: str = "deepseek/deepseek-v4-flash",
+    model: str = "deepseek/deepseek-v4-flash-0731",
     username: str = Depends(verify_credentials)
 ) -> Dict:
     """

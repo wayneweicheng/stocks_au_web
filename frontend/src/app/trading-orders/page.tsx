@@ -221,6 +221,11 @@ function formatPrice(value?: number | null): string {
   });
 }
 
+function toDateTimeLocalValue(date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 function formatEntryType(entryType: string): string {
   return entryType === "LIMIT_MID" ? "LIMIT @ MID" : entryType;
 }
@@ -250,8 +255,20 @@ function getApiValidationCounts(audits?: OrderSignalAudit[]) {
   );
 }
 
+function canCancelTradingOrder(order?: Pick<TradingOrder, "status"> | null): boolean {
+  return order?.status === "PENDING" || order?.status === "PLACED";
+}
+
+function hasApprovedValidation(audits?: OrderSignalAudit[]): boolean {
+  return (audits || []).some(
+    (audit) => String(audit.validation_decision || "").trim().toUpperCase() === "APPROVED",
+  );
+}
+
 function buildOrderTimeline(order: TradingOrder): OrderTimelineStage[] {
   const status = (order.status || "").toUpperCase();
+  const exitPlacedTimestamp = order.exit_placed_at || order.exit_filled_at;
+  const exitPlacedSourceTimeZone = order.exit_placed_at ? US_EASTERN_TIME_ZONE : SYDNEY_TIME_ZONE;
   const stageState = (
     timestamp: string | undefined,
     currentWhen: boolean,
@@ -294,9 +311,9 @@ function buildOrderTimeline(order: TradingOrder): OrderTimelineStage[] {
       key: "exit_placed",
       label: "Exit order placed",
       description: "Profit target or normal exit order submitted.",
-      timestamp: order.exit_placed_at,
-      sourceTimeZone: US_EASTERN_TIME_ZONE,
-      state: stageState(order.exit_placed_at, false),
+      timestamp: exitPlacedTimestamp,
+      sourceTimeZone: exitPlacedSourceTimeZone,
+      state: stageState(exitPlacedTimestamp, false),
     },
     {
       key: "exit_filled",
@@ -356,6 +373,7 @@ export default function TradingOrdersPage() {
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("ACTIVE");
   const [stockFilter, setStockFilter] = useState<string>("");
   const [backtestFilter, setBacktestFilter] = useState<string>("");
+  const [approvedOnly, setApprovedOnly] = useState(false);
 
   const [strategies, setStrategies] = useState<StrategyOption[]>([]);
   const [signalTypes, setSignalTypes] = useState<SignalTypeOption[]>([]);
@@ -368,13 +386,16 @@ export default function TradingOrdersPage() {
   const [message, setMessage] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<TradingOrder | null>(null);
+  const [exitFillPrice, setExitFillPrice] = useState("");
+  const [exitFillTime, setExitFillTime] = useState("");
+  const [savingExitFill, setSavingExitFill] = useState(false);
 
   const [form, setForm] = useState<TradingOrderForm>({
     strategy_id: "",
     stock_code: "",
     side: "B",
     order_source_type: "MANUAL",
-    signal_type: "",
+    signal_type: "NEWTON",
     time_frame: "5M",
     entry_type: DEFAULT_ENTRY_TYPE,
     entry_price: "",
@@ -495,13 +516,24 @@ export default function TradingOrdersPage() {
     setForm((prev) => ({
       ...prev,
       order_source_type: "SIGNAL",
-      signal_type: "SMA_CROSS",
+      signal_type: "NEWTON",
       time_frame: "5M",
       entry_type: DEFAULT_ENTRY_TYPE,
       entry_price: "",
       stop_loss_mode: "BAR_CLOSE",
     }));
   }, [isNewton]);
+
+  useEffect(() => {
+    if (!selectedOrder || selectedOrder.status !== "OPEN" || selectedOrder.exit_filled_at) {
+      setExitFillPrice("");
+      setExitFillTime("");
+      return;
+    }
+    setExitFillPrice("");
+    setExitFillTime(toDateTimeLocalValue());
+  }, [selectedOrder?.order_id]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -627,16 +659,70 @@ export default function TradingOrdersPage() {
     }));
   };
 
-  const handleCancelOrder = async (orderId: number) => {
-    if (!confirm("Cancel this order?")) return;
+  const handleCancelOrder = async (orderId: number): Promise<boolean> => {
+    if (!confirm("Cancel this order?")) return false;
     try {
       const res = await authenticatedFetch(`${baseUrl}/api/trading-orders/${orderId}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const result = await res.json();
       setMessage(result.message || "Cancelled");
       await loadOrders();
+      return true;
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to cancel order");
+      return false;
+    }
+  };
+
+  const handleRecordExitFill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setMessage("");
+
+    const orderId = selectedOrder?.order_id;
+    const fillPrice = Number(exitFillPrice);
+    if (!orderId || selectedOrder?.status !== "OPEN") {
+      setError("Only an OPEN order can have a manual exit fill recorded.");
+      return;
+    }
+    if (!Number.isFinite(fillPrice) || fillPrice <= 0) {
+      setError("Exit fill price must be greater than zero.");
+      return;
+    }
+    if (!exitFillTime) {
+      setError("Exit fill time is required.");
+      return;
+    }
+
+    try {
+      setSavingExitFill(true);
+      const res = await authenticatedFetch(`${baseUrl}/api/trading-orders/${orderId}/exit-fill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fill_price: fillPrice, fill_time: exitFillTime }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result.detail || `HTTP ${res.status}`);
+      }
+
+      setSelectedOrder((previous) => {
+        if (!previous || previous.order_id !== orderId) return previous;
+        return {
+          ...previous,
+          status: "CLOSED",
+          exit_filled_at: result.exit_filled_at || exitFillTime,
+          exit_fill_price: result.exit_fill_price ?? fillPrice,
+          exit_fill_qty: result.exit_fill_qty ?? previous.quantity,
+          updated_at: new Date().toISOString(),
+        };
+      });
+      setMessage(result.message || "Manual exit fill recorded successfully.");
+      await loadOrders();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to record exit fill");
+    } finally {
+      setSavingExitFill(false);
     }
   };
 
@@ -707,6 +793,9 @@ export default function TradingOrdersPage() {
 
   const selectedOrderTimeline = selectedOrder ? buildOrderTimeline(selectedOrder) : [];
   const selectedSignalAudits = selectedOrder?.signal_audits || [];
+  const visibleSignalAudits = approvedOnly
+    ? selectedSignalAudits.filter((audit) => hasApprovedValidation([audit]))
+    : selectedSignalAudits;
 
   return (
     <div className="min-h-screen text-slate-800">
@@ -881,6 +970,9 @@ export default function TradingOrdersPage() {
                 <option value="">Select signal</option>
                 {form.signal_type === "SMA_CROSS" && !signalTypes.some((s) => s.signal_type === "SMA_CROSS") && (
                   <option value="SMA_CROSS">SMA_CROSS - Simple moving average cross</option>
+                )}
+                {form.signal_type === "NEWTON" && !signalTypes.some((s) => s.signal_type === "NEWTON") && (
+                  <option value="NEWTON">NEWTON - Newton combined validation signal</option>
                 )}
                 {signalTypes.map((s) => (
                   <option key={s.signal_type} value={s.signal_type}>
@@ -1140,6 +1232,8 @@ export default function TradingOrdersPage() {
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Signal</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">API Validations</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Entry</th>
+                  <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Entry Fill</th>
+                  <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Exit / Stop Fill</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Qty</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Target</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Stop</th>
@@ -1151,7 +1245,7 @@ export default function TradingOrdersPage() {
               </thead>
               <tbody>
                 {orders.map((o, i) => {
-                  const canEdit = o.status === "PENDING" || o.status === "PLACED";
+                  const canEdit = canCancelTradingOrder(o);
                   const validationCounts = getApiValidationCounts(o.signal_audits);
                   return (
                     <tr
@@ -1190,6 +1284,16 @@ export default function TradingOrdersPage() {
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
                         {formatEntryType(o.entry_type)} {o.entry_price != null ? `@ ${o.entry_price}` : ""}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
+                        {o.entry_fill_price != null ? formatPrice(o.entry_fill_price) : "-"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
+                        {o.stoploss_fill_price != null
+                          ? `Stop ${formatPrice(o.stoploss_fill_price)}`
+                          : o.exit_fill_price != null
+                          ? `Exit ${formatPrice(o.exit_fill_price)}`
+                          : "-"}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.quantity}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.profit_target_price ?? "-"}</td>
@@ -1257,13 +1361,27 @@ export default function TradingOrdersPage() {
                     {selectedOrder.strategy_code || selectedOrder.strategy_id} / {selectedOrder.stock_code} / {selectedOrder.backtest_run_id ? "Backtest" : "Live"}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedOrder(null)}
-                  className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  Close
-                </button>
+                <div className="flex items-center gap-2">
+                  {canCancelTradingOrder(selectedOrder) && selectedOrder.order_id && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const cancelled = await handleCancelOrder(selectedOrder.order_id!);
+                        if (cancelled) setSelectedOrder(null);
+                      }}
+                      className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+                    >
+                      Cancel order
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrder(null)}
+                    className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
 
               <div className="px-6 py-5">
@@ -1303,6 +1421,59 @@ export default function TradingOrdersPage() {
                     <div className="font-medium text-slate-900">{selectedOrder.stop_loss_price ?? "-"}</div>
                   </div>
                 </div>
+
+                {selectedOrder.status === "OPEN" && !selectedOrder.exit_filled_at && (
+                  <form
+                    onSubmit={handleRecordExitFill}
+                    className="mb-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-4"
+                  >
+                    <div className="mb-3">
+                      <h3 className="text-base font-semibold text-slate-900">Record exit fill</h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Enter the actual exit execution price and Sydney time. The full order quantity will be recorded and the order will be marked CLOSED.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
+                      <div>
+                        <label className="block text-xs font-medium uppercase tracking-wide text-slate-600" htmlFor="exit-fill-price">
+                          Filled price
+                        </label>
+                        <input
+                          id="exit-fill-price"
+                          type="number"
+                          min="0.0001"
+                          step="0.0001"
+                          value={exitFillPrice}
+                          onChange={(event) => setExitFillPrice(event.target.value)}
+                          required
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400/40"
+                          placeholder="e.g. 217.35"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium uppercase tracking-wide text-slate-600" htmlFor="exit-fill-time">
+                          Filled time (Sydney)
+                        </label>
+                        <input
+                          id="exit-fill-time"
+                          type="datetime-local"
+                          step="1"
+                          value={exitFillTime}
+                          onChange={(event) => setExitFillTime(event.target.value)}
+                          required
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-400/40"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={savingExitFill}
+                        className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {savingExitFill ? "Saving..." : "Save exit fill"}
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 <div className="space-y-0">
                   {selectedOrderTimeline.map((stage, index) => {
@@ -1362,18 +1533,29 @@ export default function TradingOrdersPage() {
                 <div className="mt-6">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-base font-semibold text-slate-900">Signal API Audit</h3>
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                      {selectedSignalAudits.length} {selectedSignalAudits.length === 1 ? "entry" : "entries"}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-xs text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={approvedOnly}
+                          onChange={(e) => setApprovedOnly(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                        />
+                        Approved only
+                      </label>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        {visibleSignalAudits.length} {visibleSignalAudits.length === 1 ? "entry" : "entries"}
+                      </span>
+                    </div>
                   </div>
 
-                  {selectedSignalAudits.length === 0 ? (
+                  {visibleSignalAudits.length === 0 ? (
                     <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                      No signal API audit entries found for this order.
+                      {approvedOnly ? "No approved signal API audit entries found for this order." : "No signal API audit entries found for this order."}
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {selectedSignalAudits.map((audit, index) => (
+                      {visibleSignalAudits.map((audit, index) => (
                         <div
                           key={audit.order_signal_audit_id || `${audit.signal_key || "audit"}-${index}`}
                           className="rounded-md border border-slate-200 bg-white"
@@ -1400,7 +1582,11 @@ export default function TradingOrdersPage() {
                                 Triggered: <span className="font-medium text-slate-800">{formatSydneyDate(audit.triggered_at, US_EASTERN_TIME_ZONE)}</span>
                               </div>
                               <div>
-                                Decision: <span className="font-medium text-slate-800">{audit.validation_decision || "-"}</span>
+                                Decision: <span className={`font-medium ${
+                                  String(audit.validation_decision || "").toUpperCase() === "APPROVED"
+                                    ? "text-green-700"
+                                    : "text-slate-800"
+                                }`}>{audit.validation_decision || "-"}</span>
                               </div>
                               <div>
                                 Result: <span className="font-medium text-slate-800">{audit.validation_result ?? "-"}</span>

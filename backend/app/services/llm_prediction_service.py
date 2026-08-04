@@ -148,7 +148,7 @@ class LLMPredictionService:
         prompt: str,
         stock_code: str,
         observation_date: str,
-        model: str = "deepseek/deepseek-v4-flash",
+        model: str = "deepseek/deepseek-v4-flash-0731",
         request_timeout: int | None = None,
     ) -> Dict[str, Any]:
         """

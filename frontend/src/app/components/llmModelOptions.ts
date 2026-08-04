@@ -7,7 +7,8 @@ export const DEFAULT_MARKET_FLOW_MODEL = "google/gemma-4-26b-a4b-it";
 
 export const SHARED_MARKET_FLOW_MODEL_OPTIONS: LlmModelOption[] = [
   { value: "google/gemma-4-26b-a4b-it", label: "Gemma 4 26B (Default)" },
-  { value: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
+  { value: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna" },
+  { value: "deepseek/deepseek-v4-flash-0731", label: "DeepSeek V4 Flash (0731)" },
   { value: "google/gemini-3-flash-preview", label: "Gemini 3 Flash Preview" },
   { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { value: "google/gemini-2.0-flash-thinking-exp:free", label: "Gemini 2.0 Flash Thinking" },

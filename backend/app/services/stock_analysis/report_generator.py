@@ -363,7 +363,7 @@ async def generate_report(
     broker_compact: Dict[str, Any],
     liquidity_compact: Dict[str, Any],
     verified_funding: Dict[str, Any],
-    model: str = "deepseek/deepseek-v4-flash"
+    model: str = "deepseek/deepseek-v4-flash-0731"
 ) -> Tuple[str, Dict[str, Any], int, float]:
     """
     Generate stock analysis report.

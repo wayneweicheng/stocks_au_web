@@ -30,6 +30,8 @@ type OptionCountAggregate = {
   num_records?: number;
   NumOptions?: number;
   num_options?: number;
+  in_market_flow?: boolean;
+  InMarketFlow?: boolean;
 };
 type OptionCountAggregatesResponse = {
   trades?: OptionCountAggregate[];
@@ -41,6 +43,7 @@ type OptionCountRow = {
   tradeOptions: number;
   bidAskRecords: number;
   bidAskOptions: number;
+  inMarketFlow: boolean;
 };
 
 type SavedJob = {
@@ -166,6 +169,10 @@ function getAggregateOptions(row: OptionCountAggregate) {
   return Number(row.NumOptions ?? row.num_options ?? 0);
 }
 
+function getAggregateInMarketFlow(row: OptionCountAggregate) {
+  return Boolean(row.in_market_flow ?? row.InMarketFlow ?? false);
+}
+
 function isNumberField(field: TextField | DateTimeTimezoneField | NumberField): field is NumberField {
   return typeof field.defaultValue === "number";
 }
@@ -271,7 +278,7 @@ export default function SkillReportPage({
     const getOrCreateRow = (code: string) => {
       const existing = rowsByCode.get(code);
       if (existing) return existing;
-      const row = { code, tradeRecords: 0, tradeOptions: 0, bidAskRecords: 0, bidAskOptions: 0 };
+      const row = { code, tradeRecords: 0, tradeOptions: 0, bidAskRecords: 0, bidAskOptions: 0, inMarketFlow: false };
       rowsByCode.set(code, row);
       return row;
     };
@@ -282,6 +289,7 @@ export default function SkillReportPage({
       const row = getOrCreateRow(code);
       row.tradeRecords = getAggregateRecords(item);
       row.tradeOptions = getAggregateOptions(item);
+      row.inMarketFlow = row.inMarketFlow || getAggregateInMarketFlow(item);
     });
 
     (aggregates.bidask || []).forEach((item) => {
@@ -290,6 +298,7 @@ export default function SkillReportPage({
       const row = getOrCreateRow(code);
       row.bidAskRecords = getAggregateRecords(item);
       row.bidAskOptions = getAggregateOptions(item);
+      row.inMarketFlow = row.inMarketFlow || getAggregateInMarketFlow(item);
     });
 
     return Array.from(rowsByCode.values()).sort((left, right) => left.code.localeCompare(right.code));
@@ -865,6 +874,7 @@ export default function SkillReportPage({
                         <thead className="sticky top-0 bg-white">
                           <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-500">
                             <th className="px-2 py-2">Stock Code</th>
+                            <th className="px-2 py-2 text-center">In Market Flow</th>
                             <th className="px-2 py-2 text-right">Trade Records</th>
                             <th className="px-2 py-2 text-right">Trade Options</th>
                             <th className="px-2 py-2 text-right">Bid/Ask Records</th>
@@ -875,6 +885,16 @@ export default function SkillReportPage({
                           {optionCountRows.map((row) => (
                             <tr key={row.code} className="border-t border-slate-100">
                               <td className="px-2 py-2 font-medium text-slate-700">{row.code}</td>
+                              <td className="px-2 py-2 text-center">
+                                <span
+                                  className={[
+                                    "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
+                                    row.inMarketFlow ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700",
+                                  ].join(" ")}
+                                >
+                                  {row.inMarketFlow ? "true" : "false"}
+                                </span>
+                              </td>
                               <td className="px-2 py-2 text-right text-slate-600">{row.tradeRecords.toLocaleString()}</td>
                               <td className="px-2 py-2 text-right text-slate-600">{row.tradeOptions.toLocaleString()}</td>
                               <td className="px-2 py-2 text-right text-slate-600">{row.bidAskRecords.toLocaleString()}</td>

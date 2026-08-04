@@ -310,7 +310,7 @@ def list_announcements(
 def get_announcement_analysis(
 	announcement_id: int = Query(..., description="AnnouncementID"),
 	regenerate: bool = Query(False, description="Force regeneration (no cache currently)"),
-	model: str = Query("deepseek/deepseek-v4-flash", description="LLM model to use for generation"),
+	model: str = Query("deepseek/deepseek-v4-flash-0731", description="LLM model to use for generation"),
 	username: str = Depends(verify_credentials),
 ) -> Dict[str, Any]:
 	"""

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 from datetime import date
 from pydantic import BaseModel
 from app.routers.auth import verify_credentials
@@ -15,6 +15,7 @@ class OptionFlowAggregateRow(BaseModel):
     ASXCode: str
     NumRecords: int
     NumOptions: int
+    in_market_flow: bool = False
 
 
 class OptionFlowAggregatesResponse(BaseModel):
@@ -26,6 +27,32 @@ def _set_option_flow_aggregate_query_timeout(sql_model) -> None:
     cursor = getattr(sql_model, "cursor", None)
     if cursor is not None and hasattr(cursor, "timeout"):
         cursor.timeout = OPTION_FLOW_AGGREGATE_QUERY_TIMEOUT_SECONDS
+
+
+def _get_market_flow_stock_codes(sql_model, observation_date: date) -> Set[str]:
+    """Return the exact stock-code set used by the market-flow GEX dropdown."""
+    query = """
+        SELECT ASXCode
+        FROM StockDB_US.Analysis.GEX_Features WITH (NOLOCK)
+        WHERE ObservationDate = convert(date, ?)
+        GROUP BY ASXCode
+    """
+    rows = sql_model.execute_read_query(query, (observation_date,))
+    return {
+        str(row.get("ASXCode") or "").strip().upper()
+        for row in rows
+        if str(row.get("ASXCode") or "").strip()
+    }
+
+
+def _add_market_flow_flag(rows: List[Dict], market_flow_stock_codes: Set[str]) -> List[Dict]:
+    return [
+        {
+            **row,
+            "in_market_flow": str(row.get("ASXCode") or "").strip().upper() in market_flow_stock_codes,
+        }
+        for row in rows
+    ]
 
 
 @router.get("/stock-codes")
@@ -151,7 +178,12 @@ def get_option_flow_aggregates(
         """
         bidask = sql_model.execute_read_query(query_bidask, (observation_date,))
 
-        return OptionFlowAggregatesResponse(trades=trades, bidask=bidask)
+        market_flow_stock_codes = _get_market_flow_stock_codes(sql_model, observation_date)
+
+        return OptionFlowAggregatesResponse(
+            trades=_add_market_flow_flag(trades, market_flow_stock_codes),
+            bidask=_add_market_flow_flag(bidask, market_flow_stock_codes),
+        )
     except Exception as e:
         logger.error(f"Failed to retrieve option flow aggregates: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve option flow aggregates")

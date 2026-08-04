@@ -5,6 +5,7 @@ from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
 from app.routers.auth import verify_credentials
 import logging
 import json
+from datetime import datetime
 
 
 router = APIRouter(prefix="/api", tags=["trading-orders"], dependencies=[Depends(verify_credentials)])
@@ -38,6 +39,11 @@ class TradingOrderCreate(BaseModel):
 
 class TradingOrderUpdate(TradingOrderCreate):
     pass
+
+
+class TradingOrderExitFill(BaseModel):
+    fill_price: float
+    fill_time: datetime
 
 
 def _normalize_stock_code(symbol: str) -> str:
@@ -554,3 +560,81 @@ def cancel_trading_order(order_id: int) -> Dict[str, Any]:
         (order_id,),
     )
     return {"message": "Order cancelled successfully."}
+
+
+@router.post("/trading-orders/{order_id}/exit-fill")
+def record_trading_order_exit_fill(order_id: int, fill: TradingOrderExitFill) -> Dict[str, Any]:
+    if fill.fill_price <= 0:
+        raise HTTPException(status_code=400, detail="Exit fill price must be greater than zero.")
+
+    model = SQLServerModel(database=DB_NAME)
+    order_rows = model.execute_read_query(
+        """
+        SELECT Status, ExitFilledAt, Quantity
+        FROM Trading.Orders
+        WHERE OrderId = ?
+        """,
+        (order_id,),
+    ) or []
+    if not order_rows:
+        raise HTTPException(status_code=404, detail="Trading order not found.")
+
+    order_row = order_rows[0]
+    status = str(order_row.get("Status") or "").strip().upper()
+    if status != "OPEN":
+        raise HTTPException(status_code=409, detail="Only OPEN orders can have a manual exit fill recorded.")
+    if order_row.get("ExitFilledAt") is not None:
+        raise HTTPException(status_code=409, detail="This order already has an exit fill time.")
+
+    existing_exit_fills = model.execute_read_query(
+        """
+        SELECT TOP 1 FillId
+        FROM Trading.OrderFills
+        WHERE OrderId = ?
+          AND UPPER(FillType) = 'EXIT'
+          AND (Reason IS NULL OR UPPER(Reason) NOT LIKE '%STOP%')
+        """,
+        (order_id,),
+    ) or []
+    if existing_exit_fills:
+        raise HTTPException(status_code=409, detail="This order already has an exit fill.")
+
+    fill_time = fill.fill_time.replace(tzinfo=None)
+    fill_quantity = int(order_row.get("Quantity") or 0)
+    model.execute_update_usp(
+        """
+        SET XACT_ABORT ON;
+        BEGIN TRANSACTION;
+
+        UPDATE Trading.Orders
+        SET ExitFilledAt = ?,
+            Status = 'CLOSED',
+            UpdatedAt = GETDATE()
+        WHERE OrderId = ?
+          AND Status = 'OPEN'
+          AND ExitFilledAt IS NULL;
+
+        IF @@ROWCOUNT = 0
+        BEGIN
+            ROLLBACK TRANSACTION;
+            RAISERROR ('Order is no longer OPEN or already has an exit fill.', 16, 1);
+            RETURN;
+        END;
+
+        INSERT INTO Trading.OrderFills
+            (OrderId, FillTime, FillPrice, FillQty, FillType, Reason)
+        VALUES
+            (?, ?, ?, ?, 'EXIT', 'MANUAL');
+
+        COMMIT TRANSACTION;
+        """,
+        (fill_time, order_id, order_id, fill_time, fill.fill_price, fill_quantity),
+    )
+    return {
+        "message": "Manual exit fill recorded successfully.",
+        "order_id": order_id,
+        "status": "CLOSED",
+        "exit_filled_at": fill_time,
+        "exit_fill_price": fill.fill_price,
+        "exit_fill_qty": fill_quantity,
+    }

@@ -184,6 +184,8 @@ def test_option_flow_aggregates_returns_trade_and_bidask_counts(monkeypatch):
                 ]
             if "v_OptionBidAsk" in query:
                 return [{"ASXCode": "MU", "NumRecords": 30, "NumOptions": 9}]
+            if "GEX_Features" in query:
+                return [{"ASXCode": "MU"}]
             return []
 
     monkeypatch.setattr(stock_codes, "get_sql_model", lambda: FakeSqlModel())
@@ -194,15 +196,18 @@ def test_option_flow_aggregates_returns_trade_and_bidask_counts(monkeypatch):
     assert response.status_code == 200
     assert response.json() == {
         "trades": [
-            {"ASXCode": "MU", "NumRecords": 12, "NumOptions": 5},
-            {"ASXCode": "NVDA", "NumRecords": 20, "NumOptions": 7},
+            {"ASXCode": "MU", "NumRecords": 12, "NumOptions": 5, "in_market_flow": True},
+            {"ASXCode": "NVDA", "NumRecords": 20, "NumOptions": 7, "in_market_flow": False},
         ],
-        "bidask": [{"ASXCode": "MU", "NumRecords": 30, "NumOptions": 9}],
+        "bidask": [{"ASXCode": "MU", "NumRecords": 30, "NumOptions": 9, "in_market_flow": True}],
     }
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert calls[0][1][0].isoformat() == "2026-07-10"
     assert calls[1][1][0].isoformat() == "2026-07-10"
+    assert calls[2][1][0].isoformat() == "2026-07-10"
     assert calls[0][2] == 60
     assert calls[1][2] == 60
+    assert calls[2][2] == 60
     assert "WITH (NOLOCK)" in calls[0][0]
     assert "WITH (NOLOCK)" in calls[1][0]
+    assert "GEX_Features" in calls[2][0]
