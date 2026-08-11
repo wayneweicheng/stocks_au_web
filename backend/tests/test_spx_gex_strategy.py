@@ -8,11 +8,17 @@ from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from zoneinfo import ZoneInfo
 
 from app.spx_gex_strategy.calendar import USCashCalendar
 from app.spx_gex_strategy.cli import main as strategy_cli_main, parse_as_of
-from app.spx_gex_strategy.data import SqlServerMarketDataRepository, aggregate_daily_gex, parse_market_bars
-from app.spx_gex_strategy.features import classify_observations
+from app.spx_gex_strategy.data import (
+    DataValidationError,
+    SqlServerMarketDataRepository,
+    aggregate_daily_gex,
+    parse_market_bars,
+)
+from app.spx_gex_strategy.features import classify_observations, nq_daily_closes
 from app.spx_gex_strategy.models import (
     DailyGexObservation,
     Direction,
@@ -23,7 +29,11 @@ from app.spx_gex_strategy.models import (
 )
 from app.spx_gex_strategy.report import render_html_report
 from app.spx_gex_strategy.notifications import NotificationService
-from app.spx_gex_strategy.simulation import first_touch
+from app.spx_gex_strategy.simulation import (
+    first_touch,
+    simulate_normal_green,
+    simulate_reversal_green,
+)
 from app.spx_gex_strategy.service import SPXGEXStrategyService
 from app.spx_gex_strategy.storage import StrategyStore
 
@@ -55,7 +65,25 @@ class SPXGEXStrategyTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         call = service.run_daily_signal.call_args
         self.assertTrue(call.kwargs["force_notification"])
+        self.assertTrue(call.kwargs["send_notification"])
         self.assertEqual(call.kwargs["now"].isoformat(), "2026-08-05T17:30:00+10:00")
+
+    def test_daily_cli_can_generate_report_without_notification(self):
+        service = Mock()
+        service.run_daily_signal.return_value = {"notification_sent": False}
+        with patch("app.spx_gex_strategy.cli._service", return_value=service), redirect_stdout(StringIO()):
+            exit_code = strategy_cli_main(
+                [
+                    "daily",
+                    "--as-of",
+                    "2026-08-05 5:30pm",
+                    "--timezone",
+                    "Australia/Sydney",
+                    "--no-notification",
+                ]
+            )
+        self.assertEqual(exit_code, 0)
+        self.assertFalse(service.run_daily_signal.call_args.kwargs["send_notification"])
 
     def test_notification_carries_native_report_url(self):
         class FakePushover:
@@ -101,14 +129,55 @@ class SPXGEXStrategyTests(unittest.TestCase):
         self.assertEqual(summer.utcoffset().total_seconds(), -4 * 3600)
         self.assertEqual(winter.utcoffset().total_seconds(), -5 * 3600)
 
+    def test_nq_daily_close_excludes_overnight_and_post_close_bars(self):
+        zone = ZoneInfo("America/New_York")
+        bars = [
+            MarketBar(datetime(2026, 1, 5, 15, 30, tzinfo=zone), 100, 101, 99, 100),
+            MarketBar(datetime(2026, 1, 5, 16, 0, tzinfo=zone), 100, 102, 99, 101),
+            MarketBar(datetime(2026, 1, 5, 23, 30, tzinfo=zone), 101, 110, 100, 109),
+        ]
+
+        closes = nq_daily_closes(bars, USCashCalendar())
+
+        self.assertEqual(closes[date(2026, 1, 5)], 100)
+
     def test_raw_gex_requires_exact_four_capital_rows(self):
         rows = [
-            {"ObservationDate": "2026-01-02", "CapitalType": code, "GEXDelta": value}
+            {"ObservationDate": "2026-01-02", "CapitalType": code, "GEXDelta": value, "GEX": value * 10}
             for code, value in (("BC", 10), ("BP", 20), ("SC", 5), ("SP", 15))
         ]
         observations = aggregate_daily_gex(rows)
         self.assertEqual(observations[0].total_abs_gex_delta, 50)
         self.assertAlmostEqual(observations[0].sp_delta_share, 0.3)
+
+    def test_yellow_sc_low_uses_sc_gex_level_not_sc_gex_delta(self):
+        rows = []
+        start = date(2026, 1, 2)
+        for offset in range(61):
+            observation_date = start + timedelta(days=offset)
+            current = offset == 60
+            values = {
+                "BC": (64588 if current else 1000, 10000),
+                "BP": (-56932 if current else -1000, -10000),
+                "SC": (-6131 if current else -1000, 57041 if current else 60000),
+                "SP": (1301 if current else 500, -16280 if current else -10000),
+            }
+            for capital_type, (gex_delta, gex_level) in values.items():
+                rows.append(
+                    {
+                        "ObservationDate": observation_date.isoformat(),
+                        "CapitalType": capital_type,
+                        "GEXDelta": gex_delta,
+                        "GEX": gex_level,
+                        "Signal": "BEARISH" if current else None,
+                    }
+                )
+
+        observations = aggregate_daily_gex(rows)
+        target = classify_observations(observations, USCashCalendar(), lookback_days=60)[-1]
+        self.assertEqual(target.observation.derived["SC_GEX_current"], 57041)
+        self.assertEqual(target.sc_rolling_median_60, 60000)
+        self.assertEqual(target.classification, SignalClassification.RELIABLE_YELLOW)
 
     def test_sql_repository_uses_shared_trading_orders_connection(self):
         class FakeConnection:
@@ -124,7 +193,12 @@ class SPXGEXStrategyTests(unittest.TestCase):
 
             def execute_read_query(self, _sql, _params):
                 return [
-                    {"ObservationDate": "2026-01-02", "CapitalType": code, "GEXDelta": value}
+                    {
+                        "ObservationDate": "2026-01-02",
+                        "CapitalType": code,
+                        "GEXDelta": value,
+                        "GEX": value * 10,
+                    }
                     for code, value in (("BC", 10), ("BP", 20), ("SC", 5), ("SP", 15))
                 ]
 
@@ -148,6 +222,89 @@ class SPXGEXStrategyTests(unittest.TestCase):
         result = first_touch(entry, Direction.SHORT, 99, 101, bars)
         self.assertEqual(result.exit_reason, "SL_HIT")
         self.assertTrue(result.ambiguous)
+
+    def test_reversal_dip_expiry_is_exclusive_and_fallback_requires_exact_bar(self):
+        zone = ZoneInfo("America/New_York")
+        reference_time = datetime(2026, 1, 5, 3, 30, tzinfo=zone)
+        fallback_time = datetime(2026, 1, 7, 3, 30, tzinfo=zone)
+        cash_close = datetime(2026, 1, 9, 16, 0, tzinfo=zone)
+        bars = [
+            MarketBar(reference_time, 100, 101, 100, 100),
+            # A bar beginning exactly at D3 must not be used to fill the dip.
+            MarketBar(fallback_time, 101, 102, 98, 101),
+            MarketBar(datetime(2026, 1, 7, 4, 0, tzinfo=zone), 102, 103, 101, 102),
+            MarketBar(datetime(2026, 1, 9, 15, 30, tzinfo=zone), 102, 103, 101, 102),
+        ]
+
+        result = simulate_reversal_green(
+            reference_time,
+            100,
+            0.01,
+            fallback_time,
+            fallback_time,
+            cash_close,
+            bars,
+        )
+
+        self.assertEqual(result["entry_type"], "D3_FALLBACK")
+        self.assertEqual(result["entry_time"], fallback_time)
+        self.assertEqual(result["entry_price"], 101)
+
+        missing_exact_fallback = simulate_reversal_green(
+            reference_time,
+            100,
+            0.01,
+            fallback_time,
+            fallback_time,
+            cash_close,
+            [bar for bar in bars if bar.timestamp != fallback_time],
+        )
+        self.assertEqual(missing_exact_fallback["status"], "DATA_ERROR")
+        self.assertEqual(missing_exact_fallback["reason"], "MISSING_D3_FALLBACK_BAR")
+
+    def test_green_cash_close_uses_last_bar_ending_at_cash_close(self):
+        zone = ZoneInfo("America/New_York")
+        entry_time = datetime(2026, 1, 7, 3, 30, tzinfo=zone)
+        cash_close = datetime(2026, 1, 9, 16, 0, tzinfo=zone)
+        bars = [
+            MarketBar(entry_time, 100, 101, 99, 100),
+            MarketBar(datetime(2026, 1, 9, 15, 30, tzinfo=zone), 100, 101, 99, 100),
+            MarketBar(datetime(2026, 1, 9, 16, 0, tzinfo=zone), 100, 110, 99, 109),
+        ]
+
+        result = simulate_normal_green(entry_time, 100, 0.25, cash_close, bars)
+
+        self.assertEqual(result["exit_reason"], "TIME_EXIT")
+        self.assertEqual(result["exit_time"], datetime(2026, 1, 9, 15, 30, tzinfo=zone))
+        self.assertEqual(result["exit_price"], 100)
+
+        missing_d5 = simulate_normal_green(
+            entry_time,
+            100,
+            0.25,
+            cash_close,
+            [
+                bars[0],
+                MarketBar(datetime(2026, 1, 8, 15, 30, tzinfo=zone), 100, 101, 99, 101),
+            ],
+        )
+        self.assertEqual(missing_d5["status"], "DATA_ERROR")
+        self.assertEqual(missing_d5["reason"], "MISSING_NORMAL_GREEN_EXIT")
+
+    def test_backtest_neutralizes_quarterly_nq_roll_gap(self):
+        from app.spx_gex_strategy.backtest import neutralize_nq_roll_gaps
+
+        zone = ZoneInfo("America/New_York")
+        bars = [
+            MarketBar(datetime(2025, 3, 13, 9, 0, tzinfo=zone), 99, 101, 98, 100),
+            MarketBar(datetime(2025, 3, 13, 9, 30, tzinfo=zone), 110, 112, 109, 111),
+        ]
+
+        adjusted, roll_metadata = neutralize_nq_roll_gaps(bars)
+
+        self.assertEqual(len(roll_metadata), 1)
+        self.assertAlmostEqual(adjusted[1].open, 100.0)
+        self.assertAlmostEqual(adjusted[1].close, 100.9090909)
 
     def test_report_renders_without_trades(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -174,6 +331,8 @@ class SPXGEXStrategyTests(unittest.TestCase):
             close_change_pct=None,
             pcr_change_pct=None,
             signal_raw="BEARISH",
+            sc_gex=120,
+            sp_gex=-20,
         )
         evaluation = SignalEvaluation(
             observation=observation,
@@ -188,7 +347,10 @@ class SPXGEXStrategyTests(unittest.TestCase):
         observation.derived.update(
             {
                 "SC_GEX_current": 120,
+                "SC_GEXDelta_current": 120,
                 "SC_GEX_threshold": 100,
+                "SP_GEX_current": -20,
+                "SP_GEXDelta_current": 10,
                 "SP_delta_share_current": 0.0625,
                 "SP_delta_share_threshold": 0.10,
             }
@@ -196,13 +358,51 @@ class SPXGEXStrategyTests(unittest.TestCase):
         store.save_signal(evaluation, "v1.0.0", EnvironmentType.FORWARD_PAPER)
         html = render_html_report(store, "v1.0.0")
         self.assertIn("Why this is Weak Yellow", html)
+        self.assertIn("SC current GEX level", html)
+        self.assertIn("SC current GEXDelta", html)
+        self.assertIn("SP current GEX level", html)
+        self.assertIn("SP current GEXDelta", html)
         self.assertIn("SC_LOW = FALSE", html)
         self.assertIn("SP_HIGH = FALSE", html)
         self.assertIn("not tradable in strategy v1", html)
         self.assertIn("Strong Yellow", html)
         self.assertIn("Tradable Yellow", html)
-        self.assertIn("SC_LOW FALSE (120.00 &gt; 100.00)", html)
+        self.assertIn("SC_LOW FALSE (SC GEX level 120.00 &gt; 100.00)", html)
         self.assertIn("SP_HIGH FALSE (6.25% &lt;= 10.00%)", html)
+
+    def test_recent_signals_can_filter_out_stale_strategy_versions(self):
+        store = StrategyStore(":memory:")
+        observation = DailyGexObservation(
+            observation_date=date(2026, 8, 4),
+            bc_gex_delta=100,
+            bp_gex_delta=-100,
+            sc_gex_delta=-10,
+            sp_gex_delta=10,
+            total_abs_gex_delta=220,
+            close=None,
+            vwap=None,
+            put_call_ratio=None,
+            close_change_pct=None,
+            pcr_change_pct=None,
+            signal_raw="BEARISH",
+            sc_gex=57041,
+            sp_gex=-16280,
+        )
+        evaluation = SignalEvaluation(
+            observation=observation,
+            classification=SignalClassification.WEAK_YELLOW,
+            trade_allowed=False,
+            actionable_at=None,
+            action_date=None,
+            skip_reason="NON_TRADABLE_YELLOW_CLASSIFICATION",
+        )
+        store.save_signal(evaluation, "v1.0.0", EnvironmentType.FORWARD_PAPER)
+        store.save_signal(evaluation, "v1.0.1", EnvironmentType.FORWARD_PAPER)
+
+        rows = store.recent_signals(strategy_version="v1.0.1")
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["strategy_version"], "v1.0.1")
 
     def test_report_snapshots_are_append_only(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -246,36 +446,52 @@ class SPXGEXStrategyTests(unittest.TestCase):
             latest = store.report_for_date(date(2026, 8, 5), "FORWARD_PAPER")
             self.assertIn("<html>corrected</html>", latest["html_content"])
 
-    def test_supplied_files_are_causal_and_new_york_timed(self):
+    def test_stale_summary_file_is_rejected_without_gex_levels(self):
         root = Path(__file__).resolve().parents[2]
         from app.spx_gex_strategy.data import FileMarketDataRepository
-        from app.spx_gex_strategy.features import nq_daily_closes
 
         repository = FileMarketDataRepository(
             root / "backend/data/option_gex_delta_signal_SPXW_2025-01-01_to_present.csv",
             root / "backend/data/NQMain_30M.csv",
         )
-        calendar = USCashCalendar()
-        evaluations = classify_observations(
-            repository.gex_observations(), calendar, nq_daily_closes(repository.nq_bars(), calendar)
-        )
-        target = next(item for item in evaluations if item.observation.observation_date == date(2026, 8, 6))
-        self.assertEqual(target.classification, SignalClassification.NORMAL_GREEN)
-        self.assertEqual(target.actionable_at.isoformat(), "2026-08-07T03:30:00-04:00")
+        with self.assertRaisesRegex(DataValidationError, "missing BC/BP/SC/SP GEX levels"):
+            repository.gex_observations()
 
-    def test_supplied_files_produce_a_reproducible_backtest_summary(self):
-        root = Path(__file__).resolve().parents[2]
-        from app.spx_gex_strategy.backtest import run_backtest
+    def test_backtest_summary_includes_classification_counts_and_monthly_returns(self):
+        from app.spx_gex_strategy.backtest import neutralize_nq_roll_gaps, run_backtest_from_data
 
-        result = run_backtest(
-            root / "backend/data/option_gex_delta_signal_SPXW_2025-01-01_to_present.csv",
-            root / "backend/data/NQMain_30M.csv",
-            date(2025, 3, 1),
-            date(2026, 8, 6),
+        observations = []
+        for offset in range(61):
+            observation_date = date(2026, 1, 2) + timedelta(days=offset)
+            observations.append(
+                DailyGexObservation(
+                    observation_date=observation_date,
+                    bc_gex_delta=1000,
+                    bp_gex_delta=-1000,
+                    sc_gex_delta=-1000,
+                    sp_gex_delta=500,
+                    total_abs_gex_delta=3500,
+                    close=None,
+                    vwap=None,
+                    put_call_ratio=None,
+                    close_change_pct=None,
+                    pcr_change_pct=None,
+                    signal_raw="BEARISH" if offset == 60 else None,
+                    bc_gex=10000,
+                    bp_gex=-10000,
+                    sc_gex=57041 if offset == 60 else 60000,
+                    sp_gex=-10000,
+                )
+            )
+        result = run_backtest_from_data(
+            observations,
+            [],
+            observations[-1].observation_date,
+            observations[-1].observation_date,
         )
-        self.assertEqual(result["strategy_version"], "v1.0.0")
-        self.assertGreater(result["trade_count"], 0)
-        self.assertIn("unresolved_yellow", result)
+        self.assertEqual(result["classification_counts"]["RELIABLE_YELLOW"], 1)
+        self.assertEqual(result["category_breakdown"]["RELIABLE_YELLOW"]["candidate_signals"], 1)
+        self.assertIn("2026-03", result["monthly_returns"])
 
 
 if __name__ == "__main__":

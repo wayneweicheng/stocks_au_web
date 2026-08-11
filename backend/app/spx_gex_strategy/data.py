@@ -104,6 +104,12 @@ def _summary_row(row: Mapping[str, Any]) -> DailyGexObservation:
     total = total if total is not None else sum(abs(value or 0.0) for value in values.values())
     if total <= 0:
         raise DataValidationError(f"TotalAbsGEXDelta must be positive on {_value(row, 'ObservationDate')}")
+    levels = {
+        "BC": _optional_float(row, "DailyBCGEX", "BCGEX", "BC_GEX"),
+        "BP": _optional_float(row, "DailyBPGEX", "BPGEX", "BP_GEX"),
+        "SC": _optional_float(row, "DailySCGEX", "SCGEX", "SC_GEX"),
+        "SP": _optional_float(row, "DailySPGEX", "SPGEX", "SP_GEX"),
+    }
     return DailyGexObservation(
         observation_date=_date(_value(row, "ObservationDate", "observation_date")),
         bc_gex_delta=bc or 0.0,
@@ -117,6 +123,10 @@ def _summary_row(row: Mapping[str, Any]) -> DailyGexObservation:
         close_change_pct=_optional_float(row, "CloseChangePct", "close_change_pct"),
         pcr_change_pct=_optional_float(row, "PCRChangePct", "pcr_change_pct"),
         signal_raw=(str(_value(row, "Signal", "signal") or "").strip().upper() or None),
+        bc_gex=levels["BC"],
+        bp_gex=levels["BP"],
+        sc_gex=levels["SC"],
+        sp_gex=levels["SP"],
         source_rows=4,
     )
 
@@ -154,6 +164,7 @@ def aggregate_daily_gex(rows: Iterable[Mapping[str, Any] | RawGexRow]) -> list[D
             )
         selected = {capital: by_type[capital][0] for capital in ("BC", "BP", "SC", "SP")}
         values = {capital: selected[capital].gex_delta for capital in selected}
+        levels = {capital: selected[capital].gex for capital in selected}
         total = sum(abs(value) for value in values.values())
         if total <= 0:
             raise DataValidationError(f"TotalAbsGEXDelta must be positive on {observation_date}")
@@ -174,6 +185,10 @@ def aggregate_daily_gex(rows: Iterable[Mapping[str, Any] | RawGexRow]) -> list[D
                 close_change_pct=None,
                 pcr_change_pct=None,
                 signal_raw=signal,
+                bc_gex=levels["BC"],
+                bp_gex=levels["BP"],
+                sc_gex=levels["SC"],
+                sp_gex=levels["SP"],
                 source_rows=4,
             )
         )
@@ -240,7 +255,17 @@ class FileMarketDataRepository:
         self.timezone = timezone
 
     def gex_observations(self) -> list[DailyGexObservation]:
-        return aggregate_daily_gex(read_delimited(self.gex_path))
+        observations = aggregate_daily_gex(read_delimited(self.gex_path))
+        if any(
+            level is None
+            for observation in observations
+            for level in (observation.bc_gex, observation.bp_gex, observation.sc_gex, observation.sp_gex)
+        ):
+            raise DataValidationError(
+                "Summary file is missing BC/BP/SC/SP GEX levels; "
+                "the corrected Yellow classifier requires raw per-capital GEX data"
+            )
+        return observations
 
     def nq_bars(self) -> list[MarketBar]:
         return parse_market_bars(read_delimited(self.nq_path, ), timezone=self.timezone)

@@ -78,30 +78,38 @@ def classify_observations(
                 skip_reason = f"INSUFFICIENT_HISTORY_{len(prior_valid)}_OF_{lookback_days}"
             else:
                 history = prior_valid[-lookback_days:]
-                sc_values = [abs(item.sc_gex_delta) for item in history]
-                sp_values = [item.sp_delta_share or 0.0 for item in history]
-                sc_current = abs(observation.sc_gex_delta)
-                sp_current = observation.sp_delta_share or 0.0
-                sc_median = median(sc_values)
-                sp_p75 = percentile(sp_values, 0.75)
-                sc_rank = percentile_rank(sc_current, sc_values)
-                sp_rank = percentile_rank(sp_current, sp_values)
-                sc_low = sc_current <= sc_median
-                sp_high = sp_current > sp_p75
-                if sc_low and sp_high:
-                    classification = SignalClassification.STRONG_YELLOW
-                elif sc_low and not sp_high:
-                    classification = SignalClassification.RELIABLE_YELLOW
-                elif not sc_low and sp_high:
-                    classification = SignalClassification.MIXED_YELLOW
+                missing_history = sum(item.sc_gex is None for item in history)
+                if observation.sc_gex is None:
+                    classification = SignalClassification.INSUFFICIENT_HISTORY
+                    skip_reason = "MISSING_CURRENT_SC_GEX_LEVEL"
+                elif missing_history:
+                    classification = SignalClassification.INSUFFICIENT_HISTORY
+                    skip_reason = f"MISSING_SC_GEX_LEVEL_IN_PRIOR_60_{missing_history}"
                 else:
-                    classification = SignalClassification.WEAK_YELLOW
-                trade_allowed = classification in {
-                    SignalClassification.STRONG_YELLOW,
-                    SignalClassification.RELIABLE_YELLOW,
-                }
-                if not trade_allowed:
-                    skip_reason = "NON_TRADABLE_YELLOW_CLASSIFICATION"
+                    sc_values = [float(item.sc_gex) for item in history if item.sc_gex is not None]
+                    sp_values = [item.sp_delta_share or 0.0 for item in history]
+                    sc_current = float(observation.sc_gex)
+                    sp_current = observation.sp_delta_share or 0.0
+                    sc_median = median(sc_values)
+                    sp_p75 = percentile(sp_values, 0.75)
+                    sc_rank = percentile_rank(sc_current, sc_values)
+                    sp_rank = percentile_rank(sp_current, sp_values)
+                    sc_low = sc_current <= sc_median
+                    sp_high = sp_current > sp_p75
+                    if sc_low and sp_high:
+                        classification = SignalClassification.STRONG_YELLOW
+                    elif sc_low and not sp_high:
+                        classification = SignalClassification.RELIABLE_YELLOW
+                    elif not sc_low and sp_high:
+                        classification = SignalClassification.MIXED_YELLOW
+                    else:
+                        classification = SignalClassification.WEAK_YELLOW
+                    trade_allowed = classification in {
+                        SignalClassification.STRONG_YELLOW,
+                        SignalClassification.RELIABLE_YELLOW,
+                    }
+                    if not trade_allowed:
+                        skip_reason = "NON_TRADABLE_YELLOW_CLASSIFICATION"
         else:
             prior_return = _prior_nq_return(observation.observation_date, calendar, nq_daily_closes)
             if prior_return is None:
@@ -119,7 +127,10 @@ def classify_observations(
 
         observation.derived.update(
             {
-                "SC_GEX_current": abs(observation.sc_gex_delta),
+                "SC_GEX_current": observation.sc_gex,
+                "SC_GEXDelta_current": observation.sc_gex_delta,
+                "SP_GEX_current": observation.sp_gex,
+                "SP_GEXDelta_current": observation.sp_gex_delta,
                 "SP_delta_share_current": observation.sp_delta_share,
                 "SC_GEX_threshold": sc_median,
                 "SC_GEX_percentile": sc_rank,
@@ -150,14 +161,19 @@ def classify_observations(
 
 
 def nq_daily_closes(bars: Sequence, calendar: USCashCalendar) -> dict[date, float]:
-    """Use the final available bar for each US cash session."""
+    """Use the last NQ bar ending at each US cash-session close.
+
+    NQ 30-minute timestamps identify interval starts.  The bar stamped
+    16:00 therefore runs beyond the NYSE close and must not be used for the
+    cash-session close; on an early-close day the same rule applies to the
+    session's actual close time.
+    """
     grouped: dict[date, list] = {}
     for bar in bars:
         session_date = bar.timestamp.astimezone(calendar.timezone).date()
-        if calendar.is_session(session_date):
+        if calendar.is_session(session_date) and bar.timestamp < calendar.cash_close(session_date):
             grouped.setdefault(session_date, []).append(bar)
     return {
         session_date: sorted(session_bars, key=lambda item: item.timestamp)[-1].close
         for session_date, session_bars in grouped.items()
     }
-

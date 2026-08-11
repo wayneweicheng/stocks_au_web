@@ -301,6 +301,8 @@ class StrategyStore:
             "BP_GEXDelta": observation.bp_gex_delta,
             "SC_GEXDelta": observation.sc_gex_delta,
             "SP_GEXDelta": observation.sp_gex_delta,
+            "SC_GEX": observation.sc_gex,
+            "SP_GEX": observation.sp_gex,
             "TotalAbsGEXDelta": observation.total_abs_gex_delta,
             "PutCallRatio": observation.put_call_ratio,
             "CloseChangePct": observation.close_change_pct,
@@ -439,11 +441,27 @@ class StrategyStore:
                 ).fetchall()
             return db.execute("SELECT * FROM shadow_trades ORDER BY entry_timestamp").fetchall()
 
-    def recent_signals(self, limit: int = 50) -> list[sqlite3.Row]:
+    def recent_signals(
+        self,
+        limit: int = 50,
+        strategy_version: str | None = None,
+        environment_type: str | None = None,
+    ) -> list[sqlite3.Row]:
+        conditions: list[str] = []
+        params: list[Any] = []
+        if strategy_version:
+            conditions.append("strategy_version=?")
+            params.append(strategy_version)
+        if environment_type:
+            conditions.append("environment_type=?")
+            params.append(environment_type)
+        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.append(int(limit))
         with self.connection() as db:
             return db.execute(
-                "SELECT * FROM signals ORDER BY observation_date DESC, created_at DESC LIMIT ?",
-                (int(limit),),
+                f"SELECT * FROM signals{where} "
+                "ORDER BY observation_date DESC, created_at DESC LIMIT ?",
+                params,
             ).fetchall()
 
     def save_report(

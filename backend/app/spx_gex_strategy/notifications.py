@@ -102,6 +102,10 @@ def _pct(value: float | None, signed: bool = False) -> str:
     return f"{value:+.2%}" if signed else f"{value:.2%}"
 
 
+def _number(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:,.2f}"
+
+
 def signal_notification(
     evaluation: SignalEvaluation,
     snapshot: PortfolioSnapshot,
@@ -156,7 +160,9 @@ def signal_notification(
         f"Exposure: {snapshot.exposure_factor:.0%}",
         f"Suggested Quantity: {int(snapshot.shadow_nav * snapshot.exposure_factor / reference) if reference else 'at action price'} QQQ shares",
         f"SP Delta Share: {_pct(evaluation.observation.sp_delta_share)}",
-        f"SC 60D Median: {_money(evaluation.sc_rolling_median_60)}",
+        f"SC GEX Level: {_number(evaluation.observation.sc_gex)}",
+        f"SC GEXDelta: {_number(evaluation.observation.sc_gex_delta)}",
+        f"SC GEX 60D Median: {_number(evaluation.sc_rolling_median_60)}",
         f"SC 60D Percentile: {_pct((evaluation.sc_percentile_60 or 0) / 100.0)}" if evaluation.sc_percentile_60 is not None else "SC 60D Percentile: n/a",
         f"SP Share 60D P75: {_pct(evaluation.sp_share_p75_60)}",
         f"Prior 5D NQ Return: {_pct(evaluation.prior_5d_nq_return, signed=True)}",

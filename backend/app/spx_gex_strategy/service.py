@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
 
+from . import STRATEGY_VERSION
 from .calendar import USCashCalendar
 from .data import DataValidationError, FileMarketDataRepository, SqlServerMarketDataRepository
 from .features import classify_observations, nq_daily_closes
@@ -34,7 +35,7 @@ class SPXGEXStrategyService:
             settings = app_settings
         self.settings = settings
         self.environment_type = environment_type
-        self.strategy_version = "v1.0.0"
+        self.strategy_version = STRATEGY_VERSION
         self.calendar = USCashCalendar(getattr(settings, "spx_gex_timezone", "America/New_York"))
         self.store = StrategyStore(self._resolve_path(getattr(settings, "spx_gex_db_path", "data/spx_gex_strategy.sqlite3")))
         self.portfolio = PortfolioManager(
@@ -181,6 +182,7 @@ class SPXGEXStrategyService:
         now: datetime | None = None,
         observation_date: date | None = None,
         force_notification: bool = False,
+        send_notification: bool = True,
     ) -> dict[str, Any]:
         effective_now = now or datetime.now(self.calendar.timezone)
         if effective_now.tzinfo is None:
@@ -247,22 +249,23 @@ class SPXGEXStrategyService:
                 logger.error("SPX GEX report snapshot failed for %s: %s", target_date, exc, exc_info=True)
 
             notification_error = None
-            try:
-                if not report_url:
-                    raise RuntimeError("immutable report snapshot was not created; notification not sent")
-                sent = self._send_signal(
-                    signal_id,
-                    evaluation,
-                    plan=plan,
-                    reference_price=reference_price,
-                    nq_snapshot=live_nq,
-                    report_url=report_url,
-                    notification_key_suffix=f"report-{report_id}" if force_notification else None,
-                )
-            except Exception as exc:
-                notification_error = str(exc)
-                sent = False
-                logger.error("SPX GEX signal notification failed: %s", exc)
+            sent = False
+            if send_notification:
+                try:
+                    if not report_url:
+                        raise RuntimeError("immutable report snapshot was not created; notification not sent")
+                    sent = self._send_signal(
+                        signal_id,
+                        evaluation,
+                        plan=plan,
+                        reference_price=reference_price,
+                        nq_snapshot=live_nq,
+                        report_url=report_url,
+                        notification_key_suffix=f"report-{report_id}" if force_notification else None,
+                    )
+                except Exception as exc:
+                    notification_error = str(exc)
+                    logger.error("SPX GEX signal notification failed: %s", exc)
             result = {
                 "as_of_date": as_of_date.isoformat(),
                 "observation_date": target_date.isoformat(),
@@ -293,6 +296,15 @@ class SPXGEXStrategyService:
             self.store.event("DATA_ERROR", {"observation_date": target_date.isoformat(), "error": str(exc)})
             notification_sent = False
             notification_error = None
+            if not send_notification:
+                return {
+                    "observation_date": target_date.isoformat(),
+                    "classification": SignalClassification.INSUFFICIENT_HISTORY.value,
+                    "trade_allowed": False,
+                    "skip_reason": str(exc),
+                    "notification_sent": False,
+                    "notification_error": None,
+                }
             try:
                 key = f"data-error|{target_date.isoformat()}|{self.strategy_version}"
                 notification_sent = self.notifications.send_idempotent(
@@ -370,15 +382,17 @@ class SPXGEXStrategyService:
             if first_action > now:
                 continue
             if plan["classification"] == SignalClassification.REVERSAL_GREEN.value:
-                # Reference is established at D1 03:30; the dip order is then
-                # persisted so a restart cannot lose it.
-                reference = plan["reference_price"]
-                if reference:
-                    self.portfolio.set_pending_dip(plan["plan_id"], float(reference))
+                # Establish the reference from the exact D1 03:30 bar. A
+                # later bar would introduce look-ahead and change the -1%
+                # limit level.
+                bars = self._monitor_bars(now)
+                reference_bar = next((bar for bar in bars if bar.timestamp == first_action), None)
+                if reference_bar:
+                    self.portfolio.set_pending_dip(plan["plan_id"], float(reference_bar.open))
                 continue
-            # A market entry uses the first available bar at/after its action.
+            # A market entry must use the exact actionable 03:30 bar.
             bars = self._monitor_bars(now)
-            entry_bar = next((bar for bar in bars if bar.timestamp >= first_action), None)
+            entry_bar = next((bar for bar in bars if bar.timestamp == first_action), None)
             if entry_bar:
                 self.portfolio.open_trade(plan["plan_id"], entry_bar.open, entry_bar.timestamp)
                 return
@@ -395,7 +409,7 @@ class SPXGEXStrategyService:
         fallback = datetime.fromisoformat(str(metadata["fallback_at"]))
         dip_price = float(plan["dip_price"])
         for bar in bars:
-            if reference_time <= bar.timestamp <= min(expiry, now):
+            if reference_time <= bar.timestamp < expiry and bar.timestamp <= now:
                 if bar.open <= dip_price:
                     result = self.portfolio.activate_reversal_dip(plan_id, bar.open, bar.timestamp)
                     self._send_plan_event(
@@ -415,7 +429,7 @@ class SPXGEXStrategyService:
                     )
                     return {"status": "DIP_FILLED", **result}
         if now >= fallback:
-            bar = next((item for item in bars if item.timestamp >= fallback), None)
+            bar = next((item for item in bars if item.timestamp == fallback), None)
             if bar:
                 result = self.portfolio.open_trade(plan_id, bar.open, bar.timestamp, entry_type="D3_FALLBACK")
                 self._send_plan_event(
@@ -446,7 +460,19 @@ class SPXGEXStrategyService:
         entry_time = datetime.fromisoformat(position["entry_timestamp"])
         if entry_time.tzinfo is None:
             entry_time = entry_time.replace(tzinfo=self.calendar.timezone)
-        relevant = [bar for bar in bars if bar.timestamp >= entry_time and bar.timestamp <= now]
+        planned_exit = position.get("planned_exit_at")
+        exit_time = None
+        if planned_exit:
+            exit_time = datetime.fromisoformat(planned_exit)
+            if exit_time.tzinfo is None:
+                exit_time = exit_time.replace(tzinfo=self.calendar.timezone)
+        relevant = [
+            bar
+            for bar in bars
+            if bar.timestamp >= entry_time
+            and bar.timestamp <= now
+            and (exit_time is None or bar.timestamp < exit_time)
+        ]
         from .models import Direction
 
         result = first_touch(
@@ -456,13 +482,9 @@ class SPXGEXStrategyService:
             sl=float(position["sl_price"]) if position.get("sl_price") else None,
             bars=relevant,
         )
-        planned_exit = position.get("planned_exit_at")
-        if result.exit_price is None and planned_exit:
-            exit_time = datetime.fromisoformat(planned_exit)
-            if exit_time.tzinfo is None:
-                exit_time = exit_time.replace(tzinfo=self.calendar.timezone)
+        if result.exit_price is None and exit_time:
             if now >= exit_time:
-                eligible = [bar for bar in relevant if bar.timestamp <= exit_time]
+                eligible = [bar for bar in relevant if bar.timestamp < exit_time]
                 if eligible:
                     last = eligible[-1]
                     result.exit_price, result.exit_time, result.exit_reason = last.close, last.timestamp, "TIME_EXIT"

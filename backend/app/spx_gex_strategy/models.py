@@ -71,6 +71,10 @@ class DailyGexObservation:
     close_change_pct: Optional[float]
     pcr_change_pct: Optional[float]
     signal_raw: Optional[str]
+    bc_gex: Optional[float] = None
+    bp_gex: Optional[float] = None
+    sc_gex: Optional[float] = None
+    sp_gex: Optional[float] = None
     source_rows: int = 4
     derived: dict[str, Any] = field(default_factory=dict)
 
@@ -128,4 +132,3 @@ class PortfolioSnapshot:
     pending_plan_id: Optional[str] = None
     pending_dip_plan_id: Optional[str] = None
     position: Optional[dict[str, Any]] = None
-

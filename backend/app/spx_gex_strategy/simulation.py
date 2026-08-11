@@ -75,7 +75,13 @@ def first_touch(
             return FirstTouchResult(bar.timestamp, tp, "TP_HIT", max_favorable, max_adverse, index + 1)
 
     if time_exit is not None and bars:
-        eligible = [bar for bar in bars if bar.timestamp <= time_exit]
+        exit_date = time_exit.astimezone(time_exit.tzinfo).date()
+        eligible = [
+            bar
+            for bar in bars
+            if bar.timestamp < time_exit
+            and bar.timestamp.astimezone(time_exit.tzinfo).date() == exit_date
+        ]
         if eligible:
             bar = eligible[-1]
             return FirstTouchResult(
@@ -89,12 +95,23 @@ def first_touch(
     return FirstTouchResult(None, None, None, max_favorable, max_adverse, len(bars))
 
 
-def _bar_at_or_after(bars: Sequence[MarketBar], timestamp: datetime) -> MarketBar | None:
-    return next((bar for bar in sorted(bars, key=lambda item: item.timestamp) if bar.timestamp >= timestamp), None)
+def _bar_exact(bars: Sequence[MarketBar], timestamp: datetime) -> MarketBar | None:
+    return next((bar for bar in sorted(bars, key=lambda item: item.timestamp) if bar.timestamp == timestamp), None)
 
 
 def _cash_close_bar(bars: Sequence[MarketBar], cash_close: datetime) -> MarketBar | None:
-    eligible = [bar for bar in bars if bar.timestamp <= cash_close]
+    # A 30-minute bar timestamp identifies the interval start.  The bar
+    # beginning at 16:00 ends after the cash close, so the last bar ending at
+    # the close begins strictly before it.  Restricting to the cash-close
+    # session also prevents an incomplete D5 from silently using an earlier
+    # day's bar.
+    close_date = cash_close.astimezone(cash_close.tzinfo).date()
+    eligible = [
+        bar
+        for bar in bars
+        if bar.timestamp.astimezone(cash_close.tzinfo).date() == close_date
+        and bar.timestamp < cash_close
+    ]
     return sorted(eligible, key=lambda item: item.timestamp)[-1] if eligible else None
 
 
@@ -110,7 +127,11 @@ def simulate_reversal_green(
     if reference_price <= 0:
         raise ValueError("reference_price must be positive")
     dip_price = reference_price * (1.0 - dip_pct)
-    window = _bars_from(bars, reference_time, dip_expiry)
+    window = [
+        bar
+        for bar in _bars_from(bars, reference_time, dip_expiry)
+        if bar.timestamp < dip_expiry
+    ]
     fill_price = None
     fill_time = None
     for bar in window:
@@ -123,7 +144,7 @@ def simulate_reversal_green(
 
     entry_type = "DIP_LIMIT"
     if fill_price is None:
-        fallback_bar = _bar_at_or_after(bars, fallback_time)
+        fallback_bar = _bar_exact(bars, fallback_time)
         if fallback_bar is None:
             return {"status": "DATA_ERROR", "reason": "MISSING_D3_FALLBACK_BAR"}
         fill_price, fill_time, entry_type = fallback_bar.open, fallback_bar.timestamp, "D3_FALLBACK"
@@ -152,7 +173,11 @@ def simulate_normal_green(
     cash_close: datetime,
     bars: Sequence[MarketBar],
 ) -> dict:
-    eligible = _bars_from(bars, entry_time, cash_close)
+    eligible = [
+        bar
+        for bar in _bars_from(bars, entry_time, cash_close)
+        if bar.timestamp < cash_close
+    ]
     result = first_touch(
         entry=entry_price,
         side=Direction.LONG,
@@ -177,4 +202,3 @@ def simulate_normal_green(
         "bars_held": result.bars_held,
         "ambiguous": result.ambiguous,
     }
-

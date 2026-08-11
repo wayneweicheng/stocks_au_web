@@ -57,7 +57,10 @@ def _yellow_explanation(row: Any) -> str:
     label = classification.replace("_", " ").title()
     observation_date = escape(str(_row_value(row, "observation_date", "")))
     sc_current = metrics.get("SC_GEX_current")
+    sc_delta = metrics.get("SC_GEXDelta_current", metrics.get("SC_GEXDelta"))
     sc_threshold = metrics.get("SC_GEX_threshold")
+    sp_level = metrics.get("SP_GEX_current", metrics.get("SP_GEX"))
+    sp_delta = metrics.get("SP_GEXDelta_current", metrics.get("SP_GEXDelta"))
     sp_current = metrics.get("SP_delta_share_current")
     sp_threshold = metrics.get("SP_delta_share_threshold")
     if None in (sc_current, sc_threshold, sp_current, sp_threshold):
@@ -82,8 +85,8 @@ def _yellow_explanation(row: Any) -> str:
 <section><h2>Why this is {escape(label)}</h2>
 <p>The {observation_date} raw signal was <b>BEARISH</b>, so it entered the Yellow classifier. Each threshold uses only the 60 completed US sessions before that observation date.</p>
 <div class="rule-checks">
-<div class="rule-check"><span class="rule-name">SC_LOW = {sc_status}</span><span>Current |SC GEX| <b>{_number(sc_current)}</b> {sc_operator} prior-60 median <b>{_number(sc_threshold)}</b>.</span></div>
-<div class="rule-check"><span class="rule-name">SP_HIGH = {sp_status}</span><span>Current SP delta share <b>{_unsigned_pct(sp_current)}</b> {sp_operator} prior-60 75th percentile <b>{_unsigned_pct(sp_threshold)}</b>.</span></div>
+<div class="rule-check"><span class="rule-name">SC_LOW = {sc_status}</span><span>SC current GEX level: <b>{_number(sc_current)}</b></span><span>SC current GEXDelta: <b>{_number(sc_delta)}</b></span><span>Prior-60 SC GEX median: <b>{_number(sc_threshold)}</b></span><span>Level check: {_number(sc_current)} {sc_operator} {_number(sc_threshold)}.</span></div>
+<div class="rule-check"><span class="rule-name">SP_HIGH = {sp_status}</span><span>SP current GEX level: <b>{_number(sp_level)}</b></span><span>SP current GEXDelta: <b>{_number(sp_delta)}</b></span><span>SP delta share: <b>{_unsigned_pct(sp_current)}</b></span><span>Prior-60 SP share P75: <b>{_unsigned_pct(sp_threshold)}</b></span><span>Share check: {_unsigned_pct(sp_current)} {sp_operator} {_unsigned_pct(sp_threshold)}.</span></div>
 </div>
 <p class="decision">{decision}</p></section>"""
 
@@ -100,7 +103,7 @@ def _signal_rule_summary(row: Any) -> str:
             sc_low = float(sc_current) <= float(sc_threshold)
             sp_high = float(sp_current) > float(sp_threshold)
             return (
-                f"SC_LOW {str(sc_low).upper()} ({_number(sc_current)} "
+                f"SC_LOW {str(sc_low).upper()} (SC GEX level {_number(sc_current)} "
                 f"{'<=' if sc_low else '>'} {_number(sc_threshold)}); "
                 f"SP_HIGH {str(sp_high).upper()} ({_unsigned_pct(sp_current)} "
                 f"{'>' if sp_high else '<='} {_unsigned_pct(sp_threshold)}). "
@@ -146,7 +149,7 @@ def _latest_signal_explanation(signals: list[Any], focus_date: Any = None) -> st
 def _yellow_guide() -> str:
     return """
 <section><h2>Yellow classification guide</h2>
-<p>Every Yellow starts with a <b>BEARISH</b> raw signal. <b>SC_LOW</b> means current |SC GEX| is at or below its prior-60 median. <b>SP_HIGH</b> means SP delta share is above its prior-60 75th percentile.</p>
+<p>Every Yellow starts with a <b>BEARISH</b> raw signal. <b>SC_LOW</b> compares the current SC <b>GEX level</b> with the prior-60 SC GEX-level median. <b>SP_HIGH</b> remains delta-based: SP GEXDelta as a share of total absolute BC/BP/SC/SP GEXDelta, compared with its prior-60 75th percentile.</p>
 <table class="guide"><thead><tr><th>Classification</th><th>SC_LOW</th><th>SP_HIGH</th><th>Tradable in v1?</th><th>Action</th></tr></thead><tbody>
 <tr><td><b>Strong Yellow</b></td><td>TRUE</td><td>TRUE</td><td><span class="yes">YES</span></td><td>SHORT QQQ</td></tr>
 <tr><td><b>Reliable Yellow</b></td><td>TRUE</td><td>FALSE</td><td><span class="yes">YES</span></td><td>SHORT QQQ</td></tr>
@@ -167,7 +170,7 @@ def render_html_report(
     generated_at: datetime | None = None,
 ) -> str:
     snapshot = store.snapshot()
-    signals = store.recent_signals(50)
+    signals = store.recent_signals(50, strategy_version=strategy_version)
     trades = store.list_trades()
     closed = [trade for trade in trades if trade["status"] == "CLOSED"]
     returns = [float(trade["return_pct"]) for trade in closed if trade["return_pct"] is not None]

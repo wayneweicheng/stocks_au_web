@@ -57,10 +57,16 @@ def main(argv: list[str] | None = None) -> int:
         "--timezone",
         help="IANA timezone for an as-of timestamp without an offset, e.g. Australia/Sydney",
     )
-    daily.add_argument(
+    notification = daily.add_mutually_exclusive_group()
+    notification.add_argument(
         "--force-notification",
         action="store_true",
         help="send a notification for this manual run even if its signal was already notified",
+    )
+    notification.add_argument(
+        "--no-notification",
+        action="store_true",
+        help="generate and save the report without sending any Pushover notification",
     )
     subparsers.add_parser("monitor", help="run the persisted-position monitor now")
     subparsers.add_parser("live-nq", help="print current IB NQMAIN versus yesterday close")
@@ -70,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     backtest.add_argument("--end", required=True)
     backtest.add_argument("--initial-capital", type=float, default=100000.0)
     backtest.add_argument("--exposure", type=float, default=1.0)
+    backtest.add_argument("--data-mode", choices=("sql", "file"), default=None)
 
     trade = subparsers.add_parser("trade", help="record manual execution status")
     trade_sub = trade.add_subparsers(dest="trade_command", required=True)
@@ -93,7 +100,11 @@ def main(argv: list[str] | None = None) -> int:
                 parser.error(str(exc))
         print(
             json.dumps(
-                service.run_daily_signal(now=as_of, force_notification=args.force_notification),
+                service.run_daily_signal(
+                    now=as_of,
+                    force_notification=args.force_notification,
+                    send_notification=not args.no_notification,
+                ),
                 indent=2,
                 default=str,
             )
@@ -112,16 +123,26 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "backtest":
         from datetime import date
-        from .backtest import run_backtest
+        from .backtest import run_backtest, run_sql_backtest
 
-        result = run_backtest(
-            service._resolve_path(service.settings.spx_gex_gex_path),
-            service._resolve_path(service.settings.spx_gex_nq_path),
-            date.fromisoformat(args.start),
-            date.fromisoformat(args.end),
-            args.initial_capital,
-            args.exposure,
-        )
+        data_mode = args.data_mode or str(service.settings.spx_gex_data_mode).lower()
+        if data_mode == "sql":
+            result = run_sql_backtest(
+                service.settings.spx_gex_source_database,
+                date.fromisoformat(args.start),
+                date.fromisoformat(args.end),
+                args.initial_capital,
+                args.exposure,
+            )
+        else:
+            result = run_backtest(
+                service._resolve_path(service.settings.spx_gex_gex_path),
+                service._resolve_path(service.settings.spx_gex_nq_path),
+                date.fromisoformat(args.start),
+                date.fromisoformat(args.end),
+                args.initial_capital,
+                args.exposure,
+            )
         print(json.dumps(result, indent=2, default=str))
         return 0
     if args.command == "trade":
