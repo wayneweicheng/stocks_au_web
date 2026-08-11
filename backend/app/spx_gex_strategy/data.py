@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import logging
 import math
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -278,19 +279,53 @@ class SqlServerMarketDataRepository:
         self.source_database = source_database
         self.nq_symbol = nq_symbol
 
-    @staticmethod
-    def _close_shared_model(model) -> None:
-        connection = getattr(model, "cnxn", None)
-        if connection is not None:
-            connection.close()
+    def _execute_read(self, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+        """Read through the application's working connection path.
+
+        The compatibility fallback is deliberately last. It supports callers
+        that inject the shared trading-orders model (including older deployed
+        workers), while normal production traffic uses the configured ODBC
+        driver and TLS options from ``app.core.db``.
+        """
+        from app.core.db import get_db_connection
+
+        direct_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                connection = get_db_connection(database=self.source_database)
+                try:
+                    cursor = connection.cursor()
+                    cursor.execute(sql, params)
+                    columns = [column[0] for column in cursor.description]
+                    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+                finally:
+                    connection.close()
+            except Exception as exc:
+                direct_error = exc
+                if attempt < 2:
+                    time.sleep(0.5)
+        assert direct_error is not None
+        try:
+            # This fallback is primarily for the existing SQLServerModel seam
+            # used by the trading-orders worker and its tests. Do not mask the
+            # direct-path error if the fallback is unavailable or also fails.
+            from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
+
+            model = SQLServerModel(database=self.source_database)
+            try:
+                return model.execute_read_query(sql, params) or []
+            finally:
+                connection = getattr(model, "cnxn", None)
+                if connection is not None:
+                    connection.close()
+        except Exception:
+            raise direct_error
 
     def raw_gex_rows(self, start: date, end: date) -> list[RawGexRow]:
-        # Keep this aligned with trading_orders.py. That route uses the shared
-        # SQLServerModel (ODBC 17 and its existing environment configuration),
-        # while the timed adapter uses a separate ODBC 18/encryption path.
-        from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
-
-        model = SQLServerModel(database=self.source_database)
+        # Use the same direct connection builder as the working SQL-backed
+        # application services. The third-party SQLServerModel hard-codes
+        # ODBC 17 and omits the repository's Encrypt/TrustServerCertificate
+        # settings, which fails on the current SQL Server TLS configuration.
         sql = f"""
         SELECT TOP (100000) *
         FROM [{self.source_database}].[Transform].[OptionGEXChangeCapitalType] WITH (NOLOCK)
@@ -300,19 +335,14 @@ class SqlServerMarketDataRepository:
           AND CapitalType IN ('BC', 'BP', 'SC', 'SP')
         ORDER BY ObservationDate ASC, CapitalType ASC
         """
-        try:
-            rows = model.execute_read_query(sql, ("SPXW.US", start.isoformat(), end.isoformat())) or []
-            return parse_raw_gex_rows(rows)
-        finally:
-            self._close_shared_model(model)
+        return parse_raw_gex_rows(
+            self._execute_read(sql, ("SPXW.US", start.isoformat(), end.isoformat()))
+        )
 
     def gex_observations(self, start: date, end: date) -> list[DailyGexObservation]:
         return aggregate_daily_gex(self.raw_gex_rows(start, end))
 
     def nq_bars(self, start: date, end: date, timezone: str = "America/New_York") -> list[MarketBar]:
-        from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
-
-        model = SQLServerModel(database=self.source_database)
         sql = f"""
         SELECT TimeIntervalStart, [Open], [High], [Low], [Close]
         FROM [{self.source_database}].[StockData].[PriceHistoryTimeFrame] WITH (NOLOCK)
@@ -322,8 +352,8 @@ class SqlServerMarketDataRepository:
           AND TimeIntervalStart < DATEADD(day, 1, CONVERT(datetime, ?))
         ORDER BY TimeIntervalStart ASC
         """
-        try:
-            rows = model.execute_read_query(sql, (self.nq_symbol, start.isoformat(), end.isoformat())) or []
-            return parse_market_bars(rows, timezone=timezone, symbol=self.nq_symbol)
-        finally:
-            self._close_shared_model(model)
+        return parse_market_bars(
+            self._execute_read(sql, (self.nq_symbol, start.isoformat(), end.isoformat())),
+            timezone=timezone,
+            symbol=self.nq_symbol,
+        )

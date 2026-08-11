@@ -284,3 +284,53 @@ def test_option_flow_aggregates_returns_trade_and_bidask_counts(monkeypatch):
     assert "GEX_Features" in calls[1][0]
     assert "market_flow.ObservationDate = option_rows.ObservationDate" in calls[0][0]
     assert "market_flow.ObservationDate = option_rows.ObservationDate" in calls[1][0]
+
+
+def test_option_flow_aggregates_accepts_inclusive_date_range(monkeypatch):
+    calls = []
+
+    class FakeSqlModel:
+        def execute_read_query(self, query, params):
+            calls.append((query, params))
+            return [{"ASXCode": "AMZN", "NumRecords": 42, "NumOptions": 11, "in_market_flow": True}]
+
+    monkeypatch.setattr(stock_codes, "get_sql_model", lambda: FakeSqlModel())
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/option-flow-aggregates?start_date=2026-07-25&end_date=2026-08-03",
+        headers=_auth(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trades": [{"ASXCode": "AMZN", "NumRecords": 42, "NumOptions": 11, "in_market_flow": True}],
+        "bidask": [{"ASXCode": "AMZN", "NumRecords": 42, "NumOptions": 11, "in_market_flow": True}],
+    }
+    assert len(calls) == 2
+    assert [value.isoformat() for value in calls[0][1]] == [
+        "2026-07-25",
+        "2026-08-03",
+        "2026-07-25",
+        "2026-08-03",
+    ]
+    assert [value.isoformat() for value in calls[1][1]] == [
+        "2026-07-25",
+        "2026-08-03",
+        "2026-07-25",
+        "2026-08-03",
+    ]
+    assert "ObservationDate >= convert(date, ?)" in calls[0][0]
+    assert "GROUP BY option_rows.ASXCode, market_flow.ASXCode" in calls[0][0]
+
+
+def test_option_flow_aggregates_rejects_reversed_date_range():
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/option-flow-aggregates?start_date=2026-08-03&end_date=2026-07-25",
+        headers=_auth(),
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "start_date must be on or before end_date"

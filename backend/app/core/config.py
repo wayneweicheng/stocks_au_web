@@ -79,6 +79,7 @@ class Settings(BaseSettings):
 
     # SPXW GEX signal assistant
     spx_gex_strategy_enabled: bool = Field(default=True, validation_alias=AliasChoices("spx_gex_strategy_enabled", "SPX_GEX_STRATEGY_ENABLED"))
+    spx_gex_strategy_version: str = Field(default="v1.0.3-production", validation_alias=AliasChoices("spx_gex_strategy_version", "SPX_GEX_STRATEGY_VERSION"))
     spx_gex_source_database: str = Field(default="StockDB_US", validation_alias=AliasChoices("spx_gex_source_database", "SPX_GEX_SOURCE_DATABASE"))
     spx_gex_data_mode: str = Field(default="sql", validation_alias=AliasChoices("spx_gex_data_mode", "SPX_GEX_DATA_MODE"))
     spx_gex_gex_path: str = Field(default="data/option_gex_delta_signal_SPXW_2025-01-01_to_present.csv", validation_alias=AliasChoices("spx_gex_gex_path", "SPX_GEX_GEX_PATH"))
@@ -86,6 +87,14 @@ class Settings(BaseSettings):
     spx_gex_db_path: str = Field(default="data/spx_gex_strategy.sqlite3", validation_alias=AliasChoices("spx_gex_db_path", "SPX_GEX_DB_PATH"))
     spx_gex_timezone: str = Field(default="America/New_York", validation_alias=AliasChoices("spx_gex_timezone", "SPX_GEX_TIMEZONE"))
     spx_gex_lookback_days: int = Field(default=60, ge=60, validation_alias=AliasChoices("spx_gex_lookback_days", "SPX_GEX_LOOKBACK_DAYS"))
+    spx_gex_sc_lookback_days: int = Field(default=60, ge=60, validation_alias=AliasChoices("spx_gex_sc_lookback_days", "SPX_GEX_SC_LOOKBACK_DAYS"))
+    spx_gex_sp_lookback_days: int = Field(default=60, ge=60, validation_alias=AliasChoices("spx_gex_sp_lookback_days", "SPX_GEX_SP_LOOKBACK_DAYS"))
+    spx_gex_sp_threshold_quantile: float = Field(default=0.75, ge=0.0, le=1.0, validation_alias=AliasChoices("spx_gex_sp_threshold_quantile", "SPX_GEX_SP_THRESHOLD_QUANTILE"))
+    spx_gex_shadow_enabled: bool = Field(default=True, validation_alias=AliasChoices("spx_gex_shadow_enabled", "SPX_GEX_SHADOW_ENABLED"))
+    spx_gex_shadow_strategy_version: str = Field(default="v1.1.0-shadow", validation_alias=AliasChoices("spx_gex_shadow_strategy_version", "SPX_GEX_SHADOW_STRATEGY_VERSION"))
+    spx_gex_shadow_sc_lookback_days: int = Field(default=60, ge=60, validation_alias=AliasChoices("spx_gex_shadow_sc_lookback_days", "SPX_GEX_SHADOW_SC_LOOKBACK_DAYS"))
+    spx_gex_shadow_sp_lookback_days: int = Field(default=120, ge=60, validation_alias=AliasChoices("spx_gex_shadow_sp_lookback_days", "SPX_GEX_SHADOW_SP_LOOKBACK_DAYS"))
+    spx_gex_shadow_sp_threshold_quantile: float = Field(default=0.60, ge=0.0, le=1.0, validation_alias=AliasChoices("spx_gex_shadow_sp_threshold_quantile", "SPX_GEX_SHADOW_SP_THRESHOLD_QUANTILE"))
     spx_gex_initial_capital: float = Field(default=100000.0, gt=0, validation_alias=AliasChoices("spx_gex_initial_capital", "SPX_GEX_INITIAL_CAPITAL"))
     spx_gex_exposure_factor: float = Field(default=1.0, gt=0, validation_alias=AliasChoices("spx_gex_exposure_factor", "SPX_GEX_EXPOSURE_FACTOR"))
     spx_gex_notification_no_signal: bool = Field(default=False, validation_alias=AliasChoices("spx_gex_notification_no_signal", "SPX_GEX_NOTIFICATION_NO_SIGNAL"))

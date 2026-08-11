@@ -26,6 +26,7 @@ from app.spx_gex_strategy.models import (
     MarketBar,
     SignalClassification,
     SignalEvaluation,
+    TradePlan,
 )
 from app.spx_gex_strategy.report import render_html_report
 from app.spx_gex_strategy.notifications import NotificationService
@@ -178,6 +179,190 @@ class SPXGEXStrategyTests(unittest.TestCase):
         self.assertEqual(target.observation.derived["SC_GEX_current"], 57041)
         self.assertEqual(target.sc_rolling_median_60, 60000)
         self.assertEqual(target.classification, SignalClassification.RELIABLE_YELLOW)
+
+    def test_canonical_export_compat_does_not_reconstruct_blank_signal(self):
+        from app.spx_gex_strategy.backtest import canonical_export_compat_observations
+
+        observation = DailyGexObservation(
+            observation_date=date(2025, 3, 6),
+            bc_gex_delta=10,
+            bp_gex_delta=-10,
+            sc_gex_delta=-5,
+            sp_gex_delta=2,
+            total_abs_gex_delta=27,
+            close=5738.52,
+            vwap=None,
+            put_call_ratio=0.760268,
+            close_change_pct=-2.4332,
+            pcr_change_pct=-33.4138,
+            signal_raw="BULLISH",
+            sc_gex=10000,
+        )
+        compatible = canonical_export_compat_observations(
+            [observation],
+            [{"ObservationDate": "2025-03-06", "Signal": "", "CloseChangePct": "", "PCRChangePct": ""}],
+        )
+        self.assertEqual(observation.signal_raw, "BULLISH")
+        self.assertIsNone(compatible[0].signal_raw)
+        self.assertIsNone(compatible[0].close_change_pct)
+        self.assertIsNone(compatible[0].pcr_change_pct)
+
+    def test_green_classification_is_identical_under_yellow_a_and_b(self):
+        observation_date = date(2026, 1, 12)
+        observation = DailyGexObservation(
+            observation_date=observation_date,
+            bc_gex_delta=10,
+            bp_gex_delta=-10,
+            sc_gex_delta=-5,
+            sp_gex_delta=2,
+            total_abs_gex_delta=27,
+            close=None,
+            vwap=None,
+            put_call_ratio=None,
+            close_change_pct=None,
+            pcr_change_pct=None,
+            signal_raw="BULLISH",
+            sc_gex=10000,
+        )
+        calendar = USCashCalendar()
+        prior_date = calendar.session_offset(observation_date, -5)
+        closes = {prior_date: 100.0, observation_date: 99.0}
+        a = classify_observations(
+            [observation], calendar, closes, sc_lookback_days=60, sp_lookback_days=60, sp_quantile=0.75
+        )[0]
+        b = classify_observations(
+            [observation], calendar, closes, sc_lookback_days=60, sp_lookback_days=120, sp_quantile=0.60
+        )[0]
+        self.assertEqual(a.classification, SignalClassification.REVERSAL_GREEN)
+        self.assertEqual(a.classification, b.classification)
+
+    def test_sp_current_row_is_excluded_and_yellow_is_deterministic(self):
+        observations = []
+        start = date(2025, 1, 2)
+        for offset in range(61):
+            observation_date = start + timedelta(days=offset)
+            sp_share = (offset + 1) / 100.0 if offset < 60 else 0.99
+            observations.append(
+                DailyGexObservation(
+                    observation_date=observation_date,
+                    bc_gex_delta=1,
+                    bp_gex_delta=-1,
+                    sc_gex_delta=-1,
+                    sp_gex_delta=sp_share,
+                    total_abs_gex_delta=1.0,
+                    close=None,
+                    vwap=None,
+                    put_call_ratio=None,
+                    close_change_pct=None,
+                    pcr_change_pct=None,
+                    signal_raw="BEARISH" if offset == 60 else None,
+                    sc_gex=10000 if offset == 60 else 60000,
+                )
+            )
+        first = classify_observations(observations, USCashCalendar(), lookback_days=60, sp_quantile=0.75)[-1]
+        second = classify_observations(observations, USCashCalendar(), lookback_days=60, sp_quantile=0.75)[-1]
+        self.assertEqual(first.classification, second.classification)
+        self.assertLess(first.sp_share_p75_60, observations[-1].sp_delta_share)
+        self.assertEqual(first.classification, SignalClassification.STRONG_YELLOW)
+
+    def test_future_normal_green_does_not_reserve_before_d3(self):
+        from app.spx_gex_strategy.portfolio import PortfolioManager
+        from app.spx_gex_strategy.models import TradePlan
+
+        store = StrategyStore(":memory:")
+        calendar = USCashCalendar()
+        manager = PortfolioManager(store, calendar, "v1.0.3-production")
+        observation_date = date(2026, 1, 5)
+        first_action = calendar.actionable_at(calendar.session_offset(observation_date, 3))
+        evaluation = SignalEvaluation(
+            observation=DailyGexObservation(
+                observation_date=observation_date,
+                bc_gex_delta=1,
+                bp_gex_delta=-1,
+                sc_gex_delta=-1,
+                sp_gex_delta=1,
+                total_abs_gex_delta=4,
+                close=None,
+                vwap=None,
+                put_call_ratio=None,
+                close_change_pct=None,
+                pcr_change_pct=None,
+                signal_raw="BULLISH",
+                sc_gex=100,
+            ),
+            classification=SignalClassification.NORMAL_GREEN,
+            actionable_at=first_action,
+            action_date=first_action.date(),
+            trade_allowed=True,
+            skip_reason=None,
+        )
+        signal_id, _ = store.save_signal(evaluation, "v1.0.3-production", EnvironmentType.FORWARD_PAPER)
+        plan = TradePlan(
+            signal_id=signal_id,
+            classification=SignalClassification.NORMAL_GREEN,
+            observation_date=observation_date,
+            action_date=first_action.date(),
+            first_action_at=first_action,
+            direction=Direction.LONG,
+            entry_type="D3_MARKET",
+            tp_pct=0.025,
+            metadata={"base_signal_source_mode": "CAUSAL_COMPLETE"},
+        )
+        store.save_plan(plan)
+        before_d3 = calendar.actionable_at(calendar.session_offset(observation_date, 2))
+        self.assertEqual(store.open_plans(as_of=before_d3), [])
+        self.assertIsNone(manager.conflict_reason(SignalClassification.NORMAL_GREEN, at=before_d3))
+
+    def test_live_qqq_quantity_uses_qqq_quote_not_nq_proxy(self):
+        from app.spx_gex_strategy.notifications import signal_notification
+        from app.spx_gex_strategy.models import PortfolioSnapshot, PortfolioState
+
+        observation = DailyGexObservation(
+            observation_date=date(2026, 1, 5),
+            bc_gex_delta=10,
+            bp_gex_delta=-10,
+            sc_gex_delta=-5,
+            sp_gex_delta=2,
+            total_abs_gex_delta=27,
+            close=None,
+            vwap=None,
+            put_call_ratio=None,
+            close_change_pct=None,
+            pcr_change_pct=None,
+            signal_raw="BEARISH",
+            sc_gex=100,
+            derived={"SC_lookback_days": 60, "SP_lookback_days": 60, "SP_threshold_quantile": 0.75},
+        )
+        evaluation = SignalEvaluation(
+            observation=observation,
+            classification=SignalClassification.RELIABLE_YELLOW,
+            actionable_at=datetime(2026, 1, 6, 3, 30, tzinfo=ZoneInfo("America/New_York")),
+            action_date=date(2026, 1, 6),
+            trade_allowed=True,
+            skip_reason=None,
+        )
+        plan = TradePlan(
+            signal_id="x",
+            classification=SignalClassification.RELIABLE_YELLOW,
+            observation_date=date(2026, 1, 5),
+            action_date=date(2026, 1, 6),
+            first_action_at=evaluation.actionable_at,
+            direction=Direction.SHORT,
+            entry_type="D1_MARKET",
+            tp_pct=0.004,
+            sl_pct=0.008,
+        )
+        message = signal_notification(
+            evaluation,
+            PortfolioSnapshot(PortfolioState.FLAT, 100000.0, 100000.0, 1.0),
+            "v1.0.3-production",
+            plan=plan,
+            reference_price=20000.0,
+            nq_snapshot={"price": 20000.0, "previous_close": 19900.0},
+            qqq_snapshot={"price": 500.0, "source": "ib_live"},
+        )[2]
+        self.assertIn("Suggested Quantity (actual QQQ quote): 200 QQQ shares", message)
+        self.assertNotIn("5 QQQ shares", message)
 
     def test_sql_repository_uses_shared_trading_orders_connection(self):
         class FakeConnection:
@@ -403,6 +588,121 @@ class SPXGEXStrategyTests(unittest.TestCase):
 
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["strategy_version"], "v1.0.1")
+
+    def test_production_and_shadow_classifications_persist_as_a_pair(self):
+        store = StrategyStore(":memory:")
+        observation = DailyGexObservation(
+            observation_date=date(2026, 8, 4),
+            bc_gex_delta=100,
+            bp_gex_delta=-100,
+            sc_gex_delta=-10,
+            sp_gex_delta=10,
+            total_abs_gex_delta=220,
+            close=None,
+            vwap=None,
+            put_call_ratio=None,
+            close_change_pct=None,
+            pcr_change_pct=None,
+            signal_raw="BEARISH",
+            sc_gex=57041,
+            sp_gex=-16280,
+        )
+        production = SignalEvaluation(
+            observation=observation,
+            classification=SignalClassification.RELIABLE_YELLOW,
+            trade_allowed=True,
+            skip_reason=None,
+            actionable_at=datetime.fromisoformat("2026-08-05T03:30:00-04:00"),
+            action_date=date(2026, 8, 5),
+        )
+        shadow = SignalEvaluation(
+            observation=observation,
+            classification=SignalClassification.STRONG_YELLOW,
+            trade_allowed=True,
+            skip_reason=None,
+            actionable_at=production.actionable_at,
+            action_date=production.action_date,
+        )
+        production_id, _ = store.save_signal(production, "v1.0.2", EnvironmentType.FORWARD_PAPER)
+        shadow_id, _ = store.save_signal(shadow, "v1.1", EnvironmentType.FORWARD_PAPER)
+        comparison_id = store.save_strategy_comparison(
+            {
+                "observation_date": "2026-08-04",
+                "production_signal_id": production_id,
+                "shadow_signal_id": shadow_id,
+                "production_strategy_version": "v1.0.2",
+                "shadow_strategy_version": "v1.1",
+                "environment_type": "FORWARD_PAPER",
+                "production_classification": "RELIABLE_YELLOW",
+                "shadow_classification": "STRONG_YELLOW",
+                "production_trade_allowed": 1,
+                "shadow_trade_allowed": 1,
+                "production_outcome_status": "PENDING_MANUAL",
+                "shadow_outcome_status": "PENDING",
+            }
+        )
+        row = store.recent_strategy_comparisons(1)[0]
+        self.assertEqual(row["comparison_id"], comparison_id)
+        self.assertEqual(row["production_classification"], "RELIABLE_YELLOW")
+        self.assertEqual(row["shadow_classification"], "STRONG_YELLOW")
+
+    def test_daily_signal_saves_shadow_without_creating_a_shadow_plan(self):
+        observations = []
+        start = date(2026, 1, 2)
+        for offset in range(61):
+            observation_date = start + timedelta(days=offset)
+            current = offset == 60
+            observations.append(
+                DailyGexObservation(
+                    observation_date=observation_date,
+                    bc_gex_delta=64588 if current else 1000,
+                    bp_gex_delta=-56932 if current else -1000,
+                    sc_gex_delta=-6131 if current else -1000,
+                    sp_gex_delta=1301 if current else 500,
+                    total_abs_gex_delta=123952 if current else 3500,
+                    close=None,
+                    vwap=None,
+                    put_call_ratio=None,
+                    close_change_pct=None,
+                    pcr_change_pct=None,
+                    signal_raw="BEARISH" if current else None,
+                    sc_gex=57041 if current else 60000,
+                    sp_gex=-16280 if current else -10000,
+                )
+            )
+        settings = SimpleNamespace(
+            spx_gex_strategy_version="v1.0.2",
+            spx_gex_shadow_enabled=True,
+            spx_gex_shadow_strategy_version="v1.1",
+            spx_gex_shadow_sc_lookback_days=60,
+            spx_gex_shadow_sp_lookback_days=120,
+            spx_gex_shadow_sp_threshold_quantile=0.60,
+            spx_gex_timezone="America/New_York",
+            spx_gex_db_path=":memory:",
+            spx_gex_initial_capital=100000.0,
+            spx_gex_exposure_factor=1.0,
+            spx_gex_require_live_nq=False,
+            spx_gex_report_url="https://example.test/api/spx-gex/report.html",
+            spx_gex_report_token="",
+            pushover_user_key="",
+            pushover_app_token="",
+            pushover_device="",
+            pushover_sound="",
+        )
+        service = SPXGEXStrategyService(settings)
+        service._source_data = Mock(return_value=(observations, []))
+        target = observations[-1].observation_date
+        result = service.run_daily_signal(
+            now=datetime(2026, 3, 3, 17, 30, tzinfo=ZoneInfo("Australia/Sydney")),
+            observation_date=target,
+            send_notification=False,
+        )
+        self.assertEqual(result["strategy_version"], "v1.0.2")
+        self.assertEqual(result["shadow"]["shadow_strategy_version"], "v1.1")
+        self.assertEqual(len(service.store.recent_signals(strategy_version="v1.0.2")), 1)
+        self.assertEqual(len(service.store.recent_signals(strategy_version="v1.1")), 1)
+        self.assertEqual(len(service.store.recent_strategy_comparisons()), 1)
+        self.assertEqual(len(service.store.open_plans()), 1)
 
     def test_report_snapshots_are_append_only(self):
         with tempfile.TemporaryDirectory() as directory:

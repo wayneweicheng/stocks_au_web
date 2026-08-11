@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
 
-from . import STRATEGY_VERSION
+from . import SHADOW_STRATEGY_VERSION, STRATEGY_VERSION
 from .calendar import USCashCalendar
 from .data import DataValidationError, FileMarketDataRepository, SqlServerMarketDataRepository
 from .features import classify_observations, nq_daily_closes
-from .ib_market_data import get_live_nq_snapshot
-from .models import EnvironmentType, SignalClassification
+from .ib_market_data import get_live_nq_snapshot, get_live_qqq_snapshot
+from .models import Direction, EnvironmentType, SignalClassification
 from .notifications import (
     NotificationService,
     PushoverClient,
@@ -20,8 +20,9 @@ from .notifications import (
     signal_notification,
 )
 from .portfolio import PortfolioManager
+from .provenance import provenance
 from .report import render_html_report
-from .simulation import first_touch
+from .simulation import first_touch, simulate_normal_green, simulate_reversal_green
 from .storage import StrategyStore
 
 logger = logging.getLogger("app.spx_gex_strategy.service")
@@ -35,7 +36,9 @@ class SPXGEXStrategyService:
             settings = app_settings
         self.settings = settings
         self.environment_type = environment_type
-        self.strategy_version = STRATEGY_VERSION
+        self.strategy_version = str(getattr(settings, "spx_gex_strategy_version", STRATEGY_VERSION) or STRATEGY_VERSION)
+        self.shadow_enabled = bool(getattr(settings, "spx_gex_shadow_enabled", True))
+        self.shadow_strategy_version = str(getattr(settings, "spx_gex_shadow_strategy_version", SHADOW_STRATEGY_VERSION) or SHADOW_STRATEGY_VERSION)
         self.calendar = USCashCalendar(getattr(settings, "spx_gex_timezone", "America/New_York"))
         self.store = StrategyStore(self._resolve_path(getattr(settings, "spx_gex_db_path", "data/spx_gex_strategy.sqlite3")))
         self.portfolio = PortfolioManager(
@@ -67,7 +70,13 @@ class SPXGEXStrategyService:
         return backend_root / path
 
     def _source_data(self, target_date: date) -> tuple[list, list]:
-        lookback = int(getattr(self.settings, "spx_gex_lookback_days", 60))
+        lookback = max(
+            int(getattr(self.settings, "spx_gex_lookback_days", 60)),
+            int(getattr(self.settings, "spx_gex_sc_lookback_days", 60)),
+            int(getattr(self.settings, "spx_gex_sp_lookback_days", 60)),
+            int(getattr(self.settings, "spx_gex_shadow_sc_lookback_days", 60)),
+            int(getattr(self.settings, "spx_gex_shadow_sp_lookback_days", 120)),
+        )
         start = self.calendar.session_offset(target_date, -(lookback + 10))
         if str(getattr(self.settings, "spx_gex_data_mode", "sql")).lower() == "file":
             repository = FileMarketDataRepository(
@@ -87,6 +96,36 @@ class SPXGEXStrategyService:
         if not bool(getattr(self.settings, "spx_gex_require_live_nq", True)):
             return None
         return get_live_nq_snapshot()
+
+    def _live_qqq(self) -> dict[str, Any]:
+        """Fetch the real QQQ quote used for live sizing and order levels."""
+        return get_live_qqq_snapshot()
+
+    def _run_provenance(
+        self,
+        observations: list,
+        bars: list,
+        strategy_version: str,
+        sc_lookback_days: int,
+        sp_lookback_days: int,
+        sp_quantile: float,
+        base_signal_source_mode: str = "CAUSAL_COMPLETE",
+    ) -> dict[str, str]:
+        return {
+            **provenance(
+                {
+                    "strategy_version": strategy_version,
+                    "sc_lookback_days": sc_lookback_days,
+                    "sp_lookback_days": sp_lookback_days,
+                    "sp_quantile": sp_quantile,
+                    "exposure_factor": float(getattr(self.settings, "spx_gex_exposure_factor", 1.0)),
+                },
+                observations,
+                bars,
+                Path(__file__).resolve().parents[3],
+            ),
+            "base_signal_source_mode": base_signal_source_mode,
+        }
 
     def _report_url(self, file_name: str | None = None) -> str:
         url = str(
@@ -123,8 +162,10 @@ class SPXGEXStrategyService:
         plan=None,
         reference_price=None,
         nq_snapshot=None,
+        qqq_snapshot=None,
         report_url: str | None = None,
         notification_key_suffix: str | None = None,
+        shadow_evaluation=None,
     ) -> bool:
         report_url = report_url or self._latest_report_url()
         notification_type, title, message = signal_notification(
@@ -134,7 +175,10 @@ class SPXGEXStrategyService:
             plan=plan,
             reference_price=reference_price,
             nq_snapshot=nq_snapshot,
+            qqq_snapshot=qqq_snapshot,
             report_url=report_url,
+            shadow_evaluation=shadow_evaluation,
+            shadow_strategy_version=self.shadow_strategy_version,
         )
         if evaluation.classification == SignalClassification.NO_SIGNAL and not bool(
             getattr(self.settings, "spx_gex_notification_no_signal", False)
@@ -151,6 +195,291 @@ class SPXGEXStrategyService:
             url=report_url,
             url_title="Open SPX GEX HTML report",
         )
+
+    @staticmethod
+    def _bar_exact(bars: list, timestamp: datetime | None):
+        if timestamp is None:
+            return None
+        return next((bar for bar in bars if bar.timestamp == timestamp), None)
+
+    @staticmethod
+    def _bars_between(bars: list, start: datetime, end: datetime | None = None) -> list:
+        return [bar for bar in bars if bar.timestamp >= start and (end is None or bar.timestamp <= end)]
+
+    def _shadow_outcome_for_evaluation(self, evaluation, bars: list) -> dict[str, Any]:
+        """Follow a v1.1 candidate without reserving or changing production state.
+
+        This is deliberately recorded as an NQ percentage-path proxy. It is a
+        shadow outcome, not a live QQQ order or a second portfolio position.
+        """
+        if not evaluation.trade_allowed:
+            return {"status": "NOT_APPLICABLE", "reason": evaluation.skip_reason or "NOT_TRADABLE"}
+        classification = evaluation.classification
+        observation_date = evaluation.observation.observation_date
+        if classification in {SignalClassification.STRONG_YELLOW, SignalClassification.RELIABLE_YELLOW}:
+            entry_bar = self._bar_exact(bars, evaluation.actionable_at)
+            if entry_bar is None:
+                return {"status": "PENDING", "reason": "MISSING_EXACT_D1_ACTION_BAR"}
+            tp_pct = 0.008 if classification == SignalClassification.STRONG_YELLOW else 0.004
+            sl_pct = 0.010 if classification == SignalClassification.STRONG_YELLOW else 0.008
+            touch = first_touch(
+                entry_bar.open,
+                Direction.SHORT,
+                entry_bar.open * (1.0 - tp_pct),
+                entry_bar.open * (1.0 + sl_pct),
+                self._bars_between(bars, entry_bar.timestamp),
+            )
+            if touch.exit_price is None:
+                return {
+                    "status": "PENDING",
+                    "reason": "TP_SL_NOT_TOUCHED_IN_AVAILABLE_DATA",
+                    "entry_time": entry_bar.timestamp.isoformat(),
+                    "entry_price": entry_bar.open,
+                }
+            return {
+                "status": "CLOSED",
+                "entry_time": entry_bar.timestamp.isoformat(),
+                "entry_price": entry_bar.open,
+                "exit_time": touch.exit_time.isoformat() if touch.exit_time else None,
+                "exit_price": touch.exit_price,
+                "exit_reason": touch.exit_reason,
+                "return_pct": (entry_bar.open - touch.exit_price) / entry_bar.open,
+                "ambiguous": touch.ambiguous,
+                "price_source": "NQ_PERCENTAGE_PROXY_ONLY",
+            }
+        if classification == SignalClassification.REVERSAL_GREEN:
+            reference_bar = self._bar_exact(bars, evaluation.actionable_at)
+            if reference_bar is None:
+                return {"status": "PENDING", "reason": "MISSING_EXACT_D1_ACTION_BAR"}
+            d3 = self.calendar.session_offset(observation_date, 3)
+            d5 = self.calendar.session_offset(observation_date, 5)
+            outcome = simulate_reversal_green(
+                reference_time=evaluation.actionable_at,
+                reference_price=reference_bar.open,
+                dip_pct=0.010,
+                dip_expiry=self.calendar.actionable_at(d3),
+                fallback_time=self.calendar.actionable_at(d3),
+                cash_close=self.calendar.cash_close(d5),
+                bars=bars,
+            )
+        elif classification == SignalClassification.NORMAL_GREEN:
+            d3 = self.calendar.session_offset(observation_date, 3)
+            d5 = self.calendar.session_offset(observation_date, 5)
+            entry_time = self.calendar.actionable_at(d3)
+            entry_bar = self._bar_exact(bars, entry_time)
+            if entry_bar is None:
+                return {"status": "PENDING", "reason": "MISSING_EXACT_D3_ACTION_BAR"}
+            outcome = simulate_normal_green(
+                entry_time=entry_time,
+                entry_price=entry_bar.open,
+                tp_pct=0.025,
+                cash_close=self.calendar.cash_close(d5),
+                bars=bars,
+            )
+        else:
+            return {"status": "NOT_APPLICABLE", "reason": "NON_TRADABLE_CLASSIFICATION"}
+        if outcome.get("status") != "CLOSED":
+            return {"status": "PENDING", "reason": outcome.get("reason", "FUTURE_DATA_REQUIRED")}
+        outcome = dict(outcome)
+        outcome["price_source"] = "NQ_PERCENTAGE_PROXY_ONLY"
+        for key, value in list(outcome.items()):
+            if isinstance(value, datetime):
+                outcome[key] = value.isoformat()
+        return outcome
+
+    def _refresh_shadow_outcomes(self, bars: list) -> None:
+        if not self.shadow_enabled:
+            return
+        rows = self.store.recent_strategy_comparisons(
+            200,
+            self.environment_type.value,
+            self.shadow_strategy_version,
+        )
+        for row in rows:
+            if row["shadow_outcome_status"] != "PENDING":
+                continue
+            actionable_at = (
+                datetime.fromisoformat(str(row["shadow_actionable_at"]))
+                if row["shadow_actionable_at"]
+                else None
+            )
+            classification = SignalClassification(str(row["shadow_classification"]))
+            evaluation = type(
+                "ShadowEvaluation",
+                (),
+                {
+                    "classification": classification,
+                    "trade_allowed": bool(row["shadow_trade_allowed"]),
+                    "skip_reason": row["shadow_skip_reason"],
+                    "actionable_at": actionable_at,
+                    "observation": type(
+                        "ShadowObservation",
+                        (),
+                        {"observation_date": date.fromisoformat(str(row["observation_date"]))},
+                    )(),
+                },
+            )()
+            outcome = self._shadow_outcome_for_evaluation(evaluation, bars)
+            if outcome["status"] != "PENDING":
+                self.store.update_strategy_comparison(
+                    row["comparison_id"],
+                    shadow_outcome_status=outcome["status"],
+                    shadow_outcome_json=json.dumps(outcome, separators=(",", ":"), default=str),
+                )
+
+    def _shadow_portfolio_snapshot(
+        self,
+        variant: str,
+        evaluation,
+        outcome: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Maintain chronological hypothetical NAV/occupancy for A or B.
+
+        This ledger is separate from the production PortfolioManager. A future
+        Normal Green carries an entry timestamp but does not reserve the
+        portfolio before D3; Yellow and Reversal Green reserve from D1.
+        """
+        key = "portfolio_a_json" if variant == "A" else "portfolio_b_json"
+        previous = None
+        for row in self.store.recent_strategy_comparisons(200, self.environment_type.value):
+            if row[key]:
+                previous = json.loads(row[key])
+                break
+        state = previous or {
+            "variant": variant,
+            "nav": float(getattr(self.settings, "spx_gex_initial_capital", 100000.0)),
+            "state": "FLAT",
+            "active_until": None,
+            "active_signal": None,
+        }
+        action_time = evaluation.actionable_at.isoformat() if evaluation.actionable_at else None
+        classification = evaluation.classification
+        is_future_normal = classification == SignalClassification.NORMAL_GREEN and evaluation.actionable_at is not None
+        reservation_time = evaluation.actionable_at
+        if classification == SignalClassification.NORMAL_GREEN:
+            d3 = self.calendar.session_offset(evaluation.observation.observation_date, 3)
+            reservation_time = self.calendar.actionable_at(d3)
+        active_until = state.get("active_until")
+        if active_until and reservation_time and str(active_until) <= reservation_time.isoformat():
+            state.update({"state": "FLAT", "active_until": None, "active_signal": None})
+        blocked = bool(state.get("active_until") and reservation_time and str(state["active_until"]) > reservation_time.isoformat())
+        if not blocked and evaluation.trade_allowed and outcome.get("status") == "CLOSED":
+            return_pct = outcome.get("return_pct")
+            if return_pct is not None:
+                state["nav"] = float(state["nav"]) * (1.0 + float(return_pct))
+            state["state"] = "SHORT_YELLOW" if classification in {
+                SignalClassification.STRONG_YELLOW,
+                SignalClassification.RELIABLE_YELLOW,
+            } else "LONG_GREEN"
+            state["active_until"] = outcome.get("exit_time")
+            state["active_signal"] = evaluation.observation.observation_date.isoformat()
+        elif not blocked and evaluation.trade_allowed and not is_future_normal:
+            state["state"] = "PENDING_OR_ACTIVE"
+            state["active_until"] = None
+            state["active_signal"] = evaluation.observation.observation_date.isoformat()
+        state["last_actionable_at"] = action_time
+        state["last_blocked"] = blocked
+        state["last_classification"] = classification.value
+        return state
+
+    def _save_strategy_comparison(
+        self,
+        production_evaluation,
+        shadow_evaluation,
+        production_signal_id: str,
+        shadow_signal_id: str,
+        bars: list,
+        plan=None,
+        production_provenance: dict[str, str] | None = None,
+        shadow_provenance: dict[str, str] | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        production_outcome = self._shadow_outcome_for_evaluation(production_evaluation, bars)
+        shadow_outcome = self._shadow_outcome_for_evaluation(shadow_evaluation, bars)
+        production_yellow = production_evaluation.classification in {
+            SignalClassification.STRONG_YELLOW,
+            SignalClassification.RELIABLE_YELLOW,
+        }
+        production_status = (
+            "PENDING_MANUAL"
+            if production_yellow and production_evaluation.trade_allowed
+            else "SKIPPED_PRODUCTION"
+            if production_yellow
+            else "NOT_APPLICABLE"
+        )
+        shadow_status = shadow_outcome["status"]
+        portfolio_a = self._shadow_portfolio_snapshot("A", production_evaluation, production_outcome)
+        portfolio_b = self._shadow_portfolio_snapshot("B", shadow_evaluation, shadow_outcome)
+        production_provenance = production_provenance or {}
+        shadow_provenance = shadow_provenance or {}
+        values = {
+            "observation_date": production_evaluation.observation.observation_date.isoformat(),
+            "production_signal_id": production_signal_id,
+            "shadow_signal_id": shadow_signal_id,
+            "production_strategy_version": self.strategy_version,
+            "shadow_strategy_version": self.shadow_strategy_version,
+            "environment_type": self.environment_type.value,
+            "production_classification": production_evaluation.classification.value,
+            "shadow_classification": shadow_evaluation.classification.value,
+            "production_trade_allowed": int(production_evaluation.trade_allowed),
+            "shadow_trade_allowed": int(shadow_evaluation.trade_allowed),
+            "production_skip_reason": production_evaluation.skip_reason,
+            "shadow_skip_reason": shadow_evaluation.skip_reason,
+            "production_actionable_at": production_evaluation.actionable_at.isoformat() if production_evaluation.actionable_at else None,
+            "shadow_actionable_at": shadow_evaluation.actionable_at.isoformat() if shadow_evaluation.actionable_at else None,
+            "production_outcome_status": production_status,
+            "production_outcome_json": None,
+            "shadow_outcome_status": shadow_status,
+            "shadow_outcome_json": json.dumps(shadow_outcome, separators=(",", ":"), default=str),
+            "base_signal": production_evaluation.observation.signal_raw,
+            "current_sc_gex": production_evaluation.observation.sc_gex,
+            "sc_threshold_a": production_evaluation.sc_rolling_median_60,
+            "sc_low_a": int(
+                production_evaluation.observation.sc_gex is not None
+                and production_evaluation.sc_rolling_median_60 is not None
+                and production_evaluation.observation.sc_gex <= production_evaluation.sc_rolling_median_60
+            ),
+            "sp_share": production_evaluation.observation.sp_delta_share,
+            "sp_threshold_a": production_evaluation.sp_share_p75_60,
+            "classification_a": production_evaluation.classification.value,
+            "sc_threshold_b": shadow_evaluation.sc_rolling_median_60,
+            "sc_low_b": int(
+                shadow_evaluation.observation.sc_gex is not None
+                and shadow_evaluation.sc_rolling_median_60 is not None
+                and shadow_evaluation.observation.sc_gex <= shadow_evaluation.sc_rolling_median_60
+            ),
+            "sp_threshold_b": shadow_evaluation.sp_share_p75_60,
+            "classification_b": shadow_evaluation.classification.value,
+            "classification_changed": int(
+                production_evaluation.classification != shadow_evaluation.classification
+            ),
+            "production_variant": "A",
+            "strategy_version": self.strategy_version,
+            "git_commit": production_provenance.get("git_commit"),
+            "config_hash": production_provenance.get("config_hash"),
+            "data_hash": production_provenance.get("data_hash"),
+            "base_signal_source_mode": production_provenance.get("base_signal_source_mode", "CAUSAL_COMPLETE"),
+            "production_hypothetical_outcome_json": json.dumps(production_outcome, separators=(",", ":"), default=str),
+            "shadow_hypothetical_outcome_json": json.dumps(shadow_outcome, separators=(",", ":"), default=str),
+            "portfolio_a_json": json.dumps(portfolio_a, separators=(",", ":"), default=str),
+            "portfolio_b_json": json.dumps(portfolio_b, separators=(",", ":"), default=str),
+        }
+        comparison_id = self.store.save_strategy_comparison(values)
+        return comparison_id, {
+            "comparison_id": comparison_id,
+            "production_strategy_version": self.strategy_version,
+            "shadow_strategy_version": self.shadow_strategy_version,
+            "production_classification": production_evaluation.classification.value,
+            "shadow_classification": shadow_evaluation.classification.value,
+            "production_trade_allowed": production_evaluation.trade_allowed,
+            "shadow_trade_allowed": shadow_evaluation.trade_allowed,
+            "production_outcome_status": production_status,
+            "shadow_outcome_status": shadow_status,
+            "classification_changed": production_evaluation.classification != shadow_evaluation.classification,
+            "production_hypothetical_outcome": production_outcome,
+            "shadow_outcome": shadow_outcome,
+            "portfolio_A": portfolio_a,
+            "portfolio_B": portfolio_b,
+        }
 
     def save_report_snapshot(
         self,
@@ -193,6 +522,18 @@ class SPXGEXStrategyService:
         started = datetime.now()
         try:
             observations, bars = self._source_data(target_date)
+            production_sc = int(getattr(self.settings, "spx_gex_sc_lookback_days", getattr(self.settings, "spx_gex_lookback_days", 60)))
+            production_sp = int(getattr(self.settings, "spx_gex_sp_lookback_days", getattr(self.settings, "spx_gex_lookback_days", 60)))
+            production_quantile = float(getattr(self.settings, "spx_gex_sp_threshold_quantile", 0.75))
+            shadow_sc = int(getattr(self.settings, "spx_gex_shadow_sc_lookback_days", 60))
+            shadow_sp = int(getattr(self.settings, "spx_gex_shadow_sp_lookback_days", 120))
+            shadow_quantile = float(getattr(self.settings, "spx_gex_shadow_sp_threshold_quantile", 0.60))
+            production_provenance = self._run_provenance(
+                observations, bars, self.strategy_version, production_sc, production_sp, production_quantile
+            )
+            shadow_provenance = self._run_provenance(
+                observations, bars, self.shadow_strategy_version, shadow_sc, shadow_sp, shadow_quantile
+            )
             by_date = {observation.observation_date: observation for observation in observations}
             target = by_date.get(target_date)
             if target is None:
@@ -204,10 +545,13 @@ class SPXGEXStrategyService:
                 observations,
                 self.calendar,
                 closes,
-                lookback_days=int(getattr(self.settings, "spx_gex_lookback_days", 60)),
+                sc_lookback_days=int(getattr(self.settings, "spx_gex_sc_lookback_days", getattr(self.settings, "spx_gex_lookback_days", 60))),
+                sp_lookback_days=int(getattr(self.settings, "spx_gex_sp_lookback_days", getattr(self.settings, "spx_gex_lookback_days", 60))),
+                sp_quantile=float(getattr(self.settings, "spx_gex_sp_threshold_quantile", 0.75)),
             )
             evaluation = next(item for item in evaluations if item.observation.observation_date == target_date)
             live_nq = None
+            live_qqq = None
             reference_price = None
             if evaluation.trade_allowed:
                 try:
@@ -218,20 +562,108 @@ class SPXGEXStrategyService:
                     evaluation.skip_reason = f"MISSING_LIVE_NQ_QUOTE: {exc}"
 
             if evaluation.trade_allowed:
-                conflict = self.portfolio.conflict_reason(evaluation.classification)
-                if conflict:
+                try:
+                    live_qqq = self._live_qqq()
+                except Exception as exc:
+                    evaluation.trade_allowed = False
+                    evaluation.skip_reason = f"MISSING_LIVE_QQQ_QUOTE: {exc}"
+
+            if evaluation.trade_allowed:
+                conflict = self.portfolio.conflict_reason(
+                    evaluation.classification,
+                    at=evaluation.actionable_at,
+                )
+                # A Normal Green is a future D3 plan. It is recorded so the
+                # portfolio can re-check the state at D3; a position that is
+                # open today must not discard that future candidate.
+                future_normal = (
+                    evaluation.classification == SignalClassification.NORMAL_GREEN
+                    and evaluation.actionable_at is not None
+                    and evaluation.actionable_at > effective_now
+                )
+                if conflict and not future_normal:
                     evaluation.trade_allowed = False
                     evaluation.skip_reason = conflict
 
-            signal_id, _ = self.store.save_signal(evaluation, self.strategy_version, self.environment_type)
+            # Persist the production classification before evaluating the
+            # shadow variant. Both classifiers write derived threshold fields
+            # onto the shared observation object, so this ordering preserves
+            # the production metrics exactly as classified.
+            signal_id, _ = self.store.save_signal(
+                evaluation,
+                self.strategy_version,
+                self.environment_type,
+                production_provenance,
+                production_provenance.get("base_signal_source_mode"),
+            )
             plan = None
             if evaluation.trade_allowed:
                 plan = self.portfolio.build_plan(evaluation, reference_price=reference_price)
+                plan.metadata.update(production_provenance)
+                if live_qqq:
+                    plan.metadata["live_qqq_quote"] = live_qqq
+                    qqq_price = float(live_qqq.get("price") or 0.0)
+                    if qqq_price > 0:
+                        plan.metadata["qqq_reference_price"] = qqq_price
+                        plan.metadata["qqq_quantity"] = int(
+                            self.portfolio.snapshot.shadow_nav
+                            * self.portfolio.snapshot.exposure_factor
+                            / qqq_price
+                        )
+                        if evaluation.classification == SignalClassification.STRONG_YELLOW:
+                            plan.metadata.update({
+                                "qqq_tp_price": qqq_price * 0.992,
+                                "qqq_sl_price": qqq_price * 1.010,
+                            })
+                        elif evaluation.classification == SignalClassification.RELIABLE_YELLOW:
+                            plan.metadata.update({
+                                "qqq_tp_price": qqq_price * 0.996,
+                                "qqq_sl_price": qqq_price * 1.008,
+                            })
+                        elif evaluation.classification == SignalClassification.REVERSAL_GREEN:
+                            plan.metadata["qqq_dip_limit"] = qqq_price * 0.99
+                        elif evaluation.classification == SignalClassification.NORMAL_GREEN:
+                            plan.metadata["qqq_tp_price"] = qqq_price * 1.025
                 plan.signal_id = signal_id
                 self.store.save_plan(plan)
                 snapshot = self.portfolio.snapshot
                 snapshot.pending_plan_id = self.store.plan_id_for_signal(signal_id)
                 self.store.update_portfolio(snapshot)
+
+            shadow_evaluation = None
+            shadow_signal_id = None
+            shadow_comparison = None
+            if self.shadow_enabled:
+                shadow_evaluations = classify_observations(
+                    observations,
+                    self.calendar,
+                    closes,
+                    sc_lookback_days=int(getattr(self.settings, "spx_gex_shadow_sc_lookback_days", 60)),
+                    sp_lookback_days=int(getattr(self.settings, "spx_gex_shadow_sp_lookback_days", 120)),
+                    sp_quantile=float(getattr(self.settings, "spx_gex_shadow_sp_threshold_quantile", 0.60)),
+                )
+                shadow_evaluation = next(
+                    item for item in shadow_evaluations
+                    if item.observation.observation_date == target_date
+                )
+                shadow_signal_id, _ = self.store.save_signal(
+                    shadow_evaluation,
+                    self.shadow_strategy_version,
+                    self.environment_type,
+                    shadow_provenance,
+                    shadow_provenance.get("base_signal_source_mode"),
+                )
+                _, shadow_comparison = self._save_strategy_comparison(
+                    evaluation,
+                    shadow_evaluation,
+                    signal_id,
+                    shadow_signal_id,
+                    bars,
+                    plan=plan,
+                    production_provenance=production_provenance,
+                    shadow_provenance=shadow_provenance,
+                )
+                self._refresh_shadow_outcomes(bars)
 
             report_id = None
             report_file_name = None
@@ -260,8 +692,10 @@ class SPXGEXStrategyService:
                         plan=plan,
                         reference_price=reference_price,
                         nq_snapshot=live_nq,
+                        qqq_snapshot=live_qqq,
                         report_url=report_url,
                         notification_key_suffix=f"report-{report_id}" if force_notification else None,
+                        shadow_evaluation=shadow_evaluation,
                     )
                 except Exception as exc:
                     notification_error = str(exc)
@@ -280,12 +714,19 @@ class SPXGEXStrategyService:
                 "tp_pct": plan.tp_pct if plan else None,
                 "sl_pct": plan.sl_pct if plan else None,
                 "strategy_version": self.strategy_version,
+                "base_signal_source_mode": production_provenance.get("base_signal_source_mode"),
+                "git_commit": production_provenance.get("git_commit"),
+                "config_hash": production_provenance.get("config_hash"),
+                "data_hash": production_provenance.get("data_hash"),
+                "production_variant": "A",
                 "notification_sent": sent,
                 "notification_error": notification_error,
                 "duration_ms": int((datetime.now() - started).total_seconds() * 1000),
                 "report_id": report_id,
                 "report_file_name": report_file_name,
                 "report_url": report_url,
+                "live_qqq": live_qqq,
+                "shadow": shadow_comparison,
             }
             if report_id is None:
                 result["report_error"] = report_error
@@ -374,12 +815,32 @@ class SPXGEXStrategyService:
         ).nq_bars(start, now.date(), self.calendar.timezone_name)
 
     def _activate_due_plan(self, now: datetime) -> None:
-        plans = self.store.open_plans()
+        priority = {
+            SignalClassification.STRONG_YELLOW.value: 0,
+            SignalClassification.RELIABLE_YELLOW.value: 1,
+            SignalClassification.REVERSAL_GREEN.value: 2,
+            SignalClassification.NORMAL_GREEN.value: 3,
+        }
+        plans = sorted(
+            self.store.open_plans(as_of=now),
+            key=lambda plan: (
+                plan["first_action_at"],
+                priority.get(str(plan["classification"]), 99),
+                str(plan["plan_id"]),
+            ),
+        )
         for plan in plans:
             first_action = datetime.fromisoformat(plan["first_action_at"])
             if first_action.tzinfo is None:
                 first_action = first_action.replace(tzinfo=self.calendar.timezone)
             if first_action > now:
+                continue
+            # A plan can have been detected earlier, but the portfolio is
+            # authoritative at its actual action timestamp. In particular a
+            # future Normal Green must be rechecked at D3 rather than acting
+            # as an open position while it is still PLANNED.
+            if self.portfolio.snapshot.state.value != "FLAT":
+                self.store.update_plan(plan["plan_id"], status="SKIPPED")
                 continue
             if plan["classification"] == SignalClassification.REVERSAL_GREEN.value:
                 # Establish the reference from the exact D1 03:30 bar. A
@@ -394,7 +855,20 @@ class SPXGEXStrategyService:
             bars = self._monitor_bars(now)
             entry_bar = next((bar for bar in bars if bar.timestamp == first_action), None)
             if entry_bar:
-                self.portfolio.open_trade(plan["plan_id"], entry_bar.open, entry_bar.timestamp)
+                try:
+                    qqq_quote = self._live_qqq()
+                    qqq_price = float(qqq_quote.get("price") or 0.0)
+                except Exception as exc:
+                    logger.warning("Waiting for actual QQQ quote before opening plan %s: %s", plan["plan_id"], exc)
+                    continue
+                if qqq_price <= 0:
+                    continue
+                self.portfolio.open_trade(
+                    plan["plan_id"],
+                    entry_bar.open,
+                    entry_bar.timestamp,
+                    quote_price=qqq_price,
+                )
                 return
 
     def _monitor_pending_dip(self, plan_id: str, bars: list, now: datetime) -> dict[str, Any]:
@@ -411,7 +885,14 @@ class SPXGEXStrategyService:
         for bar in bars:
             if reference_time <= bar.timestamp < expiry and bar.timestamp <= now:
                 if bar.open <= dip_price:
-                    result = self.portfolio.activate_reversal_dip(plan_id, bar.open, bar.timestamp)
+                    try:
+                        qqq_quote = self._live_qqq()
+                        qqq_price = float(qqq_quote.get("price") or 0.0)
+                    except Exception as exc:
+                        return {"status": "WAITING_QQQ_QUOTE", "reason": str(exc)}
+                    if qqq_price <= 0:
+                        return {"status": "WAITING_QQQ_QUOTE", "reason": "MISSING_QQQ_PRICE"}
+                    result = self.portfolio.activate_reversal_dip(plan_id, bar.open, bar.timestamp, qqq_price)
                     self._send_plan_event(
                         plan_id,
                         "DIP_ORDER_UPDATE",
@@ -420,7 +901,14 @@ class SPXGEXStrategyService:
                     )
                     return {"status": "DIP_FILLED", **result}
                 if bar.low <= dip_price:
-                    result = self.portfolio.activate_reversal_dip(plan_id, dip_price, bar.timestamp)
+                    try:
+                        qqq_quote = self._live_qqq()
+                        qqq_price = float(qqq_quote.get("price") or 0.0)
+                    except Exception as exc:
+                        return {"status": "WAITING_QQQ_QUOTE", "reason": str(exc)}
+                    if qqq_price <= 0:
+                        return {"status": "WAITING_QQQ_QUOTE", "reason": "MISSING_QQQ_PRICE"}
+                    result = self.portfolio.activate_reversal_dip(plan_id, dip_price, bar.timestamp, qqq_price)
                     self._send_plan_event(
                         plan_id,
                         "DIP_ORDER_UPDATE",
@@ -431,7 +919,20 @@ class SPXGEXStrategyService:
         if now >= fallback:
             bar = next((item for item in bars if item.timestamp == fallback), None)
             if bar:
-                result = self.portfolio.open_trade(plan_id, bar.open, bar.timestamp, entry_type="D3_FALLBACK")
+                try:
+                    qqq_quote = self._live_qqq()
+                    qqq_price = float(qqq_quote.get("price") or 0.0)
+                except Exception as exc:
+                    return {"status": "WAITING_QQQ_QUOTE", "reason": str(exc)}
+                if qqq_price <= 0:
+                    return {"status": "WAITING_QQQ_QUOTE", "reason": "MISSING_QQQ_PRICE"}
+                result = self.portfolio.open_trade(
+                    plan_id,
+                    bar.open,
+                    bar.timestamp,
+                    entry_type="D3_FALLBACK",
+                    quote_price=qqq_price,
+                )
                 self._send_plan_event(
                     plan_id,
                     "D3_FALLBACK",
@@ -475,11 +976,20 @@ class SPXGEXStrategyService:
         ]
         from .models import Direction
 
+        proxy_entry_price = float(position.get("proxy_entry_price") or position["entry_price"])
+        tp_pct = float(position.get("tp_pct") or 0.0)
+        sl_pct = float(position.get("sl_pct") or 0.0)
+        proxy_tp = None
+        proxy_sl = None
+        if tp_pct:
+            proxy_tp = proxy_entry_price * (1.0 - tp_pct) if position["direction"] == Direction.SHORT.value else proxy_entry_price * (1.0 + tp_pct)
+        if sl_pct:
+            proxy_sl = proxy_entry_price * (1.0 + sl_pct) if position["direction"] == Direction.SHORT.value else proxy_entry_price * (1.0 - sl_pct)
         result = first_touch(
-            entry=float(position["entry_price"]),
+            entry=proxy_entry_price,
             side=Direction(position["direction"]),
-            tp=float(position["tp_price"]) if position.get("tp_price") else None,
-            sl=float(position["sl_price"]) if position.get("sl_price") else None,
+            tp=proxy_tp,
+            sl=proxy_sl,
             bars=relevant,
         )
         if result.exit_price is None and exit_time:
@@ -490,14 +1000,27 @@ class SPXGEXStrategyService:
                     result.exit_price, result.exit_time, result.exit_reason = last.close, last.timestamp, "TIME_EXIT"
         if result.exit_price is None:
             return {"status": "OPEN", "trade_id": snapshot.active_trade_id}
+        proxy_return = None
+        if result.exit_price is not None:
+            proxy_return = (
+                (result.exit_price / proxy_entry_price - 1.0)
+                * (1.0 if position["direction"] == Direction.LONG.value else -1.0)
+            )
+        qqq_entry_price = float(position.get("qqq_entry_price") or 0.0)
+        economic_exit_price = (
+            qqq_entry_price * (1.0 + proxy_return)
+            if qqq_entry_price > 0 and proxy_return is not None
+            else result.exit_price
+        )
         result_dict = self.portfolio.close_trade(
-            result.exit_price,
+            economic_exit_price,
             result.exit_time or now,
             result.exit_reason or "TIME_EXIT",
             result.mfe_pct,
             result.mae_pct,
             result.bars_held,
             result.ambiguous,
+            return_pct_override=proxy_return,
         )
         trade = self.store.trade(result_dict["trade_id"])
         signal_type = trade["signal_type"] if trade else "SHADOW TRADE"

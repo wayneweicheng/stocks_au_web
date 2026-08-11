@@ -51,6 +51,11 @@ def _metrics(row: Any) -> dict[str, Any]:
         return {}
 
 
+def _comparison_return(row: Any) -> str:
+    outcome = _metrics({"metrics_json": _row_value(row, "shadow_outcome_json", "")})
+    return _pct(outcome.get("return_pct"))
+
+
 def _yellow_explanation(row: Any) -> str:
     metrics = _metrics(row)
     classification = str(_row_value(row, "classification", "YELLOW"))
@@ -63,6 +68,10 @@ def _yellow_explanation(row: Any) -> str:
     sp_delta = metrics.get("SP_GEXDelta_current", metrics.get("SP_GEXDelta"))
     sp_current = metrics.get("SP_delta_share_current")
     sp_threshold = metrics.get("SP_delta_share_threshold")
+    sc_lookback = int(metrics.get("SC_lookback_days", 60) or 60)
+    sp_lookback = int(metrics.get("SP_lookback_days", 60) or 60)
+    sp_quantile = float(metrics.get("SP_threshold_quantile", 0.75) or 0.75)
+    sp_percentile_label = f"P{int(sp_quantile * 100)}"
     if None in (sc_current, sc_threshold, sp_current, sp_threshold):
         return (
             f"<section><h2>Why this is {escape(label)}</h2>"
@@ -83,10 +92,10 @@ def _yellow_explanation(row: Any) -> str:
     )
     return f"""
 <section><h2>Why this is {escape(label)}</h2>
-<p>The {observation_date} raw signal was <b>BEARISH</b>, so it entered the Yellow classifier. Each threshold uses only the 60 completed US sessions before that observation date.</p>
+<p>The {observation_date} raw signal was <b>BEARISH</b>, so it entered the Yellow classifier. Each threshold uses only the configured completed US-session lookback before that observation date.</p>
 <div class="rule-checks">
-<div class="rule-check"><span class="rule-name">SC_LOW = {sc_status}</span><span>SC current GEX level: <b>{_number(sc_current)}</b></span><span>SC current GEXDelta: <b>{_number(sc_delta)}</b></span><span>Prior-60 SC GEX median: <b>{_number(sc_threshold)}</b></span><span>Level check: {_number(sc_current)} {sc_operator} {_number(sc_threshold)}.</span></div>
-<div class="rule-check"><span class="rule-name">SP_HIGH = {sp_status}</span><span>SP current GEX level: <b>{_number(sp_level)}</b></span><span>SP current GEXDelta: <b>{_number(sp_delta)}</b></span><span>SP delta share: <b>{_unsigned_pct(sp_current)}</b></span><span>Prior-60 SP share P75: <b>{_unsigned_pct(sp_threshold)}</b></span><span>Share check: {_unsigned_pct(sp_current)} {sp_operator} {_unsigned_pct(sp_threshold)}.</span></div>
+<div class="rule-check"><span class="rule-name">SC_LOW = {sc_status}</span><span>SC current GEX level: <b>{_number(sc_current)}</b></span><span>SC current GEXDelta: <b>{_number(sc_delta)}</b></span><span>Prior-{sc_lookback} SC GEX median: <b>{_number(sc_threshold)}</b></span><span>Level check: {_number(sc_current)} {sc_operator} {_number(sc_threshold)}.</span></div>
+<div class="rule-check"><span class="rule-name">SP_HIGH = {sp_status}</span><span>SP current GEX level: <b>{_number(sp_level)}</b></span><span>SP current GEXDelta: <b>{_number(sp_delta)}</b></span><span>SP delta share: <b>{_unsigned_pct(sp_current)}</b></span><span>Prior-{sp_lookback} SP share {sp_percentile_label}: <b>{_unsigned_pct(sp_threshold)}</b></span><span>Share check: {_unsigned_pct(sp_current)} {sp_operator} {_unsigned_pct(sp_threshold)}.</span></div>
 </div>
 <p class="decision">{decision}</p></section>"""
 
@@ -99,6 +108,9 @@ def _signal_rule_summary(row: Any) -> str:
         sc_threshold = metrics.get("SC_GEX_threshold")
         sp_current = metrics.get("SP_delta_share_current")
         sp_threshold = metrics.get("SP_delta_share_threshold")
+        sc_lookback = int(metrics.get("SC_lookback_days", 60) or 60)
+        sp_lookback = int(metrics.get("SP_lookback_days", 60) or 60)
+        sp_quantile = float(metrics.get("SP_threshold_quantile", 0.75) or 0.75)
         if None not in (sc_current, sc_threshold, sp_current, sp_threshold):
             sc_low = float(sc_current) <= float(sc_threshold)
             sp_high = float(sp_current) > float(sp_threshold)
@@ -107,6 +119,7 @@ def _signal_rule_summary(row: Any) -> str:
                 f"{'<=' if sc_low else '>'} {_number(sc_threshold)}); "
                 f"SP_HIGH {str(sp_high).upper()} ({_unsigned_pct(sp_current)} "
                 f"{'>' if sp_high else '<='} {_unsigned_pct(sp_threshold)}). "
+                f"Lookbacks SC {sc_lookback}D / SP {sp_lookback}D, SP P{int(sp_quantile * 100)}. "
                 f"This combination gives {classification}; "
                 f"{'tradable SHORT QQQ' if bool(_row_value(row, 'trade_allowed', False)) else 'not tradable in v1'}."
             )
@@ -179,6 +192,8 @@ def render_html_report(
     loss = abs(sum(float(trade["pnl_usd"] or 0) for trade in closed if float(trade["pnl_usd"] or 0) < 0))
     win_rate = wins / len(returns) if returns else 0.0
     latest_signal_explanation = _latest_signal_explanation(signals, focus_date)
+    comparisons = store.recent_strategy_comparisons(50)
+    shadow_version = str(comparisons[0]["shadow_strategy_version"] if comparisons else "v1.1.0-shadow")
     signal_rows = "".join(
         "<tr>"
         f"<td>{escape(str(row['observation_date'] or ''))}</td>"
@@ -205,6 +220,18 @@ def render_html_report(
         + "</tr>"
         for row in reversed(trades[-50:])
     ) or "<tr><td colspan='6'>No shadow trades recorded yet.</td></tr>"
+    comparison_rows = "".join(
+        "<tr>"
+        f"<td>{escape(str(row['observation_date'] or ''))}</td>"
+        f"<td>{escape(str(row['production_classification'] or ''))}</td>"
+        f"<td>{'YES' if row['production_trade_allowed'] else 'NO'}</td>"
+        f"<td>{escape(str(row['shadow_classification'] or ''))}</td>"
+        f"<td>{'YES' if row['shadow_trade_allowed'] else 'NO'}</td>"
+        f"<td>{escape(str(row['shadow_outcome_status'] or ''))}</td>"
+        f"<td>{escape(_comparison_return(row))}</td>"
+        "</tr>"
+        for row in comparisons
+    ) or "<tr><td colspan='7'>No production/shadow comparisons recorded yet.</td></tr>"
     nq_html = ""
     if live_nq:
         nq_html = (
@@ -252,7 +279,7 @@ h1{{margin-bottom:.25rem}} h2{{font-size:1.1rem}} .metrics{{display:grid;grid-te
 table{{border-collapse:collapse;width:100%;font-size:.88rem}}th,td{{border-bottom:1px solid #e5eaf2;text-align:left;padding:.5rem;white-space:nowrap}}th{{background:#f1f5f9}}
 .rule-checks{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.75rem;margin:.75rem 0}}.rule-check{{display:flex;flex-direction:column;gap:.35rem;background:#f8fafc;border-left:4px solid #f59e0b;border-radius:6px;padding:.75rem}}.rule-name{{font-weight:750}}.decision{{background:#fff7ed;border-radius:6px;padding:.75rem}}.yes{{color:#08783e;font-weight:700}}.no{{color:#b42318;font-weight:700}}.guide td:first-child{{white-space:nowrap}}td.why{{white-space:normal;min-width:340px}}
 </style></head><body><main>
-<h1>SPX GEX Signal Report</h1><p>Strategy version: <b>{escape(strategy_version)}</b></p>{nq_html}
+<h1>SPX GEX Signal Report</h1><p>Production strategy version: <b>{escape(strategy_version)}</b></p>{nq_html}
 {report_metadata}
 <section><h2>Portfolio</h2><div class="metrics">
 <div class="metric"><span class="label">State</span><span class="value">{escape(snapshot.state.value)}</span></div>
@@ -265,5 +292,6 @@ table{{border-collapse:collapse;width:100%;font-size:.88rem}}th,td{{border-botto
 {_yellow_guide()}
 <section><h2>Recent signals</h2><table><thead><tr><th>Observation</th><th>Classification</th><th>Tradable</th><th>Why</th><th>Actionable at</th></tr></thead><tbody>{signal_rows}</tbody></table></section>
 <section><h2>Shadow trades</h2><table><thead><tr><th>Trade ID</th><th>Type</th><th>Entry</th><th>Exit</th><th>Return</th><th>P&amp;L</th></tr></thead><tbody>{trade_rows}</tbody></table></section>
+<section><h2>Production vs {escape(shadow_version)} shadow</h2><p>Production remains {escape(strategy_version)} and is the only strategy allowed to reserve or execute the portfolio. {escape(shadow_version)} is classification-only and follows a separate hypothetical NQ percentage-path outcome.</p><table><thead><tr><th>Observation</th><th>{escape(strategy_version)}</th><th>Prod allowed</th><th>{escape(shadow_version)}</th><th>Shadow allowed</th><th>Shadow outcome</th><th>Return</th></tr></thead><tbody>{comparison_rows}</tbody></table></section>
 {archive_html}
 </main></body></html>"""

@@ -13,10 +13,11 @@ from zoneinfo import ZoneInfo
 from .calendar import NEW_YORK
 
 try:
-    from ib_insync import ContFuture, IB  # type: ignore
+    from ib_insync import ContFuture, IB, Stock  # type: ignore
 except Exception:  # pragma: no cover - IB is optional for offline backtests.
     ContFuture = None  # type: ignore
     IB = None  # type: ignore
+    Stock = None  # type: ignore
 
 logger = logging.getLogger("app.spx_gex_strategy.ib_market_data")
 
@@ -177,3 +178,79 @@ def get_live_nq_snapshot(wait_seconds: float = 3.0) -> dict[str, Any]:
         except Exception:
             pass
 
+
+def get_live_qqq_snapshot(wait_seconds: float = 3.0) -> dict[str, Any]:
+    """Get an actual QQQ quote for live sizing and order levels.
+
+    NQMAIN is intentionally not used here. The historical strategy can use
+    NQ's percentage path as a proxy, but a live QQQ notification must size and
+    price the QQQ order from the QQQ quote itself.
+    """
+    if Stock is None:
+        raise RuntimeError("ib_insync Stock is unavailable on the backend")
+
+    settings = _settings()
+    market_data_type = int(getattr(settings, "ib_market_data_type", None) or os.getenv("MARKET_DATA_TYPE", "1"))
+    ib = _connect_ib()
+    contract = None
+    try:
+        contract = Stock("QQQ", "SMART", "USD")
+        qualified = ib.qualifyContracts(contract)
+        if not qualified:
+            raise RuntimeError("IB could not qualify QQQ on SMART/USD")
+        contract = qualified[0]
+        try:
+            ib.reqMarketDataType(market_data_type)
+        except Exception:
+            pass
+        ticker = ib.reqMktData(contract, "221,225", False, False)
+        deadline = time.time() + wait_seconds
+        while time.time() < deadline:
+            ib.sleep(0.2)
+            if _ticker_price(ticker) is not None:
+                break
+        current_price = _ticker_price(ticker)
+        if current_price is None:
+            raise RuntimeError("IB returned no usable QQQ price")
+
+        previous_close = _positive(getattr(ticker, "close", None))
+        history = ib.reqHistoricalData(
+            contract,
+            endDateTime="",
+            durationStr="3 D",
+            barSizeSetting="1 day",
+            whatToShow="TRADES",
+            useRTH=True,
+            formatDate=2,
+            keepUpToDate=False,
+        )
+        today = datetime.now(NEW_YORK).date()
+        completed = [
+            bar for bar in history
+            if (_bar_local_date(getattr(bar, "date", None)) or today) < today
+            and _positive(getattr(bar, "close", None)) is not None
+        ]
+        if completed:
+            previous_close = _positive(getattr(completed[-1], "close", None))
+        move_fraction = current_price / previous_close - 1.0 if previous_close else None
+        actual_data_type = getattr(ticker, "marketDataType", None)
+        return {
+            "symbol": "QQQ",
+            "price": round(current_price, 4),
+            "previous_close": round(previous_close, 4) if previous_close else None,
+            "move_fraction": move_fraction,
+            "move_pct": move_fraction * 100.0 if move_fraction is not None else None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": "ib_live" if actual_data_type == 1 else "ib_delayed",
+            "market_data_type": actual_data_type if actual_data_type in {1, 2, 3, 4} else market_data_type,
+        }
+    finally:
+        if contract is not None:
+            try:
+                ib.cancelMktData(contract)
+            except Exception:
+                pass
+        try:
+            ib.disconnect()
+        except Exception:
+            pass

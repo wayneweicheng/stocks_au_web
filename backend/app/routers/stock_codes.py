@@ -51,9 +51,41 @@ def _build_option_flow_aggregate_query(view_name: str) -> str:
     """
 
 
-def _get_option_flow_aggregate_rows(sql_model, view_name: str, observation_date: date) -> List[Dict]:
-    query = _build_option_flow_aggregate_query(view_name)
-    return sql_model.execute_read_query(query, (observation_date, observation_date))
+def _build_option_flow_aggregate_range_query(view_name: str) -> str:
+    """Build an aggregate query for an inclusive date range, grouped by stock code."""
+    return f"""
+        SELECT option_rows.ASXCode,
+               COUNT(*) AS NumRecords,
+               COUNT(DISTINCT option_rows.OptionSymbol) AS NumOptions,
+               CAST(CASE WHEN market_flow.ASXCode IS NULL THEN 0 ELSE 1 END AS bit) AS in_market_flow
+        FROM {view_name} AS option_rows WITH (NOLOCK)
+        LEFT JOIN (
+            SELECT ASXCode
+            FROM StockDB_US.Analysis.GEX_Features WITH (NOLOCK)
+            WHERE ObservationDate >= convert(date, ?)
+              AND ObservationDate <= convert(date, ?)
+            GROUP BY ASXCode
+        ) AS market_flow
+          ON market_flow.ASXCode = option_rows.ASXCode
+        WHERE option_rows.ObservationDate >= convert(date, ?)
+          AND option_rows.ObservationDate <= convert(date, ?)
+        GROUP BY option_rows.ASXCode, market_flow.ASXCode
+        ORDER BY option_rows.ASXCode
+    """
+
+
+def _get_option_flow_aggregate_rows(
+    sql_model,
+    view_name: str,
+    start_date: date,
+    end_date: Optional[date] = None,
+) -> List[Dict]:
+    if end_date is None or start_date == end_date:
+        query = _build_option_flow_aggregate_query(view_name)
+        return sql_model.execute_read_query(query, (start_date, start_date))
+
+    query = _build_option_flow_aggregate_range_query(view_name)
+    return sql_model.execute_read_query(query, (start_date, end_date, start_date, end_date))
 
 
 @router.get("/stock-codes")
@@ -145,11 +177,14 @@ def get_stock_codes(
 
 @router.get("/option-flow-aggregates", response_model=OptionFlowAggregatesResponse)
 def get_option_flow_aggregates(
-    observation_date: date = Query(..., alias="observation_date", description="Observation date (YYYY-MM-DD)"),
+    observation_date: Optional[date] = Query(None, alias="observation_date", description="Observation date (YYYY-MM-DD)"),
+    start_date: Optional[date] = Query(None, alias="start_date", description="Inclusive range start date (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, alias="end_date", description="Inclusive range end date (YYYY-MM-DD)"),
     username: str = Depends(verify_credentials),
 ) -> OptionFlowAggregatesResponse:
     """
-    Returns aggregated counts by ASXCode for option trades and option bid/ask on the given observation_date.
+    Returns aggregated counts by ASXCode for option trades and option bid/ask on either one observation date
+    or an inclusive date range.
 
     Response shape:
     {
@@ -157,6 +192,20 @@ def get_option_flow_aggregates(
       "bidask": [ { "ASXCode": "ABC", "NumRecords": 234, "NumOptions": 67, "in_market_flow": true }, ... ]
     }
     """
+    if observation_date and (start_date or end_date):
+        raise HTTPException(status_code=400, detail="Use observation_date or start_date/end_date, not both")
+    if (start_date is None) != (end_date is None):
+        raise HTTPException(status_code=400, detail="start_date and end_date are both required for a date range")
+    if observation_date is None and start_date is None:
+        raise HTTPException(status_code=400, detail="observation_date or start_date/end_date is required")
+
+    range_start = observation_date or start_date
+    range_end = observation_date or end_date
+    if range_start is None or range_end is None:
+        raise HTTPException(status_code=400, detail="A valid observation date or date range is required")
+    if range_start > range_end:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
+
     try:
         sql_model = get_sql_model()
         _set_option_flow_aggregate_query_timeout(sql_model)
@@ -164,12 +213,14 @@ def get_option_flow_aggregates(
         trades = _get_option_flow_aggregate_rows(
             sql_model,
             "StockDB_US.StockData.v_OptionTrade",
-            observation_date,
+            range_start,
+            range_end,
         )
         bidask = _get_option_flow_aggregate_rows(
             sql_model,
             "StockDB_US.StockData.v_OptionBidAsk",
-            observation_date,
+            range_start,
+            range_end,
         )
 
         return OptionFlowAggregatesResponse(

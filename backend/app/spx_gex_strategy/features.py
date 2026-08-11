@@ -46,12 +46,22 @@ def classify_observations(
     calendar: USCashCalendar,
     nq_daily_closes: Mapping[date, float] | None = None,
     lookback_days: int = 60,
+    sc_lookback_days: int | None = None,
+    sp_lookback_days: int | None = None,
+    sp_quantile: float = 0.75,
     actionable_hour: int = 3,
     actionable_minute: int = 30,
 ) -> list[SignalEvaluation]:
     """Classify observations using only rows strictly before each date."""
     ordered = sorted(observations, key=lambda item: item.observation_date)
     nq_daily_closes = nq_daily_closes or {}
+    sc_lookback_days = int(sc_lookback_days or lookback_days)
+    sp_lookback_days = int(sp_lookback_days or lookback_days)
+    if sc_lookback_days <= 0 or sp_lookback_days <= 0:
+        raise ValueError("SC and SP lookbacks must be positive")
+    if not 0.0 <= sp_quantile <= 1.0:
+        raise ValueError("sp_quantile must be between 0 and 1")
+    required_history = max(sc_lookback_days, sp_lookback_days)
     if len({item.observation_date for item in ordered}) != len(ordered):
         raise ValueError("Duplicate GEX observation dates are not allowed")
 
@@ -68,32 +78,42 @@ def classify_observations(
         sp_p75: float | None = None
         sp_rank: float | None = None
         prior_return: float | None = None
+        missing_history = 0
+
+        # The rolling thresholds are features of the observation stream, not
+        # of the Bearish signal branch. Compute them whenever the causal
+        # history exists so reports can show the threshold path at regular
+        # checkpoints, including months whose last observation was Green or
+        # had no raw signal.
+        if len(prior_valid) >= required_history:
+            sc_history = prior_valid[-sc_lookback_days:]
+            sp_history = prior_valid[-sp_lookback_days:]
+            missing_history = sum(item.sc_gex is None for item in sc_history)
+            if not missing_history:
+                sc_values = [float(item.sc_gex) for item in sc_history if item.sc_gex is not None]
+                sp_values = [item.sp_delta_share or 0.0 for item in sp_history]
+                sc_median = median(sc_values)
+                sp_p75 = percentile(sp_values, sp_quantile)
+                sc_rank = percentile_rank(float(observation.sc_gex), sc_values) if observation.sc_gex is not None else None
+                sp_rank = percentile_rank(observation.sp_delta_share or 0.0, sp_values)
 
         raw_signal = (observation.signal_raw or "").upper()
         if raw_signal not in {"BEARISH", "BULLISH"}:
             skip_reason = "NO_SIGNAL"
         elif raw_signal == "BEARISH":
-            if len(prior_valid) < lookback_days:
+            if len(prior_valid) < required_history:
                 classification = SignalClassification.INSUFFICIENT_HISTORY
-                skip_reason = f"INSUFFICIENT_HISTORY_{len(prior_valid)}_OF_{lookback_days}"
+                skip_reason = f"INSUFFICIENT_HISTORY_{len(prior_valid)}_OF_{required_history}"
             else:
-                history = prior_valid[-lookback_days:]
-                missing_history = sum(item.sc_gex is None for item in history)
                 if observation.sc_gex is None:
                     classification = SignalClassification.INSUFFICIENT_HISTORY
                     skip_reason = "MISSING_CURRENT_SC_GEX_LEVEL"
                 elif missing_history:
                     classification = SignalClassification.INSUFFICIENT_HISTORY
-                    skip_reason = f"MISSING_SC_GEX_LEVEL_IN_PRIOR_60_{missing_history}"
+                    skip_reason = f"MISSING_SC_GEX_LEVEL_IN_PRIOR_{sc_lookback_days}_{missing_history}"
                 else:
-                    sc_values = [float(item.sc_gex) for item in history if item.sc_gex is not None]
-                    sp_values = [item.sp_delta_share or 0.0 for item in history]
                     sc_current = float(observation.sc_gex)
                     sp_current = observation.sp_delta_share or 0.0
-                    sc_median = median(sc_values)
-                    sp_p75 = percentile(sp_values, 0.75)
-                    sc_rank = percentile_rank(sc_current, sc_values)
-                    sp_rank = percentile_rank(sp_current, sp_values)
                     sc_low = sc_current <= sc_median
                     sp_high = sp_current > sp_p75
                     if sc_low and sp_high:
@@ -137,6 +157,9 @@ def classify_observations(
                 "SP_delta_share_threshold": sp_p75,
                 "SP_delta_share_percentile": sp_rank,
                 "prior_5d_nq_return": prior_return,
+                "SC_lookback_days": sc_lookback_days,
+                "SP_lookback_days": sp_lookback_days,
+                "SP_threshold_quantile": sp_quantile,
             }
         )
         evaluations.append(

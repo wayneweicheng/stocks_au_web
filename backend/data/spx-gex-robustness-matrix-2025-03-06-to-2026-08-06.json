@@ -1,0 +1,1626 @@
+{
+  "study": "SPX GEX v1.0.2 fixed robustness matrix",
+  "strategy_version": "v1.0.2",
+  "start": "2025-03-06",
+  "end": "2026-08-06",
+  "portfolio_conflicts_applied": false,
+  "historical_pnl_model": "Not applicable: this study reports independent Yellow outcomes and no NAV selection.",
+  "thresholds_held_fixed": {
+    "sc_quantile": 0.5,
+    "strong_yellow_sp_condition": "SP share > selected historical percentile",
+    "green_rules": "not used in this Yellow-only study"
+  },
+  "matrix_definition": {
+    "sc_lookbacks": [
+      60,
+      120,
+      180
+    ],
+    "sp_lookbacks": [
+      60,
+      120,
+      180
+    ],
+    "sp_quantiles": [
+      0.6,
+      0.75
+    ],
+    "combinations": 18
+  },
+  "warmup_policy": "All cells use a common causal warm-up sufficient for the maximum 180-session lookback. The SQL runner loads 190 prior US sessions. This avoids treating the first six research-window Yellow dates as insufficient merely because the 60-session production query warm-up is shorter.",
+  "results": [
+    {
+      "sc_lookback": 60,
+      "sc_quantile": 0.5,
+      "sp_lookback": 60,
+      "sp_quantile": 0.6,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.005875881370949634,
+          "profit_factor": 5.406911028212207
+        },
+        "reliable": {
+          "candidate_count": 16,
+          "completed_outcome_count": 16,
+          "win_rate": 0.8125,
+          "average_return": 0.001750000000000018,
+          "profit_factor": 2.166666666666679
+        },
+        "combined_yellow": {
+          "candidate_count": 31,
+          "completed_outcome_count": 31,
+          "win_rate": 0.8387096774193549,
+          "average_return": 0.0037463942117498318,
+          "profit_factor": 3.6395050128237405
+        },
+        "total_tradable_yellow": 31
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 0.75,
+          "average_return": 0.004017277570530575,
+          "profit_factor": 2.606911028212223
+        },
+        "reliable": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 0.875,
+          "average_return": 0.0025000000000000313,
+          "profit_factor": 3.500000000000046
+        },
+        "combined_yellow": {
+          "candidate_count": 16,
+          "completed_outcome_count": 16,
+          "win_rate": 0.8125,
+          "average_return": 0.0032586387852653028,
+          "profit_factor": 2.862079305865885
+        },
+        "total_tradable_yellow": 16
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999988,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 0.75,
+          "average_return": 0.0010000000000000046,
+          "profit_factor": 1.5000000000000007
+        },
+        "combined_yellow": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.004266666666666664,
+          "profit_factor": 4.999999999999983
+        },
+        "total_tradable_yellow": 15
+      }
+    },
+    {
+      "sc_lookback": 60,
+      "sc_quantile": 0.5,
+      "sp_lookback": 60,
+      "sp_quantile": 0.75,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.8,
+          "average_return": 0.004813822056424429,
+          "profit_factor": 3.406911028212205
+        },
+        "reliable": {
+          "candidate_count": 21,
+          "completed_outcome_count": 21,
+          "win_rate": 0.8571428571428571,
+          "average_return": 0.0022857142857142976,
+          "profit_factor": 3.0000000000000098
+        },
+        "combined_yellow": {
+          "candidate_count": 31,
+          "completed_outcome_count": 31,
+          "win_rate": 0.8387096774193549,
+          "average_return": 0.0031012329214272437,
+          "profit_factor": 3.1849595582782806
+        },
+        "total_tradable_yellow": 31
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 0.6666666666666666,
+          "average_return": 0.0026897034273740718,
+          "profit_factor": 1.8069110282122183
+        },
+        "reliable": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.9,
+          "average_return": 0.0028000000000000256,
+          "profit_factor": 4.5000000000000515
+        },
+        "combined_yellow": {
+          "candidate_count": 16,
+          "completed_outcome_count": 16,
+          "win_rate": 0.8125,
+          "average_return": 0.0027586387852652932,
+          "profit_factor": 2.576365020151594
+        },
+        "total_tradable_yellow": 16
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 4,
+          "completed_outcome_count": 4,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999965,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 11,
+          "completed_outcome_count": 11,
+          "win_rate": 0.8181818181818182,
+          "average_return": 0.001818181818181818,
+          "profit_factor": 2.249999999999996
+        },
+        "combined_yellow": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.003466666666666658,
+          "profit_factor": 4.2499999999999805
+        },
+        "total_tradable_yellow": 15
+      }
+    },
+    {
+      "sc_lookback": 60,
+      "sc_quantile": 0.5,
+      "sp_lookback": 120,
+      "sp_quantile": 0.6,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.005875881370949617,
+          "profit_factor": 5.406911028212194
+        },
+        "reliable": {
+          "candidate_count": 16,
+          "completed_outcome_count": 16,
+          "win_rate": 0.8125,
+          "average_return": 0.0017500000000000174,
+          "profit_factor": 2.1666666666666776
+        },
+        "combined_yellow": {
+          "candidate_count": 31,
+          "completed_outcome_count": 31,
+          "win_rate": 0.8387096774193549,
+          "average_return": 0.0037463942117498235,
+          "profit_factor": 3.6395050128237343
+        },
+        "total_tradable_yellow": 31
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 0.7142857142857143,
+          "average_return": 0.0034483172234635,
+          "profit_factor": 2.20691102821222
+        },
+        "reliable": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 0.8888888888888888,
+          "average_return": 0.0026666666666667,
+          "profit_factor": 4.000000000000055
+        },
+        "combined_yellow": {
+          "candidate_count": 16,
+          "completed_outcome_count": 16,
+          "win_rate": 0.8125,
+          "average_return": 0.0030086387852653,
+          "profit_factor": 2.719222163008741
+        },
+        "total_tradable_yellow": 16
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999969,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 0.7142857142857143,
+          "average_return": 0.0005714285714285683,
+          "profit_factor": 1.2499999999999978
+        },
+        "combined_yellow": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.0045333333333333154,
+          "profit_factor": 5.249999999999968
+        },
+        "total_tradable_yellow": 15
+      }
+    },
+    {
+      "sc_lookback": 60,
+      "sc_quantile": 0.5,
+      "sp_lookback": 120,
+      "sp_quantile": 0.75,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.9,
+          "average_return": 0.0066138220564244425,
+          "profit_factor": 7.613822056424434
+        },
+        "reliable": {
+          "candidate_count": 21,
+          "completed_outcome_count": 21,
+          "win_rate": 0.8571428571428571,
+          "average_return": 0.0022857142857142976,
+          "profit_factor": 3.0000000000000098
+        },
+        "combined_yellow": {
+          "candidate_count": 31,
+          "completed_outcome_count": 31,
+          "win_rate": 0.8709677419354839,
+          "average_return": 0.00368187808271757,
+          "profit_factor": 4.357006487183663
+        },
+        "total_tradable_yellow": 31
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 0.8333333333333334,
+          "average_return": 0.005689703427374094,
+          "profit_factor": 4.4138220564244515
+        },
+        "reliable": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.9,
+          "average_return": 0.002800000000000026,
+          "profit_factor": 4.500000000000052
+        },
+        "combined_yellow": {
+          "candidate_count": 16,
+          "completed_outcome_count": 16,
+          "win_rate": 0.875,
+          "average_return": 0.0038836387852653016,
+          "profit_factor": 4.452123364680274
+        },
+        "total_tradable_yellow": 16
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 4,
+          "completed_outcome_count": 4,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999965,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 11,
+          "completed_outcome_count": 11,
+          "win_rate": 0.8181818181818182,
+          "average_return": 0.001818181818181818,
+          "profit_factor": 2.249999999999996
+        },
+        "combined_yellow": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.003466666666666658,
+          "profit_factor": 4.2499999999999805
+        },
+        "total_tradable_yellow": 15
+      }
+    },
+    {
+      "sc_lookback": 60,
+      "sc_quantile": 0.5,
+      "sp_lookback": 180,
+      "sp_quantile": 0.6,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 14,
+          "completed_outcome_count": 14,
+          "win_rate": 0.9285714285714286,
+          "average_return": 0.007009872897446028,
+          "profit_factor": 10.813822056424376
+        },
+        "reliable": {
+          "candidate_count": 11,
+          "completed_outcome_count": 11,
+          "win_rate": 0.8181818181818182,
+          "average_return": 0.001818181818181832,
+          "profit_factor": 2.2500000000000053
+        },
+        "combined_yellow": {
+          "candidate_count": 25,
+          "completed_outcome_count": 25,
+          "win_rate": 0.88,
+          "average_return": 0.004725528822569782,
+          "profit_factor": 5.543777714009385
+        },
+        "total_tradable_yellow": 25
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 0.8,
+          "average_return": 0.0052276441128489195,
+          "profit_factor": 3.613822056424443
+        },
+        "reliable": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 1.0,
+          "average_return": 0.004000000000000026,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.9,
+          "average_return": 0.004613822056424474,
+          "profit_factor": 5.613822056424444
+        },
+        "total_tradable_yellow": 10
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999978,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 0.6666666666666666,
+          "average_return": 3.3248866622888804e-18,
+          "profit_factor": 1.0000000000000013
+        },
+        "combined_yellow": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.0047999999999999874,
+          "profit_factor": 5.4999999999999725
+        },
+        "total_tradable_yellow": 15
+      }
+    },
+    {
+      "sc_lookback": 60,
+      "sc_quantile": 0.5,
+      "sp_lookback": 180,
+      "sp_quantile": 0.75,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 1.0,
+          "average_return": 0.00841382205642444,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.0024000000000000002,
+          "profit_factor": 3.2499999999999925
+        },
+        "combined_yellow": {
+          "candidate_count": 25,
+          "completed_outcome_count": 25,
+          "win_rate": 0.92,
+          "average_return": 0.004805528822569776,
+          "profit_factor": 8.50863878526525
+        },
+        "total_tradable_yellow": 25
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 2,
+          "completed_outcome_count": 2,
+          "win_rate": 1.0,
+          "average_return": 0.010069110282122325,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 1.0,
+          "average_return": 0.0040000000000000036,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 1.0,
+          "average_return": 0.005213822056424467,
+          "profit_factor": null
+        },
+        "total_tradable_yellow": 10
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999969,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 0.7142857142857143,
+          "average_return": 0.0005714285714285683,
+          "profit_factor": 1.2499999999999978
+        },
+        "combined_yellow": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.0045333333333333154,
+          "profit_factor": 5.249999999999968
+        },
+        "total_tradable_yellow": 15
+      }
+    },
+    {
+      "sc_lookback": 120,
+      "sc_quantile": 0.5,
+      "sp_lookback": 60,
+      "sp_quantile": 0.6,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 12,
+          "completed_outcome_count": 12,
+          "win_rate": 0.9166666666666666,
+          "average_return": 0.006844851713687032,
+          "profit_factor": 9.213822056424386
+        },
+        "reliable": {
+          "candidate_count": 21,
+          "completed_outcome_count": 21,
+          "win_rate": 0.8571428571428571,
+          "average_return": 0.0022857142857143015,
+          "profit_factor": 3.0000000000000133
+        },
+        "combined_yellow": {
+          "candidate_count": 33,
+          "completed_outcome_count": 33,
+          "win_rate": 0.8787878787878788,
+          "average_return": 0.003943582441340749,
+          "profit_factor": 4.827594722477779
+        },
+        "total_tradable_yellow": 33
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 0.8333333333333334,
+          "average_return": 0.005689703427374086,
+          "profit_factor": 4.413822056424429
+        },
+        "reliable": {
+          "candidate_count": 14,
+          "completed_outcome_count": 14,
+          "win_rate": 0.9285714285714286,
+          "average_return": 0.003142857142857165,
+          "profit_factor": 6.500000000000071
+        },
+        "combined_yellow": {
+          "candidate_count": 20,
+          "completed_outcome_count": 20,
+          "win_rate": 0.9,
+          "average_return": 0.0039069110282122415,
+          "profit_factor": 5.341012253569154
+        },
+        "total_tradable_yellow": 20
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999978,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 0.7142857142857143,
+          "average_return": 0.0005714285714285745,
+          "profit_factor": 1.2500000000000007
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.003999999999999991,
+          "profit_factor": 4.249999999999982
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 120,
+      "sc_quantile": 0.5,
+      "sp_lookback": 60,
+      "sp_quantile": 0.75,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 0.8888888888888888,
+          "average_return": 0.006459802284916034,
+          "profit_factor": 6.813822056424393
+        },
+        "reliable": {
+          "candidate_count": 24,
+          "completed_outcome_count": 24,
+          "win_rate": 0.875,
+          "average_return": 0.0025000000000000126,
+          "profit_factor": 3.500000000000011
+        },
+        "combined_yellow": {
+          "candidate_count": 33,
+          "completed_outcome_count": 33,
+          "win_rate": 0.8787878787878788,
+          "average_return": 0.0035799460777043808,
+          "profit_factor": 4.474653546007188
+        },
+        "total_tradable_yellow": 33
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 0.8,
+          "average_return": 0.005227644112848889,
+          "profit_factor": 3.6138220564244277
+        },
+        "reliable": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.9333333333333333,
+          "average_return": 0.003200000000000018,
+          "profit_factor": 7.000000000000069
+        },
+        "combined_yellow": {
+          "candidate_count": 20,
+          "completed_outcome_count": 20,
+          "win_rate": 0.9,
+          "average_return": 0.0037069110282122357,
+          "profit_factor": 5.118790031346927
+        },
+        "total_tradable_yellow": 20
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 4,
+          "completed_outcome_count": 4,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999965,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 0.7777777777777778,
+          "average_return": 0.0013333333333333359,
+          "profit_factor": 1.7499999999999991
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.0033846153846153757,
+          "profit_factor": 3.749999999999983
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 120,
+      "sc_quantile": 0.5,
+      "sp_lookback": 120,
+      "sp_quantile": 0.6,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 14,
+          "completed_outcome_count": 14,
+          "win_rate": 0.9285714285714286,
+          "average_return": 0.007009872897446019,
+          "profit_factor": 10.813822056424362
+        },
+        "reliable": {
+          "candidate_count": 19,
+          "completed_outcome_count": 19,
+          "win_rate": 0.8421052631578947,
+          "average_return": 0.0021052631578947533,
+          "profit_factor": 2.66666666666668
+        },
+        "combined_yellow": {
+          "candidate_count": 33,
+          "completed_outcome_count": 33,
+          "win_rate": 0.8787878787878788,
+          "average_return": 0.004186006683764988,
+          "profit_factor": 5.062888840124833
+        },
+        "total_tradable_yellow": 33
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 0.8333333333333334,
+          "average_return": 0.005689703427374086,
+          "profit_factor": 4.413822056424429
+        },
+        "reliable": {
+          "candidate_count": 14,
+          "completed_outcome_count": 14,
+          "win_rate": 0.9285714285714286,
+          "average_return": 0.003142857142857165,
+          "profit_factor": 6.500000000000071
+        },
+        "combined_yellow": {
+          "candidate_count": 20,
+          "completed_outcome_count": 20,
+          "win_rate": 0.9,
+          "average_return": 0.0039069110282122415,
+          "profit_factor": 5.341012253569154
+        },
+        "total_tradable_yellow": 20
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999969,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 0.6,
+          "average_return": -0.000799999999999999,
+          "profit_factor": 0.7500000000000013
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.004615384615384596,
+          "profit_factor": 4.749999999999972
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 120,
+      "sc_quantile": 0.5,
+      "sp_lookback": 120,
+      "sp_quantile": 0.75,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 1.0,
+          "average_return": 0.00845980228491605,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 24,
+          "completed_outcome_count": 24,
+          "win_rate": 0.875,
+          "average_return": 0.0025000000000000126,
+          "profit_factor": 3.500000000000011
+        },
+        "combined_yellow": {
+          "candidate_count": 33,
+          "completed_outcome_count": 33,
+          "win_rate": 0.9090909090909091,
+          "average_return": 0.004125400623158931,
+          "profit_factor": 6.672425856843528
+        },
+        "total_tradable_yellow": 33
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 1.0,
+          "average_return": 0.008827644112848917,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.9333333333333333,
+          "average_return": 0.003200000000000018,
+          "profit_factor": 7.000000000000069
+        },
+        "combined_yellow": {
+          "candidate_count": 20,
+          "completed_outcome_count": 20,
+          "win_rate": 0.95,
+          "average_return": 0.004606911028212242,
+          "profit_factor": 12.517277570530673
+        },
+        "total_tradable_yellow": 20
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 4,
+          "completed_outcome_count": 4,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999965,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 0.7777777777777778,
+          "average_return": 0.0013333333333333359,
+          "profit_factor": 1.7499999999999991
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.0033846153846153757,
+          "profit_factor": 3.749999999999983
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 120,
+      "sc_quantile": 0.5,
+      "sp_lookback": 180,
+      "sp_quantile": 0.6,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.9230769230769231,
+          "average_return": 0.006933709274172643,
+          "profit_factor": 10.013822056424377
+        },
+        "reliable": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.8666666666666667,
+          "average_return": 0.0024000000000000085,
+          "profit_factor": 3.25
+        },
+        "combined_yellow": {
+          "candidate_count": 28,
+          "completed_outcome_count": 28,
+          "win_rate": 0.8928571428571429,
+          "average_return": 0.004504936448723017,
+          "profit_factor": 5.851470021701689
+        },
+        "total_tradable_yellow": 28
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 0.8,
+          "average_return": 0.0052276441128489195,
+          "profit_factor": 3.613822056424443
+        },
+        "reliable": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 1.0,
+          "average_return": 0.004000000000000012,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 0.9333333333333333,
+          "average_return": 0.0044092147042829825,
+          "profit_factor": 7.613822056424429
+        },
+        "total_tradable_yellow": 15
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999969,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 0.6,
+          "average_return": -0.000799999999999999,
+          "profit_factor": 0.7500000000000013
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.004615384615384596,
+          "profit_factor": 4.749999999999972
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 120,
+      "sc_quantile": 0.5,
+      "sp_lookback": 180,
+      "sp_quantile": 0.75,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 1.0,
+          "average_return": 0.00841382205642444,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 18,
+          "completed_outcome_count": 18,
+          "win_rate": 0.8888888888888888,
+          "average_return": 0.0026666666666666683,
+          "profit_factor": 3.999999999999991
+        },
+        "combined_yellow": {
+          "candidate_count": 28,
+          "completed_outcome_count": 28,
+          "win_rate": 0.9285714285714286,
+          "average_return": 0.004719222163008729,
+          "profit_factor": 9.25863878526525
+        },
+        "total_tradable_yellow": 28
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 2,
+          "completed_outcome_count": 2,
+          "win_rate": 1.0,
+          "average_return": 0.010069110282122325,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 1.0,
+          "average_return": 0.004000000000000002,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 15,
+          "completed_outcome_count": 15,
+          "win_rate": 1.0,
+          "average_return": 0.0048092147042829774,
+          "profit_factor": null
+        },
+        "total_tradable_yellow": 15
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999969,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 0.6,
+          "average_return": -0.000799999999999999,
+          "profit_factor": 0.7500000000000013
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.004615384615384596,
+          "profit_factor": 4.749999999999972
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 180,
+      "sc_quantile": 0.5,
+      "sp_lookback": 60,
+      "sp_quantile": 0.6,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.9,
+          "average_return": 0.006613822056424442,
+          "profit_factor": 7.613822056424398
+        },
+        "reliable": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.0021538461538461676,
+          "profit_factor": 2.7500000000000058
+        },
+        "combined_yellow": {
+          "candidate_count": 23,
+          "completed_outcome_count": 23,
+          "win_rate": 0.8695652173913043,
+          "average_return": 0.004092966111488895,
+          "profit_factor": 4.620700790932467
+        },
+        "total_tradable_yellow": 23
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 4,
+          "completed_outcome_count": 4,
+          "win_rate": 0.75,
+          "average_return": 0.004534555141061136,
+          "profit_factor": 2.8138220564244425
+        },
+        "reliable": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 1.0,
+          "average_return": 0.004000000000000027,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.9,
+          "average_return": 0.004213822056424471,
+          "profit_factor": 5.213822056424444
+        },
+        "total_tradable_yellow": 10
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999978,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 0.7142857142857143,
+          "average_return": 0.0005714285714285745,
+          "profit_factor": 1.2500000000000007
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.003999999999999991,
+          "profit_factor": 4.249999999999982
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 180,
+      "sc_quantile": 0.5,
+      "sp_lookback": 60,
+      "sp_quantile": 0.75,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 0.8571428571428571,
+          "average_return": 0.006019745794892048,
+          "profit_factor": 5.213822056424407
+        },
+        "reliable": {
+          "candidate_count": 16,
+          "completed_outcome_count": 16,
+          "win_rate": 0.875,
+          "average_return": 0.002500000000000009,
+          "profit_factor": 3.5000000000000004
+        },
+        "combined_yellow": {
+          "candidate_count": 23,
+          "completed_outcome_count": 23,
+          "win_rate": 0.8695652173913043,
+          "average_return": 0.0035712269810541084,
+          "profit_factor": 4.159162329394003
+        },
+        "total_tradable_yellow": 23
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 3,
+          "completed_outcome_count": 3,
+          "win_rate": 0.6666666666666666,
+          "average_return": 0.0033794068547481587,
+          "profit_factor": 2.013822056424441
+        },
+        "reliable": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 1.0,
+          "average_return": 0.0040000000000000166,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.9,
+          "average_return": 0.0038138220564244603,
+          "profit_factor": 4.813822056424436
+        },
+        "total_tradable_yellow": 10
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 4,
+          "completed_outcome_count": 4,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999965,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 0.7777777777777778,
+          "average_return": 0.0013333333333333359,
+          "profit_factor": 1.7499999999999991
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.0033846153846153757,
+          "profit_factor": 3.749999999999983
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 180,
+      "sc_quantile": 0.5,
+      "sp_lookback": 120,
+      "sp_quantile": 0.6,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 12,
+          "completed_outcome_count": 12,
+          "win_rate": 0.9166666666666666,
+          "average_return": 0.006844851713687024,
+          "profit_factor": 9.213822056424377
+        },
+        "reliable": {
+          "candidate_count": 11,
+          "completed_outcome_count": 11,
+          "win_rate": 0.8181818181818182,
+          "average_return": 0.0018181818181818334,
+          "profit_factor": 2.250000000000006
+        },
+        "combined_yellow": {
+          "candidate_count": 23,
+          "completed_outcome_count": 23,
+          "win_rate": 0.8695652173913043,
+          "average_return": 0.004440792198445411,
+          "profit_factor": 4.9283930986247695
+        },
+        "total_tradable_yellow": 23
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 4,
+          "completed_outcome_count": 4,
+          "win_rate": 0.75,
+          "average_return": 0.004534555141061136,
+          "profit_factor": 2.8138220564244425
+        },
+        "reliable": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 1.0,
+          "average_return": 0.004000000000000027,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.9,
+          "average_return": 0.004213822056424471,
+          "profit_factor": 5.213822056424444
+        },
+        "total_tradable_yellow": 10
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999969,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 0.6,
+          "average_return": -0.000799999999999999,
+          "profit_factor": 0.7500000000000013
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.004615384615384596,
+          "profit_factor": 4.749999999999972
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 180,
+      "sc_quantile": 0.5,
+      "sp_lookback": 120,
+      "sp_quantile": 0.75,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 1.0,
+          "average_return": 0.008591174366320639,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 16,
+          "completed_outcome_count": 16,
+          "win_rate": 0.875,
+          "average_return": 0.002500000000000009,
+          "profit_factor": 3.5000000000000004
+        },
+        "combined_yellow": {
+          "candidate_count": 23,
+          "completed_outcome_count": 23,
+          "win_rate": 0.9130434782608695,
+          "average_return": 0.004353835676706288,
+          "profit_factor": 7.258638785265267
+        },
+        "total_tradable_yellow": 23
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 3,
+          "completed_outcome_count": 3,
+          "win_rate": 1.0,
+          "average_return": 0.009379406854748203,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 7,
+          "completed_outcome_count": 7,
+          "win_rate": 1.0,
+          "average_return": 0.004000000000000017,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 1.0,
+          "average_return": 0.005613822056424474,
+          "profit_factor": null
+        },
+        "total_tradable_yellow": 10
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 4,
+          "completed_outcome_count": 4,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999965,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 0.7777777777777778,
+          "average_return": 0.0013333333333333359,
+          "profit_factor": 1.7499999999999991
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.0033846153846153757,
+          "profit_factor": 3.749999999999983
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 180,
+      "sc_quantile": 0.5,
+      "sp_lookback": 180,
+      "sp_quantile": 0.6,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 12,
+          "completed_outcome_count": 12,
+          "win_rate": 0.9166666666666666,
+          "average_return": 0.006844851713687024,
+          "profit_factor": 9.213822056424377
+        },
+        "reliable": {
+          "candidate_count": 11,
+          "completed_outcome_count": 11,
+          "win_rate": 0.8181818181818182,
+          "average_return": 0.0018181818181818334,
+          "profit_factor": 2.250000000000006
+        },
+        "combined_yellow": {
+          "candidate_count": 23,
+          "completed_outcome_count": 23,
+          "win_rate": 0.8695652173913043,
+          "average_return": 0.004440792198445411,
+          "profit_factor": 4.9283930986247695
+        },
+        "total_tradable_yellow": 23
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 4,
+          "completed_outcome_count": 4,
+          "win_rate": 0.75,
+          "average_return": 0.004534555141061136,
+          "profit_factor": 2.8138220564244425
+        },
+        "reliable": {
+          "candidate_count": 6,
+          "completed_outcome_count": 6,
+          "win_rate": 1.0,
+          "average_return": 0.004000000000000027,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 0.9,
+          "average_return": 0.004213822056424471,
+          "profit_factor": 5.213822056424444
+        },
+        "total_tradable_yellow": 10
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999969,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 0.6,
+          "average_return": -0.000799999999999999,
+          "profit_factor": 0.7500000000000013
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.004615384615384596,
+          "profit_factor": 4.749999999999972
+        },
+        "total_tradable_yellow": 13
+      }
+    },
+    {
+      "sc_lookback": 180,
+      "sc_quantile": 0.5,
+      "sp_lookback": 180,
+      "sp_quantile": 0.75,
+      "portfolio_conflicts_applied": false,
+      "all": {
+        "strong": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 1.0,
+          "average_return": 0.008459802284916038,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 14,
+          "completed_outcome_count": 14,
+          "win_rate": 0.8571428571428571,
+          "average_return": 0.00228571428571429,
+          "profit_factor": 2.9999999999999964
+        },
+        "combined_yellow": {
+          "candidate_count": 23,
+          "completed_outcome_count": 23,
+          "win_rate": 0.9130434782608695,
+          "average_return": 0.004701661763662801,
+          "profit_factor": 7.758638785265252
+        },
+        "total_tradable_yellow": 23
+      },
+      "2025": {
+        "strong": {
+          "candidate_count": 1,
+          "completed_outcome_count": 1,
+          "win_rate": 1.0,
+          "average_return": 0.012138220564244594,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 9,
+          "completed_outcome_count": 9,
+          "win_rate": 1.0,
+          "average_return": 0.004000000000000006,
+          "profit_factor": null
+        },
+        "combined_yellow": {
+          "candidate_count": 10,
+          "completed_outcome_count": 10,
+          "win_rate": 1.0,
+          "average_return": 0.004813822056424466,
+          "profit_factor": null
+        },
+        "total_tradable_yellow": 10
+      },
+      "2026": {
+        "strong": {
+          "candidate_count": 8,
+          "completed_outcome_count": 8,
+          "win_rate": 1.0,
+          "average_return": 0.007999999999999969,
+          "profit_factor": null
+        },
+        "reliable": {
+          "candidate_count": 5,
+          "completed_outcome_count": 5,
+          "win_rate": 0.6,
+          "average_return": -0.000799999999999999,
+          "profit_factor": 0.7500000000000013
+        },
+        "combined_yellow": {
+          "candidate_count": 13,
+          "completed_outcome_count": 13,
+          "win_rate": 0.8461538461538461,
+          "average_return": 0.004615384615384596,
+          "profit_factor": 4.749999999999972
+        },
+        "total_tradable_yellow": 13
+      }
+    }
+  ],
+  "stability_by_sp_threshold": {
+    "P60": {
+      "combinations": 9,
+      "overall_profit_factor": {
+        "min": 3.6395050128237343,
+        "max": 5.851470021701689,
+        "range": 2.211965008877955
+      },
+      "tradable_yellow_count": {
+        "min": 23,
+        "max": 33,
+        "range": 10
+      },
+      "2025_profit_factor": {
+        "min": 2.719222163008741,
+        "max": 7.613822056424429,
+        "range": 4.8945998934156885
+      },
+      "2026_profit_factor": {
+        "min": 4.249999999999982,
+        "max": 5.4999999999999725,
+        "range": 1.2499999999999902
+      }
+    },
+    "P75": {
+      "combinations": 9,
+      "overall_profit_factor": {
+        "min": 3.1849595582782806,
+        "max": 9.25863878526525,
+        "range": 6.073679226986969
+      },
+      "tradable_yellow_count": {
+        "min": 23,
+        "max": 33,
+        "range": 10
+      },
+      "2025_profit_factor": {
+        "min": 2.576365020151594,
+        "max": 12.517277570530673,
+        "range": 9.940912550379078
+      },
+      "2026_profit_factor": {
+        "min": 3.749999999999983,
+        "max": 5.249999999999968,
+        "range": 1.499999999999985
+      }
+    }
+  },
+  "stability_by_sc_lookback": {
+    "60": {
+      "combinations": 6,
+      "overall_profit_factor": {
+        "min": 3.1849595582782806,
+        "max": 8.50863878526525,
+        "range": 5.323679226986969
+      },
+      "tradable_yellow_count": {
+        "min": 25,
+        "max": 31,
+        "range": 6
+      },
+      "2025_profit_factor": {
+        "min": 2.576365020151594,
+        "max": 5.613822056424444,
+        "range": 3.0374570362728495
+      },
+      "2026_profit_factor": {
+        "min": 4.2499999999999805,
+        "max": 5.4999999999999725,
+        "range": 1.249999999999992
+      }
+    },
+    "120": {
+      "combinations": 6,
+      "overall_profit_factor": {
+        "min": 4.474653546007188,
+        "max": 9.25863878526525,
+        "range": 4.783985239258062
+      },
+      "tradable_yellow_count": {
+        "min": 28,
+        "max": 33,
+        "range": 5
+      },
+      "2025_profit_factor": {
+        "min": 5.118790031346927,
+        "max": 12.517277570530673,
+        "range": 7.398487539183747
+      },
+      "2026_profit_factor": {
+        "min": 3.749999999999983,
+        "max": 4.749999999999972,
+        "range": 0.9999999999999885
+      }
+    },
+    "180": {
+      "combinations": 6,
+      "overall_profit_factor": {
+        "min": 4.159162329394003,
+        "max": 7.758638785265252,
+        "range": 3.5994764558712493
+      },
+      "tradable_yellow_count": {
+        "min": 23,
+        "max": 23,
+        "range": 0
+      },
+      "2025_profit_factor": {
+        "min": 4.813822056424436,
+        "max": 5.213822056424444,
+        "range": 0.40000000000000835
+      },
+      "2026_profit_factor": {
+        "min": 3.749999999999983,
+        "max": 4.749999999999972,
+        "range": 0.9999999999999885
+      }
+    }
+  },
+  "nq_roll_gaps_neutralized": true,
+  "nq_roll_adjustments": [
+    {
+      "roll_at": "2024-09-12T09:30:00-04:00",
+      "bar_timestamp": "2024-09-12T09:30:00-04:00",
+      "raw_gap_pct": 0.012241030167713829,
+      "adjustment_factor": 0.9879070006027264
+    },
+    {
+      "roll_at": "2024-12-12T09:30:00-05:00",
+      "bar_timestamp": "2024-12-12T09:30:00-05:00",
+      "raw_gap_pct": 0.012445980985306804,
+      "adjustment_factor": 0.9877070172443231
+    },
+    {
+      "roll_at": "2025-03-13T09:30:00-04:00",
+      "bar_timestamp": "2025-03-13T09:30:00-04:00",
+      "raw_gap_pct": 0.01066492962423693,
+      "adjustment_factor": 0.9894476108632739
+    },
+    {
+      "roll_at": "2025-06-12T09:30:00-04:00",
+      "bar_timestamp": "2025-06-12T09:30:00-04:00",
+      "raw_gap_pct": 0.01033041287293135,
+      "adjustment_factor": 0.9897752133942438
+    },
+    {
+      "roll_at": "2025-09-11T09:30:00-04:00",
+      "bar_timestamp": "2025-09-11T09:30:00-04:00",
+      "raw_gap_pct": 0.009717747401128074,
+      "adjustment_factor": 0.9903757783537624
+    },
+    {
+      "roll_at": "2025-12-11T09:30:00-05:00",
+      "bar_timestamp": "2025-12-11T09:30:00-05:00",
+      "raw_gap_pct": 0.010071072720359453,
+      "adjustment_factor": 0.9900293424964287
+    },
+    {
+      "roll_at": "2026-03-12T09:30:00-04:00",
+      "bar_timestamp": "2026-03-12T09:30:00-04:00",
+      "raw_gap_pct": 0.008627387667376363,
+      "adjustment_factor": 0.9914464074911463
+    },
+    {
+      "roll_at": "2026-06-11T09:30:00-04:00",
+      "bar_timestamp": "2026-06-11T09:30:00-04:00",
+      "raw_gap_pct": 0.009798977498000294,
+      "adjustment_factor": 0.9902961106949432
+    }
+  ],
+  "selection_rule": "No combination was selected by NAV or profit factor; inspect ranges and year splits for plateaus."
+}

@@ -41,11 +41,11 @@ class PortfolioManager:
     def snapshot(self) -> PortfolioSnapshot:
         return self.store.snapshot()
 
-    def conflict_reason(self, classification: SignalClassification) -> str | None:
+    def conflict_reason(self, classification: SignalClassification, at: datetime | None = None) -> str | None:
         snapshot = self.snapshot
         if snapshot.state != PortfolioState.FLAT:
             return f"EXISTING_POSITION_PRIORITY_CURRENT_STATE_{snapshot.state.value}"
-        if self.store.open_plans():
+        if self.store.open_plans(as_of=at):
             return "EXISTING_POSITION_PRIORITY_OPEN_PLAN"
         return None
 
@@ -123,7 +123,7 @@ class PortfolioManager:
         raise ValueError(f"Cannot build plan for {classification.value}")
 
     def reserve_plan(self, evaluation: SignalEvaluation, signal_id: str, reference_price: float | None = None) -> tuple[str | None, str | None]:
-        reason = self.conflict_reason(evaluation.classification)
+        reason = self.conflict_reason(evaluation.classification, at=evaluation.actionable_at)
         if reason:
             return None, reason
         plan = self.build_plan(evaluation, reference_price=reference_price)
@@ -137,7 +137,14 @@ class PortfolioManager:
     def _trade_id(self, signal_id: str) -> str:
         return hashlib.sha256(f"trade|{signal_id}".encode("utf-8")).hexdigest()[:32]
 
-    def open_trade(self, plan_id: str, entry_price: float, entry_time: datetime, entry_type: str | None = None) -> str:
+    def open_trade(
+        self,
+        plan_id: str,
+        entry_price: float,
+        entry_time: datetime,
+        entry_type: str | None = None,
+        quote_price: float | None = None,
+    ) -> str:
         if entry_price <= 0:
             raise ValueError("entry_price must be positive")
         plan = self.store.plan(plan_id)
@@ -146,13 +153,23 @@ class PortfolioManager:
         snapshot = self.snapshot
         if snapshot.active_trade_id:
             raise ValueError("Cannot open a second active shadow trade")
-        quantity = math.floor((snapshot.shadow_nav * snapshot.exposure_factor) / entry_price)
+        plan_metadata = json.loads(plan["metadata_json"] or "{}")
+        qqq_entry_price = float(quote_price or plan_metadata.get("qqq_reference_price") or 0.0)
+        if quote_price is not None or plan_metadata.get("qqq_reference_price") is not None:
+            if qqq_entry_price <= 0:
+                raise ValueError("A live QQQ quote is required for QQQ sizing")
+            quantity = math.floor((snapshot.shadow_nav * snapshot.exposure_factor) / qqq_entry_price)
+        else:
+            # Historical/offline paper mode deliberately remains an NQ
+            # percentage-path proxy and is not a live QQQ order.
+            quantity = math.floor((snapshot.shadow_nav * snapshot.exposure_factor) / entry_price)
         if quantity < 1:
             raise ValueError("Shadow NAV/exposure produces zero shares")
         trade_id = self._trade_id(plan["signal_id"])
         nav_before = snapshot.shadow_nav
         direction = Direction(plan["direction"])
-        position_notional = quantity * entry_price
+        plan_metadata = json.loads(plan["metadata_json"] or "{}")
+        position_notional = quantity * (qqq_entry_price if qqq_entry_price > 0 else entry_price)
         if direction == Direction.LONG:
             snapshot.state = PortfolioState.LONG_GREEN
         else:
@@ -166,11 +183,15 @@ class PortfolioManager:
             "plan_id": plan_id,
             "direction": direction.value,
             "entry_price": entry_price,
+            "qqq_entry_price": qqq_entry_price if qqq_entry_price > 0 else None,
+            "proxy_entry_price": entry_price,
             "entry_timestamp": entry_time.isoformat(),
             "quantity": quantity,
             "position_notional": position_notional,
             "tp_price": plan["tp_price"],
             "sl_price": plan["sl_price"],
+            "tp_pct": plan["tp_pct"],
+            "sl_pct": plan["sl_pct"],
             "planned_exit_at": plan["planned_exit_at"],
         }
         self.store.update_portfolio(snapshot)
@@ -185,12 +206,13 @@ class PortfolioManager:
         sl_pct = plan["sl_pct"]
         tp_price = None
         sl_price = None
+        price_basis = qqq_entry_price if qqq_entry_price > 0 else entry_price
         if direction == Direction.SHORT:
-            tp_price = entry_price * (1.0 - (tp_pct or 0.0)) if tp_pct is not None else None
-            sl_price = entry_price * (1.0 + (sl_pct or 0.0)) if sl_pct is not None else None
+            tp_price = price_basis * (1.0 - (tp_pct or 0.0)) if tp_pct is not None else None
+            sl_price = price_basis * (1.0 + (sl_pct or 0.0)) if sl_pct is not None else None
         else:
-            tp_price = entry_price * (1.0 + (tp_pct or 0.0)) if tp_pct is not None else None
-            sl_price = entry_price * (1.0 - (sl_pct or 0.0)) if sl_pct is not None else None
+            tp_price = price_basis * (1.0 + (tp_pct or 0.0)) if tp_pct is not None else None
+            sl_price = price_basis * (1.0 - (sl_pct or 0.0)) if sl_pct is not None else None
         snapshot.position["tp_price"] = tp_price
         snapshot.position["sl_price"] = sl_price
         self.store.update_portfolio(snapshot)
@@ -216,9 +238,13 @@ class PortfolioManager:
                 "planned_exit_date": plan["planned_exit_at"],
                 "nav_before": nav_before,
                 "nav_after": nav_before,
-                "price_source": "NQ_PROXY",
+                "price_source": "IB_QQQ_LIVE" if qqq_entry_price > 0 else "NQ_PROXY",
                 "strategy_version": self.strategy_version,
                 "environment_type": self.environment_type.value,
+                "git_commit": plan_metadata.get("git_commit"),
+                "config_hash": plan_metadata.get("config_hash"),
+                "data_hash": plan_metadata.get("data_hash"),
+                "base_signal_source_mode": plan_metadata.get("base_signal_source_mode", "CAUSAL_COMPLETE"),
                 "status": "OPEN",
                 "created_at": datetime.utcnow().isoformat() + "Z",
                 "updated_at": datetime.utcnow().isoformat() + "Z",
@@ -226,8 +252,14 @@ class PortfolioManager:
         )
         return trade_id
 
-    def activate_reversal_dip(self, plan_id: str, entry_price: float, entry_time: datetime) -> str:
-        return self.open_trade(plan_id, entry_price, entry_time, entry_type="DIP_LIMIT")
+    def activate_reversal_dip(
+        self,
+        plan_id: str,
+        entry_price: float,
+        entry_time: datetime,
+        quote_price: float | None = None,
+    ) -> str:
+        return self.open_trade(plan_id, entry_price, entry_time, entry_type="DIP_LIMIT", quote_price=quote_price)
 
     def set_pending_dip(self, plan_id: str, reference_price: float) -> None:
         if reference_price <= 0:
@@ -251,6 +283,7 @@ class PortfolioManager:
         mae_pct: float | None = None,
         bars_held: int | None = None,
         ambiguous: bool = False,
+        return_pct_override: float | None = None,
     ) -> dict[str, Any]:
         if exit_price <= 0:
             raise ValueError("exit_price must be positive")
@@ -261,7 +294,11 @@ class PortfolioManager:
         direction = Direction(position["direction"])
         entry_price = float(position["entry_price"])
         quantity = float(position["quantity"])
-        price_return = (exit_price / entry_price - 1.0) * (1.0 if direction == Direction.LONG else -1.0)
+        price_return = (
+            float(return_pct_override)
+            if return_pct_override is not None
+            else (exit_price / entry_price - 1.0) * (1.0 if direction == Direction.LONG else -1.0)
+        )
         pnl = quantity * entry_price * price_return
         snapshot.cash += quantity * exit_price if direction == Direction.LONG else -quantity * exit_price
         snapshot.shadow_nav = snapshot.cash

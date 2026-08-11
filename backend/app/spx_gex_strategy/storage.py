@@ -75,7 +75,58 @@ class StrategyStore:
                     metrics_json TEXT NOT NULL,
                     strategy_version TEXT NOT NULL,
                     environment_type TEXT NOT NULL,
+                    git_commit TEXT,
+                    config_hash TEXT,
+                    data_hash TEXT,
+                    base_signal_source_mode TEXT,
                     created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS strategy_comparisons (
+                    comparison_id TEXT PRIMARY KEY,
+                    observation_date TEXT NOT NULL,
+                    production_signal_id TEXT NOT NULL REFERENCES signals(signal_id),
+                    shadow_signal_id TEXT NOT NULL REFERENCES signals(signal_id),
+                    production_strategy_version TEXT NOT NULL,
+                    shadow_strategy_version TEXT NOT NULL,
+                    environment_type TEXT NOT NULL,
+                    production_classification TEXT NOT NULL,
+                    shadow_classification TEXT NOT NULL,
+                    production_trade_allowed INTEGER NOT NULL,
+                    shadow_trade_allowed INTEGER NOT NULL,
+                    production_skip_reason TEXT,
+                    shadow_skip_reason TEXT,
+                    production_actionable_at TEXT,
+                    shadow_actionable_at TEXT,
+                    production_outcome_status TEXT NOT NULL,
+                    production_outcome_json TEXT,
+                    shadow_outcome_status TEXT NOT NULL,
+                    shadow_outcome_json TEXT,
+                    base_signal TEXT,
+                    current_sc_gex REAL,
+                    sc_threshold_a REAL,
+                    sc_low_a INTEGER,
+                    sp_share REAL,
+                    sp_threshold_a REAL,
+                    classification_a TEXT,
+                    sc_threshold_b REAL,
+                    sc_low_b INTEGER,
+                    sp_threshold_b REAL,
+                    classification_b TEXT,
+                    classification_changed INTEGER,
+                    production_variant TEXT,
+                    strategy_version TEXT,
+                    git_commit TEXT,
+                    config_hash TEXT,
+                    data_hash TEXT,
+                    base_signal_source_mode TEXT,
+                    production_hypothetical_outcome_json TEXT,
+                    shadow_hypothetical_outcome_json TEXT,
+                    portfolio_a_json TEXT,
+                    portfolio_b_json TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE (observation_date, production_strategy_version, shadow_strategy_version, environment_type)
                 );
 
                 CREATE TABLE IF NOT EXISTS trade_plans (
@@ -134,6 +185,10 @@ class StrategyStore:
                     price_source TEXT NOT NULL,
                     strategy_version TEXT NOT NULL,
                     environment_type TEXT NOT NULL,
+                    git_commit TEXT,
+                    config_hash TEXT,
+                    data_hash TEXT,
+                    base_signal_source_mode TEXT,
                     status TEXT NOT NULL,
                     actual_status TEXT,
                     actual_entry REAL,
@@ -205,6 +260,49 @@ class StrategyStore:
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_strategy_reports_file_name "
                 "ON strategy_reports(file_name) WHERE file_name IS NOT NULL"
             )
+            migration_columns = {
+                "signals": {
+                    "git_commit": "TEXT",
+                    "config_hash": "TEXT",
+                    "data_hash": "TEXT",
+                    "base_signal_source_mode": "TEXT",
+                },
+                "strategy_comparisons": {
+                    "base_signal": "TEXT",
+                    "current_sc_gex": "REAL",
+                    "sc_threshold_a": "REAL",
+                    "sc_low_a": "INTEGER",
+                    "sp_share": "REAL",
+                    "sp_threshold_a": "REAL",
+                    "classification_a": "TEXT",
+                    "sc_threshold_b": "REAL",
+                    "sc_low_b": "INTEGER",
+                    "sp_threshold_b": "REAL",
+                    "classification_b": "TEXT",
+                    "classification_changed": "INTEGER",
+                    "production_variant": "TEXT",
+                    "strategy_version": "TEXT",
+                    "git_commit": "TEXT",
+                    "config_hash": "TEXT",
+                    "data_hash": "TEXT",
+                    "base_signal_source_mode": "TEXT",
+                    "production_hypothetical_outcome_json": "TEXT",
+                    "shadow_hypothetical_outcome_json": "TEXT",
+                    "portfolio_a_json": "TEXT",
+                    "portfolio_b_json": "TEXT",
+                },
+                "shadow_trades": {
+                    "git_commit": "TEXT",
+                    "config_hash": "TEXT",
+                    "data_hash": "TEXT",
+                    "base_signal_source_mode": "TEXT",
+                },
+            }
+            for table, definitions in migration_columns.items():
+                existing = {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+                for column, column_type in definitions.items():
+                    if column not in existing:
+                        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
 
     @staticmethod
     def _report_file_name(report_date: date, generated_at: datetime, sequence: int = 1) -> str:
@@ -291,6 +389,8 @@ class StrategyStore:
         evaluation: SignalEvaluation,
         strategy_version: str,
         environment_type: EnvironmentType,
+        provenance_metadata: Mapping[str, Any] | None = None,
+        base_signal_source_mode: str | None = None,
     ) -> tuple[str, bool]:
         observation = evaluation.observation
         action_stamp = evaluation.actionable_at.isoformat() if evaluation.actionable_at else "none"
@@ -321,8 +421,9 @@ class StrategyStore:
                 INSERT OR IGNORE INTO signals
                     (signal_id, idempotency_key, observation_date, action_date, actionable_at,
                      signal_raw, classification, trade_allowed, skip_reason, metrics_json,
-                     strategy_version, environment_type, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     strategy_version, environment_type, git_commit, config_hash, data_hash,
+                     base_signal_source_mode, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     signal_id,
@@ -337,6 +438,10 @@ class StrategyStore:
                     _json(metrics),
                     strategy_version,
                     environment_type.value,
+                    (provenance_metadata or {}).get("git_commit"),
+                    (provenance_metadata or {}).get("config_hash"),
+                    (provenance_metadata or {}).get("data_hash"),
+                    base_signal_source_mode or (provenance_metadata or {}).get("base_signal_source_mode"),
                     _utc_now(),
                 ),
             )
@@ -382,11 +487,26 @@ class StrategyStore:
             )
         return plan_id
 
-    def open_plans(self) -> list[sqlite3.Row]:
+    def open_plans(self, as_of: datetime | None = None) -> list[sqlite3.Row]:
         with self.connection() as db:
-            return db.execute(
+            rows = db.execute(
                 "SELECT * FROM trade_plans WHERE status IN ('PLANNED', 'PENDING_GREEN_DIP') ORDER BY first_action_at"
             ).fetchall()
+        if as_of is None:
+            return rows
+        if as_of.tzinfo is None:
+            as_of = as_of.replace(tzinfo=timezone.utc)
+        active: list[sqlite3.Row] = []
+        for row in rows:
+            if row["status"] == "PENDING_GREEN_DIP":
+                active.append(row)
+                continue
+            first_action = datetime.fromisoformat(str(row["first_action_at"]))
+            if first_action.tzinfo is None:
+                first_action = first_action.replace(tzinfo=as_of.tzinfo)
+            if first_action <= as_of:
+                active.append(row)
+        return active
 
     def plan(self, plan_id: str) -> sqlite3.Row | None:
         with self.connection() as db:
@@ -460,6 +580,89 @@ class StrategyStore:
         with self.connection() as db:
             return db.execute(
                 f"SELECT * FROM signals{where} "
+                "ORDER BY observation_date DESC, created_at DESC LIMIT ?",
+                params,
+            ).fetchall()
+
+    def save_strategy_comparison(self, values: Mapping[str, Any]) -> str:
+        required = {
+            "observation_date",
+            "production_signal_id",
+            "shadow_signal_id",
+            "production_strategy_version",
+            "shadow_strategy_version",
+            "environment_type",
+            "production_classification",
+            "shadow_classification",
+            "production_trade_allowed",
+            "shadow_trade_allowed",
+            "production_outcome_status",
+            "shadow_outcome_status",
+        }
+        missing = required - set(values)
+        if missing:
+            raise ValueError(f"Missing strategy comparison fields: {sorted(missing)}")
+        key = "|".join(
+            (
+                str(values["observation_date"]),
+                str(values["production_strategy_version"]),
+                str(values["shadow_strategy_version"]),
+                str(values["environment_type"]),
+            )
+        )
+        comparison_id = _idempotent_id(f"comparison|{key}")
+        columns = list(values.keys())
+        row_values = [values[column] for column in columns]
+        columns.extend(["comparison_id", "created_at", "updated_at"])
+        row_values.extend([comparison_id, _utc_now(), _utc_now()])
+        placeholders = ",".join("?" for _ in columns)
+        with self.connection() as db:
+            db.execute(
+                f"INSERT OR IGNORE INTO strategy_comparisons ({','.join(columns)}) VALUES ({placeholders})",
+                row_values,
+            )
+        return comparison_id
+
+    def update_strategy_comparison(self, comparison_id: str, **values: Any) -> None:
+        allowed = {
+            "production_outcome_status",
+            "production_outcome_json",
+            "shadow_outcome_status",
+            "shadow_outcome_json",
+            "updated_at",
+        }
+        unknown = set(values) - allowed
+        if unknown:
+            raise ValueError(f"Unsupported strategy comparison fields: {sorted(unknown)}")
+        if not values:
+            return
+        values.setdefault("updated_at", _utc_now())
+        fields = ", ".join(f"{field}=?" for field in values)
+        with self.connection() as db:
+            db.execute(
+                f"UPDATE strategy_comparisons SET {fields} WHERE comparison_id=?",
+                [*values.values(), comparison_id],
+            )
+
+    def recent_strategy_comparisons(
+        self,
+        limit: int = 50,
+        environment_type: str | None = None,
+        shadow_strategy_version: str | None = None,
+    ) -> list[sqlite3.Row]:
+        conditions: list[str] = []
+        params: list[Any] = []
+        if environment_type:
+            conditions.append("environment_type=?")
+            params.append(environment_type)
+        if shadow_strategy_version:
+            conditions.append("shadow_strategy_version=?")
+            params.append(shadow_strategy_version)
+        where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.append(int(limit))
+        with self.connection() as db:
+            return db.execute(
+                f"SELECT * FROM strategy_comparisons{where} "
                 "ORDER BY observation_date DESC, created_at DESC LIMIT ?",
                 params,
             ).fetchall()

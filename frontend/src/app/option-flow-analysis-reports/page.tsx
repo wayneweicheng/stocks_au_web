@@ -282,6 +282,7 @@ export default function OptionFlowAnalysisReportsPage() {
       getReportDate={getOptionFlowReportDate}
       optionCountsEndpoint="/api/option-flow-aggregates"
       optionCountsTitle="Option Records and Contracts by Stock Code"
+      optionCountsDateRangeFields={{ startDateField: "start_date", endDateField: "end_date" }}
       canDeleteReports
       htmlReports={{
         label: "HTML Reports",

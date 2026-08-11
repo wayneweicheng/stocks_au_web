@@ -105,6 +105,59 @@ if (!$workingDirectoryNode) {
 }
 $workingDirectoryNode.InnerText = $WorkingDirectory
 
+# The source task is reused for its principal and trigger configuration, but
+# its idle policy must not be inherited by a long-running web-app supervisor.
+# If the machine leaves an idle state while this task is running, Windows can
+# otherwise stop the supervisor; its exit handler then deliberately tears down
+# both web services.
+$runOnlyIfIdleNode = $taskXml.SelectSingleNode('/task:Task/task:Settings/task:RunOnlyIfIdle', $namespace)
+if (!$runOnlyIfIdleNode) {
+    $settingsNode = $taskXml.SelectSingleNode('/task:Task/task:Settings', $namespace)
+    $runOnlyIfIdleNode = $taskXml.CreateElement('RunOnlyIfIdle', $taskXml.Task.NamespaceURI)
+    $settingsNode.AppendChild($runOnlyIfIdleNode) | Out-Null
+}
+$runOnlyIfIdleNode.InnerText = 'false'
+
+$idleSettingsNode = $taskXml.SelectSingleNode('/task:Task/task:Settings/task:IdleSettings', $namespace)
+if (!$idleSettingsNode) {
+    $settingsNode = $taskXml.SelectSingleNode('/task:Task/task:Settings', $namespace)
+    $idleSettingsNode = $taskXml.CreateElement('IdleSettings', $taskXml.Task.NamespaceURI)
+    $settingsNode.AppendChild($idleSettingsNode) | Out-Null
+}
+$stopOnIdleEndNode = $idleSettingsNode.SelectSingleNode('task:StopOnIdleEnd', $namespace)
+if (!$stopOnIdleEndNode) {
+    $stopOnIdleEndNode = $taskXml.CreateElement('StopOnIdleEnd', $taskXml.Task.NamespaceURI)
+    $idleSettingsNode.AppendChild($stopOnIdleEndNode) | Out-Null
+}
+$stopOnIdleEndNode.InnerText = 'false'
+$restartOnIdleNode = $idleSettingsNode.SelectSingleNode('task:RestartOnIdle', $namespace)
+if (!$restartOnIdleNode) {
+    $restartOnIdleNode = $taskXml.CreateElement('RestartOnIdle', $taskXml.Task.NamespaceURI)
+    $idleSettingsNode.AppendChild($restartOnIdleNode) | Out-Null
+}
+$restartOnIdleNode.InnerText = 'false'
+
+# Recover from future non-zero supervisor exits without waiting for the next
+# hourly trigger. This supplements the idle-policy fix.
+$restartOnFailureNode = $taskXml.SelectSingleNode('/task:Task/task:Settings/task:RestartOnFailure', $namespace)
+if (!$restartOnFailureNode) {
+    $settingsNode = $taskXml.SelectSingleNode('/task:Task/task:Settings', $namespace)
+    $restartOnFailureNode = $taskXml.CreateElement('RestartOnFailure', $taskXml.Task.NamespaceURI)
+    $settingsNode.AppendChild($restartOnFailureNode) | Out-Null
+}
+$restartIntervalNode = $restartOnFailureNode.SelectSingleNode('task:Interval', $namespace)
+if (!$restartIntervalNode) {
+    $restartIntervalNode = $taskXml.CreateElement('Interval', $taskXml.Task.NamespaceURI)
+    $restartOnFailureNode.AppendChild($restartIntervalNode) | Out-Null
+}
+$restartIntervalNode.InnerText = 'PT1M'
+$restartCountNode = $restartOnFailureNode.SelectSingleNode('task:Count', $namespace)
+if (!$restartCountNode) {
+    $restartCountNode = $taskXml.CreateElement('Count', $taskXml.Task.NamespaceURI)
+    $restartOnFailureNode.AppendChild($restartCountNode) | Out-Null
+}
+$restartCountNode.InnerText = '3'
+
 Ensure-TaskFolder -Path $normalizedTaskPath
 
 try {

@@ -1,0 +1,1046 @@
+{
+  "audit": "SPX GEX final Green alignment audit",
+  "strategy_version": "v1.0.2",
+  "window": {
+    "start": "2025-03-06",
+    "end": "2026-08-06"
+  },
+  "rules_changed": false,
+  "sql_warmup_sessions": 70,
+  "canonical_base_signal_counts": {
+    "GREEN": 67,
+    "YELLOW": 85,
+    "NO_SIGNAL": 200
+  },
+  "sql_reconstructed_base_signal_counts": {
+    "GREEN": 68,
+    "YELLOW": 85,
+    "NO_SIGNAL": 199
+  },
+  "sql_strategy_classification_counts": {
+    "NO_SIGNAL": 199,
+    "INSUFFICIENT_HISTORY": 6,
+    "STRONG_YELLOW": 8,
+    "RELIABLE_YELLOW": 17,
+    "WEAK_YELLOW": 51,
+    "MIXED_YELLOW": 3,
+    "REVERSAL_GREEN": 42,
+    "NORMAL_GREEN": 26
+  },
+  "sql_green_subtype_counts": {
+    "REVERSAL_GREEN": 42,
+    "NORMAL_GREEN": 26
+  },
+  "canonical_green_subtype_counts": {
+    "REVERSAL_GREEN": 41,
+    "NORMAL_GREEN": 26
+  },
+  "mismatch_count": 7,
+  "mismatches": [
+    {
+      "date": "2025-03-06",
+      "canonical_signal": null,
+      "sql_signal": "BULLISH",
+      "canonical_sql_classification": "REVERSAL_GREEN",
+      "canonical_broad_classification": "NO_SIGNAL",
+      "sql_broad_classification": "GREEN",
+      "canonical_close_change_pct": null,
+      "sql_close_change_pct": -2.4331673776345486,
+      "canonical_put_call_ratio": 0.760268,
+      "sql_put_call_ratio": 0.760268381039849,
+      "canonical_pcr_change_pct": null,
+      "sql_pcr_change_pct": -33.41375337966562,
+      "canonical_field_rule_signal": null,
+      "canonical_field_rule_reason": "CloseChangePct or PCRChangePct is missing",
+      "sql_field_rule_signal": "BULLISH",
+      "sql_field_rule_reason": "CloseChangePct < 0 and PCRChangePct < -5",
+      "sql_classifier_skip_reason": null,
+      "reason": "Canonical CSV stores a blank base Signal and blank change fields, so it emits no signal. SQL reconstructs the missing fields from the previous SQL row and emits BULLISH because CloseChangePct < 0 and PCRChangePct < -5."
+    },
+    {
+      "date": "2025-03-07",
+      "canonical_signal": "BEARISH",
+      "sql_signal": "BEARISH",
+      "canonical_sql_classification": "INSUFFICIENT_HISTORY",
+      "canonical_broad_classification": "YELLOW",
+      "sql_broad_classification": "NO_SIGNAL",
+      "canonical_close_change_pct": 0.552,
+      "sql_close_change_pct": 0.5520587189728143,
+      "canonical_put_call_ratio": 0.842833,
+      "sql_put_call_ratio": 0.8428334654464221,
+      "canonical_pcr_change_pct": 10.86,
+      "sql_pcr_change_pct": 10.859991874664798,
+      "canonical_field_rule_signal": "BEARISH",
+      "canonical_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_field_rule_signal": "BEARISH",
+      "sql_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_classifier_skip_reason": "INSUFFICIENT_HISTORY_28_OF_60",
+      "reason": "Both sources emit base signal BEARISH. The mismatch is downstream SQL history gating: INSUFFICIENT_HISTORY_28_OF_60; the canonical CSV retains its stored BEARISH signal without applying this SQL causal-lookback gate to the broad comparison."
+    },
+    {
+      "date": "2025-03-14",
+      "canonical_signal": "BEARISH",
+      "sql_signal": "BEARISH",
+      "canonical_sql_classification": "INSUFFICIENT_HISTORY",
+      "canonical_broad_classification": "YELLOW",
+      "sql_broad_classification": "NO_SIGNAL",
+      "canonical_close_change_pct": 2.127,
+      "sql_close_change_pct": 2.1265883307494793,
+      "canonical_put_call_ratio": 1.071774,
+      "sql_put_call_ratio": 1.0717749757516974,
+      "canonical_pcr_change_pct": 17.207,
+      "sql_pcr_change_pct": 17.20723629891601,
+      "canonical_field_rule_signal": "BEARISH",
+      "canonical_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_field_rule_signal": "BEARISH",
+      "sql_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_classifier_skip_reason": "INSUFFICIENT_HISTORY_33_OF_60",
+      "reason": "Both sources emit base signal BEARISH. The mismatch is downstream SQL history gating: INSUFFICIENT_HISTORY_33_OF_60; the canonical CSV retains its stored BEARISH signal without applying this SQL causal-lookback gate to the broad comparison."
+    },
+    {
+      "date": "2025-03-24",
+      "canonical_signal": "BEARISH",
+      "sql_signal": "BEARISH",
+      "canonical_sql_classification": "INSUFFICIENT_HISTORY",
+      "canonical_broad_classification": "YELLOW",
+      "sql_broad_classification": "NO_SIGNAL",
+      "canonical_close_change_pct": 1.765,
+      "sql_close_change_pct": 1.7646041682840563,
+      "canonical_put_call_ratio": 0.752198,
+      "sql_put_call_ratio": 0.7521989218189791,
+      "canonical_pcr_change_pct": 18.673,
+      "sql_pcr_change_pct": 18.672644504374247,
+      "canonical_field_rule_signal": "BEARISH",
+      "canonical_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_field_rule_signal": "BEARISH",
+      "sql_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_classifier_skip_reason": "INSUFFICIENT_HISTORY_39_OF_60",
+      "reason": "Both sources emit base signal BEARISH. The mismatch is downstream SQL history gating: INSUFFICIENT_HISTORY_39_OF_60; the canonical CSV retains its stored BEARISH signal without applying this SQL causal-lookback gate to the broad comparison."
+    },
+    {
+      "date": "2025-03-25",
+      "canonical_signal": "BEARISH",
+      "sql_signal": "BEARISH",
+      "canonical_sql_classification": "INSUFFICIENT_HISTORY",
+      "canonical_broad_classification": "YELLOW",
+      "sql_broad_classification": "NO_SIGNAL",
+      "canonical_close_change_pct": 0.157,
+      "sql_close_change_pct": 0.15743198608773046,
+      "canonical_put_call_ratio": 0.80935,
+      "sql_put_call_ratio": 0.809350987410207,
+      "canonical_pcr_change_pct": 7.598,
+      "sql_pcr_change_pct": 7.597998871498235,
+      "canonical_field_rule_signal": "BEARISH",
+      "canonical_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_field_rule_signal": "BEARISH",
+      "sql_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_classifier_skip_reason": "INSUFFICIENT_HISTORY_40_OF_60",
+      "reason": "Both sources emit base signal BEARISH. The mismatch is downstream SQL history gating: INSUFFICIENT_HISTORY_40_OF_60; the canonical CSV retains its stored BEARISH signal without applying this SQL causal-lookback gate to the broad comparison."
+    },
+    {
+      "date": "2025-04-02",
+      "canonical_signal": "BEARISH",
+      "sql_signal": "BEARISH",
+      "canonical_sql_classification": "INSUFFICIENT_HISTORY",
+      "canonical_broad_classification": "YELLOW",
+      "sql_broad_classification": "NO_SIGNAL",
+      "canonical_close_change_pct": 0.673,
+      "sql_close_change_pct": 0.6728125160880394,
+      "canonical_put_call_ratio": 2.376128,
+      "sql_put_call_ratio": 2.376128093158661,
+      "canonical_pcr_change_pct": 216.562,
+      "sql_pcr_change_pct": 216.5615428038367,
+      "canonical_field_rule_signal": "BEARISH",
+      "canonical_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_field_rule_signal": "BEARISH",
+      "sql_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_classifier_skip_reason": "INSUFFICIENT_HISTORY_46_OF_60",
+      "reason": "Both sources emit base signal BEARISH. The mismatch is downstream SQL history gating: INSUFFICIENT_HISTORY_46_OF_60; the canonical CSV retains its stored BEARISH signal without applying this SQL causal-lookback gate to the broad comparison."
+    },
+    {
+      "date": "2025-04-14",
+      "canonical_signal": "BEARISH",
+      "sql_signal": "BEARISH",
+      "canonical_sql_classification": "INSUFFICIENT_HISTORY",
+      "canonical_broad_classification": "YELLOW",
+      "sql_broad_classification": "NO_SIGNAL",
+      "canonical_close_change_pct": 0.794,
+      "sql_close_change_pct": 0.7944646639420183,
+      "canonical_put_call_ratio": 0.960808,
+      "sql_put_call_ratio": 0.9608082451857879,
+      "canonical_pcr_change_pct": 33.266,
+      "sql_pcr_change_pct": 33.26635159883031,
+      "canonical_field_rule_signal": "BEARISH",
+      "canonical_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_field_rule_signal": "BEARISH",
+      "sql_field_rule_reason": "CloseChangePct > 0 and PCRChangePct > 5",
+      "sql_classifier_skip_reason": "INSUFFICIENT_HISTORY_54_OF_60",
+      "reason": "Both sources emit base signal BEARISH. The mismatch is downstream SQL history gating: INSUFFICIENT_HISTORY_54_OF_60; the canonical CSV retains its stored BEARISH signal without applying this SQL causal-lookback gate to the broad comparison."
+    }
+  ],
+  "canonical_green_rows": [
+    {
+      "observation_date": "2025-03-11",
+      "nq_cash_close_d0": 19154.602185419157,
+      "nq_cash_close_d_minus_5": 20146.75388424108,
+      "d_minus_5_session": "2025-03-04",
+      "prior_5d_return": -0.04924623115577886,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-03-13",
+      "nq_cash_close_d0": 19013.799962264373,
+      "nq_cash_close_d_minus_5": 19846.490950998807,
+      "d_minus_5_session": "2025-03-06",
+      "prior_5d_return": -0.04195658521147927,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-03-18",
+      "nq_cash_close_d0": 19258.60969154992,
+      "nq_cash_close_d_minus_5": 19154.602185419157,
+      "d_minus_5_session": "2025-03-11",
+      "prior_5d_return": 0.005429896435538373,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-03-21",
+      "nq_cash_close_d0": 19499.754604528793,
+      "nq_cash_close_d_minus_5": 19460.90755167809,
+      "d_minus_5_session": "2025-03-14",
+      "prior_5d_return": 0.0019961583367860136,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-03-27",
+      "nq_cash_close_d0": 19540.31190498927,
+      "nq_cash_close_d_minus_5": 19429.878773614953,
+      "d_minus_5_session": "2025-03-20",
+      "prior_5d_return": 0.005683675778990427,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-04-03",
+      "nq_cash_close_d0": 18261.535335048615,
+      "nq_cash_close_d_minus_5": 19540.31190498927,
+      "d_minus_5_session": "2025-03-27",
+      "prior_5d_return": -0.06544299682412658,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-04-04",
+      "nq_cash_close_d0": 17136.43672890098,
+      "nq_cash_close_d_minus_5": 19019.419347267933,
+      "d_minus_5_session": "2025-03-28",
+      "prior_5d_return": -0.09900316008529653,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-04-16",
+      "nq_cash_close_d0": 17969.327314863473,
+      "nq_cash_close_d_minus_5": 18831.536431279328,
+      "d_minus_5_session": "2025-04-09",
+      "prior_5d_return": -0.045785383447721206,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-04-21",
+      "nq_cash_close_d0": 17515.134413923526,
+      "nq_cash_close_d_minus_5": 18382.22995208161,
+      "d_minus_5_session": "2025-04-11",
+      "prior_5d_return": -0.0471703128738139,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-05-06",
+      "nq_cash_close_d0": 19424.259388611394,
+      "nq_cash_close_d_minus_5": 19198.506704120533,
+      "d_minus_5_session": "2025-04-29",
+      "prior_5d_return": 0.011758866872828566,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-05-09",
+      "nq_cash_close_d0": 19678.84196138139,
+      "nq_cash_close_d_minus_5": 19727.217536629432,
+      "d_minus_5_session": "2025-05-02",
+      "prior_5d_return": -0.0024522249606777624,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-05-22",
+      "nq_cash_close_d0": 20702.302995290716,
+      "nq_cash_close_d_minus_5": 20932.942101523804,
+      "d_minus_5_session": "2025-05-15",
+      "prior_5d_return": -0.011017997618992026,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-05-23",
+      "nq_cash_close_d0": 20501.959703859433,
+      "nq_cash_close_d_minus_5": 21016.744234402988,
+      "d_minus_5_session": "2025-05-16",
+      "prior_5d_return": -0.024494018902361026,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-05-28",
+      "nq_cash_close_d0": 20887.254058233986,
+      "nq_cash_close_d_minus_5": 20960.30606328027,
+      "d_minus_5_session": "2025-05-20",
+      "prior_5d_return": -0.0034852546916889215,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-06-09",
+      "nq_cash_close_d0": 21323.122877640584,
+      "nq_cash_close_d_minus_5": 21044.84115942079,
+      "d_minus_5_session": "2025-06-02",
+      "prior_5d_return": 0.013223274821212883,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-06-13",
+      "nq_cash_close_d0": 21153.463087674852,
+      "nq_cash_close_d_minus_5": 21294.29298936145,
+      "d_minus_5_session": "2025-06-06",
+      "prior_5d_return": -0.0066135044613575555,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-06-17",
+      "nq_cash_close_d0": 21238.342945277298,
+      "nq_cash_close_d_minus_5": 21465.806392513594,
+      "d_minus_5_session": "2025-06-10",
+      "prior_5d_return": -0.01059654797388021,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-07-07",
+      "nq_cash_close_d0": 22134.780643659815,
+      "nq_cash_close_d_minus_5": 22007.823591690347,
+      "d_minus_5_session": "2025-06-27",
+      "prior_5d_return": 0.005768723628691852,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-07-11",
+      "nq_cash_close_d0": 22204.425655025923,
+      "nq_cash_close_d_minus_5": 22302.60577521565,
+      "d_minus_5_session": "2025-07-03",
+      "prior_5d_return": -0.00440218157372585,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-07-22",
+      "nq_cash_close_d0": 22461.725280350714,
+      "nq_cash_close_d_minus_5": 22298.252962005266,
+      "d_minus_5_session": "2025-07-15",
+      "prior_5d_return": 0.00733117157761165,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-07-30",
+      "nq_cash_close_d0": 22715.39756133352,
+      "nq_cash_close_d_minus_5": 22561.356338277234,
+      "d_minus_5_session": "2025-07-23",
+      "prior_5d_return": 0.006827657909686202,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-08-01",
+      "nq_cash_close_d0": 22132.362414098494,
+      "nq_cash_close_d_minus_5": 22656.634582993367,
+      "d_minus_5_session": "2025-07-25",
+      "prior_5d_return": -0.023139896041241892,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-08-18",
+      "nq_cash_close_d0": 23018.40172536732,
+      "nq_cash_close_d_minus_5": 22865.32779413556,
+      "d_minus_5_session": "2025-08-11",
+      "prior_5d_return": 0.006694587220001269,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-08-20",
+      "nq_cash_close_d0": 22561.839984189497,
+      "nq_cash_close_d_minus_5": 23159.868154704727,
+      "d_minus_5_session": "2025-08-13",
+      "prior_5d_return": -0.025821743307020806,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-09-02",
+      "nq_cash_close_d0": 22515.409976612093,
+      "nq_cash_close_d_minus_5": 22727.005063227873,
+      "d_minus_5_session": "2025-08-25",
+      "prior_5d_return": -0.009310293460449759,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-09-17",
+      "nq_cash_close_d0": 23446.858579286956,
+      "nq_cash_close_d_minus_5": 23093.36684176834,
+      "d_minus_5_session": "2025-09-10",
+      "prior_5d_return": 0.015307068039956073,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-09-24",
+      "nq_cash_close_d0": 23700.24492239771,
+      "nq_cash_close_d_minus_5": 23446.858579286956,
+      "d_minus_5_session": "2025-09-17",
+      "prior_5d_return": 0.010806835476655063,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-09-25",
+      "nq_cash_close_d0": 23597.261815084265,
+      "nq_cash_close_d_minus_5": 23660.728148661154,
+      "d_minus_5_session": "2025-09-18",
+      "prior_5d_return": -0.002682349130514017,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-10-22",
+      "nq_cash_close_d0": 23988.358127276944,
+      "nq_cash_close_d_minus_5": 23877.47166521619,
+      "d_minus_5_session": "2025-10-15",
+      "prior_5d_return": 0.004643978374908375,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-10-30",
+      "nq_cash_close_d0": 24784.680991968104,
+      "nq_cash_close_d_minus_5": 24191.689890321395,
+      "d_minus_5_session": "2025-10-23",
+      "prior_5d_return": 0.02451218184158166,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-11-04",
+      "nq_cash_close_d0": 24504.231646237775,
+      "nq_cash_close_d_minus_5": 25060.819416927174,
+      "d_minus_5_session": "2025-10-28",
+      "prior_5d_return": -0.022209480122324154,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-11-14",
+      "nq_cash_close_d0": 24051.34546965703,
+      "nq_cash_close_d_minus_5": 24106.908448486607,
+      "d_minus_5_session": "2025-11-07",
+      "prior_5d_return": -0.0023048570889256936,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-11-18",
+      "nq_cash_close_d0": 23551.757651387627,
+      "nq_cash_close_d_minus_5": 24568.89545780668,
+      "d_minus_5_session": "2025-11-11",
+      "prior_5d_return": -0.04139941122570334,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-12-15",
+      "nq_cash_close_d0": 24028.491259362534,
+      "nq_cash_close_d_minus_5": 24590.21056606458,
+      "d_minus_5_session": "2025-12-08",
+      "prior_5d_return": -0.02284320848708954,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-12-16",
+      "nq_cash_close_d0": 24063.820302165426,
+      "nq_cash_close_d_minus_5": 24623.02146304584,
+      "d_minus_5_session": "2025-12-09",
+      "prior_5d_return": -0.022710501297318886,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-12-26",
+      "nq_cash_close_d0": 24532.819273065557,
+      "nq_cash_close_d_minus_5": 23949.53440531312,
+      "d_minus_5_session": "2025-12-18",
+      "prior_5d_return": 0.024354747690754186,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-12-29",
+      "nq_cash_close_d0": 24413.79122281689,
+      "nq_cash_close_d_minus_5": 24261.56809879369,
+      "d_minus_5_session": "2025-12-19",
+      "prior_5d_return": 0.006274249191286607,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2025-12-31",
+      "nq_cash_close_d0": 24142.540048545023,
+      "nq_cash_close_d_minus_5": 24480.181370365946,
+      "d_minus_5_session": "2025-12-23",
+      "prior_5d_return": -0.013792435469030084,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-01-08",
+      "nq_cash_close_d0": 24358.070920409642,
+      "nq_cash_close_d_minus_5": 24142.540048545023,
+      "d_minus_5_session": "2025-12-31",
+      "prior_5d_return": 0.008927431472878888,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-01-14",
+      "nq_cash_close_d0": 24314.680216832938,
+      "nq_cash_close_d_minus_5": 24502.469491328844,
+      "d_minus_5_session": "2026-01-07",
+      "prior_5d_return": -0.007664095839905571,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-01-20",
+      "nq_cash_close_d0": 23845.918353602625,
+      "nq_cash_close_d_minus_5": 24613.910096143332,
+      "d_minus_5_session": "2026-01-12",
+      "prior_5d_return": -0.031201533585719976,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-01-28",
+      "nq_cash_close_d0": 24800.750939959966,
+      "nq_cash_close_d_minus_5": 24157.71493941338,
+      "d_minus_5_session": "2026-01-21",
+      "prior_5d_return": 0.02661824606173613,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-02-04",
+      "nq_cash_close_d0": 23705.78772074015,
+      "nq_cash_close_d_minus_5": 24800.750939959966,
+      "d_minus_5_session": "2026-01-28",
+      "prior_5d_return": -0.044150405843379814,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-02-11",
+      "nq_cash_close_d0": 23974.667818313836,
+      "nq_cash_close_d_minus_5": 23705.78772074015,
+      "d_minus_5_session": "2026-02-04",
+      "prior_5d_return": 0.011342381900198983,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-02-13",
+      "nq_cash_close_d0": 23523.21481498024,
+      "nq_cash_close_d_minus_5": 23850.186291659353,
+      "d_minus_5_session": "2026-02-06",
+      "prior_5d_return": -0.013709388793891941,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-02-19",
+      "nq_cash_close_d0": 23581.306194085668,
+      "nq_cash_close_d_minus_5": 23974.667818313836,
+      "d_minus_5_session": "2026-02-11",
+      "prior_5d_return": -0.01640738579608958,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-03-13",
+      "nq_cash_close_d0": 23140.2903307915,
+      "nq_cash_close_d_minus_5": 23395.413780948307,
+      "d_minus_5_session": "2026-03-06",
+      "prior_5d_return": -0.010904848811204348,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-03-19",
+      "nq_cash_close_d0": 23108.08443279363,
+      "nq_cash_close_d_minus_5": 23292.151718431098,
+      "d_minus_5_session": "2026-03-12",
+      "prior_5d_return": -0.007902545366464175,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-03-24",
+      "nq_cash_close_d0": 22773.566236801144,
+      "nq_cash_close_d_minus_5": 23517.593004416194,
+      "d_minus_5_session": "2026-03-17",
+      "prior_5d_return": -0.03163702881818453,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-03-27",
+      "nq_cash_close_d0": 21917.641604609547,
+      "nq_cash_close_d_minus_5": 22674.832826880665,
+      "d_minus_5_session": "2026-03-20",
+      "prior_5d_return": -0.033393464377540205,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-03-30",
+      "nq_cash_close_d0": 21754.966557788186,
+      "nq_cash_close_d_minus_5": 22942.58843140311,
+      "d_minus_5_session": "2026-03-23",
+      "prior_5d_return": -0.05176494697474254,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-04-07",
+      "nq_cash_close_d0": 22914.849044806404,
+      "nq_cash_close_d_minus_5": 21754.966557788186,
+      "d_minus_5_session": "2026-03-30",
+      "prior_5d_return": 0.05331575591887017,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-04-20",
+      "nq_cash_close_d0": 25149.515222673283,
+      "nq_cash_close_d_minus_5": 24014.081008587753,
+      "d_minus_5_session": "2026-04-13",
+      "prior_5d_return": 0.04728201814924682,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-04-28",
+      "nq_cash_close_d0": 25547.73997601922,
+      "nq_cash_close_d_minus_5": 25051.48705139509,
+      "d_minus_5_session": "2026-04-21",
+      "prior_5d_return": 0.019809320045793388,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-05-12",
+      "nq_cash_close_d0": 27433.31302595297,
+      "nq_cash_close_d_minus_5": 26456.32242683507,
+      "d_minus_5_session": "2026-05-05",
+      "prior_5d_return": 0.03692843560626269,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-05-18",
+      "nq_cash_close_d0": 27362.083923081766,
+      "nq_cash_close_d_minus_5": 27672.85908478385,
+      "d_minus_5_session": "2026-05-11",
+      "prior_5d_return": -0.011230323572636092,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-05-19",
+      "nq_cash_close_d0": 27197.998398975826,
+      "nq_cash_close_d_minus_5": 27433.31302595297,
+      "d_minus_5_session": "2026-05-12",
+      "prior_5d_return": -0.00857769627585736,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-05-27",
+      "nq_cash_close_d0": 28254.21080557754,
+      "nq_cash_close_d_minus_5": 27197.998398975826,
+      "d_minus_5_session": "2026-05-19",
+      "prior_5d_return": 0.03883419621943518,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-06-09",
+      "nq_cash_close_d0": 27377.59917321213,
+      "nq_cash_close_d_minus_5": 28874.58573124456,
+      "d_minus_5_session": "2026-06-02",
+      "prior_5d_return": -0.05184443413200468,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-06-17",
+      "nq_cash_close_d0": 27930.914617237,
+      "nq_cash_close_d_minus_5": 26823.51667992029,
+      "d_minus_5_session": "2026-06-10",
+      "prior_5d_return": 0.041284591820344385,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-06-22",
+      "nq_cash_close_d0": 28545.03669493619,
+      "nq_cash_close_d_minus_5": 27882.492558040096,
+      "d_minus_5_session": "2026-06-12",
+      "prior_5d_return": 0.023762012507201113,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-06-23",
+      "nq_cash_close_d0": 27610.118475057512,
+      "nq_cash_close_d_minus_5": 28748.502462907793,
+      "d_minus_5_session": "2026-06-15",
+      "prior_5d_return": -0.03959802738661111,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-06-24",
+      "nq_cash_close_d0": 27483.243368027164,
+      "nq_cash_close_d_minus_5": 28224.473351118228,
+      "d_minus_5_session": "2026-06-16",
+      "prior_5d_return": -0.026261959749257713,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-07-08",
+      "nq_cash_close_d0": 27429.932543238265,
+      "nq_cash_close_d_minus_5": 28413.971217398415,
+      "d_minus_5_session": "2026-06-30",
+      "prior_5d_return": -0.03463221197175015,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-07-17",
+      "nq_cash_close_d0": 26785.081081817963,
+      "nq_cash_close_d_minus_5": 27970.72313705753,
+      "d_minus_5_session": "2026-07-10",
+      "prior_5d_return": -0.04238868081564706,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-07-27",
+      "nq_cash_close_d0": 26252.671229013547,
+      "nq_cash_close_d_minus_5": 26805.10174090899,
+      "d_minus_5_session": "2026-07-20",
+      "prior_5d_return": -0.020609155571767235,
+      "expected_subtype": "REVERSAL_GREEN",
+      "sql_subtype": "REVERSAL_GREEN",
+      "match": true
+    },
+    {
+      "observation_date": "2026-08-06",
+      "nq_cash_close_d0": 27467.645877805084,
+      "nq_cash_close_d_minus_5": 26286.659789795987,
+      "d_minus_5_session": "2026-07-30",
+      "prior_5d_return": 0.044927202522228926,
+      "expected_subtype": "NORMAL_GREEN",
+      "sql_subtype": "NORMAL_GREEN",
+      "match": true
+    }
+  ],
+  "bar_convention_examples": [
+    {
+      "example": "normal_session",
+      "session_date": "2025-03-07",
+      "official_cash_close": "2025-03-07T16:00:00-05:00",
+      "bar_timestamp": "2025-03-07T15:30:00-05:00",
+      "interpreted_bar_interval": "[2025-03-07T15:30:00-05:00, 2025-03-07T16:00:00-05:00)",
+      "price_used": 19975.880570257814,
+      "rule": "last bar with bar_timestamp < official cash close",
+      "status": "PASS"
+    },
+    {
+      "example": "dst_transition",
+      "session_date": "2025-03-10",
+      "official_cash_close": "2025-03-10T16:00:00-04:00",
+      "bar_timestamp": "2025-03-10T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-03-10T15:30:00-04:00, 2025-03-10T16:00:00-04:00)",
+      "price_used": 19224.235530134883,
+      "rule": "last bar with bar_timestamp < official cash close",
+      "status": "PASS"
+    },
+    {
+      "example": "early_close_session",
+      "session_date": "2025-07-03",
+      "official_cash_close": "2025-07-03T13:00:00-04:00",
+      "bar_timestamp": "2025-07-03T12:30:00-04:00",
+      "interpreted_bar_interval": "[2025-07-03T12:30:00-04:00, 2025-07-03T13:00:00-04:00)",
+      "price_used": 22302.60577521565,
+      "rule": "last bar with bar_timestamp < official cash close",
+      "status": "PASS"
+    }
+  ],
+  "green_time_exit_examples": [
+    {
+      "signal_type": "REVERSAL_GREEN",
+      "observation_date": "2025-03-06",
+      "bar_timestamp": "2025-03-13T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-03-13T15:30:00-04:00, 2025-03-13T16:00:00-04:00)",
+      "economic_exit_time": "2025-03-13T16:00:00-04:00",
+      "exit_price": 19013.799962264373,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    },
+    {
+      "signal_type": "REVERSAL_GREEN",
+      "observation_date": "2025-03-13",
+      "bar_timestamp": "2025-03-20T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-03-20T15:30:00-04:00, 2025-03-20T16:00:00-04:00)",
+      "economic_exit_time": "2025-03-20T16:00:00-04:00",
+      "exit_price": 19429.878773614953,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    },
+    {
+      "signal_type": "NORMAL_GREEN",
+      "observation_date": "2025-03-21",
+      "bar_timestamp": "2025-03-28T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-03-28T15:30:00-04:00, 2025-03-28T16:00:00-04:00)",
+      "economic_exit_time": "2025-03-28T16:00:00-04:00",
+      "exit_price": 19019.419347267933,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    },
+    {
+      "signal_type": "REVERSAL_GREEN",
+      "observation_date": "2025-04-03",
+      "bar_timestamp": "2025-04-10T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-04-10T15:30:00-04:00, 2025-04-10T16:00:00-04:00)",
+      "economic_exit_time": "2025-04-10T16:00:00-04:00",
+      "exit_price": 18062.657970139997,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    },
+    {
+      "signal_type": "REVERSAL_GREEN",
+      "observation_date": "2025-04-16",
+      "bar_timestamp": "2025-04-24T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-04-24T15:30:00-04:00, 2025-04-24T16:00:00-04:00)",
+      "economic_exit_time": "2025-04-24T16:00:00-04:00",
+      "exit_price": 18880.644969788704,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    },
+    {
+      "signal_type": "REVERSAL_GREEN",
+      "observation_date": "2025-05-09",
+      "bar_timestamp": "2025-05-16T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-05-16T15:30:00-04:00, 2025-05-16T16:00:00-04:00)",
+      "economic_exit_time": "2025-05-16T16:00:00-04:00",
+      "exit_price": 21016.744234402988,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    },
+    {
+      "signal_type": "REVERSAL_GREEN",
+      "observation_date": "2025-05-22",
+      "bar_timestamp": "2025-05-30T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-05-30T15:30:00-04:00, 2025-05-30T16:00:00-04:00)",
+      "economic_exit_time": "2025-05-30T16:00:00-04:00",
+      "exit_price": 20884.077884101538,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    },
+    {
+      "signal_type": "NORMAL_GREEN",
+      "observation_date": "2025-06-09",
+      "bar_timestamp": "2025-06-16T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-06-16T15:30:00-04:00, 2025-06-16T16:00:00-04:00)",
+      "economic_exit_time": "2025-06-16T16:00:00-04:00",
+      "exit_price": 21450.421677805345,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    },
+    {
+      "signal_type": "REVERSAL_GREEN",
+      "observation_date": "2025-06-17",
+      "bar_timestamp": "2025-06-25T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-06-25T15:30:00-04:00, 2025-06-25T16:00:00-04:00)",
+      "economic_exit_time": "2025-06-25T16:00:00-04:00",
+      "exit_price": 21728.276254401382,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    },
+    {
+      "signal_type": "NORMAL_GREEN",
+      "observation_date": "2025-07-07",
+      "bar_timestamp": "2025-07-14T15:30:00-04:00",
+      "interpreted_bar_interval": "[2025-07-14T15:30:00-04:00, 2025-07-14T16:00:00-04:00)",
+      "economic_exit_time": "2025-07-14T16:00:00-04:00",
+      "exit_price": 22280.84170916374,
+      "explanation": "The simulator records the timestamp of the 30-minute bar used for the cash-close price. The economic exit is the end of that bar at the official cash close."
+    }
+  ],
+  "time_exit_convention": {
+    "bar_timestamp_is_start": true,
+    "bar_interval_minutes": 30,
+    "economic_exit_time": "official cash close, normally 16:00 America/New_York",
+    "explanation": "A 15:30 timestamp identifies the 15:30-16:00 bar; its close is the 16:00 economic exit."
+  },
+  "regression_proofs": [
+    {
+      "test": "test_calendar_keeps_action_time_at_0330_across_dst",
+      "result": "PASS",
+      "proves": "D1/D3 action references remain exactly 03:30 America/New_York while the UTC offset changes."
+    },
+    {
+      "test": "test_reversal_dip_expiry_is_exclusive_and_fallback_requires_exact_bar",
+      "result": "PASS",
+      "proves": "The dip window is strictly before D3 03:30; the D3 bar is the fallback, not a dip fill; removing it produces DATA_ERROR rather than a retroactive fill."
+    },
+    {
+      "test": "test_green_cash_close_uses_last_bar_ending_at_cash_close",
+      "result": "PASS",
+      "proves": "D5 TIME_EXIT uses the last bar ending at official cash close and excludes the bar stamped at 16:00."
+    }
+  ],
+  "nq_roll_gaps_neutralized": true,
+  "nq_roll_adjustments": [
+    {
+      "roll_at": "2024-12-12T09:30:00-05:00",
+      "bar_timestamp": "2024-12-12T09:30:00-05:00",
+      "raw_gap_pct": 0.012445980985306804,
+      "adjustment_factor": 0.9877070172443231
+    },
+    {
+      "roll_at": "2025-03-13T09:30:00-04:00",
+      "bar_timestamp": "2025-03-13T09:30:00-04:00",
+      "raw_gap_pct": 0.01066492962423693,
+      "adjustment_factor": 0.9894476108632739
+    },
+    {
+      "roll_at": "2025-06-12T09:30:00-04:00",
+      "bar_timestamp": "2025-06-12T09:30:00-04:00",
+      "raw_gap_pct": 0.01033041287293135,
+      "adjustment_factor": 0.9897752133942438
+    },
+    {
+      "roll_at": "2025-09-11T09:30:00-04:00",
+      "bar_timestamp": "2025-09-11T09:30:00-04:00",
+      "raw_gap_pct": 0.009717747401128074,
+      "adjustment_factor": 0.9903757783537624
+    },
+    {
+      "roll_at": "2025-12-11T09:30:00-05:00",
+      "bar_timestamp": "2025-12-11T09:30:00-05:00",
+      "raw_gap_pct": 0.010071072720359453,
+      "adjustment_factor": 0.9900293424964287
+    },
+    {
+      "roll_at": "2026-03-12T09:30:00-04:00",
+      "bar_timestamp": "2026-03-12T09:30:00-04:00",
+      "raw_gap_pct": 0.008627387667376363,
+      "adjustment_factor": 0.9914464074911463
+    },
+    {
+      "roll_at": "2026-06-11T09:30:00-04:00",
+      "bar_timestamp": "2026-06-11T09:30:00-04:00",
+      "raw_gap_pct": 0.009798977498000294,
+      "adjustment_factor": 0.9902961106949432
+    }
+  ],
+  "reconciliation_note": "The seven mismatches are the existing broad canonical-vs-SQL comparison. Only 2025-03-06 differs at the base-signal level; the other six have the same BEARISH base signal but differ because the 70-session SQL run applies insufficient-history gating."
+}

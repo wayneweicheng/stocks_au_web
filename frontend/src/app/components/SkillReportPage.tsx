@@ -101,6 +101,10 @@ export type ReportDateRange = {
   startDate: string;
   endDate: string;
 };
+export type OptionCountsDateRangeFields = {
+  startDateField: string;
+  endDateField: string;
+};
 
 type Props = {
   title: string;
@@ -119,6 +123,7 @@ type Props = {
   optionCountsEndpoint?: string;
   optionCountsTitle?: string;
   optionCountsObservationDateField?: string;
+  optionCountsDateRangeFields?: OptionCountsDateRangeFields;
   canDeleteReports?: boolean;
   htmlReports?: {
     label?: string;
@@ -233,6 +238,7 @@ export default function SkillReportPage({
   optionCountsEndpoint,
   optionCountsTitle = "Option Counts by Stock Code",
   optionCountsObservationDateField = "observation_date",
+  optionCountsDateRangeFields,
   canDeleteReports = false,
   htmlReports,
   alternateJobMode,
@@ -284,6 +290,14 @@ export default function SkillReportPage({
   const optionCountsObservationDate = activeJobMode
     ? ""
     : String(values[optionCountsObservationDateField] || "").trim();
+  const optionCountsRangeStartField = optionCountsDateRangeFields?.startDateField || "";
+  const optionCountsRangeEndField = optionCountsDateRangeFields?.endDateField || "";
+  const optionCountsRangeStartDate = activeJobMode && optionCountsRangeStartField
+    ? String(values[optionCountsRangeStartField] || "").trim()
+    : "";
+  const optionCountsRangeEndDate = activeJobMode && optionCountsRangeEndField
+    ? String(values[optionCountsRangeEndField] || "").trim()
+    : "";
 
   const getReportFileType = useCallback(
     (report: ReportSummary): ReportFileType => htmlReports?.getReportFileType(report) || "markdown",
@@ -656,7 +670,9 @@ export default function SkillReportPage({
   }, [loadReports]);
 
   useEffect(() => {
-    if (activeTab !== "runner" || activeJobMode || !optionCountsEndpoint || !optionCountsObservationDate) {
+    const hasObservationDate = !activeJobMode && Boolean(optionCountsObservationDate);
+    const hasDateRange = Boolean(activeJobMode && optionCountsRangeStartDate && optionCountsRangeEndDate);
+    if (activeTab !== "runner" || !optionCountsEndpoint || (!hasObservationDate && !hasDateRange)) {
       setAggregates(null);
       setAggregatesError("");
       return;
@@ -667,7 +683,14 @@ export default function SkillReportPage({
       setLoadingAggregates(true);
       setAggregatesError("");
       try {
-        const res = await authenticatedFetch(`${baseUrl}${optionCountsEndpoint}?observation_date=${encodeURIComponent(optionCountsObservationDate)}`);
+        const params = new URLSearchParams();
+        if (hasDateRange) {
+          params.set("start_date", optionCountsRangeStartDate);
+          params.set("end_date", optionCountsRangeEndDate);
+        } else {
+          params.set("observation_date", optionCountsObservationDate);
+        }
+        const res = await authenticatedFetch(`${baseUrl}${optionCountsEndpoint}?${params.toString()}`);
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload.detail || `HTTP ${res.status}`);
         if (!cancelled) setAggregates(payload as OptionCountAggregatesResponse);
@@ -682,9 +705,21 @@ export default function SkillReportPage({
     return () => {
       cancelled = true;
     };
-  }, [activeJobMode, activeTab, baseUrl, optionCountsEndpoint, optionCountsObservationDate]);
+  }, [
+    activeJobMode,
+    activeTab,
+    baseUrl,
+    optionCountsEndpoint,
+    optionCountsObservationDate,
+    optionCountsRangeEndDate,
+    optionCountsRangeStartDate,
+  ]);
 
   const visibleJobStatus = jobStatus ? getStatus(jobStatus) : jobResponse ? getStatus(jobResponse) : "";
+  const optionCountsPanelEnabled = Boolean(optionCountsEndpoint && (!activeJobMode || optionCountsDateRangeFields));
+  const optionCountsDateLabel = activeJobMode
+    ? `${optionCountsRangeStartDate || "start date"} to ${optionCountsRangeEndDate || "end date"}`
+    : optionCountsObservationDate || "the selected observation date";
 
   return (
     <div className="space-y-6">
@@ -1033,7 +1068,7 @@ export default function SkillReportPage({
             </div>
           </section>
 
-          {optionCountsEndpoint && !activeJobMode ? (
+          {optionCountsPanelEnabled ? (
             <section className="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
                 <h2 className="text-lg font-semibold text-slate-900">{optionCountsTitle}</h2>
@@ -1082,11 +1117,13 @@ export default function SkillReportPage({
                     </div>
                   ) : (
                     <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
-                      No option counts found for this observation date.
+                      No option counts found for {optionCountsDateLabel}.
                     </div>
                   )
                 ) : (
-                  <div className="text-sm text-slate-500">Choose an observation date to load counts.</div>
+                  <div className="text-sm text-slate-500">
+                    {activeJobMode ? "Choose a start and end date to load counts." : "Choose an observation date to load counts."}
+                  </div>
                 )}
               </div>
             </section>
