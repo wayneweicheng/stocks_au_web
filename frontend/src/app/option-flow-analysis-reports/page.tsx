@@ -1,6 +1,10 @@
 "use client";
 
-import SkillReportPage from "../components/SkillReportPage";
+import SkillReportPage, {
+  type ReportDateRange,
+  type ReportJobMode,
+  type ReportSummary,
+} from "../components/SkillReportPage";
 
 function getPreviousBusinessDayISO(): string {
   const d = new Date();
@@ -12,7 +16,18 @@ function getPreviousBusinessDayISO(): string {
   return `${year}-${month}-${day}`;
 }
 
+function getDateOffsetISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 const defaultObservationDate = getPreviousBusinessDayISO();
+const defaultRangeEndDate = defaultObservationDate;
+const defaultRangeStartDate = getDateOffsetISO(-10);
 
 const fields = [
   {
@@ -53,6 +68,37 @@ const fields = [
   },
 ];
 
+const rangeFields: ReportJobMode["fields"] = [
+  {
+    name: "ticker",
+    label: "Ticker",
+    placeholder: "e.g. AMZN",
+    defaultValue: "",
+    required: true,
+  },
+  {
+    name: "start_date",
+    label: "Start date",
+    inputType: "date",
+    defaultValue: defaultRangeStartDate,
+    required: true,
+  },
+  {
+    name: "end_date",
+    label: "End date",
+    inputType: "date",
+    defaultValue: defaultRangeEndDate,
+    required: true,
+  },
+  {
+    name: "top_n",
+    label: "Top trades",
+    defaultValue: 30,
+    min: 1,
+    max: 100,
+  },
+];
+
 type OptionFlowReportDetail = {
   title: string;
   job_id: string;
@@ -64,7 +110,43 @@ type OptionFlowReportDetail = {
 type OptionFlowReportSummary = {
   title: string;
   raw?: Record<string, any>;
+  file_name?: string | null;
 };
+
+function getOptionFlowReportFileType(report: ReportSummary): "markdown" | "html" {
+  const raw = report.raw || {};
+  const metadata = [
+    report.file_name,
+    report.file_type,
+    report.title,
+    raw.file_name,
+    raw.filename,
+    raw.report_file,
+    raw.report_filename,
+    raw.report_path,
+    raw.relative_path,
+    raw.path,
+    raw.file,
+    raw.report,
+    raw.name,
+    raw.format,
+    raw.extension,
+    raw.mime_type,
+    raw.content_type,
+    raw.mime,
+    raw.type,
+    raw.job_type,
+    raw.jobType,
+    raw.route,
+    JSON.stringify(raw),
+  ]
+    .filter((value) => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+
+  if (/text\/html|\.(?:html?|xhtml)(?:\b|$)|\bhtml\b|analyze-option-flow-range/.test(metadata)) return "html";
+  return "markdown";
+}
 
 const OPTION_FLOW_ASSESSMENT_SYSTEM_PROMPT = `You are an options-flow analyst. Use the supplied option-flow markdown to derive whether the flow is overall bullish, bearish, neutral, mildly bullish, or mildly bearish. Even if it is difficult, still provide an overall assessment in terms of bullish or bearish.
 
@@ -158,6 +240,31 @@ function getOptionFlowReportDate(report: OptionFlowReportSummary): string {
   return report.title.match(/\d{4}-\d{2}-\d{2}/)?.[0] || "";
 }
 
+function getOptionFlowReportDateRange(report: OptionFlowReportSummary): ReportDateRange | null {
+  const request = report.raw?.request;
+  const requestedStartDate = request?.start_date;
+  const requestedEndDate = request?.end_date;
+  if (
+    typeof requestedStartDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(requestedStartDate) &&
+    typeof requestedEndDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(requestedEndDate)
+  ) {
+    return { startDate: requestedStartDate, endDate: requestedEndDate };
+  }
+
+  const fileName = report.file_name || report.raw?.filename || report.raw?.report_file || "";
+  const rangeMatch = String(fileName).match(/(\d{4}-\d{2}-\d{2})-to-(\d{4}-\d{2}-\d{2})/);
+  if (rangeMatch) return { startDate: rangeMatch[1], endDate: rangeMatch[2] };
+
+  const compactRangeMatch = String(fileName).match(/(\d{8})_(\d{8})(?:\.html?)?$/i);
+  if (!compactRangeMatch) return null;
+
+  const startDate = `${compactRangeMatch[1].slice(0, 4)}-${compactRangeMatch[1].slice(4, 6)}-${compactRangeMatch[1].slice(6, 8)}`;
+  const endDate = `${compactRangeMatch[2].slice(0, 4)}-${compactRangeMatch[2].slice(4, 6)}-${compactRangeMatch[2].slice(6, 8)}`;
+  return { startDate, endDate };
+}
+
 export default function OptionFlowAnalysisReportsPage() {
   return (
     <SkillReportPage
@@ -176,6 +283,24 @@ export default function OptionFlowAnalysisReportsPage() {
       optionCountsEndpoint="/api/option-flow-aggregates"
       optionCountsTitle="Option Records and Contracts by Stock Code"
       canDeleteReports
+      htmlReports={{
+        label: "HTML Reports",
+        getReportFileType: getOptionFlowReportFileType,
+        getReportDateRange: getOptionFlowReportDateRange,
+      }}
+      alternateJobMode={{
+        key: "range",
+        label: "Date-range HTML",
+        fields: rangeFields,
+        jobsEndpoint: "/api/option-flow-analysis-range/jobs",
+        submitLabel: "Submit Date-range HTML Job",
+        makeJobLabel: (values) => {
+          const ticker = String(values.ticker || "").trim().toUpperCase();
+          const startDate = String(values.start_date || "start date");
+          const endDate = String(values.end_date || "end date");
+          return `${ticker}:${startDate} to ${endDate}`;
+        },
+      }}
       makeJobLabel={(values) => {
         const date = String(values.observation_date || "observation date");
         const ticker = String(values.ticker || "").trim().toUpperCase();

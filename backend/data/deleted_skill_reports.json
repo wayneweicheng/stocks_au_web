@@ -1,5 +1,9 @@
 {
   "analyze-option-flow": [
-    "49d8af492ff14c7ba7b9091b68bf7f94"
+    "49d8af492ff14c7ba7b9091b68bf7f94",
+    "b1df710861114342b96b57580fb32edd"
+  ],
+  "analyze-option-flow-range": [
+    "b1df710861114342b96b57580fb32edd"
   ]
 }

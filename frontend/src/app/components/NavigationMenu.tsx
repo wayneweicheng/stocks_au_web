@@ -36,6 +36,7 @@ export default function NavigationMenu() {
             <Link onClick={() => setOpen(false)} href="/pegasus-invest-opportunities" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Pegasus Invest Opportunities</Link>
             <Link onClick={() => setOpen(false)} href="/research-hub" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Research Hub</Link>
             <Link onClick={() => setOpen(false)} href="/option-flow-analysis-reports" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Option Flow Analysis</Link>
+            <Link onClick={() => setOpen(false)} href="/spx-gex-reports" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">SPX GEX Reports</Link>
             <Link onClick={() => setOpen(false)} href="/find-index-bottoms-reports" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Find Index Bottoms</Link>
             <Link onClick={() => setOpen(false)} href="/monitor-stocks" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Monitor Stocks</Link>
             <Link onClick={() => setOpen(false)} href="/conditional-orders" className="block px-4 py-2 text-slate-700 hover:bg-emerald-50 hover:text-slate-900">Conditional Orders</Link>

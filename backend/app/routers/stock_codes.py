@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional
 from datetime import date
 from pydantic import BaseModel
 from app.routers.auth import verify_credentials
@@ -29,30 +29,31 @@ def _set_option_flow_aggregate_query_timeout(sql_model) -> None:
         cursor.timeout = OPTION_FLOW_AGGREGATE_QUERY_TIMEOUT_SECONDS
 
 
-def _get_market_flow_stock_codes(sql_model, observation_date: date) -> Set[str]:
-    """Return the exact stock-code set used by the market-flow GEX dropdown."""
-    query = """
-        SELECT ASXCode
-        FROM StockDB_US.Analysis.GEX_Features WITH (NOLOCK)
-        WHERE ObservationDate = convert(date, ?)
-        GROUP BY ASXCode
+def _build_option_flow_aggregate_query(view_name: str) -> str:
+    """Build an aggregate query with a same-ticker, same-date Market Flow join."""
+    return f"""
+        SELECT option_rows.ASXCode,
+               COUNT(*) AS NumRecords,
+               COUNT(DISTINCT option_rows.OptionSymbol) AS NumOptions,
+               CAST(CASE WHEN market_flow.ASXCode IS NULL THEN 0 ELSE 1 END AS bit) AS in_market_flow
+        FROM {view_name} AS option_rows WITH (NOLOCK)
+        LEFT JOIN (
+            SELECT ASXCode, ObservationDate
+            FROM StockDB_US.Analysis.GEX_Features WITH (NOLOCK)
+            WHERE ObservationDate = convert(date, ?)
+            GROUP BY ASXCode, ObservationDate
+        ) AS market_flow
+          ON market_flow.ASXCode = option_rows.ASXCode
+         AND market_flow.ObservationDate = option_rows.ObservationDate
+        WHERE option_rows.ObservationDate = convert(date, ?)
+        GROUP BY option_rows.ASXCode, option_rows.ObservationDate, market_flow.ASXCode
+        ORDER BY option_rows.ASXCode
     """
-    rows = sql_model.execute_read_query(query, (observation_date,))
-    return {
-        str(row.get("ASXCode") or "").strip().upper()
-        for row in rows
-        if str(row.get("ASXCode") or "").strip()
-    }
 
 
-def _add_market_flow_flag(rows: List[Dict], market_flow_stock_codes: Set[str]) -> List[Dict]:
-    return [
-        {
-            **row,
-            "in_market_flow": str(row.get("ASXCode") or "").strip().upper() in market_flow_stock_codes,
-        }
-        for row in rows
-    ]
+def _get_option_flow_aggregate_rows(sql_model, view_name: str, observation_date: date) -> List[Dict]:
+    query = _build_option_flow_aggregate_query(view_name)
+    return sql_model.execute_read_query(query, (observation_date, observation_date))
 
 
 @router.get("/stock-codes")
@@ -152,37 +153,28 @@ def get_option_flow_aggregates(
 
     Response shape:
     {
-      "trades": [ { "ASXCode": "ABC", "NumRecords": 123, "NumOptions": 45 }, ... ],
-      "bidask": [ { "ASXCode": "ABC", "NumRecords": 234, "NumOptions": 67 }, ... ]
+      "trades": [ { "ASXCode": "ABC", "NumRecords": 123, "NumOptions": 45, "in_market_flow": true }, ... ],
+      "bidask": [ { "ASXCode": "ABC", "NumRecords": 234, "NumOptions": 67, "in_market_flow": true }, ... ]
     }
     """
     try:
         sql_model = get_sql_model()
         _set_option_flow_aggregate_query_timeout(sql_model)
 
-        query_trades = """
-            SELECT ASXCode, COUNT(*) AS NumRecords, COUNT(DISTINCT OptionSymbol) AS NumOptions
-            FROM StockDB_US.StockData.v_OptionTrade WITH (NOLOCK)
-            WHERE ObservationDate = convert(date, ?)
-            GROUP BY ASXCode
-            ORDER BY ASXCode
-        """
-        trades = sql_model.execute_read_query(query_trades, (observation_date,))
-
-        query_bidask = """
-            SELECT ASXCode, COUNT(*) AS NumRecords, COUNT(DISTINCT OptionSymbol) AS NumOptions
-            FROM StockDB_US.StockData.v_OptionBidAsk WITH (NOLOCK)
-            WHERE ObservationDate = convert(date, ?)
-            GROUP BY ASXCode
-            ORDER BY ASXCode
-        """
-        bidask = sql_model.execute_read_query(query_bidask, (observation_date,))
-
-        market_flow_stock_codes = _get_market_flow_stock_codes(sql_model, observation_date)
+        trades = _get_option_flow_aggregate_rows(
+            sql_model,
+            "StockDB_US.StockData.v_OptionTrade",
+            observation_date,
+        )
+        bidask = _get_option_flow_aggregate_rows(
+            sql_model,
+            "StockDB_US.StockData.v_OptionBidAsk",
+            observation_date,
+        )
 
         return OptionFlowAggregatesResponse(
-            trades=_add_market_flow_flag(trades, market_flow_stock_codes),
-            bidask=_add_market_flow_flag(bidask, market_flow_stock_codes),
+            trades=trades,
+            bidask=bidask,
         )
     except Exception as e:
         logger.error(f"Failed to retrieve option flow aggregates: {e}")

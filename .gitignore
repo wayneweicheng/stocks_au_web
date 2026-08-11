@@ -15,6 +15,9 @@ frontend/.env.local
 # Logs
 logs/
 *.log
+backend/data/spx_gex_strategy.sqlite3
+backend/data/spx_gex_strategy.sqlite3-shm
+backend/data/spx_gex_strategy.sqlite3-wal
 
 # IDE and local settings
 .claude/

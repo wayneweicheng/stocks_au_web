@@ -6,7 +6,8 @@ from statistics import median
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
-from app.core.db import get_sql_model
+from app.core.config import settings
+from app.core.db import get_timed_sql_model
 from app.services.live_stock_price_service import get_live_stock_prices
 
 ATR_PERIOD = 14
@@ -14,6 +15,39 @@ MIN_ZONE_DISTANCE_ATR = 0.1
 MAX_ZONE_DISTANCE_ATR = 3.0
 US_EASTERN = ZoneInfo("America/New_York")
 logger = logging.getLogger("app.price_levels_30m_service")
+
+
+class SupportResistanceDatabaseError(RuntimeError):
+    """Raised when support/resistance database work cannot complete promptly."""
+
+
+def _open_support_resistance_model():
+    try:
+        return get_timed_sql_model(
+            connection_timeout=settings.support_resistance_db_connection_timeout,
+            query_timeout=settings.support_resistance_db_query_timeout,
+        )
+    except Exception as exc:
+        raise SupportResistanceDatabaseError(
+            "Unable to connect to the support/resistance database"
+        ) from exc
+
+
+def _close_support_resistance_model(model) -> None:
+    try:
+        model.close()
+    except Exception:
+        logger.warning("Failed to close support/resistance database connection", exc_info=True)
+
+
+def _execute_support_resistance_query(model, sql_query, values, query_name: str):
+    try:
+        return model.execute_read_query(sql_query, values) or []
+    except Exception as exc:
+        logger.warning("Support/resistance database query failed during %s: %s", query_name, exc)
+        raise SupportResistanceDatabaseError(
+            f"Support/resistance data could not be loaded during {query_name}"
+        ) from exc
 
 
 def _number(value: Any) -> Optional[float]:
@@ -382,12 +416,41 @@ def get_30m_support_resistance(
     max_levels: int = 2,
     enable_live_prices: bool = True,
 ) -> Dict[str, Any]:
+    model = _open_support_resistance_model()
+    try:
+        return _get_30m_support_resistance_with_model(
+            observation_date=observation_date,
+            observation_datetime=observation_datetime,
+            lookback_days=lookback_days,
+            minimum_distance_atr=minimum_distance_atr,
+            maximum_distance_atr=maximum_distance_atr,
+            stock_codes=stock_codes,
+            group=group,
+            max_levels=max_levels,
+            enable_live_prices=enable_live_prices,
+            model=model,
+        )
+    finally:
+        _close_support_resistance_model(model)
+
+
+def _get_30m_support_resistance_with_model(
+    observation_date: Optional[date] = None,
+    observation_datetime: Optional[datetime] = None,
+    lookback_days: int = 10,
+    minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
+    maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
+    stock_codes: Optional[List[str]] = None,
+    group: Optional[Dict[str, Any]] = None,
+    max_levels: int = 2,
+    enable_live_prices: bool = True,
+    model=None,
+) -> Dict[str, Any]:
     if minimum_distance_atr > maximum_distance_atr:
         raise ValueError("Minimum ATR distance cannot exceed maximum ATR distance")
     if observation_date is not None and observation_datetime is not None:
         raise ValueError("Use either observation_date or observation_datetime, not both")
 
-    model = get_sql_model()
     market_today = datetime.now(US_EASTERN).date()
     if observation_datetime is not None:
         observation_date = observation_datetime.date()
@@ -405,7 +468,8 @@ def get_30m_support_resistance(
         stock_filter = f" AND ASXCode IN ({','.join(['convert(varchar(10), ?)'] * len(filtered_stock_codes))})"
         stock_filter_params = tuple(filtered_stock_codes)
 
-    date_rows = model.execute_read_query(
+    date_rows = _execute_support_resistance_query(
+        model,
         f"""
         SELECT DISTINCT TOP (3)
             CAST(TimeIntervalStart AS date) AS TradingDate
@@ -416,6 +480,7 @@ def get_30m_support_resistance(
         ORDER BY TradingDate DESC
         """,
         (market_today.isoformat(), *stock_filter_params),
+        "trading-date lookup",
     ) or []
     recent_trading_dates = [
         value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
@@ -450,7 +515,8 @@ def get_30m_support_resistance(
     )
     observation_end_operator = "<" if observation_datetime is not None else "<="
 
-    rows = model.execute_read_query(
+    rows = _execute_support_resistance_query(
+        model,
         f"""
         SELECT ASXCode, TimeIntervalStart, [High], [Low], [Close], Volume
         FROM StockDB_US.StockData.PriceHistoryTimeFrame
@@ -466,6 +532,7 @@ def get_30m_support_resistance(
             observation_end_datetime,
             *stock_filter_params,
         ),
+        "30-minute price lookup",
     ) or []
 
     grouped: Dict[str, List[Dict[str, Any]]] = {}
@@ -475,7 +542,8 @@ def get_30m_support_resistance(
             continue
         grouped.setdefault(code, []).append(row)
 
-    daily_rows = model.execute_read_query(
+    daily_rows = _execute_support_resistance_query(
+        model,
         f"""
         SELECT ASXCode, ObservationDate, [High], [Low], [Close]
         FROM StockDB_US.StockData.PriceHistory
@@ -489,6 +557,7 @@ def get_30m_support_resistance(
             observation_date.isoformat(),
             *stock_filter_params,
         ),
+        "daily price lookup",
     ) or []
 
     daily_by_stock: Dict[str, List[Dict[str, Any]]] = {}
@@ -498,30 +567,39 @@ def get_30m_support_resistance(
             continue
         daily_by_stock.setdefault(code, []).append(row)
 
-    wall_rows = model.execute_read_query(
-        f"""
-        SELECT
-            ASXCode,
-            PorC,
-            Strike,
-            SUM(COALESCE(OpenInterest, 0)) AS OpenInterest,
-            MIN(ExpiryDate) AS NearestExpiry
-        FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
-        WHERE ObservationDate = convert(date, ?)
-          AND ExpiryDate >= convert(date, ?)
-          AND ExpiryDate <= DATEADD(day, 30, convert(date, ?))
-          AND PorC IN ('P', 'C')
-          AND OpenInterest > 0
-          {stock_filter}
-        GROUP BY ASXCode, PorC, Strike
-        """,
-        (
-            observation_date.isoformat(),
-            observation_date.isoformat(),
-            observation_date.isoformat(),
-            *stock_filter_params,
-        ),
-    ) or []
+    try:
+        wall_rows = _execute_support_resistance_query(
+            model,
+            f"""
+            SELECT
+                ASXCode,
+                PorC,
+                Strike,
+                SUM(COALESCE(OpenInterest, 0)) AS OpenInterest,
+                MIN(ExpiryDate) AS NearestExpiry
+            FROM StockDB_US.StockData.v_OptionDelayedQuote_V2
+            WHERE ObservationDate = convert(date, ?)
+              AND ExpiryDate >= convert(date, ?)
+              AND ExpiryDate <= DATEADD(day, 30, convert(date, ?))
+              AND PorC IN ('P', 'C')
+              AND OpenInterest > 0
+              {stock_filter}
+            GROUP BY ASXCode, PorC, Strike
+            """,
+            (
+                observation_date.isoformat(),
+                observation_date.isoformat(),
+                observation_date.isoformat(),
+                *stock_filter_params,
+            ),
+            "option wall lookup",
+        ) or []
+    except SupportResistanceDatabaseError as exc:
+        # Gamma walls are an enhancement to the 30-minute calculation. A
+        # slow option view must not make the primary support/resistance chart
+        # unavailable.
+        logger.warning("Skipping optional option walls: %s", exc)
+        wall_rows = []
 
     walls_by_stock: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
     for row in wall_rows:
@@ -540,24 +618,30 @@ def get_30m_support_resistance(
             }
         )
 
-    snapshot_rows = model.execute_read_query(
-        f"""
-        SELECT
-            ASXCode,
-            ObservationDate,
-            ImpliedVolatility,
-            HistoricalVolatility,
-            IVRank252,
-            IVPercentile252,
-            IVHistoryCount,
-            TrailingPE,
-            ForwardPE
-        FROM StockDB_US.StockData.v_DailyMarketSnapshot_Latest
-        WHERE CollectionStatus = 'COMPLETE'
-          {stock_filter}
-        """,
-        stock_filter_params,
-    ) or []
+    try:
+        snapshot_rows = _execute_support_resistance_query(
+            model,
+            f"""
+            SELECT
+                ASXCode,
+                ObservationDate,
+                ImpliedVolatility,
+                HistoricalVolatility,
+                IVRank252,
+                IVPercentile252,
+                IVHistoryCount,
+                TrailingPE,
+                ForwardPE
+            FROM StockDB_US.StockData.v_DailyMarketSnapshot_Latest
+            WHERE CollectionStatus = 'COMPLETE'
+              {stock_filter}
+            """,
+            stock_filter_params,
+            "market snapshot lookup",
+        ) or []
+    except SupportResistanceDatabaseError as exc:
+        logger.warning("Skipping optional market snapshot data: %s", exc)
+        snapshot_rows = []
     snapshots_by_stock = {
         str(row.get("ASXCode") or ""): row
         for row in snapshot_rows
@@ -672,6 +756,34 @@ def get_30m_support_resistance_for_stock(
     max_levels: int = 5,
     enable_live_prices: bool = True,
 ) -> Dict[str, Any]:
+    model = _open_support_resistance_model()
+    try:
+        return _get_30m_support_resistance_for_stock_with_model(
+            stock_code=stock_code,
+            observation_date=observation_date,
+            observation_datetime=observation_datetime,
+            lookback_days=lookback_days,
+            minimum_distance_atr=minimum_distance_atr,
+            maximum_distance_atr=maximum_distance_atr,
+            max_levels=max_levels,
+            enable_live_prices=enable_live_prices,
+            model=model,
+        )
+    finally:
+        _close_support_resistance_model(model)
+
+
+def _get_30m_support_resistance_for_stock_with_model(
+    stock_code: str,
+    observation_date: Optional[date] = None,
+    observation_datetime: Optional[datetime] = None,
+    lookback_days: int = 10,
+    minimum_distance_atr: float = MIN_ZONE_DISTANCE_ATR,
+    maximum_distance_atr: float = MAX_ZONE_DISTANCE_ATR,
+    max_levels: int = 5,
+    enable_live_prices: bool = True,
+    model=None,
+) -> Dict[str, Any]:
     if minimum_distance_atr > maximum_distance_atr:
         raise ValueError("Minimum ATR distance cannot exceed maximum ATR distance")
     if observation_date is not None and observation_datetime is not None:
@@ -682,7 +794,7 @@ def get_30m_support_resistance_for_stock(
 
     aliases = _stock_code_aliases(code)
 
-    result = get_30m_support_resistance(
+    result = _get_30m_support_resistance_with_model(
         observation_date=observation_date,
         observation_datetime=observation_datetime,
         lookback_days=lookback_days,
@@ -692,6 +804,7 @@ def get_30m_support_resistance_for_stock(
         group=None,
         max_levels=max_levels,
         enable_live_prices=enable_live_prices,
+        model=model,
     )
 
     if not result.get("stocks"):
@@ -707,7 +820,6 @@ def get_30m_support_resistance_for_stock(
         ),
         stocks[0],
     )
-    model = get_sql_model()
     observation_end_datetime = (
         result["observation_datetime"] or result["observation_date"]
     )
@@ -717,7 +829,8 @@ def get_30m_support_resistance_for_stock(
         else "DATEADD(hour, 23, convert(datetime, ?))"
     )
     observation_end_operator = "<" if result.get("observation_datetime") else "<="
-    raw_bars = model.execute_read_query(
+    raw_bars = _execute_support_resistance_query(
+        model,
         f"""
         SELECT TimeIntervalStart, [Open], [High], [Low], [Close], Volume
         FROM StockDB_US.StockData.PriceHistoryTimeFrame
@@ -733,6 +846,7 @@ def get_30m_support_resistance_for_stock(
             observation_end_datetime,
             stock["database_code"],
         ),
+        "chart bar lookup",
     ) or []
 
     bars: List[Dict[str, Any]] = []

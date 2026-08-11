@@ -231,6 +231,66 @@ def start_scheduler():
         misfire_grace_time=3600,
     )
 
+    # SPXW GEX signal assistant. CronTrigger receives the IANA timezone so
+    # 03:25/03:29 remains 03:25/03:29 in New York across DST transitions.
+    try:
+        from app.core.config import settings
+        from app.spx_gex_strategy.jobs import (
+            spx_gex_daily_signal_job,
+            spx_gex_data_check_job,
+            spx_gex_monthly_report_job,
+            spx_gex_position_monitor_job,
+        )
+
+        if settings.spx_gex_strategy_enabled:
+            strategy_timezone = settings.spx_gex_timezone
+            scheduler.add_job(
+                spx_gex_data_check_job,
+                trigger=CronTrigger(hour=3, minute=25, timezone=strategy_timezone),
+                id="spx_gex_data_check",
+                name="SPX GEX source-data check",
+                replace_existing=True,
+                misfire_grace_time=300,
+            )
+            scheduler.add_job(
+                spx_gex_daily_signal_job,
+                trigger=CronTrigger(hour=3, minute=29, timezone=strategy_timezone),
+                id="spx_gex_daily_signal",
+                name="SPX GEX daily signal and Pushover",
+                replace_existing=True,
+                misfire_grace_time=300,
+            )
+            # The source table is normally refreshed at the 03:30 New York
+            # boundary. A one-time NY-time retry handles a collector that
+            # finishes a minute late without creating a duplicate notification
+            # because the signal store is idempotent.
+            scheduler.add_job(
+                spx_gex_daily_signal_job,
+                trigger=CronTrigger(hour=3, minute=31, timezone=strategy_timezone),
+                id="spx_gex_daily_signal_retry",
+                name="SPX GEX daily signal retry after source refresh",
+                replace_existing=True,
+                misfire_grace_time=300,
+            )
+            scheduler.add_job(
+                spx_gex_position_monitor_job,
+                trigger=CronTrigger(hour="3-16", minute="0,30", timezone=strategy_timezone),
+                id="spx_gex_position_monitor",
+                name="SPX GEX shadow-position monitor",
+                replace_existing=True,
+                misfire_grace_time=900,
+            )
+            scheduler.add_job(
+                spx_gex_monthly_report_job,
+                trigger=CronTrigger(hour=16, minute=5, timezone=strategy_timezone),
+                id="spx_gex_monthly_report",
+                name="SPX GEX monthly Pushover report",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+    except Exception as exc:
+        logger.error("Failed to register SPX GEX scheduler jobs: %s", exc, exc_info=True)
+
     # Bet odds monitor scans are manual-only. Keep bet_odds_monitor_job available
     # for explicit calls, but do not run automatic background checks.
 

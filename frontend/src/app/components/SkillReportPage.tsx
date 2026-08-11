@@ -11,12 +11,14 @@ import MarkdownRenderer from "./MarkdownRenderer";
 import PageHeader from "./PageHeader";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
-type ReportSummary = {
+export type ReportSummary = {
   job_id: string;
   title: string;
   created_at?: string | null;
   stock_code?: string | null;
   status?: string | null;
+  file_name?: string | null;
+  file_type?: string | null;
   raw?: Record<string, unknown>;
 };
 
@@ -54,7 +56,7 @@ type SavedJob = {
   last_checked_at?: string;
 };
 
-type TextField = {
+export type TextField = {
   name: string;
   label: string;
   inputType?: "text" | "date";
@@ -65,7 +67,7 @@ type TextField = {
   omitWhenBlank?: boolean;
 };
 
-type DateTimeTimezoneField = {
+export type DateTimeTimezoneField = {
   name: string;
   label: string;
   inputType: "datetime-timezone";
@@ -77,12 +79,27 @@ type DateTimeTimezoneField = {
   defaultTimezone: string;
 };
 
-type NumberField = {
+export type NumberField = {
   name: string;
   label: string;
   defaultValue: number;
   min?: number;
   max?: number;
+};
+
+export type ReportJobMode = {
+  key: string;
+  label: string;
+  fields: Array<TextField | DateTimeTimezoneField | NumberField>;
+  jobsEndpoint: string;
+  submitLabel?: string;
+  makeJobLabel: (values: Record<string, string | number>) => string;
+};
+
+export type ReportFileType = "markdown" | "html";
+export type ReportDateRange = {
+  startDate: string;
+  endDate: string;
 };
 
 type Props = {
@@ -103,6 +120,12 @@ type Props = {
   optionCountsTitle?: string;
   optionCountsObservationDateField?: string;
   canDeleteReports?: boolean;
+  htmlReports?: {
+    label?: string;
+    getReportFileType: (report: ReportSummary) => ReportFileType | null;
+    getReportDateRange?: (report: ReportSummary) => ReportDateRange | null;
+  };
+  alternateJobMode?: ReportJobMode;
 };
 
 const MAX_SAVED_JOBS = 25;
@@ -211,6 +234,8 @@ export default function SkillReportPage({
   optionCountsTitle = "Option Counts by Stock Code",
   optionCountsObservationDateField = "observation_date",
   canDeleteReports = false,
+  htmlReports,
+  alternateJobMode,
 }: Props) {
   const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const initialValues = useMemo(() => {
@@ -221,7 +246,8 @@ export default function SkillReportPage({
     return values;
   }, [fields]);
 
-  const [activeTab, setActiveTab] = useState<"viewer" | "runner">("viewer");
+  const [activeTab, setActiveTab] = useState<"viewer" | "html" | "runner">("viewer");
+  const [activeJobModeKey, setActiveJobModeKey] = useState("default");
   const [values, setValues] = useState<Record<string, string | number>>(initialValues);
   const [items, setItems] = useState<ReportSummary[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
@@ -232,9 +258,13 @@ export default function SkillReportPage({
   const [deletingJobId, setDeletingJobId] = useState("");
   const [search, setSearch] = useState("");
   const [selectedReportDate, setSelectedReportDate] = useState("");
+  const [sortHtmlByRangeStartDate, setSortHtmlByRangeStartDate] = useState(false);
+  const [sortHtmlRangeStartDateDescending, setSortHtmlRangeStartDateDescending] = useState(true);
+  const [showOnlyOneDayHtmlReports, setShowOnlyOneDayHtmlReports] = useState(false);
   const [reportPrompt, setReportPrompt] = useState("");
   const [reportPromptCopied, setReportPromptCopied] = useState(false);
   const [reportPromptError, setReportPromptError] = useState("");
+  const [htmlPreviewUrl, setHtmlPreviewUrl] = useState("");
 
   const [jobId, setJobId] = useState("");
   const [jobResponse, setJobResponse] = useState<Record<string, unknown> | null>(null);
@@ -246,21 +276,78 @@ export default function SkillReportPage({
   const [aggregates, setAggregates] = useState<OptionCountAggregatesResponse | null>(null);
   const [loadingAggregates, setLoadingAggregates] = useState(false);
   const [aggregatesError, setAggregatesError] = useState("");
-  const optionCountsObservationDate = String(values[optionCountsObservationDateField] || "").trim();
+  const activeJobMode = alternateJobMode && activeJobModeKey === alternateJobMode.key ? alternateJobMode : null;
+  const activeFields = activeJobMode?.fields || fields;
+  const activeJobsEndpoint = activeJobMode?.jobsEndpoint || jobsEndpoint;
+  const activeSubmitLabel = activeJobMode?.submitLabel || submitLabel;
+  const activeMakeJobLabel = activeJobMode?.makeJobLabel || makeJobLabel;
+  const optionCountsObservationDate = activeJobMode
+    ? ""
+    : String(values[optionCountsObservationDateField] || "").trim();
+
+  const getReportFileType = useCallback(
+    (report: ReportSummary): ReportFileType => htmlReports?.getReportFileType(report) || "markdown",
+    [htmlReports]
+  );
+
+  const getReportsForTab = useCallback(
+    (reportItems: ReportSummary[], tab: "viewer" | "html") => {
+      const reportType = tab === "html" ? "html" : "markdown";
+      return htmlReports
+        ? reportItems.filter((item) => getReportFileType(item) === reportType)
+        : reportItems;
+    },
+    [getReportFileType, htmlReports]
+  );
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return items.filter((item) => {
+    const reportItems = activeTab === "runner" ? [] : getReportsForTab(items, activeTab);
+    const visibleItems = reportItems.filter((item) => {
       if (selectedReportDate && getReportDate?.(item) !== selectedReportDate) return false;
       if (!query) return true;
       return `${item.title} ${item.job_id} ${item.stock_code || ""} ${item.status || ""}`.toLowerCase().includes(query);
     });
-  }, [getReportDate, items, search, selectedReportDate]);
+
+    if (activeTab !== "html" || !htmlReports?.getReportDateRange) return visibleItems;
+
+    const getDateRange = htmlReports.getReportDateRange;
+    const rangeFilteredItems = showOnlyOneDayHtmlReports
+      ? visibleItems.filter((item) => {
+          const range = getDateRange(item);
+          return range ? range.startDate === range.endDate : false;
+        })
+      : visibleItems;
+
+    if (!sortHtmlByRangeStartDate) return rangeFilteredItems;
+
+    return [...rangeFilteredItems].sort((left, right) => {
+      const leftStartDate = getDateRange(left)?.startDate || "";
+      const rightStartDate = getDateRange(right)?.startDate || "";
+      if (!leftStartDate && !rightStartDate) return 0;
+      if (!leftStartDate) return 1;
+      if (!rightStartDate) return -1;
+      return sortHtmlRangeStartDateDescending
+        ? rightStartDate.localeCompare(leftStartDate)
+        : leftStartDate.localeCompare(rightStartDate);
+    });
+  }, [
+    activeTab,
+    getReportDate,
+    getReportsForTab,
+    htmlReports,
+    items,
+    search,
+    selectedReportDate,
+    sortHtmlRangeStartDateDescending,
+    showOnlyOneDayHtmlReports,
+    sortHtmlByRangeStartDate,
+  ]);
 
   const reportDateCards = useMemo(() => {
-    if (!getReportDate) return [];
+    if (activeTab !== "viewer" || !getReportDate) return [];
     const counts = new Map<string, number>();
-    items.forEach((item) => {
+    getReportsForTab(items, "viewer").forEach((item) => {
       const reportDate = getReportDate(item);
       if (!reportDate) return;
       counts.set(reportDate, (counts.get(reportDate) || 0) + 1);
@@ -269,7 +356,7 @@ export default function SkillReportPage({
       .map(([date, count]) => ({ date, count }))
       .sort((left, right) => right.date.localeCompare(left.date))
       .slice(0, 9);
-  }, [getReportDate, items]);
+  }, [activeTab, getReportDate, getReportsForTab, items]);
 
   const optionCountRows = useMemo<OptionCountRow[]>(() => {
     if (!aggregates) return [];
@@ -342,6 +429,17 @@ export default function SkillReportPage({
     [baseUrl, reportsEndpoint]
   );
 
+  useEffect(() => {
+    if (activeTab !== "html" || !detail) {
+      setHtmlPreviewUrl("");
+      return;
+    }
+
+    const url = URL.createObjectURL(new Blob([detail.content], { type: "text/html" }));
+    setHtmlPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [activeTab, detail]);
+
   const loadReports = useCallback(async () => {
     setLoadingList(true);
     setViewerError("");
@@ -351,8 +449,10 @@ export default function SkillReportPage({
       if (!res.ok) throw new Error(payload.detail || `HTTP ${res.status}`);
       const nextItems = ((payload as ReportPageResponse).items || []);
       setItems(nextItems);
-      const stillSelected = nextItems.some((item) => item.job_id === selectedJobId);
-      const jobIdToLoad = stillSelected ? selectedJobId : nextItems[0]?.job_id || "";
+      const reportTab = activeTab === "html" ? "html" : "viewer";
+      const visibleItems = getReportsForTab(nextItems, reportTab);
+      const stillSelected = visibleItems.some((item) => item.job_id === selectedJobId);
+      const jobIdToLoad = stillSelected ? selectedJobId : visibleItems[0]?.job_id || "";
       if (jobIdToLoad) await loadDetail(jobIdToLoad);
       else {
         setSelectedJobId("");
@@ -363,19 +463,19 @@ export default function SkillReportPage({
     } finally {
       setLoadingList(false);
     }
-  }, [baseUrl, loadDetail, reportsEndpoint, selectedJobId]);
+  }, [activeTab, baseUrl, getReportsForTab, loadDetail, reportsEndpoint, selectedJobId]);
 
   const selectReportDate = useCallback(
     (reportDate: string) => {
       setSelectedReportDate(reportDate);
       setSearch("");
       if (!reportDate) return;
-      const firstMatch = items.find((item) => getReportDate?.(item) === reportDate);
+      const firstMatch = getReportsForTab(items, "viewer").find((item) => getReportDate?.(item) === reportDate);
       if (firstMatch) {
         void loadDetail(firstMatch.job_id);
       }
     },
-    [getReportDate, items, loadDetail]
+    [getReportDate, getReportsForTab, items, loadDetail]
   );
 
   const prepareReportPrompt = useCallback(() => {
@@ -454,7 +554,7 @@ export default function SkillReportPage({
   );
 
   const submitJob = useCallback(async () => {
-    const missing = fields.find((field) => "required" in field && field.required && !String(values[field.name] || "").trim());
+    const missing = activeFields.find((field) => "required" in field && field.required && !String(values[field.name] || "").trim());
     if (missing) {
       setJobError(`${missing.label} is required.`);
       return;
@@ -467,12 +567,12 @@ export default function SkillReportPage({
     try {
       const requestValues = Object.fromEntries(
         Object.entries(values).filter(([name, value]) => {
-          const field = fields.find((item) => item.name === name);
+          const field = activeFields.find((item) => item.name === name);
           const omitWhenBlank = !!field && "omitWhenBlank" in field && field.omitWhenBlank;
           return !(omitWhenBlank && !String(value || "").trim());
         })
       );
-      const res = await authenticatedFetch(`${baseUrl}${jobsEndpoint}`, {
+      const res = await authenticatedFetch(`${baseUrl}${activeJobsEndpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestValues),
@@ -486,7 +586,7 @@ export default function SkillReportPage({
         setJobId(returnedJobId);
         saveJob({
           job_id: returnedJobId,
-          label: makeJobLabel(values),
+          label: activeMakeJobLabel(values),
           submitted_at: new Date().toISOString(),
           status: getStatus(data) || "submitted",
         });
@@ -496,7 +596,7 @@ export default function SkillReportPage({
     } finally {
       setSubmitting(false);
     }
-  }, [baseUrl, fields, jobsEndpoint, makeJobLabel, saveJob, values]);
+  }, [activeFields, activeJobsEndpoint, activeMakeJobLabel, baseUrl, saveJob, values]);
 
   const checkStatusFor = useCallback(
     async (jobIdToCheck: string) => {
@@ -508,7 +608,7 @@ export default function SkillReportPage({
       setChecking(true);
       setJobError("");
       try {
-        const res = await authenticatedFetch(`${baseUrl}${jobsEndpoint}/${encodeURIComponent(currentJobId)}`);
+        const res = await authenticatedFetch(`${baseUrl}${activeJobsEndpoint}/${encodeURIComponent(currentJobId)}`);
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload.detail || `HTTP ${res.status}`);
         const data = (payload as ProxyResponse).data || {};
@@ -528,20 +628,24 @@ export default function SkillReportPage({
         setChecking(false);
       }
     },
-    [baseUrl, jobsEndpoint, saveJob, savedJobs]
+    [activeJobsEndpoint, baseUrl, saveJob, savedJobs]
   );
 
   useEffect(() => {
     setValues(() => {
-      const nextValues = { ...initialValues };
-      fields.forEach((field) => {
+      const nextValues: Record<string, string | number> = {};
+      activeFields.forEach((field) => {
+        nextValues[field.name] = resolveDefaultValue(field);
         if (isDateTimeTimezoneField(field) && field.clientDefaultValue) {
           nextValues[field.name] = field.clientDefaultValue();
         }
       });
       return nextValues;
     });
-  }, [fields, initialValues]);
+    setJobError("");
+    setJobResponse(null);
+    setJobStatus(null);
+  }, [activeFields, activeJobModeKey]);
 
   useEffect(() => {
     setSavedJobs(loadSavedJobs(storageKey));
@@ -552,7 +656,7 @@ export default function SkillReportPage({
   }, [loadReports]);
 
   useEffect(() => {
-    if (activeTab !== "runner" || !optionCountsEndpoint || !optionCountsObservationDate) {
+    if (activeTab !== "runner" || activeJobMode || !optionCountsEndpoint || !optionCountsObservationDate) {
       setAggregates(null);
       setAggregatesError("");
       return;
@@ -578,7 +682,7 @@ export default function SkillReportPage({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, baseUrl, optionCountsEndpoint, optionCountsObservationDate]);
+  }, [activeJobMode, activeTab, baseUrl, optionCountsEndpoint, optionCountsObservationDate]);
 
   const visibleJobStatus = jobStatus ? getStatus(jobStatus) : jobResponse ? getStatus(jobResponse) : "";
 
@@ -591,25 +695,28 @@ export default function SkillReportPage({
       />
 
       <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-        {(["viewer", "runner"] as const).map((key) => (
+        {(["viewer", ...(htmlReports ? ["html" as const] : []), "runner"] as const).map((key) => (
           <button
             key={key}
             type="button"
-            onClick={() => setActiveTab(key)}
+            onClick={() => {
+              setActiveTab(key);
+              if (key !== "viewer") setSelectedReportDate("");
+            }}
             className={[
               "rounded-md px-4 py-2 text-sm font-medium transition-colors",
               activeTab === key ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
             ].join(" ")}
           >
-            {key === "viewer" ? "Viewer" : "Run Job"}
+            {key === "viewer" ? "Viewer" : key === "html" ? (htmlReports?.label || "HTML Reports") : "Run Job"}
           </button>
         ))}
       </div>
 
-      {activeTab === "viewer" ? (
+      {activeTab === "viewer" || activeTab === "html" ? (
         <div className="space-y-4">
           {viewerError ? <Alert variant="danger">{viewerError}</Alert> : null}
-          {reportDateCards.length > 0 ? (
+          {activeTab === "viewer" && reportDateCards.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
               <button
                 type="button"
@@ -640,6 +747,37 @@ export default function SkillReportPage({
                   <span className="mt-1 block text-xs text-slate-500">{card.count.toLocaleString()} reports</span>
                 </button>
               ))}
+            </div>
+          ) : null}
+          {activeTab === "html" && htmlReports?.getReportDateRange ? (
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={sortHtmlByRangeStartDate}
+                  onChange={(event) => setSortHtmlByRangeStartDate(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>Order by range start date</span>
+              </label>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={sortHtmlRangeStartDateDescending}
+                  onChange={(event) => setSortHtmlRangeStartDateDescending(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>Range start date descending</span>
+              </label>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={showOnlyOneDayHtmlReports}
+                  onChange={(event) => setShowOnlyOneDayHtmlReports(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>Show only one-day range reports</span>
+              </label>
             </div>
           ) : null}
           <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -691,7 +829,7 @@ export default function SkillReportPage({
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
-                      {buildReportPrompt ? (
+                      {activeTab === "viewer" && buildReportPrompt ? (
                         <>
                           <Button type="button" variant="secondary" size="sm" onClick={prepareReportPrompt}>
                             {reportPromptLabel}
@@ -702,6 +840,16 @@ export default function SkillReportPage({
                             </Button>
                           ) : null}
                         </>
+                      ) : null}
+                      {activeTab === "html" && htmlPreviewUrl ? (
+                        <a
+                          href={htmlPreviewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                        >
+                          Open full HTML in new tab
+                        </a>
                       ) : null}
                       <Button type="button" variant="secondary" size="sm" onClick={() => void loadDetail(detail.job_id)} disabled={loadingDetail}>
                         {loadingDetail ? "Loading..." : "Reload"}
@@ -739,7 +887,16 @@ export default function SkillReportPage({
                 {loadingDetail && !detail ? (
                   <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500">Loading report...</div>
                 ) : detail ? (
-                  <MarkdownRenderer content={detail.content} />
+                  activeTab === "html" ? (
+                    <iframe
+                      title={detail.title}
+                      srcDoc={detail.content}
+                      sandbox="allow-forms allow-modals allow-popups allow-scripts"
+                      className="h-[calc(100vh-300px)] min-h-[620px] w-full rounded-md border border-slate-200 bg-white"
+                    />
+                  ) : (
+                    <MarkdownRenderer content={detail.content} />
+                  )
                 ) : (
                   <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500">Select a report to view it.</div>
                 )}
@@ -751,7 +908,26 @@ export default function SkillReportPage({
         <div className="grid gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="space-y-4">
-              {fields.map((field) => (
+              {alternateJobMode ? (
+                <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveJobModeKey("default")}
+                    className={["rounded-md px-3 py-2 text-sm font-medium", !activeJobMode ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"].join(" ")}
+                  >
+                    Single-date Markdown
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveJobModeKey(alternateJobMode.key)}
+                    className={["rounded-md px-3 py-2 text-sm font-medium", activeJobMode ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"].join(" ")}
+                  >
+                    {alternateJobMode.label}
+                  </button>
+                </div>
+              ) : null}
+
+              {activeFields.map((field) => (
                 <div key={field.name}>
                   <label className="mb-1 block text-sm font-medium text-slate-700">{field.label}</label>
                   {isDateTimeTimezoneField(field) ? (
@@ -814,7 +990,7 @@ export default function SkillReportPage({
                 </div>
               ))}
 
-              <Button type="button" onClick={() => void submitJob()} disabled={submitting}>{submitting ? "Submitting..." : submitLabel}</Button>
+              <Button type="button" onClick={() => void submitJob()} disabled={submitting}>{submitting ? "Submitting..." : activeSubmitLabel}</Button>
 
               <div className="border-t border-slate-200 pt-4">
                 <label className="mb-1 block text-sm font-medium text-slate-700">Job id</label>
@@ -857,7 +1033,7 @@ export default function SkillReportPage({
             </div>
           </section>
 
-          {optionCountsEndpoint ? (
+          {optionCountsEndpoint && !activeJobMode ? (
             <section className="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
                 <h2 className="text-lg font-semibold text-slate-900">{optionCountsTitle}</h2>

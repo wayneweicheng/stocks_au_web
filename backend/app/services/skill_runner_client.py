@@ -110,11 +110,26 @@ def extract_report_items(data: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def extract_report_content(data: Any) -> str:
+def extract_report_content(data: Any, preferred_format: Optional[str] = None) -> str:
     if isinstance(data, str):
         return data
     if isinstance(data, dict):
-        content = get_first_value(data, ["content", "report_markdown", "markdown", "report", "text"])
+        if preferred_format == "html":
+            content_keys = ["html", "report_html", "html_content", "content", "report", "text"]
+        elif preferred_format == "markdown":
+            content_keys = ["content", "report_markdown", "markdown", "report", "text"]
+        else:
+            content_keys = [
+                "html",
+                "report_html",
+                "html_content",
+                "content",
+                "report_markdown",
+                "markdown",
+                "report",
+                "text",
+            ]
+        content = get_first_value(data, content_keys)
         if content is not None:
             return str(content)
     return json.dumps(data, indent=2, ensure_ascii=False)

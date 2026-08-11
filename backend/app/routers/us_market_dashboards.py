@@ -1,14 +1,16 @@
 import logging
 import statistics
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from time import perf_counter
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.db import get_sql_model
 from app.routers.auth import verify_credentials
+from app.services.live_stock_price_service import get_live_stock_prices
 
 
 router = APIRouter(
@@ -19,6 +21,7 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 SLOW_QUERY_SECONDS = 2.0
+US_EASTERN = ZoneInfo("America/New_York")
 
 
 def _json_value(value: Any) -> Any:
@@ -81,6 +84,45 @@ def _timed_query(label: str, sql: str, params: Tuple[Any, ...]) -> List[Dict[str
         elapsed >= SLOW_QUERY_SECONDS,
     )
     return rows
+
+
+def _get_qqq_price_change() -> Dict[str, Any]:
+    stock_code = "QQQ.US"
+    market_date = datetime.now(US_EASTERN).date()
+    previous_close_rows = _timed_query(
+        "option_gex_delta_capital_type.qqq_previous_close",
+        """
+        select top (1) ObservationDate, [Close]
+        from StockDB_US.StockData.PriceHistory with(nolock)
+        where ASXCode = convert(varchar(10), ?)
+          and ObservationDate < convert(date, ?)
+        order by ObservationDate desc
+        """,
+        (stock_code, market_date),
+    )
+    previous_close = _float(previous_close_rows[0].get("Close")) if previous_close_rows else None
+    previous_close_date = previous_close_rows[0].get("ObservationDate") if previous_close_rows else None
+
+    live_price = None
+    quote_source = None
+    try:
+        live_quote = get_live_stock_prices([stock_code]).get(stock_code) or {}
+        live_price = _float(live_quote.get("price"))
+        quote_source = live_quote.get("source")
+    except Exception as exc:
+        logger.warning("Unable to load QQQ live price: %s", exc)
+
+    change_pct = None
+    if live_price is not None and previous_close not in (None, 0):
+        change_pct = round((live_price - previous_close) * 100.0 / previous_close, 2)
+
+    return {
+        "price": live_price,
+        "previous_close": previous_close,
+        "previous_close_date": previous_close_date,
+        "change_pct": change_pct,
+        "source": quote_source,
+    }
 
 
 def _option_gex_metrics(raw_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -522,9 +564,9 @@ def option_gex_delta_capital_type(
     previous_bc_perc = None
     for date_key in table_dates:
         bc = current_map.get((date_key, "BC"))
-        bp = current_map.get((date_key, "BP"))
+        sp = current_map.get((date_key, "SP"))
         bc_pre = pre_map.get((date_key, "BC"))
-        bp_pre = pre_map.get((date_key, "BP"))
+        sp_pre = pre_map.get((date_key, "SP"))
         close = _float(bc.get("Close")) if bc else None
         bc_perc = _float(bc.get("GEXDeltaPerc")) if bc else None
         insight = None
@@ -539,8 +581,8 @@ def option_gex_delta_capital_type(
                 "GEXInsight": insight,
                 "BC_GEXDeltaPerc": bc.get("GEXDeltaPerc") if bc else None,
                 "BC_GEXDeltaPerc_Pre": bc_pre.get("GEXDeltaPerc") if bc_pre else None,
-                "BP_GEXDeltaPerc": bp.get("GEXDeltaPerc") if bp else None,
-                "BP_GEXDeltaPerc_Pre": bp_pre.get("GEXDeltaPerc") if bp_pre else None,
+                "SP_GEXDeltaPerc": sp.get("GEXDeltaPerc") if sp else None,
+                "SP_GEXDeltaPerc_Pre": sp_pre.get("GEXDeltaPerc") if sp_pre else None,
                 "Close": bc.get("Close") if bc else None,
                 "PreviousClose": previous_close,
                 "VWAP": bc.get("VWAP") if bc else None,
@@ -552,6 +594,7 @@ def option_gex_delta_capital_type(
         previous_close = close if close is not None else previous_close
         previous_bc_perc = bc_perc if bc_perc is not None else previous_bc_perc
     table_rows = _rows(list(reversed(table_rows))[:200])
+    qqq_price = _get_qqq_price_change()
 
     endpoint_elapsed = perf_counter() - endpoint_started
     endpoint_log = logger.warning if endpoint_elapsed >= SLOW_QUERY_SECONDS else logger.info
@@ -572,4 +615,9 @@ def option_gex_delta_capital_type(
         "count": len(rows),
         "rows": rows,
         "table_rows": table_rows,
+        "qqq_live_price": qqq_price["price"],
+        "qqq_previous_close": qqq_price["previous_close"],
+        "qqq_previous_close_date": _json_value(qqq_price["previous_close_date"]),
+        "qqq_price_change_pct": qqq_price["change_pct"],
+        "qqq_price_source": qqq_price["source"],
     }

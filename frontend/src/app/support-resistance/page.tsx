@@ -9,7 +9,7 @@ import Input from "../components/ui/Input";
 import PageHeader from "../components/PageHeader";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
-const LOOKBACK_DAY_OPTIONS = ["3", "5", "10", "20", "30", "60"];
+const LOOKBACK_DAY_OPTIONS = ["3", "5", "10", "20", "30"];
 const SUPPORT_RESISTANCE_REQUEST_TIMEOUT_MS = 60000;
 
 function formatPrice(value: number | null | undefined) {
@@ -183,6 +183,7 @@ export default function SupportResistancePage() {
   const initialLoadStarted = useRef(false);
   const plotRef = useRef<HTMLDivElement>(null);
   const activeRequest = useRef<AbortController | null>(null);
+  const requestSequence = useRef(0);
   const [stockCode, setStockCode] = useState("");
   const [data, setData] = useState<SupportResistanceResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -201,6 +202,8 @@ export default function SupportResistancePage() {
       setLoading(true);
       setError("");
       activeRequest.current?.abort();
+      const requestId = requestSequence.current + 1;
+      requestSequence.current = requestId;
       const controller = new AbortController();
       activeRequest.current = controller;
       const timeoutId = window.setTimeout(() => controller.abort(), SUPPORT_RESISTANCE_REQUEST_TIMEOUT_MS);
@@ -209,7 +212,7 @@ export default function SupportResistancePage() {
         const maxAtr = Number(maximumAtr);
         const params = new URLSearchParams({
           stock_code: code.trim().toUpperCase(),
-          lookback_days: String(Math.max(3, Math.min(60, Number(lookbackDays) || 10))),
+          lookback_days: String(Math.max(3, Math.min(30, Number(lookbackDays) || 10))),
           minimum_distance_atr: (Number.isFinite(minAtr) ? minAtr : 0.1).toFixed(2),
           maximum_distance_atr: (Number.isFinite(maxAtr) ? maxAtr : 3).toFixed(2),
           max_levels: "5",
@@ -238,9 +241,11 @@ export default function SupportResistancePage() {
           }
         }
         if (!response.ok) throw new Error(body?.detail || `HTTP ${response.status}`);
+        if (requestSequence.current !== requestId) return;
         setData(body);
         setStockCode(body.stock_code);
       } catch (exc: any) {
+        if (requestSequence.current !== requestId) return;
         if (exc?.name === "AbortError") {
           setError("Request timed out after 60 seconds. The support/resistance service is taking too long.");
         } else {
@@ -251,8 +256,8 @@ export default function SupportResistancePage() {
         window.clearTimeout(timeoutId);
         if (activeRequest.current === controller) {
           activeRequest.current = null;
+          setLoading(false);
         }
-        setLoading(false);
       }
     },
     [baseUrl, lookbackDays, minimumAtr, maximumAtr, observationDateTime]

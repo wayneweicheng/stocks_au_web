@@ -10,7 +10,9 @@ def _auth():
 
 def test_option_flow_report_list_and_read_from_skill_runner(monkeypatch):
     def fake_list_reports(job_type):
-        assert job_type == "analyze-option-flow"
+        assert job_type in {"analyze-option-flow", "analyze-option-flow-range"}
+        if job_type == "analyze-option-flow-range":
+            return []
         return [
             {
                 "job_id": "flow-123",
@@ -48,7 +50,9 @@ def test_option_flow_report_delete_hides_report(monkeypatch, tmp_path):
     deleted_path = tmp_path / "deleted_skill_reports.json"
 
     def fake_list_reports(job_type):
-        assert job_type == "analyze-option-flow"
+        assert job_type in {"analyze-option-flow", "analyze-option-flow-range"}
+        if job_type == "analyze-option-flow-range":
+            return []
         return [
             {
                 "job_id": "flow-123",
@@ -164,6 +168,76 @@ def test_option_flow_ticker_drilldown_job_submit(monkeypatch):
     ]
 
 
+def test_option_flow_range_job_submit_forwards_html_job_payload(monkeypatch):
+    calls = []
+
+    def fake_call_skill_runner(method, path, payload=None):
+        calls.append((method, path, payload))
+        return {"job_id": "flow-range-123", "status": "queued"}
+
+    monkeypatch.setattr(skill_report_pages, "call_skill_runner", fake_call_skill_runner)
+    client = TestClient(app)
+
+    create = client.post(
+        "/api/option-flow-analysis-range/jobs",
+        headers=_auth(),
+        json={
+            "ticker": "amzn",
+            "start_date": "2026-07-25",
+            "end_date": "2026-08-03",
+            "top_n": 30,
+        },
+    )
+
+    assert create.status_code == 200
+    assert create.json()["data"]["job_id"] == "flow-range-123"
+    assert calls == [
+        (
+            "POST",
+            "/api/jobs/analyze-option-flow-range",
+            {
+                "ticker": "AMZN",
+                "start_date": "2026-07-25",
+                "end_date": "2026-08-03",
+                "top_n": 30,
+            },
+        ),
+    ]
+
+
+def test_option_flow_html_report_metadata_and_content(monkeypatch):
+    def fake_list_reports(job_type):
+        assert job_type in {"analyze-option-flow", "analyze-option-flow-range"}
+        if job_type == "analyze-option-flow-range":
+            return []
+        return [
+            {
+                "job_id": "flow-html-123",
+                "label": "AMZN range report",
+                "filename": "AMZN_20260725_20260803.html",
+                "completed_at": "2026-08-03T10:30:00+10:00",
+                "status": "succeeded",
+            }
+        ]
+
+    def fake_get_job_report(job_id):
+        assert job_id == "flow-html-123"
+        return {"report_html": "<!doctype html><html><body><h1>AMZN</h1></body></html>"}
+
+    monkeypatch.setattr(skill_report_pages, "list_reports", fake_list_reports)
+    monkeypatch.setattr(skill_report_pages, "get_job_report", fake_get_job_report)
+    client = TestClient(app)
+
+    listing = client.get("/api/option-flow-analysis-reports", headers=_auth())
+    assert listing.status_code == 200
+    assert listing.json()["items"][0]["file_name"] == "AMZN_20260725_20260803.html"
+    assert listing.json()["items"][0]["file_type"] == "html"
+
+    detail = client.get("/api/option-flow-analysis-reports/flow-html-123", headers=_auth())
+    assert detail.status_code == 200
+    assert detail.json()["content"].startswith("<!doctype html>")
+
+
 def test_option_flow_aggregates_returns_trade_and_bidask_counts(monkeypatch):
     calls = []
 
@@ -179,13 +253,11 @@ def test_option_flow_aggregates_returns_trade_and_bidask_counts(monkeypatch):
             calls.append((query, params, self.cursor.timeout))
             if "v_OptionTrade" in query:
                 return [
-                    {"ASXCode": "MU", "NumRecords": 12, "NumOptions": 5},
-                    {"ASXCode": "NVDA", "NumRecords": 20, "NumOptions": 7},
+                    {"ASXCode": "MU", "NumRecords": 12, "NumOptions": 5, "in_market_flow": True},
+                    {"ASXCode": "NVDA", "NumRecords": 20, "NumOptions": 7, "in_market_flow": False},
                 ]
             if "v_OptionBidAsk" in query:
-                return [{"ASXCode": "MU", "NumRecords": 30, "NumOptions": 9}]
-            if "GEX_Features" in query:
-                return [{"ASXCode": "MU"}]
+                return [{"ASXCode": "MU", "NumRecords": 30, "NumOptions": 9, "in_market_flow": True}]
             return []
 
     monkeypatch.setattr(stock_codes, "get_sql_model", lambda: FakeSqlModel())
@@ -201,13 +273,14 @@ def test_option_flow_aggregates_returns_trade_and_bidask_counts(monkeypatch):
         ],
         "bidask": [{"ASXCode": "MU", "NumRecords": 30, "NumOptions": 9, "in_market_flow": True}],
     }
-    assert len(calls) == 3
-    assert calls[0][1][0].isoformat() == "2026-07-10"
-    assert calls[1][1][0].isoformat() == "2026-07-10"
-    assert calls[2][1][0].isoformat() == "2026-07-10"
+    assert len(calls) == 2
+    assert [value.isoformat() for value in calls[0][1]] == ["2026-07-10", "2026-07-10"]
+    assert [value.isoformat() for value in calls[1][1]] == ["2026-07-10", "2026-07-10"]
     assert calls[0][2] == 60
     assert calls[1][2] == 60
-    assert calls[2][2] == 60
     assert "WITH (NOLOCK)" in calls[0][0]
     assert "WITH (NOLOCK)" in calls[1][0]
-    assert "GEX_Features" in calls[2][0]
+    assert "GEX_Features" in calls[0][0]
+    assert "GEX_Features" in calls[1][0]
+    assert "market_flow.ObservationDate = option_rows.ObservationDate" in calls[0][0]
+    assert "market_flow.ObservationDate = option_rows.ObservationDate" in calls[1][0]

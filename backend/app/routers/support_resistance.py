@@ -1,12 +1,15 @@
 from datetime import date, datetime
+from threading import BoundedSemaphore
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.config import settings
 from app.routers.auth import verify_credentials
 from app.services.price_levels_30m_service import (
     MAX_ZONE_DISTANCE_ATR,
     MIN_ZONE_DISTANCE_ATR,
+    SupportResistanceDatabaseError,
     get_30m_support_resistance_for_stock,
 )
 
@@ -15,6 +18,9 @@ router = APIRouter(
     prefix="/api/support-resistance",
     tags=["support-resistance"],
     dependencies=[Depends(verify_credentials)],
+)
+_support_resistance_slots = BoundedSemaphore(
+    settings.support_resistance_max_concurrent_requests
 )
 
 
@@ -42,6 +48,11 @@ def support_resistance(
             status_code=422,
             detail="Minimum ATR distance cannot exceed maximum ATR distance",
         )
+    if not _support_resistance_slots.acquire(blocking=False):
+        raise HTTPException(
+            status_code=503,
+            detail="Support/resistance is already loading another request. Please try again shortly.",
+        )
     try:
         return get_30m_support_resistance_for_stock(
             stock_code=stock_code,
@@ -53,7 +64,11 @@ def support_resistance(
             max_levels=max_levels,
             enable_live_prices=enable_live_prices,
         )
+    except SupportResistanceDatabaseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to calculate support/resistance: {exc}")
+    finally:
+        _support_resistance_slots.release()
