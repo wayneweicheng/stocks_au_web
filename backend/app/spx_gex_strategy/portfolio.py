@@ -45,9 +45,44 @@ class PortfolioManager:
         snapshot = self.snapshot
         if snapshot.state != PortfolioState.FLAT:
             return f"EXISTING_POSITION_PRIORITY_CURRENT_STATE_{snapshot.state.value}"
-        if self.store.open_plans(as_of=at):
+        if self._has_overlapping_open_plan(at):
             return "EXISTING_POSITION_PRIORITY_OPEN_PLAN"
         return None
+
+    def _has_overlapping_open_plan(self, at: datetime | None) -> bool:
+        """Return whether a still-actionable prior plan overlaps ``at``.
+
+        A stale ``PLANNED`` row is not an open order. It can remain in the
+        audit ledger after its scheduled action time, especially when a
+        worker was offline, and must not be allowed to describe or block a
+        later independent signal. A plan due at the candidate action time,
+        or a pending dip order that has not expired, remains relevant.
+        """
+        for row in self.store.open_plans():
+            status = str(row["status"])
+            if status == "PENDING_GREEN_DIP":
+                metadata = json.loads(row["metadata_json"] or "{}")
+                expiry = metadata.get("dip_expire_at")
+                if at is None or not expiry:
+                    return True
+                expiry_at = datetime.fromisoformat(str(expiry))
+                if expiry_at.tzinfo is None:
+                    expiry_at = expiry_at.replace(tzinfo=at.tzinfo)
+                if expiry_at > at:
+                    return True
+                continue
+
+            first_action = datetime.fromisoformat(str(row["first_action_at"]))
+            if at is None:
+                return True
+            if first_action.tzinfo is None:
+                first_action = first_action.replace(tzinfo=at.tzinfo)
+            # A future scheduled plan is not an existing order at this
+            # candidate's action time. Only a plan due at the same action
+            # timestamp is an actual overlap; older PLANNED rows are stale.
+            if first_action == at:
+                return True
+        return False
 
     def build_plan(self, evaluation: SignalEvaluation, reference_price: float | None = None) -> TradePlan:
         if not evaluation.action_date or not evaluation.actionable_at:

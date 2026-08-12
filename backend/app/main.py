@@ -151,7 +151,10 @@ logger = logging.getLogger("app")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
-    # Startup
+    # Startup. Build the OpenAPI document during service startup so the first
+    # health probe or client request does not pay schema-generation cost.
+    logger.info("Preparing OpenAPI schema...")
+    app.openapi()
     logger.info("Starting background scheduler...")
     start_scheduler()
     yield

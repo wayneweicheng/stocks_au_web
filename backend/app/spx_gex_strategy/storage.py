@@ -260,6 +260,14 @@ class StrategyStore:
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_strategy_reports_file_name "
                 "ON strategy_reports(file_name) WHERE file_name IS NOT NULL"
             )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS ix_strategy_reports_generated_at "
+                "ON strategy_reports(generated_at DESC)"
+            )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS ix_strategy_reports_environment_generated_at "
+                "ON strategy_reports(environment_type, generated_at DESC)"
+            )
             migration_columns = {
                 "signals": {
                     "git_commit": "TEXT",
@@ -315,7 +323,7 @@ class StrategyStore:
     def _backfill_report_metadata(self, db: sqlite3.Connection) -> None:
         rows = db.execute(
             "SELECT report_id, report_date, generated_at, file_name, observation_date "
-            "FROM strategy_reports ORDER BY generated_at"
+            "FROM strategy_reports WHERE file_name IS NULL OR observation_date IS NULL ORDER BY generated_at"
         ).fetchall()
         used_names = {str(row["file_name"]) for row in rows if row["file_name"]}
         for row in rows:
@@ -445,7 +453,38 @@ class StrategyStore:
                     _utc_now(),
                 ),
             )
-            return signal_id, cursor.rowcount == 1
+            inserted = cursor.rowcount == 1
+            if not inserted:
+                # A rerun can discover a different operational blocker (or
+                # recover from one) while retaining the same deterministic
+                # signal identity. Refresh the saved decision fields so the
+                # next report reflects the current run rather than a stale
+                # first-attempt result.
+                db.execute(
+                    """
+                    UPDATE signals
+                    SET action_date=?, actionable_at=?, signal_raw=?, classification=?,
+                        trade_allowed=?, skip_reason=?, metrics_json=?, environment_type=?,
+                        git_commit=?, config_hash=?, data_hash=?, base_signal_source_mode=?
+                    WHERE signal_id=?
+                    """,
+                    (
+                        evaluation.action_date.isoformat() if evaluation.action_date else None,
+                        action_stamp if evaluation.actionable_at else None,
+                        observation.signal_raw,
+                        evaluation.classification.value,
+                        int(evaluation.trade_allowed),
+                        evaluation.skip_reason,
+                        _json(metrics),
+                        environment_type.value,
+                        (provenance_metadata or {}).get("git_commit"),
+                        (provenance_metadata or {}).get("config_hash"),
+                        (provenance_metadata or {}).get("data_hash"),
+                        base_signal_source_mode or (provenance_metadata or {}).get("base_signal_source_mode"),
+                        signal_id,
+                    ),
+                )
+            return signal_id, inserted
 
     def save_plan(self, plan: TradePlan) -> str:
         key = f"plan|{plan.signal_id}|{plan.classification.value}"

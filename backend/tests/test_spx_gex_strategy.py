@@ -313,6 +313,56 @@ class SPXGEXStrategyTests(unittest.TestCase):
         self.assertEqual(store.open_plans(as_of=before_d3), [])
         self.assertIsNone(manager.conflict_reason(SignalClassification.NORMAL_GREEN, at=before_d3))
 
+    def test_stale_planned_order_does_not_overlap_later_signal(self):
+        from app.spx_gex_strategy.portfolio import PortfolioManager
+
+        store = StrategyStore(":memory:")
+        calendar = USCashCalendar()
+        manager = PortfolioManager(store, calendar, "v1.0.3-production")
+        old_evaluation = SignalEvaluation(
+            observation=DailyGexObservation(
+                observation_date=date(2026, 6, 26),
+                bc_gex_delta=1,
+                bp_gex_delta=-1,
+                sc_gex_delta=-1,
+                sp_gex_delta=1,
+                total_abs_gex_delta=4,
+                close=None,
+                vwap=None,
+                put_call_ratio=None,
+                close_change_pct=None,
+                pcr_change_pct=None,
+                signal_raw="BEARISH",
+                sc_gex=100,
+            ),
+            classification=SignalClassification.STRONG_YELLOW,
+            actionable_at=calendar.actionable_at(date(2026, 6, 29)),
+            action_date=date(2026, 6, 29),
+            trade_allowed=True,
+            skip_reason=None,
+        )
+        old_signal_id, _ = store.save_signal(
+            old_evaluation, "v1.0.3-production", EnvironmentType.FORWARD_PAPER
+        )
+        old_action = calendar.actionable_at(date(2026, 6, 29))
+        store.save_plan(
+            TradePlan(
+                signal_id=old_signal_id,
+                classification=SignalClassification.STRONG_YELLOW,
+                observation_date=date(2026, 6, 26),
+                action_date=date(2026, 6, 29),
+                first_action_at=old_action,
+                direction=Direction.SHORT,
+                entry_type="D1_MARKET",
+                tp_pct=0.008,
+                sl_pct=0.010,
+            )
+        )
+        current_action = calendar.actionable_at(date(2026, 8, 12))
+        self.assertIsNone(
+            manager.conflict_reason(SignalClassification.REVERSAL_GREEN, at=current_action)
+        )
+
     def test_live_qqq_quantity_uses_qqq_quote_not_nq_proxy(self):
         from app.spx_gex_strategy.notifications import signal_notification
         from app.spx_gex_strategy.models import PortfolioSnapshot, PortfolioState
@@ -554,6 +604,120 @@ class SPXGEXStrategyTests(unittest.TestCase):
         self.assertIn("Tradable Yellow", html)
         self.assertIn("SC_LOW FALSE (SC GEX level 120.00 &gt; 100.00)", html)
         self.assertIn("SP_HIGH FALSE (6.25% &lt;= 10.00%)", html)
+
+    def test_report_gives_reversal_action_and_historical_performance(self):
+        store = StrategyStore(":memory:")
+        store.ensure_portfolio(100000, 1.0)
+        observation = DailyGexObservation(
+            observation_date=date(2026, 8, 11),
+            bc_gex_delta=10,
+            bp_gex_delta=-10,
+            sc_gex_delta=-5,
+            sp_gex_delta=2,
+            total_abs_gex_delta=27,
+            close=None,
+            vwap=None,
+            put_call_ratio=None,
+            close_change_pct=None,
+            pcr_change_pct=None,
+            signal_raw="BULLISH",
+            sc_gex=100,
+            derived={"prior_5d_nq_return": -0.0081},
+        )
+        evaluation = SignalEvaluation(
+            observation=observation,
+            classification=SignalClassification.REVERSAL_GREEN,
+            actionable_at=datetime.fromisoformat("2026-08-12T03:30:00-04:00"),
+            action_date=date(2026, 8, 12),
+            trade_allowed=False,
+            skip_reason="PORTFOLIO_CONFLICT",
+            prior_5d_nq_return=-0.0081,
+        )
+        signal_id, _ = store.save_signal(evaluation, "v1.0.3-production", EnvironmentType.FORWARD_PAPER)
+        html = render_html_report(
+            store,
+            "v1.0.3-production",
+            qqq_reference={
+                "reference_price": 500.0,
+                "reference_timestamp": "2026-08-12T03:30:00-04:00",
+                "reference_source": "IB_HISTORICAL_03:30",
+            },
+            focus_date=date(2026, 8, 11),
+        )
+        self.assertIn("What this signal means", html)
+        self.assertIn("Reversal Green action plan", html)
+        self.assertIn("DO NOT PLACE AN ORDER", html)
+        self.assertIn("78.57%", html)
+        self.assertIn("Average return: +1.459%", html)
+        self.assertIn("QQQ ORDER REFERENCE", html)
+        self.assertIn("IB_HISTORICAL_03:30", html)
+        self.assertNotIn("tradable LONG QQQ", html)
+
+    def test_qqq_reference_uses_live_before_boundary_and_historical_after(self):
+        settings = SimpleNamespace(
+            spx_gex_timezone="America/New_York",
+            spx_gex_db_path=":memory:",
+            spx_gex_initial_capital=100000.0,
+            spx_gex_exposure_factor=1.0,
+            spx_gex_strategy_version="v1.0.3-production",
+            spx_gex_shadow_enabled=False,
+            pushover_user_key="",
+            pushover_app_token="",
+            pushover_device="",
+            pushover_sound="",
+        )
+        service = SPXGEXStrategyService(settings)
+        boundary = datetime.fromisoformat("2026-08-12T03:30:00-04:00")
+        service._live_qqq = Mock(return_value={"price": 500.0, "timestamp": "before"})
+        before = service._qqq_reference(boundary, datetime.fromisoformat("2026-08-12T03:29:00-04:00"))
+        self.assertEqual(before["reference_source"], "IB_LIVE_BEFORE_03:30")
+        self.assertEqual(before["reference_price"], 500.0)
+        with patch(
+            "app.spx_gex_strategy.service.get_qqq_reference_snapshot",
+            return_value={"reference_price": 501.0, "reference_source": "IB_HISTORICAL_03:30"},
+        ) as historical:
+            after = service._qqq_reference(boundary, datetime.fromisoformat("2026-08-12T03:31:00-04:00"))
+        historical.assert_called_once()
+        self.assertEqual(after["reference_source"], "IB_HISTORICAL_03:30")
+        self.assertEqual(after["reference_price"], 501.0)
+
+    def test_missing_qqq_reference_does_not_make_reversal_signal_untradable(self):
+        store = StrategyStore(":memory:")
+        store.ensure_portfolio(100000, 1.0)
+        observation = DailyGexObservation(
+            observation_date=date(2026, 8, 11),
+            bc_gex_delta=10,
+            bp_gex_delta=-10,
+            sc_gex_delta=-5,
+            sp_gex_delta=2,
+            total_abs_gex_delta=27,
+            close=None,
+            vwap=None,
+            put_call_ratio=None,
+            close_change_pct=None,
+            pcr_change_pct=None,
+            signal_raw="BULLISH",
+            sc_gex=100,
+            derived={
+                "prior_5d_nq_return": -0.0081,
+                "QQQ_reference_unavailable_reason": "IB returned no QQQ bar",
+            },
+        )
+        evaluation = SignalEvaluation(
+            observation=observation,
+            classification=SignalClassification.REVERSAL_GREEN,
+            actionable_at=datetime.fromisoformat("2026-08-12T03:30:00-04:00"),
+            action_date=date(2026, 8, 12),
+            trade_allowed=True,
+            skip_reason=None,
+            prior_5d_nq_return=-0.0081,
+        )
+        store.save_signal(evaluation, "v1.0.3-production", EnvironmentType.FORWARD_PAPER)
+        html = render_html_report(store, "v1.0.3-production", focus_date=date(2026, 8, 11))
+        self.assertIn("ACTION: PLACE A QQQ BUY LIMIT ORDER", html)
+        self.assertIn("Q0 × 0.99", html)
+        self.assertIn("Manual price required", html)
+        self.assertNotIn("Reason: MISSING_LIVE_QQQ_QUOTE", html)
 
     def test_recent_signals_can_filter_out_stale_strategy_versions(self):
         store = StrategyStore(":memory:")

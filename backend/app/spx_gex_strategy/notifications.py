@@ -211,9 +211,14 @@ def signal_notification(
     elif classification == SignalClassification.REVERSAL_GREEN:
         title = "🟢 REVERSAL GREEN — BUY DIP"
         notification_type = "SIGNAL_READY"
+        dip_instruction = (
+            f"QQQ Dip Limit (actual QQQ quote): {_money(qqq_price * 0.99)}"
+            if qqq_price
+            else "QQQ Dip Limit: MANUAL — obtain the D1 03:30 QQQ price Q0 and calculate Q0 × 0.99"
+        )
         common[6:6] = [
             "Entry Rule: Buy dip at -1.00% from D1 03:30 reference",
-            f"QQQ Dip Limit (actual QQQ quote): {_money(qqq_price * 0.99) if qqq_price else 'at D1 live quote'}",
+            dip_instruction,
             "Validity: D1 03:30 until D3 03:30 New York",
             "Fallback: BUY at D3 03:30 if unfilled",
             "Exit: D5 cash close",

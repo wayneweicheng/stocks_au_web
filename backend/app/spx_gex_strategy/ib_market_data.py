@@ -92,6 +92,33 @@ def _bar_local_date(value: Any) -> date | None:
     return timestamp.astimezone(NEW_YORK).date()
 
 
+def _bar_timestamp(value: Any) -> datetime | None:
+    """Parse the timestamp formats returned by IB historical bars."""
+    if isinstance(value, datetime):
+        timestamp = value
+    else:
+        text = str(value or "").strip()
+        timestamp = None
+        for candidate in (text.replace("Z", "+00:00"),):
+            try:
+                timestamp = datetime.fromisoformat(candidate)
+                break
+            except ValueError:
+                pass
+        if timestamp is None:
+            for fmt in ("%Y%m%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    timestamp = datetime.strptime(text, fmt)
+                    break
+                except ValueError:
+                    pass
+        if timestamp is None:
+            return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=NEW_YORK)
+    return timestamp.astimezone(NEW_YORK)
+
+
 def get_live_nq_snapshot(wait_seconds: float = 3.0) -> dict[str, Any]:
     """Get IB's rolling NQ front contract and move versus yesterday's close.
 
@@ -243,6 +270,102 @@ def get_live_qqq_snapshot(wait_seconds: float = 3.0) -> dict[str, Any]:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "source": "ib_live" if actual_data_type == 1 else "ib_delayed",
             "market_data_type": actual_data_type if actual_data_type in {1, 2, 3, 4} else market_data_type,
+        }
+    finally:
+        if contract is not None:
+            try:
+                ib.cancelMktData(contract)
+            except Exception:
+                pass
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+
+
+def get_qqq_reference_snapshot(
+    actionable_at: datetime,
+    now: datetime | None = None,
+    wait_seconds: float = 3.0,
+) -> dict[str, Any]:
+    """Return the QQQ price appropriate for a signal's 03:30 ET boundary.
+
+    Before the boundary, the current IB quote is the only actionable price.
+    At or after the boundary, deliberately request the exact 03:30 one-minute
+    historical bar instead of using a later quote.  A caller can treat an
+    exception or a missing bar as an unavailable reference and display N/A.
+    """
+    boundary = actionable_at
+    if boundary.tzinfo is None:
+        boundary = boundary.replace(tzinfo=NEW_YORK)
+    boundary = boundary.astimezone(NEW_YORK)
+    current_time = (now or datetime.now(NEW_YORK))
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=NEW_YORK)
+    current_time = current_time.astimezone(NEW_YORK)
+
+    if current_time < boundary:
+        snapshot = get_live_qqq_snapshot(wait_seconds)
+        price = _positive(snapshot.get("price"))
+        if price is None:
+            raise RuntimeError("IB returned no usable QQQ reference price")
+        return {
+            **snapshot,
+            "reference_price": round(price, 4),
+            "reference_timestamp": snapshot.get("timestamp"),
+            "reference_source": "IB_LIVE_BEFORE_03:30",
+            "reference_rule": "Current IB QQQ quote captured before the 03:30 New York action boundary",
+        }
+
+    if Stock is None:
+        raise RuntimeError("ib_insync Stock is unavailable on the backend")
+
+    settings = _settings()
+    market_data_type = int(getattr(settings, "ib_market_data_type", None) or os.getenv("MARKET_DATA_TYPE", "1"))
+    ib = _connect_ib()
+    contract = None
+    try:
+        contract = Stock("QQQ", "SMART", "USD")
+        qualified = ib.qualifyContracts(contract)
+        if not qualified:
+            raise RuntimeError("IB could not qualify QQQ on SMART/USD")
+        contract = qualified[0]
+        try:
+            ib.reqMarketDataType(market_data_type)
+        except Exception:
+            pass
+        bars = ib.reqHistoricalData(
+            contract,
+            endDateTime=boundary.strftime("%Y%m%d %H:%M:%S US/Eastern"),
+            durationStr="1 D",
+            barSizeSetting="1 min",
+            whatToShow="TRADES",
+            useRTH=False,
+            formatDate=2,
+            keepUpToDate=False,
+        )
+        target = None
+        for bar in bars:
+            timestamp = _bar_timestamp(getattr(bar, "date", None))
+            if timestamp is None or timestamp != boundary.replace(second=0, microsecond=0):
+                continue
+            target = bar
+            break
+        if target is None:
+            raise RuntimeError(f"IB returned no QQQ bar at {boundary.isoformat()}")
+        price = _positive(getattr(target, "open", None))
+        if price is None:
+            raise RuntimeError(f"IB returned no usable QQQ open at {boundary.isoformat()}")
+        return {
+            "symbol": "QQQ",
+            "price": round(price, 4),
+            "reference_price": round(price, 4),
+            "reference_timestamp": boundary.isoformat(),
+            "reference_source": "IB_HISTORICAL_03:30",
+            "reference_rule": "Exact QQQ 03:30 New York one-minute bar open",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": "ib_historical",
+            "market_data_type": market_data_type,
         }
     finally:
         if contract is not None:

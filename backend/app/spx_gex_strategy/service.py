@@ -11,7 +11,7 @@ from . import SHADOW_STRATEGY_VERSION, STRATEGY_VERSION
 from .calendar import USCashCalendar
 from .data import DataValidationError, FileMarketDataRepository, SqlServerMarketDataRepository
 from .features import classify_observations, nq_daily_closes
-from .ib_market_data import get_live_nq_snapshot, get_live_qqq_snapshot
+from .ib_market_data import get_live_nq_snapshot, get_live_qqq_snapshot, get_qqq_reference_snapshot
 from .models import Direction, EnvironmentType, SignalClassification
 from .notifications import (
     NotificationService,
@@ -100,6 +100,35 @@ class SPXGEXStrategyService:
     def _live_qqq(self) -> dict[str, Any]:
         """Fetch the real QQQ quote used for live sizing and order levels."""
         return get_live_qqq_snapshot()
+
+    def _qqq_reference(self, actionable_at: datetime | None, now: datetime) -> dict[str, Any]:
+        """Select the QQQ reference price on the correct side of 03:30 ET.
+
+        Keep the pre-boundary path on ``_live_qqq`` so existing live-quote
+        integrations remain usable, while the post-boundary path asks IB for
+        the exact historical 03:30 bar.
+        """
+        if actionable_at is None:
+            raise RuntimeError("Missing 03:30 New York action boundary")
+        boundary = actionable_at
+        if boundary.tzinfo is None:
+            boundary = boundary.replace(tzinfo=self.calendar.timezone)
+        current = now
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=self.calendar.timezone)
+        if current.astimezone(self.calendar.timezone) < boundary.astimezone(self.calendar.timezone):
+            snapshot = self._live_qqq()
+            price = float(snapshot.get("price") or 0.0)
+            if price <= 0:
+                raise RuntimeError("IB returned no usable QQQ reference price")
+            return {
+                **snapshot,
+                "reference_price": price,
+                "reference_timestamp": snapshot.get("timestamp"),
+                "reference_source": "IB_LIVE_BEFORE_03:30",
+                "reference_rule": "Current IB QQQ quote captured before the 03:30 New York action boundary",
+            }
+        return get_qqq_reference_snapshot(boundary, now=current)
 
     def _run_provenance(
         self,
@@ -487,12 +516,14 @@ class SPXGEXStrategyService:
         as_of_date: date,
         generated_at: datetime,
         live_nq: dict[str, Any] | None = None,
+        qqq_reference: dict[str, Any] | None = None,
     ) -> str:
         """Persist an immutable HTML snapshot for a completed signal date."""
         html = render_html_report(
             self.store,
             self.strategy_version,
             live_nq,
+            qqq_reference=qqq_reference,
             focus_date=observation_date,
             report_as_of=as_of_date,
             generated_at=generated_at,
@@ -552,6 +583,7 @@ class SPXGEXStrategyService:
             evaluation = next(item for item in evaluations if item.observation.observation_date == target_date)
             live_nq = None
             live_qqq = None
+            qqq_reference = None
             reference_price = None
             if evaluation.trade_allowed:
                 try:
@@ -563,27 +595,51 @@ class SPXGEXStrategyService:
 
             if evaluation.trade_allowed:
                 try:
-                    live_qqq = self._live_qqq()
+                    qqq_reference = self._qqq_reference(evaluation.actionable_at, effective_now)
+                    live_qqq = qqq_reference
+                    qqq_price = float(qqq_reference.get("reference_price") or qqq_reference.get("price") or 0.0)
+                    if qqq_price > 0:
+                        evaluation.observation.derived.update(
+                            {
+                                "QQQ_reference_price": qqq_price,
+                                "QQQ_reference_timestamp": qqq_reference.get("reference_timestamp"),
+                                "QQQ_reference_source": qqq_reference.get("reference_source"),
+                                "QQQ_reference_rule": qqq_reference.get("reference_rule"),
+                                "QQQ_dip_limit_price": qqq_price * 0.99
+                                if evaluation.classification == SignalClassification.REVERSAL_GREEN
+                                else None,
+                            }
+                        )
                 except Exception as exc:
-                    evaluation.trade_allowed = False
-                    evaluation.skip_reason = f"MISSING_LIVE_QQQ_QUOTE: {exc}"
+                    # QQQ reference data is useful for displaying a ready-to-
+                    # place limit level, but it is not a strategy eligibility
+                    # condition. Keep the signal tradable and let the report
+                    # instruct the user to obtain Q0 manually and calculate
+                    # Q0 * 0.99. The production gate below is reserved for
+                    # genuine portfolio conflicts.
+                    qqq_reference = None
+                    live_qqq = None
+                    evaluation.observation.derived.update(
+                        {
+                            "QQQ_reference_price": None,
+                            "QQQ_reference_timestamp": None,
+                            "QQQ_reference_source": None,
+                            "QQQ_reference_rule": None,
+                            "QQQ_reference_unavailable_reason": str(exc),
+                        }
+                    )
 
             if evaluation.trade_allowed:
                 conflict = self.portfolio.conflict_reason(
                     evaluation.classification,
                     at=evaluation.actionable_at,
                 )
-                # A Normal Green is a future D3 plan. It is recorded so the
-                # portfolio can re-check the state at D3; a position that is
-                # open today must not discard that future candidate.
-                future_normal = (
-                    evaluation.classification == SignalClassification.NORMAL_GREEN
-                    and evaluation.actionable_at is not None
-                    and evaluation.actionable_at > effective_now
-                )
-                if conflict and not future_normal:
-                    evaluation.trade_allowed = False
-                    evaluation.skip_reason = conflict
+                # Existing positions/plans are an overlap warning, not a
+                # classifier or production-eligibility failure. The user may
+                # choose to skip a new order, but a prior plan must never make
+                # today's independent signal non-tradable.
+                if conflict:
+                    evaluation.observation.derived["production_overlap_warning"] = conflict
 
             # Persist the production classification before evaluating the
             # shadow variant. Both classifiers write derived threshold fields
@@ -600,9 +656,9 @@ class SPXGEXStrategyService:
             if evaluation.trade_allowed:
                 plan = self.portfolio.build_plan(evaluation, reference_price=reference_price)
                 plan.metadata.update(production_provenance)
-                if live_qqq:
-                    plan.metadata["live_qqq_quote"] = live_qqq
-                    qqq_price = float(live_qqq.get("price") or 0.0)
+                if qqq_reference:
+                    plan.metadata["qqq_reference"] = qqq_reference
+                    qqq_price = float(qqq_reference.get("reference_price") or qqq_reference.get("price") or 0.0)
                     if qqq_price > 0:
                         plan.metadata["qqq_reference_price"] = qqq_price
                         plan.metadata["qqq_quantity"] = int(
@@ -670,7 +726,13 @@ class SPXGEXStrategyService:
             report_url = None
             report_error = None
             try:
-                report_id = self.save_report_snapshot(target_date, as_of_date, generated_at, live_nq)
+                report_id = self.save_report_snapshot(
+                    target_date,
+                    as_of_date,
+                    generated_at,
+                    live_nq,
+                    qqq_reference,
+                )
                 report_row = self.store.report(report_id)
                 if report_row is None:
                     raise RuntimeError(f"saved report {report_id} could not be reloaded")

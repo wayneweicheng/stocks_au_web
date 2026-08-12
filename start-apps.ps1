@@ -10,7 +10,9 @@ param(
     [switch]$FrontendDev,
     [switch]$NoNewWindows,
     [int]$MaxRestarts = 5,
-    [int]$RestartCooldown = 60
+    [int]$RestartCooldown = 60,
+    [int]$StartupTimeoutSeconds = 90,
+    [int]$StartupHealthPollSeconds = 2
 )
 
 # Resolve script root and log path to absolute (robust for Task Scheduler)
@@ -55,7 +57,7 @@ function Write-Log {
     }
 }
 
-# Windows Job Object to ensure children die when supervisor exits
+# Legacy Windows Job Object helpers; services are intentionally not assigned to a kill-on-close job
 function Initialize-JobObject {
     if ($global:JobInitialized) { return }
     $csharp = @"
@@ -262,9 +264,31 @@ function Start-ServiceWithMonitoring {
 
     Write-Log "Starting $ServiceName..."
 
-    # Check if port is already in use
+    # If a previous supervisor instance survived while this one was stopped,
+    # adopt its healthy listener instead of taking the site down to restart it.
     if ($Port -gt 0) {
         $portCheck = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+        if ($portCheck -and (Test-ServiceHttpHealth -ServiceName $ServiceName -Port $Port)) {
+            $existingPid = Get-PortOwnerPid -Port $Port -Attempts 3 -DelayMs 200
+            $existingProcess = if ($existingPid -gt 0) { Get-Process -Id $existingPid -ErrorAction SilentlyContinue } else { $null }
+            if ($existingProcess) {
+                Write-Log "Adopting healthy $ServiceName listener on port $Port (PID: $existingPid)"
+                $global:ServiceProcesses[$ServiceName] = @{
+                    Process = $existingProcess
+                    Port = $Port
+                    WorkingDirectory = $WorkingDirectory
+                    Command = $Command
+                    Arguments = $Arguments
+                    LogFile = $LogFile
+                    PortOwnerPid = $existingPid
+                    RestartCount = 0
+                    LastRestartTime = $null
+                    HealthFailureCount = 0
+                    StartTime = $existingProcess.StartTime
+                }
+                return $true
+            }
+        }
         if ($portCheck) {
             Write-Log "WARNING: Port $Port is already in use. $ServiceName may fail to start."
         }
@@ -311,10 +335,9 @@ function Start-ServiceWithMonitoring {
 
         if ($process) {
             Write-Log "$ServiceName started successfully (PID: $($process.Id))"
-            Add-ProcessToJobObject -ProcessId $process.Id
-            # Also assign immediate children that may spawn quickly
-            Start-Sleep -Milliseconds 200
-            Add-ProcessTreeToJobObject -RootPid $process.Id
+            # Do not place services in a kill-on-close job. If this supervisor is
+            # terminated externally, the web services must remain available until
+            # the next supervisor instance can take ownership.
             # Store process info for monitoring
             $global:ServiceProcesses[$ServiceName] = @{
                 Process = $process
@@ -377,6 +400,57 @@ function Test-ServiceHealth {
         }
     }
     return $true
+}
+
+function Get-ServiceHealthUri {
+    param([string]$ServiceName, [int]$Port)
+
+    if ($Port -le 0) { return $null }
+    switch ($ServiceName) {
+        "Backend" { return "http://127.0.0.1:$Port/healthz" }
+        "Frontend" { return "http://127.0.0.1:$Port/" }
+        default { return "http://127.0.0.1:$Port/" }
+    }
+}
+
+function Test-ServiceHttpHealth {
+    param([string]$ServiceName, [int]$Port)
+
+    $uri = Get-ServiceHealthUri -ServiceName $ServiceName -Port $Port
+    if (!$uri) { return $true }
+
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri $uri -Method Get -TimeoutSec 5 -ErrorAction Stop
+        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 400
+    } catch {
+        return $false
+    }
+}
+
+function Wait-ServiceHealth {
+    param(
+        [string]$ServiceName,
+        [int]$Port,
+        [int]$TimeoutSeconds = $StartupTimeoutSeconds,
+        [int]$PollSeconds = $StartupHealthPollSeconds
+    )
+
+    $deadline = (Get-Date).AddSeconds([Math]::Max(1, $TimeoutSeconds))
+    while ((Get-Date) -lt $deadline) {
+        $serviceInfo = $global:ServiceProcesses[$ServiceName]
+        if ($serviceInfo -and $serviceInfo.Process -and $serviceInfo.Process.HasExited) {
+            Write-Log "ERROR: $ServiceName process exited before becoming HTTP-ready (PID: $($serviceInfo.Process.Id))"
+            return $false
+        }
+
+        if (Test-ServiceHttpHealth -ServiceName $ServiceName -Port $Port) {
+            return $true
+        }
+
+        Start-Sleep -Seconds ([Math]::Max(1, $PollSeconds))
+    }
+
+    return $false
 }
 
 function Stop-ProcessOnPort {
@@ -567,6 +641,7 @@ function Monitor-Services {
 
         if ($shouldShutdown) {
             Write-Log "One or more services failed permanently. Exiting supervisor so Task Scheduler can restart it."
+            $global:ExpectedShutdown = $true
             break
         }
     }
@@ -616,10 +691,16 @@ function Cleanup-Processes {
 
 # Initialize global variables
 $global:ServiceProcesses = @{}
+$global:ExpectedShutdown = $false
 
-# Register cleanup on script exit or termination
+# An external task/session termination must not take healthy services down with
+# it. Explicit shutdown paths set ExpectedShutdown and perform cleanup below.
 Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
-    Cleanup-Processes
+    if ($global:ExpectedShutdown) {
+        Cleanup-Processes
+    } else {
+        Write-Log "Supervisor process exited unexpectedly; leaving managed services running."
+    }
 } | Out-Null
 
 # Handle Ctrl+C and other termination signals (skip in non-interactive mode)
@@ -628,6 +709,7 @@ try {
     $null = [Console]::CancelKeyPress.Add({
         param($sender, $e)
         $e.Cancel = $true
+        $global:ExpectedShutdown = $true
         Write-Host "`nReceived termination signal. Shutting down..."
         Cleanup-Processes
         exit 0
@@ -642,6 +724,7 @@ Write-Log "Backend will run on port $BackendPort"
 Write-Log "Frontend will run on port $FrontendPort"
 Write-Log "Max restarts per service: $MaxRestarts"
 Write-Log "Restart cooldown: $RestartCooldown seconds"
+Write-Log "Startup readiness timeout: $StartupTimeoutSeconds seconds"
 
 # Keep browser API calls same-origin while letting the Next.js server proxy to
 # the private FastAPI backend. Start-Process inherits these values.
@@ -711,8 +794,8 @@ if (!(Test-Path $nextBin)) {
     exit 1
 }
 
-# Initialize job object early so children are tracked
-Initialize-JobObject
+# Services are deliberately independent of the supervisor process lifecycle.
+Write-Log "Service processes will survive an unexpected supervisor exit."
 
 # Start Backend Service (FastAPI with Python virtual environment)
 Write-Log "--- Starting Backend Service ---"
@@ -726,14 +809,13 @@ $backendArgs = @("-m", "uvicorn", "app.main:app", "--reload", "--reload-dir", "a
 $backendSuccess = Start-ServiceWithMonitoring -ServiceName "Backend" -WorkingDirectory $backendWD -Command $python -Arguments $backendArgs -Port $BackendPort -LogFile $backendLogFile
 
 if ($backendSuccess) {
-    # Wait a moment for backend to initialize
-    Start-Sleep -Seconds 5
-
-    # Test backend health
-    if (Test-ServiceHealth -ServiceName "Backend" -Port $BackendPort) {
-        Write-Log "Backend service is responding on port $BackendPort"
+    # Backend startup can include Uvicorn reload-process creation and database
+    # initialization. Wait for the actual health endpoint instead of treating
+    # an open TCP port after five seconds as the readiness deadline.
+    if (Wait-ServiceHealth -ServiceName "Backend" -Port $BackendPort) {
+        Write-Log "Backend HTTP health check passed on port $BackendPort"
     } else {
-        Write-Log "WARNING: Backend service is not responding on port $BackendPort"
+        Write-Log "WARNING: Backend service did not become HTTP-ready within $StartupTimeoutSeconds seconds on port $BackendPort"
     }
 
     # Resolve and record the port owner PID for reliable shutdown
@@ -775,20 +857,17 @@ if ($FrontendDev) {
 $frontendSuccess = Start-ServiceWithMonitoring -ServiceName "Frontend" -WorkingDirectory $frontendWD -Command $frontendCommand -Arguments $frontendArgs -Port $FrontendPort -LogFile $frontendLogFile
 
 if ($frontendSuccess) {
-    # Wait a moment for frontend to initialize
-    Start-Sleep -Seconds 10
-
     # Check if the frontend process is still running
     $frontendProcess = $global:ServiceProcesses["Frontend"].Process
     if ($frontendProcess.HasExited) {
         Write-Log "ERROR: Frontend process has exited unexpectedly. Check logs for details:"
         Write-Log "Frontend log: $frontendLogFile"
     } else {
-        # Check if frontend is responding on port
-        if (Test-ServiceHealth -ServiceName "Frontend" -Port $FrontendPort) {
-            Write-Log "Frontend service is responding on port $FrontendPort"
+        # Next.js production startup can take 30+ seconds on this machine.
+        if (Wait-ServiceHealth -ServiceName "Frontend" -Port $FrontendPort) {
+            Write-Log "Frontend HTTP health check passed on port $FrontendPort"
         } else {
-            Write-Log "Frontend service started but is not responding on port $FrontendPort"
+            Write-Log "WARNING: Frontend service did not become HTTP-ready within $StartupTimeoutSeconds seconds on port $FrontendPort"
             Write-Log "Check frontend logs: $frontendLogFile"
         }
     }
@@ -832,5 +911,9 @@ catch {
     Write-Log "Startup script terminated with error: $($_.Exception.Message)"
 }
 finally {
-    Cleanup-Processes
+    if ($global:ExpectedShutdown) {
+        Cleanup-Processes
+    } else {
+        Write-Log "Supervisor exited without an explicit shutdown request; services were preserved."
+    }
 }
