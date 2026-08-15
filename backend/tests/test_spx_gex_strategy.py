@@ -653,6 +653,49 @@ class SPXGEXStrategyTests(unittest.TestCase):
         self.assertIn("IB_HISTORICAL_03:30", html)
         self.assertNotIn("tradable LONG QQQ", html)
 
+    def test_report_uses_current_yellow_classification_performance(self):
+        store = StrategyStore(":memory:")
+        store.ensure_portfolio(100000, 1.0)
+        observation = DailyGexObservation(
+            observation_date=date(2026, 7, 31),
+            bc_gex_delta=10,
+            bp_gex_delta=-10,
+            sc_gex_delta=-5,
+            sp_gex_delta=2,
+            total_abs_gex_delta=27,
+            close=None,
+            vwap=None,
+            put_call_ratio=None,
+            close_change_pct=None,
+            pcr_change_pct=None,
+            signal_raw="BEARISH",
+            sc_gex=100,
+            sp_gex=-20,
+            derived={
+                "SC_GEX_current": 100,
+                "SC_GEX_threshold": 200,
+                "SP_delta_share_current": 0.02,
+                "SP_delta_share_threshold": 0.05,
+            },
+        )
+        evaluation = SignalEvaluation(
+            observation=observation,
+            classification=SignalClassification.RELIABLE_YELLOW,
+            actionable_at=datetime.fromisoformat("2026-08-03T03:30:00-04:00"),
+            action_date=date(2026, 8, 3),
+            trade_allowed=True,
+            skip_reason=None,
+        )
+        store.save_signal(evaluation, "v1.0.3-production", EnvironmentType.FORWARD_PAPER)
+        html = render_html_report(store, "v1.0.3-production", focus_date=date(2026, 7, 31))
+        self.assertIn("Reliable Yellow historical performance", html)
+        self.assertIn("All candidates, no existing position", html)
+        self.assertIn("88.24%", html)
+        self.assertIn("Average return: +0.259%", html)
+        self.assertIn("87.50%", html)
+        self.assertIn("Candidate signals", html)
+        self.assertNotIn("Reversal Green historical performance", html)
+
     def test_qqq_reference_uses_live_before_boundary_and_historical_after(self):
         settings = SimpleNamespace(
             spx_gex_timezone="America/New_York",

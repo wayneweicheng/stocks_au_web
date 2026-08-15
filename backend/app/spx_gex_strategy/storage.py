@@ -656,10 +656,20 @@ class StrategyStore:
         row_values.extend([comparison_id, _utc_now(), _utc_now()])
         placeholders = ",".join("?" for _ in columns)
         with self.connection() as db:
-            db.execute(
+            cursor = db.execute(
                 f"INSERT OR IGNORE INTO strategy_comparisons ({','.join(columns)}) VALUES ({placeholders})",
                 row_values,
             )
+            if cursor.rowcount != 1:
+                # A rerun can change the production eligibility decision or
+                # refresh a pending outcome while retaining the deterministic
+                # comparison identity. Keep the comparison row aligned with
+                # the current signal ledger instead of showing stale values.
+                update_columns = [column for column in values if column not in {"comparison_id", "created_at", "updated_at"}]
+                db.execute(
+                    f"UPDATE strategy_comparisons SET {', '.join(f'{column}=?' for column in update_columns)}, updated_at=? WHERE comparison_id=?",
+                    [*(values[column] for column in update_columns), _utc_now(), comparison_id],
+                )
         return comparison_id
 
     def update_strategy_comparison(self, comparison_id: str, **values: Any) -> None:

@@ -28,6 +28,50 @@ REVERSAL_GREEN_HISTORICAL_STATS = {
     "executed_profit_factor": 2.3303814804951735,
 }
 
+# These Yellow and Normal Green figures come from the frozen causal backtest
+# ledger for the same production rules. Returns use the NQ percentage-path
+# proxy; they are not a historical QQQ execution ledger.
+SIGNAL_HISTORICAL_STATS = {
+    "STRONG_YELLOW": {
+        "label": "Strong Yellow",
+        "candidate_count": 8,
+        "skipped_count": 4,
+        "executed_count": 4,
+        "wins": 4,
+        "losses": 0,
+        "win_rate": 1.0,
+        "average_return": 0.008,
+        "profit_factor": None,
+    },
+    "RELIABLE_YELLOW": {
+        "label": "Reliable Yellow",
+        "candidate_count": 17,
+        "skipped_count": 9,
+        "candidate_wins": 15,
+        "candidate_losses": 2,
+        "candidate_win_rate": 15 / 17,
+        "candidate_average_return": 0.002588235294117647,
+        "candidate_profit_factor": 1.25,
+        "executed_count": 8,
+        "wins": 7,
+        "losses": 1,
+        "win_rate": 0.875,
+        "average_return": 0.0025,
+        "profit_factor": 3.625554653652297,
+    },
+    "NORMAL_GREEN": {
+        "label": "Normal Green",
+        "candidate_count": 26,
+        "skipped_count": 4,
+        "executed_count": 21,
+        "wins": 15,
+        "losses": 6,
+        "win_rate": 15 / 21,
+        "average_return": 0.0036701179020242427,
+        "profit_factor": 1.7548203302311083,
+    },
+}
+
 
 def _money(value: Any) -> str:
     try:
@@ -305,9 +349,10 @@ def _signal_rule_summary(row: Any) -> str:
     return str(_row_value(row, "skip_reason", "") or classification.replace("_", " ").title())
 
 
-def _historical_reversal_section() -> str:
-    stats = REVERSAL_GREEN_HISTORICAL_STATS
-    return f"""
+def _historical_performance_section(classification: str) -> str:
+    if classification == "REVERSAL_GREEN":
+        stats = REVERSAL_GREEN_HISTORICAL_STATS
+        return f"""
 <section class="history-section"><div class="section-kicker">HISTORICAL EVIDENCE</div><h2>Reversal Green historical performance</h2>
 <p>Frozen production rule <b>{escape(stats['strategy_version'])}</b>, {escape(stats['window'])}. Results use NQ's historical percentage path as a QQQ proxy; they are not a historical QQQ execution ledger.</p>
 <div class="history-grid">
@@ -315,6 +360,25 @@ def _historical_reversal_section() -> str:
 <div class="history-card"><span class="label">Portfolio-executed only</span><strong>{stats['executed_win_rate']:.2%}</strong><small>{stats['executed_wins']} wins / {stats['executed_losses']} losses from {stats['executed_count']} trades</small><small>Average return: {_pct3(stats['executed_average_return'])}</small><small>Profit factor: {stats['executed_profit_factor']:.2f}</small></div>
 </div>
 <p class="muted">The hypothetical figure includes signals skipped because another position was already open. The executed figure reflects the single-position portfolio rule.</p>
+</section>"""
+
+    stats = SIGNAL_HISTORICAL_STATS.get(classification)
+    if stats is None:
+        label = classification.replace("_", " ").title() if classification else "Current signal"
+        return f"""
+<section class="history-section"><div class="section-kicker">HISTORICAL EVIDENCE</div><h2>{escape(label)} historical performance</h2>
+<p>No applicable historical trade-performance summary is available for this classification.</p></section>"""
+
+    pf = "N/A" if stats["profit_factor"] is None else f"{stats['profit_factor']:.2f}"
+    return f"""
+<section class="history-section"><div class="section-kicker">HISTORICAL EVIDENCE</div><h2>{escape(stats['label'])} historical performance</h2>
+<p>This section matches the current signal type. The frozen causal backtest uses NQ's historical percentage path as a QQQ proxy; it is not a historical QQQ execution ledger.</p>
+<div class="history-grid">
+<div class="history-card"><span class="label">All candidates, no existing position</span><strong>{stats.get('candidate_win_rate', stats['win_rate']):.2%}</strong><small>{stats.get('candidate_wins', stats['wins'])} wins / {stats.get('candidate_losses', stats['losses'])} losses from {stats['candidate_count']} signals</small><small>Average return: {_pct3(stats.get('candidate_average_return', stats['average_return']))}</small><small>Profit factor: {stats.get('candidate_profit_factor', pf) if stats.get('candidate_profit_factor') is not None else 'N/A'}</small></div>
+<div class="history-card"><span class="label">Portfolio-executed only</span><strong>{stats['win_rate']:.2%}</strong><small>{stats['wins']} wins / {stats['losses']} losses from {stats['executed_count']} trades</small><small>Average return: {_pct3(stats['average_return'])}</small><small>Profit factor: {pf}</small></div>
+<div class="history-card"><span class="label">Candidate signals</span><strong>{stats['candidate_count']}</strong><small>{stats['skipped_count']} were skipped by the single-position rule</small></div>
+</div>
+<p class="muted">The first card assumes every candidate could be traded because no position was open. The second card reflects the historical single-position portfolio. Both are separate from the live portfolio metrics above.</p>
 </section>"""
 
 
@@ -342,7 +406,13 @@ def render_html_report(
     generated_at: datetime | None = None,
 ) -> str:
     snapshot = store.snapshot()
-    signals = store.recent_signals(50, strategy_version=strategy_version)
+    signals = store.recent_signals(200, strategy_version=strategy_version)
+    cutoff_date = _parse_date(focus_date) if focus_date is not None else None
+    if cutoff_date is not None:
+        signals = [
+            row for row in signals
+            if (_parse_date(_row_value(row, "observation_date")) or date.min) <= cutoff_date
+        ]
     focus_signal = signals[0] if signals else None
     if focus_date is not None:
         wanted = str(focus_date)
@@ -368,11 +438,11 @@ def render_html_report(
     profit = sum(float(trade["pnl_usd"] or 0) for trade in closed if float(trade["pnl_usd"] or 0) > 0)
     loss = abs(sum(float(trade["pnl_usd"] or 0) for trade in closed if float(trade["pnl_usd"] or 0) < 0))
     win_rate = wins / len(returns) if returns else 0.0
+    focus_classification = str(_row_value(focus_signal, "classification", "") or "") if focus_signal is not None else ""
 
     if focus_signal is not None:
         explanation = _signal_meaning(focus_signal)
-        classification = str(_row_value(focus_signal, "classification", "") or "")
-        if classification.endswith("_YELLOW"):
+        if focus_classification.endswith("_YELLOW"):
             explanation_html = _yellow_explanation(focus_signal)
         else:
             explanation_html = f"<section class=\"explanation\"><div class=\"section-kicker\">SIGNAL MEANING</div><h2>What this signal means</h2><p>{explanation}</p></section>"
@@ -421,13 +491,29 @@ def render_html_report(
         + "</tr>"
         for row in reversed(trades[-50:])
     ) or "<tr><td colspan='6'>No shadow trades recorded yet.</td></tr>"
-    comparisons = store.recent_strategy_comparisons(50)
+    comparisons = store.recent_strategy_comparisons(200)
+    if cutoff_date is not None:
+        comparisons = [
+            row for row in comparisons
+            if (_parse_date(_row_value(row, "observation_date")) or date.min) <= cutoff_date
+        ]
     shadow_version = str(comparisons[0]["shadow_strategy_version"] if comparisons else "v1.1.0-shadow")
+    production_signals_by_id = {
+        str(_row_value(row, "signal_id")): row
+        for row in signals
+        if _row_value(row, "signal_id")
+    }
+
+    def _comparison_production_value(comparison: Any, key: str, fallback: Any) -> Any:
+        signal = production_signals_by_id.get(str(_row_value(comparison, "production_signal_id", "")))
+        value = _row_value(signal, key) if signal is not None else None
+        return fallback if value is None else value
+
     comparison_rows = "".join(
         "<tr>"
         f"<td>{escape(str(row['observation_date'] or ''))}</td>"
-        f"<td>{escape(str(row['production_classification'] or ''))}</td>"
-        f"<td>{'YES' if row['production_trade_allowed'] else 'NO'}</td>"
+        f"<td>{escape(str(_comparison_production_value(row, 'classification', row['production_classification']) or ''))}</td>"
+        f"<td>{'YES' if _comparison_production_value(row, 'trade_allowed', row['production_trade_allowed']) else 'NO'}</td>"
         f"<td>{escape(str(row['shadow_classification'] or ''))}</td>"
         f"<td>{'YES' if row['shadow_trade_allowed'] else 'NO'}</td>"
         f"<td>{escape(str(row['shadow_outcome_status'] or ''))}</td>"
@@ -453,15 +539,15 @@ def render_html_report(
 <style>
 :root{{--ink:#172033;--muted:#60708a;--line:#dce5f0;--card:#fff;--bg:#f4f7fb;--green:#08783e;--red:#b42318;--blue:#155eef;--amber:#b54708}}
 *{{box-sizing:border-box}}body{{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;line-height:1.5;color:var(--ink);background:var(--bg)}}main{{max-width:1180px;margin:auto;padding:28px 18px 60px}}h1{{font-size:clamp(1.7rem,3vw,2.5rem);margin:.1rem 0 .2rem;letter-spacing:-.03em}}h2{{font-size:1.15rem;margin:.25rem 0 .7rem}}p{{margin:.55rem 0}}section{{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin:16px 0;box-shadow:0 5px 18px rgba(16,42,75,.04)}}.hero{{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;background:linear-gradient(135deg,#102a56,#1858a8);color:#fff;border:0}}.hero p,.hero .muted{{color:#d9e7ff}}.hero-side{{min-width:220px}}.quote-card{{display:flex;flex-direction:column;gap:2px;background:#edf5ff;color:var(--ink);border-radius:14px;padding:14px 16px;min-width:210px}}.quote-card strong{{font-size:1.55rem}}.quote-card span:not(.section-kicker){{color:var(--muted);font-size:.86rem}}.section-kicker{{font-size:.72rem;font-weight:800;letter-spacing:.1em;color:var(--blue);text-transform:uppercase}}.hero .section-kicker{{color:#b9d4ff}}.metadata,.muted{{font-size:.84rem;color:var(--muted)}}.market-strip{{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}}.market-strip span{{background:#eaf2fc;border:1px solid #d8e7f8;border-radius:999px;padding:6px 11px;font-size:.84rem}}.metrics,.history-grid,.action-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}}.metric,.history-card,.action-grid>div{{background:#f7faff;border:1px solid #e1ebf7;border-radius:12px;padding:13px}}.metric .label,.action-grid .label,.history-card .label{{display:block;color:var(--muted);font-size:.78rem}}.metric .value,.history-card strong,.action-grid strong{{display:block;font-size:1.17rem;font-weight:800;margin-top:3px}}.history-card strong{{font-size:1.55rem;color:var(--blue)}}.history-card small,.action-grid small{{display:block;color:var(--muted);font-size:.78rem;margin-top:4px}}.decision{{border-radius:12px;padding:13px 15px;background:#fff8eb;border:1px solid #f7d9a7}}.decision.approved{{background:#eaf8ef;border-color:#b7e3c5;color:#075e31}}.decision.blocked{{background:#fff0ef;border-color:#f4c7c3;color:#8d1c16}}.rule-checks{{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:14px 0}}.rule-check{{display:flex;flex-direction:column;gap:4px;background:#f8fafc;border-left:4px solid #f59e0b;border-radius:9px;padding:13px}}.rule-name{{font-weight:800}}.steps{{padding-left:22px}}table{{border-collapse:collapse;width:100%;font-size:.86rem}}th,td{{border-bottom:1px solid #e5eaf2;text-align:left;padding:9px 8px;vertical-align:top}}th{{background:#f1f5f9;font-size:.77rem;text-transform:uppercase;letter-spacing:.04em}}td{{white-space:nowrap}}td.why{{white-space:normal;min-width:310px}}.yes{{color:var(--green);font-weight:800}}.no{{color:var(--red);font-weight:800}}a{{color:#155eef;text-decoration:none}}a:hover{{text-decoration:underline}}ul{{margin-top:.6rem}}@media(max-width:700px){{main{{padding:18px 10px 40px}}section{{padding:15px;border-radius:12px}}.hero{{display:block}}.hero-side{{margin-top:14px}}table{{display:block;overflow-x:auto}}}}
-</style></head><body><main>
+</style><style>.hero .market-strip span{{color:var(--ink)}}.hero .metadata{{color:#d9e7ff}}</style></head><body><main>
 <section class="hero"><div><div class="section-kicker">SPX GEX SIGNAL ASSISTANT</div><h1>Production decision report</h1><p>Strategy version: <b>{escape(strategy_version)}</b></p>{nq_html}{report_metadata}</div><div class="hero-side">{qqq_html}</div></section>
 <section><div class="section-kicker">PORTFOLIO</div><div class="metrics"><div class="metric"><span class="label">State</span><span class="value">{escape(snapshot.state.value)}</span></div><div class="metric"><span class="label">Shadow NAV</span><span class="value">{_money(snapshot.shadow_nav)}</span></div><div class="metric"><span class="label">Closed trades</span><span class="value">{len(closed)}</span></div><div class="metric"><span class="label">Live-ledger win rate</span><span class="value">{win_rate:.1%}</span></div><div class="metric"><span class="label">Profit factor</span><span class="value">{(profit / loss) if loss else ('N/A' if not profit else '∞')}</span></div></div><p class="muted">Live-ledger metrics describe this portfolio only. See the historical evidence section for the Reversal Green backtest.</p></section>
 {explanation_html}
 {action_html}
-{_historical_reversal_section()}
+{_historical_performance_section(focus_classification)}
 {_yellow_guide()}
 <section><div class="section-kicker">AUDIT TRAIL</div><h2>Recent signals</h2><table><thead><tr><th>Observation</th><th>Classification</th><th>Prod allowed</th><th>Reason / action</th><th>Actionable at</th></tr></thead><tbody>{signal_rows}</tbody></table></section>
 <section><div class="section-kicker">PAPER LEDGER</div><h2>Shadow trades</h2><table><thead><tr><th>Trade ID</th><th>Type</th><th>Entry</th><th>Exit</th><th>Return</th><th>P&amp;L</th></tr></thead><tbody>{trade_rows}</tbody></table></section>
-<section><div class="section-kicker">FORWARD TEST</div><h2>Production vs {escape(shadow_version)} shadow</h2><p>Production remains the only strategy allowed to reserve or execute the portfolio. The shadow variant is classification-only and hypothetical.</p><table><thead><tr><th>Observation</th><th>Production</th><th>Prod allowed</th><th>Shadow</th><th>Shadow allowed</th><th>Outcome</th><th>Return</th></tr></thead><tbody>{comparison_rows}</tbody></table></section>
+<section><div class="section-kicker">FORWARD TEST</div><h2>Production vs {escape(shadow_version)} shadow</h2><p>This is a same-observation comparison between the production classifier and a research-only shadow classifier. <b>Prod allowed</b> is the production classifier decision for that date; it is not a statement that an order was filled. The shadow column is hypothetical and never executes. Outcome and return are the shadow NQ-proxy result when enough future bars are available.</p><table><thead><tr><th>Observation</th><th>Production</th><th>Prod allowed</th><th>Shadow</th><th>Shadow allowed</th><th>Shadow outcome</th><th>Shadow return</th></tr></thead><tbody>{comparison_rows}</tbody></table></section>
 <section><div class="section-kicker">ARCHIVE</div><h2>Historical reports</h2><ul>{archive_rows}</ul></section>
 </main></body></html>"""
