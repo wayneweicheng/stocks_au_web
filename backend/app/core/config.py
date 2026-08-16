@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # External resources (local directory path for charts)
     chart_base_url: str = Field(default="", validation_alias=AliasChoices("chart_base_url", "CHART_BASE_URL", "CHART_BASE_DIR"))
 
+    # Generic immutable Trading Signal report catalog
+    trading_signal_report_base_url: str = Field(default="", validation_alias=AliasChoices("trading_signal_report_base_url", "TRADING_SIGNAL_REPORT_BASE_URL"))
+    trading_signal_report_token: str = Field(default="", validation_alias=AliasChoices("trading_signal_report_token", "TRADING_SIGNAL_REPORT_TOKEN"))
+
     # IB Gateway automation
     ibg_exe_path: str = Field(default="", validation_alias=AliasChoices("ibg_exe_path", "IBG_EXE_PATH"))
     ibg_username: str = Field(default="", validation_alias=AliasChoices("ibg_username", "IBG_USERNAME"))

@@ -105,10 +105,10 @@ If queue insertion fails, the Strategy Run transaction must roll back. Do not co
 Construct URLs in the runtime publishing Module, not the Strategy Implementation:
 
 ```text
-{TRADING_SIGNAL_REPORT_BASE_URL}/api/trading-signal-reports/{public_report_id}.html
+{TRADING_SIGNAL_REPORT_BASE_URL}/trading-signal-reports?public_report_id={public_report_id}
 ```
 
-Append `report_token` only when configured. URL-encode it. Never log the resulting full tokenized URL at INFO level.
+Pushover must open the authenticated website catalog, not the immutable HTML API endpoint. The catalog preserves the opaque report ID, fetches the HTML with the signed-in user's application credentials, and renders it in the sandboxed viewer. Do not put the shared report token in notification URLs.
 
 Set Pushover `url_title` to `Open trading signal report`. Do not duplicate the raw URL in the message body.
 

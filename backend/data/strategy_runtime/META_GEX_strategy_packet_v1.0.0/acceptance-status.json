@@ -1,0 +1,22 @@
+{
+  "status": "IMPLEMENTABLE",
+  "criteria": {
+    "signals_defined": "PASS",
+    "exact_triggers": "PASS",
+    "explicit_exits": "PASS",
+    "variables_specified": "PASS",
+    "refresh_gate": "PASS",
+    "historical_stats_actionable": "PASS",
+    "ledger_reconciliation": "PASS",
+    "manual_independent_outcomes": "PASS",
+    "notification_only": "PASS",
+    "broker_disabled": "PASS",
+    "fixtures": "PASS",
+    "hashes": "PASS"
+  },
+  "blockers_to_implementation": [],
+  "implementation_risks": [
+    "No untouched strict OOS window exists; forward-paper results remain a research validation risk.",
+    "The 2.5% emergency stop is frozen for v1.0.0 and must be monitored; changing it requires a new version."
+  ]
+}

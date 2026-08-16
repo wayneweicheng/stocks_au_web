@@ -1,0 +1,617 @@
+"""SQL-backed read model and guarded production notification toggle."""
+
+from __future__ import annotations
+
+import json
+import re
+from collections import defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Dict, Iterable, List, Optional
+
+from app.core.config import settings
+from app.core.db import get_db_connection, get_timed_sql_model
+
+
+class ProductionDeploymentNotFound(ValueError):
+    pass
+
+
+def _json_object(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _metadata_values(metadata: Iterable[Dict[str, Any]], keys: Iterable[str]) -> List[str]:
+    for item in metadata:
+        for key in keys:
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                return [value.strip()]
+            if isinstance(value, (list, tuple)):
+                values = [str(entry).strip() for entry in value if str(entry).strip()]
+                if values:
+                    return values
+    return []
+
+
+def _descriptor_signals(configuration: Dict[str, Any]) -> List[Dict[str, Any]]:
+    values = configuration.get("signal_definitions")
+    if not isinstance(values, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        signal = dict(value)
+        definition = signal.get("strategy_definition") or signal.get("definition")
+        if isinstance(definition, dict):
+            pieces = [definition.get("purpose"), definition.get("rationale")]
+            definition = " ".join(str(piece).strip() for piece in pieces if piece)
+        signal["strategy_definition"] = str(definition or "Not recorded in strategy metadata")
+
+        confidence = signal.get("confidence")
+        if isinstance(confidence, dict):
+            # Strategy packets keep both the research label and score; the
+            # admin response exposes the display label in its string field.
+            signal["confidence"] = str(confidence.get("label") or "UNKNOWN")
+        elif confidence is None:
+            signal["confidence"] = "UNKNOWN"
+        else:
+            signal["confidence"] = str(confidence)
+
+        exits = signal.get("exit_conditions")
+        normalized_exits: List[Dict[str, Any]] = []
+        if isinstance(exits, list):
+            for item in exits:
+                if isinstance(item, dict):
+                    normalized_exits.append({
+                        "kind": str(item.get("kind") or "CONTRACT"),
+                        "description": str(item.get("description") or item.get("rule") or "Not recorded"),
+                        "horizon": item.get("horizon"),
+                    })
+                elif item is not None:
+                    description = str(item)
+                    horizon_match = re.search(r"\bD\d+\b", description.upper())
+                    normalized_exits.append({
+                        "kind": "CONTRACT",
+                        "description": description,
+                        "horizon": horizon_match.group(0) if horizon_match else None,
+                    })
+        signal["exit_conditions"] = normalized_exits
+        signal["historical_performance"] = dict(signal.get("historical_performance") or {})
+        normalized.append(signal)
+    return normalized
+
+
+def _terminal_horizon(configuration: Dict[str, Any], signal_code: str | None = None) -> str:
+    for signal in _descriptor_signals(configuration):
+        if signal_code and str(signal.get("signal_code") or "").upper() != signal_code.upper():
+            continue
+        historical = signal.get("historical_performance")
+        if isinstance(historical, dict) and historical.get("measurement_horizon"):
+            return str(historical["measurement_horizon"]).upper()
+    horizons = configuration.get("outcome_horizons")
+    return str(horizons[-1]).upper() if isinstance(horizons, list) and horizons else "D5"
+
+
+def _model_builder_historical_performance(descriptor: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize the frozen model-builder statistics for the admin API.
+
+    Historical research is intentionally independent from runtime outcome rows.
+    Runtime rows belong in the simulated production-performance section and must
+    not replace the packet's published research sample.
+    """
+    historical = dict(descriptor.get("historical_performance") or {})
+    # Research packets use the descriptive field name
+    # ``number_of_signal_instances``; the web contract deliberately exposes a
+    # compact ``instances`` field.  Normalize packet metadata before Pydantic
+    # validation so model-builder statistics are visible even when no runtime
+    # outcome rows have been finalized yet.
+    if "instances" not in historical and "number_of_signal_instances" in historical:
+        historical["instances"] = historical.get("number_of_signal_instances")
+    source_range = historical.get("source_date_range")
+    if isinstance(source_range, dict):
+        historical.setdefault("sample_start", source_range.get("start"))
+        historical.setdefault("sample_end", source_range.get("end"))
+    historical.setdefault("measurement_horizon", descriptor.get("holding_period") or "CUSTOM")
+    historical.setdefault("source_reference", historical.get("per_instance_ledger_reference") or "strategy packet historical-performance.json")
+    historical.setdefault("as_of_utc", historical.get("as_of") or "NOT_AVAILABLE")
+    historical.setdefault("notes", historical.get("sample_size_limitations") or historical.get("status") or "Model-builder historical statistics")
+    historical.setdefault("status", "NOT_AVAILABLE")
+    historical.setdefault("instances", 0)
+    historical["status"] = str(historical.get("status") or "NOT_AVAILABLE").upper()
+    historical.setdefault("source_kind", "MODEL_BUILDER_PACKET")
+    return historical
+
+
+def _descriptor_stats(signals: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Aggregate packet research stats without mixing them into live outcomes."""
+    histories = [dict(signal.get("historical_performance") or {}) for signal in signals]
+    histories = [item for item in histories if str(item.get("status") or "").upper() == "AVAILABLE"]
+    instances = sum(int(item.get("instances") or item.get("number_of_signal_instances") or 0) for item in histories)
+    wins = sum(int(item.get("wins") or 0) for item in histories)
+    losses = sum(int(item.get("losses") or 0) for item in histories)
+    gross_profit = sum(float(item.get("gross_profit_return_units") or item.get("gross_profit_pct") or 0) for item in histories)
+    gross_loss = sum(abs(float(item.get("gross_loss_return_units") or item.get("gross_loss_pct") or 0)) for item in histories)
+    return {
+        "instances": instances,
+        "wins": wins,
+        "losses": losses,
+        "win_rate_pct": round(wins * 100.0 / instances, 4) if instances else None,
+        "profit_factor": round(gross_profit / gross_loss, 4) if gross_loss else None,
+        "gross_profit_pct": round(gross_profit, 4) if histories else None,
+        "gross_loss_pct": round(-gross_loss, 4) if histories else None,
+        "source": "MODEL_BUILDER_PACKET",
+        "source_reference": "historical-performance.json + per-instance-ledger.json",
+    }
+
+
+def _historical_trade_ledger(configuration: Dict[str, Any], strategy_code: str, version_code: str) -> List[Dict[str, Any]]:
+    """Return immutable model-builder trade records for the admin detail view.
+
+    Newer SQL catalogues may carry the ledger in ConfigurationJson. The local
+    packet fallback keeps already-provisioned catalogues readable until their
+    next idempotent provisioning run, without using manual TradePlan data.
+    """
+    ledger = configuration.get("historical_trade_ledger") or configuration.get("per_instance_ledger")
+    if not ledger:
+        packet_root = Path(__file__).resolve().parents[2] / "data" / "strategy_runtime"
+        for path in sorted(packet_root.glob("*/per-instance-ledger.json")):
+            try:
+                candidate = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if (
+                str(candidate.get("strategy_code") or "") == str(strategy_code)
+                and str(candidate.get("version_code") or "") == str(version_code)
+            ):
+                ledger = candidate
+                break
+    records = ledger.get("records") if isinstance(ledger, dict) else ledger
+    if not isinstance(records, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        normalized.append({
+            "signal_code": str(record.get("signal_code") or ""),
+            "market_date": str(record.get("market_date") or ""),
+            "direction": str(record.get("direction") or ""),
+            "entry_timestamp": record.get("entry_timestamp"),
+            "entry_price": record.get("entry_price"),
+            "exit_timestamp": record.get("exit_timestamp"),
+            "exit_price": record.get("exit_price"),
+            "exit_reason": str(record.get("exit_reason") or ""),
+            "gross_return_pct": record.get("gross_return_pct"),
+            "return_pct": record.get("return_pct"),
+            "mfe_pct": record.get("mfe_pct"),
+            "mae_pct": record.get("mae_pct"),
+            "bars_held": record.get("bars_held"),
+            "same_bar_ambiguity": bool(record.get("same_bar_ambiguity")),
+            "status": str(record.get("status") or ""),
+            "features": record.get("features") if isinstance(record.get("features"), dict) else {},
+        })
+    return normalized
+
+
+def _stats(rows: Iterable[Dict[str, Any]], value_key: str = "directional_return_pct") -> Dict[str, Any]:
+    values = [float(row[value_key]) for row in rows if row.get(value_key) is not None]
+    wins = sum(1 for value in values if value > 0)
+    losses = sum(1 for value in values if value < 0)
+    gross_profit = sum(value for value in values if value > 0)
+    gross_loss = sum(value for value in values if value < 0)
+    return {
+        "instances": len(values),
+        "wins": wins,
+        "losses": losses,
+        "win_rate_pct": round(wins * 100.0 / len(values), 4) if values else None,
+        "profit_factor": round(gross_profit / abs(gross_loss), 4) if gross_loss else None,
+        "gross_profit_pct": round(gross_profit, 4) if values else None,
+        "gross_loss_pct": round(gross_loss, 4) if values else None,
+    }
+
+
+def _actual_return(direction: Optional[str], entry: Any, exit: Any) -> Optional[float]:
+    if entry is None or exit is None or float(entry) == 0:
+        return None
+    value = (float(exit) - float(entry)) / float(entry) * 100.0
+    return round(value if str(direction or "").upper() == "LONG" else -value, 4)
+
+
+class TradingSignalAdminRepository:
+    """Deep module for the strategy catalogue, performance, and safe toggles."""
+
+    def __init__(self, model_factory: Optional[Callable[[], Any]] = None, connection_factory: Optional[Callable[..., Any]] = None) -> None:
+        self._model_factory = model_factory or (
+            lambda: get_timed_sql_model(
+                database="StockDB_US",
+                connection_timeout=settings.sqlserver_connection_timeout,
+                query_timeout=10,
+            )
+        )
+        self._connection_factory = connection_factory or get_db_connection
+
+    def _read_catalog_rows(self, model: Any) -> Dict[str, List[Dict[str, Any]]]:
+        definitions = model.execute_read_query(
+            """
+            SELECT StrategyDefinitionID AS strategy_definition_id, StrategyCode AS strategy_code,
+                   DisplayName AS display_name, Description AS description, IsEnabled AS is_enabled,
+                   CreatedUtc AS created_utc
+            FROM [StockDB_US].[TradingSignal].[StrategyDefinition]
+            ORDER BY StrategyCode
+            """,
+            [],
+        ) or []
+        versions = model.execute_read_query(
+            """
+            SELECT v.StrategyVersionID AS strategy_version_id, v.StrategyDefinitionID AS strategy_definition_id,
+                   v.VersionCode AS version_code, v.ImplementationKey AS implementation_key,
+                   v.ConfigurationJson AS configuration_json, v.ResearchMetadataJson AS research_metadata_json,
+                   v.Status AS status, v.CreatedUtc AS created_utc,
+                   d.StrategyDeploymentID AS strategy_deployment_id, d.DeploymentKey AS deployment_key,
+                   d.EnvironmentType AS environment, d.IsEnabled AS is_enabled,
+                   d.ExecutionEnabled AS execution_enabled, d.NotificationEnabled AS notification_enabled,
+                   d.ConfigurationJson AS deployment_configuration_json
+            FROM [StockDB_US].[TradingSignal].[StrategyVersion] AS v
+            JOIN [StockDB_US].[TradingSignal].[StrategyDefinition] AS defn
+              ON defn.StrategyDefinitionID = v.StrategyDefinitionID
+            LEFT JOIN [StockDB_US].[TradingSignal].[StrategyDeployment] AS d
+              ON d.StrategyVersionID = v.StrategyVersionID
+            WHERE defn.IsEnabled = 1
+              AND v.Status <> 'RETIRED'
+            ORDER BY defn.StrategyCode, v.CreatedUtc DESC, d.StrategyDeploymentID
+            """,
+            [],
+        ) or []
+        roles = model.execute_read_query(
+            """
+            SELECT StrategyDeploymentID AS strategy_deployment_id, InstrumentCode AS instrument_code,
+                   RoleCode AS role_code
+            FROM [StockDB_US].[TradingSignal].[StrategyInstrumentRole]
+            """,
+            [],
+        ) or []
+        directions = model.execute_read_query(
+            """
+            SELECT s.StrategyVersionID AS strategy_version_id, UPPER(s.Direction) AS direction,
+                   UPPER(s.Classification) AS classification
+            FROM [StockDB_US].[TradingSignal].[Signal] AS s
+            WHERE s.Direction IN ('LONG', 'SHORT') OR s.Classification IS NOT NULL
+            GROUP BY s.StrategyVersionID, UPPER(s.Direction), UPPER(s.Classification)
+            """,
+            [],
+        ) or []
+        outcomes = model.execute_read_query(
+            """
+            WITH ranked AS (
+                SELECT so.SignalID AS signal_id, so.HorizonCode AS horizon_code,
+                       so.DirectionalReturnPct AS directional_return_pct,
+                   s.StrategyVersionID AS strategy_version_id,
+                   s.Classification AS classification,
+                   o.StrategyDeploymentID AS strategy_deployment_id,
+                   d.EnvironmentType AS environment,
+                   o.MarketDate AS market_date,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY so.SignalID, so.HorizonCode
+                           ORDER BY so.RevisionNo DESC, so.SignalOutcomeID DESC
+                       ) AS row_number
+                FROM [StockDB_US].[TradingSignal].[SignalOutcome] AS so
+                JOIN [StockDB_US].[TradingSignal].[Signal] AS s ON s.SignalID = so.SignalID
+                JOIN [StockDB_US].[TradingSignal].[Observation] AS o ON o.ObservationID = s.ObservationID
+                JOIN [StockDB_US].[TradingSignal].[StrategyDeployment] AS d ON d.StrategyDeploymentID = o.StrategyDeploymentID
+                WHERE so.FinalizedUtc IS NOT NULL
+                  AND so.NullReason IS NULL
+                  AND so.DirectionalReturnPct IS NOT NULL
+            )
+            SELECT ranked.strategy_version_id, ranked.strategy_deployment_id,
+                   ranked.signal_id, ranked.classification, ranked.market_date,
+                   ranked.horizon_code, ranked.directional_return_pct
+            FROM ranked
+            JOIN [StockDB_US].[TradingSignal].[Signal] AS signal ON signal.SignalID = ranked.signal_id
+            WHERE ranked.row_number = 1 AND signal.ActionCode = 'PLAN_ENTRY'
+            """,
+            [],
+        ) or []
+        executions = model.execute_read_query(
+            """
+            SELECT p.TradePlanID AS trade_plan_id, s.SignalID AS signal_id,
+                   s.StrategyVersionID AS strategy_version_id, v.VersionCode AS strategy_version_code,
+                   d.StrategyDeploymentID AS strategy_deployment_id,
+                   d.DeploymentKey AS deployment_key, o.MarketDate AS market_date,
+                   s.Classification AS classification, s.Direction AS direction,
+                   p.ExecutionInstrumentCode AS execution_instrument_code, COALESCE(p.PlanStatus, 'NOT_ENTERED') AS plan_status,
+                   p.PlannedEntryUtc AS planned_entry_utc, p.PlannedExitUtc AS planned_exit_utc,
+                   p.ActualEntryUtc AS actual_entry_utc, p.ActualEntryPrice AS actual_entry_price,
+                   p.ActualExitUtc AS actual_exit_utc, p.ActualExitPrice AS actual_exit_price,
+                   p.ExitReason AS exit_reason,
+                   outcome.HorizonCode AS outcome_horizon,
+                   outcome.FinalizedUtc AS outcome_finalized_utc,
+                   outcome.DirectionalReturnPct AS simulated_return_pct,
+                   outcome.ReferencePrice AS simulated_reference_price,
+                   outcome.HorizonClose AS simulated_exit_price,
+                   TRY_CONVERT(decimal(19,8), JSON_VALUE(outcome.SourceManifestJson, '$.outcome.entry_price')) AS simulated_entry_price,
+                   JSON_VALUE(outcome.SourceManifestJson, '$.outcome.exit_reason') AS simulated_exit_reason
+            FROM [StockDB_US].[TradingSignal].[Signal] AS s
+            JOIN [StockDB_US].[TradingSignal].[StrategyVersion] AS v ON v.StrategyVersionID = s.StrategyVersionID
+            JOIN [StockDB_US].[TradingSignal].[Observation] AS o ON o.ObservationID = s.ObservationID
+            JOIN [StockDB_US].[TradingSignal].[StrategyDeployment] AS d ON d.StrategyDeploymentID = o.StrategyDeploymentID
+            LEFT JOIN [StockDB_US].[TradingSignal].[ExecutionBook] AS b
+              ON b.StrategyDeploymentID = d.StrategyDeploymentID AND b.EnvironmentType = d.EnvironmentType
+            LEFT JOIN [StockDB_US].[TradingSignal].[TradePlan] AS p
+              ON p.SignalID = s.SignalID AND p.ExecutionBookID = b.ExecutionBookID
+            OUTER APPLY (
+                SELECT TOP (1) so.HorizonCode, so.FinalizedUtc,
+                       so.DirectionalReturnPct, so.ReferencePrice,
+                       so.HorizonClose, so.SourceManifestJson
+                FROM [StockDB_US].[TradingSignal].[SignalOutcome] AS so
+                WHERE so.SignalID = s.SignalID
+                  AND so.FinalizedUtc IS NOT NULL AND so.NullReason IS NULL
+                ORDER BY CASE WHEN so.HorizonCode = COALESCE(s.HoldingPeriodCode, 'D5') THEN 0 ELSE 1 END,
+                         so.RevisionNo DESC, so.SignalOutcomeID DESC
+            ) AS outcome
+            WHERE LOWER(d.DeploymentKey) LIKE '%production%'
+              AND d.EnvironmentType <> 'MIGRATION_SHADOW'
+              AND v.Status <> 'RETIRED'
+              AND s.ActionCode = 'PLAN_ENTRY'
+            ORDER BY s.SignalID DESC
+            """,
+            [],
+        ) or []
+        return {
+            "definitions": [dict(row) for row in definitions],
+            "versions": [dict(row) for row in versions],
+            "roles": [dict(row) for row in roles],
+            "directions": [dict(row) for row in directions],
+            "outcomes": [dict(row) for row in outcomes],
+            "executions": [dict(row) for row in executions],
+        }
+
+    @staticmethod
+    def _is_production(row: Dict[str, Any]) -> bool:
+        return "production" in str(row.get("deployment_key") or "").lower() and str(row.get("environment") or "").upper() != "MIGRATION_SHADOW"
+
+    def list_strategies(self) -> Dict[str, Any]:
+        model = self._model_factory()
+        try:
+            data = self._read_catalog_rows(model)
+        finally:
+            model.close()
+
+        definition_by_id = {int(row["strategy_definition_id"]): row for row in data["definitions"]}
+        active_versions = [
+            row for row in data["versions"]
+            if str(row.get("status") or "").upper() != "RETIRED"
+        ]
+        roles_by_deployment: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+        for row in data["roles"]:
+            roles_by_deployment[int(row["strategy_deployment_id"])].append(row)
+        directions_by_version: Dict[int, List[str]] = defaultdict(list)
+        signal_names_by_version: Dict[int, List[str]] = defaultdict(list)
+        for row in data["directions"]:
+            if row.get("direction"):
+                directions_by_version[int(row["strategy_version_id"])].append(str(row["direction"]).upper())
+            if row.get("classification"):
+                signal_names_by_version[int(row["strategy_version_id"])].append(str(row["classification"]).upper())
+        configuration_by_version = {
+            int(row["strategy_version_id"]): _json_object(row.get("configuration_json"))
+            for row in active_versions
+        }
+        outcomes_by_version: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+        outcomes_by_signal: Dict[tuple[int, str], List[Dict[str, Any]]] = defaultdict(list)
+        outcomes_by_deployment: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+        for row in data["outcomes"]:
+            version_id = int(row["strategy_version_id"])
+            signal_code = str(row.get("classification") or "").upper()
+            horizon = str(row.get("horizon_code") or "").upper()
+            if horizon and horizon != _terminal_horizon(configuration_by_version.get(version_id, {}), signal_code):
+                continue
+            if str(row.get("environment") or "").upper() == "BACKTEST":
+                outcomes_by_version[version_id].append(row)
+                if signal_code:
+                    outcomes_by_signal[(version_id, signal_code)].append(row)
+            if row.get("strategy_deployment_id") is not None:
+                outcomes_by_deployment[int(row["strategy_deployment_id"])].append(row)
+        executions_by_deployment_key: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for row in data["executions"]:
+            calculated = row.get("simulated_return_pct")
+            row["actual_return_pct"] = float(calculated) if calculated is not None else None
+            row["outcome_status"] = "FINALIZED" if calculated is not None else "WAITING_MARKET_DATA"
+            row["execution_mode"] = "SIMULATED_MARKET_OUTCOME"
+            row["calculated_entry_price"] = row.get("simulated_entry_price") or row.get("simulated_reference_price")
+            row["calculated_exit_price"] = row.get("simulated_exit_price")
+            row["calculated_exit_reason"] = row.get("simulated_exit_reason")
+            executions_by_deployment_key[str(row["deployment_key"])].append(row)
+        deployments_by_version: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+        for row in active_versions:
+            if row.get("strategy_deployment_id") is not None:
+                deployments_by_version[int(row["strategy_version_id"])].append(row)
+
+        stocks: Dict[str, Dict[int, Dict[str, Any]]] = defaultdict(dict)
+        for row in active_versions:
+            definition = definition_by_id.get(int(row["strategy_definition_id"]), {})
+            version_id = int(row["strategy_version_id"])
+            config = _json_object(row.get("configuration_json"))
+            research = _json_object(row.get("research_metadata_json"))
+            metadata = [config, research]
+            descriptor_signals = _descriptor_signals(config)
+            for descriptor in descriptor_signals:
+                signal_code = str(descriptor.get("signal_code") or "").upper()
+                descriptor["historical_performance"] = _model_builder_historical_performance(descriptor)
+            deployment_rows = deployments_by_version.get(version_id, [])
+            role_rows = [role for deployment in deployment_rows for role in roles_by_deployment.get(int(deployment["strategy_deployment_id"]), [])]
+            subject_roles = [role for role in role_rows if str(role.get("role_code") or "").upper() == "SUBJECT"]
+            stock_codes = sorted({str(role.get("instrument_code")).strip() for role in subject_roles if role.get("instrument_code")})
+            if not stock_codes:
+                fallback = config.get("subject_instrument_code") or config.get("instrument_code") or "UNSPECIFIED"
+                stock_codes = [str(fallback)]
+            definition_value = config.get("strategy_definition") or config.get("definition")
+            if isinstance(definition_value, dict):
+                definition_value = " ".join(
+                    str(piece).strip()
+                    for piece in (definition_value.get("purpose"), definition_value.get("rationale"))
+                    if piece
+                )
+            definition_text = [str(definition_value).strip()] if definition_value else _metadata_values(metadata, ("strategy_definition",))
+            trigger_conditions = _metadata_values(metadata, ("trigger_conditions", "trigger_condition", "entry_conditions", "entry_rule"))
+            if not trigger_conditions:
+                trigger_conditions = sorted({str(item.get("trigger_condition")) for item in descriptor_signals if item.get("trigger_condition")})
+            exit_conditions = _metadata_values(metadata, ("exit_conditions", "exit_condition"))
+            if not exit_conditions:
+                exit_conditions = sorted({
+                    str(exit_item.get("description"))
+                    for item in descriptor_signals
+                    for exit_item in item.get("exit_conditions", [])
+                    if isinstance(exit_item, dict) and exit_item.get("description")
+                })
+            for stock_code in stock_codes:
+                version_payload = stocks[stock_code].get(version_id)
+                if version_payload is None:
+                    model_builder_stats = _descriptor_stats(descriptor_signals)
+                    historical_stats = model_builder_stats
+                    # Legacy versions may not carry packet research metadata.
+                    # Preserve their existing runtime-outcome fallback, while
+                    # never allowing it to replace published packet statistics.
+                    if not model_builder_stats["instances"] and outcomes_by_version.get(version_id):
+                        historical_stats = _stats(outcomes_by_version[version_id])
+                    version_payload = {
+                        "strategy_version_id": version_id,
+                        "strategy_code": str(definition.get("strategy_code") or ""),
+                        "display_name": str(definition.get("display_name") or definition.get("strategy_code") or "Strategy"),
+                        "version_code": str(row["version_code"]),
+                        "implementation_key": row.get("implementation_key"),
+                        "status": str(row.get("status") or ""),
+                        "created_utc": row.get("created_utc"),
+                        "strategy_definition": definition_text[0] if definition_text else str(definition.get("description") or definition.get("display_name") or "Not recorded in strategy metadata"),
+                        "trigger_conditions": trigger_conditions,
+                        "exit_conditions": exit_conditions,
+                        "signal_names": sorted(set(signal_names_by_version.get(version_id, []))),
+                        "signals": descriptor_signals,
+                        "directions": sorted(set(directions_by_version.get(version_id, [])) | {str(value).upper() for value in config.get("directions", []) if value}),
+                        "configuration": config,
+                        "historical_trades": _historical_trade_ledger(
+                            config,
+                            str(definition.get("strategy_code") or ""),
+                            str(row.get("version_code") or ""),
+                        ),
+                        # Prefer the model-builder's frozen packet result. The
+                        # runtime fallback is only for legacy versions with no
+                        # packet statistics at all.
+                        "historical_stats": historical_stats,
+                        "deployments": [],
+                    }
+                    if not version_payload["directions"]:
+                        version_payload["directions"] = ["UNKNOWN"]
+                    stocks[stock_code][version_id] = version_payload
+                existing_deployment_ids = {deployment["strategy_deployment_id"] for deployment in version_payload["deployments"]}
+                for deployment in deployment_rows:
+                    deployment_id = int(deployment["strategy_deployment_id"])
+                    if deployment_id in existing_deployment_ids:
+                        continue
+                    production = self._is_production(deployment)
+                    deployment_payload = {
+                        "strategy_deployment_id": deployment_id,
+                        "deployment_key": str(deployment["deployment_key"]),
+                        "environment": str(deployment["environment"]),
+                        "is_enabled": bool(deployment.get("is_enabled")),
+                        "notification_enabled": bool(deployment.get("notification_enabled")),
+                        "execution_enabled": bool(deployment.get("execution_enabled")),
+                        "is_production": production,
+                        "notification_only": not bool(deployment.get("execution_enabled")),
+                        "production_stats": _stats(outcomes_by_deployment.get(deployment_id, [])) if production else _stats([]),
+                        "executions": executions_by_deployment_key.get(str(deployment["deployment_key"]), []),
+                    }
+                    version_payload["deployments"].append(deployment_payload)
+
+        stock_payload = [
+            {"stock_code": stock_code, "strategies": list(versions.values())}
+            for stock_code, versions in sorted(stocks.items())
+        ]
+        all_versions = [version for stock in stock_payload for version in stock["strategies"]]
+        production_deployments = [deployment for version in all_versions for deployment in version["deployments"] if deployment["is_production"]]
+        return {
+            "generated_utc": datetime.now(timezone.utc),
+            "stocks": stock_payload,
+            "strategy_count": len(all_versions),
+            "production_deployment_count": len(production_deployments),
+            "enabled_production_deployment_count": sum(1 for deployment in production_deployments if deployment["is_enabled"]),
+        }
+
+    def set_production_enabled(self, deployment_id: int, enabled: bool, actor: str) -> Dict[str, Any]:
+        connection = self._connection_factory(database="StockDB_US", connection_timeout=settings.sqlserver_connection_timeout)
+        try:
+            connection.timeout = 10
+            cursor = connection.cursor()
+            row = cursor.execute(
+                """
+                SELECT d.StrategyDeploymentID AS strategy_deployment_id, d.DeploymentKey AS deployment_key,
+                       d.EnvironmentType AS environment, d.IsEnabled AS is_enabled,
+                       d.NotificationEnabled AS notification_enabled, d.ExecutionEnabled AS execution_enabled
+                FROM [StockDB_US].[TradingSignal].[StrategyDeployment] AS d WITH (UPDLOCK, HOLDLOCK)
+                JOIN [StockDB_US].[TradingSignal].[StrategyVersion] AS v ON v.StrategyVersionID = d.StrategyVersionID
+                JOIN [StockDB_US].[TradingSignal].[StrategyDefinition] AS defn ON defn.StrategyDefinitionID = v.StrategyDefinitionID
+                WHERE d.StrategyDeploymentID = ? AND defn.IsEnabled = 1
+                  AND LOWER(d.DeploymentKey) LIKE '%production%'
+                  AND d.EnvironmentType <> 'MIGRATION_SHADOW'
+                """,
+                [deployment_id],
+            ).fetchone()
+            if row is None:
+                raise ProductionDeploymentNotFound("Only enabled production deployments can be changed")
+            columns = [column[0] for column in cursor.description]
+            current = dict(zip(columns, row))
+            cursor.execute(
+                """
+                UPDATE [StockDB_US].[TradingSignal].[StrategyDeployment]
+                SET IsEnabled = ?, NotificationEnabled = ?, ExecutionEnabled = 0
+                WHERE StrategyDeploymentID = ?
+                """,
+                [1 if enabled else 0, 1 if enabled else 0, deployment_id],
+            )
+            payload = json.dumps({
+                "actor": actor,
+                "deployment_id": deployment_id,
+                "deployment_key": current["deployment_key"],
+                "previous_is_enabled": bool(current["is_enabled"]),
+                "new_is_enabled": enabled,
+                "previous_notification_enabled": bool(current["notification_enabled"]),
+                "new_notification_enabled": enabled,
+                "execution_enabled": False,
+            }, separators=(",", ":"))
+            cursor.execute(
+                """
+                INSERT INTO [StockDB_US].[TradingSignal].[AuditEvent] (EventType, Source, PayloadJson)
+                VALUES (?, ?, ?)
+                """,
+                ["STRATEGY_PRODUCTION_TOGGLE", "WEB_ADMIN", payload],
+            )
+            connection.commit()
+            return {
+                "strategy_deployment_id": deployment_id,
+                "deployment_key": current["deployment_key"],
+                "environment": current["environment"],
+                "is_enabled": enabled,
+                "notification_enabled": enabled,
+                "execution_enabled": False,
+                "is_production": True,
+                "notification_only": True,
+                "production_stats": _stats([]),
+                "executions": [],
+            }
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            try:
+                cursor.close()
+            except (UnboundLocalError, AttributeError):
+                pass
+            connection.close()

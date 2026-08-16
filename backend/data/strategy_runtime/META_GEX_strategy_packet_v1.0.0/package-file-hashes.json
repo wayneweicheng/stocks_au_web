@@ -1,0 +1,13 @@
+{
+  "hash_algorithm": "SHA-256",
+  "files": {
+    "acceptance-status.json": "b6fa218782c1be8f8f385e26ef6b88738b133d80b223cdea38e041f609c522d2",
+    "deterministic-fixtures.json": "0188ffbb68df80af654004562119eb109a68bf989ead652e7ce607046904a23d",
+    "historical-performance.json": "7194eb046bbda8c7b8c3d4833fb223adbc6985f5dfd0deb9c858b206e6b143c7",
+    "package-file-hashes.json": "27dfa1b9a0e759edfb2df005ea2e5847e1449b57d7128359a1ef4deefa1b21ed",
+    "per-instance-ledger.json": "57e48696eb978c6a9635ee8dc832704414a86fa02ca94efeff9afd15df46f281",
+    "source-manifest.json": "2a20e0c5e6353f0973c2b988a2276052057f7ef23e1750c23a5100c37ae235a5",
+    "strategy.descriptor.json": "16fa3fd14f45129feffa580ca846054943f5b430de79d92f13920c71dfacaa49",
+    "strategy.md": "92f32f94b47e09b3f58f383a4fd4035d4ae050d0787615411b641f17f50fb095"
+  }
+}

@@ -1,6 +1,6 @@
 # New Strategy Research-to-Production Contract Template
 
-Complete every section. Use `TBD` only while status is `RESEARCH_DRAFT` or `REVIEW_READY`. A contract cannot be `IMPLEMENTABLE` while any mandatory decision or fixture remains unresolved.
+Complete every section. Use `TBD` only while status is `RESEARCH_DRAFT` or `REVIEW_READY`. A contract cannot be `IMPLEMENTABLE` while any mandatory decision or fixture remains unresolved. The companion descriptor is format `2`; it is not optional.
 
 ## 1. Identity and status
 
@@ -17,6 +17,8 @@ Complete every section. Use `TBD` only while status is `RESEARCH_DRAFT` or `REVI
 | Created/reviewed date | `<ISO dates>` |
 | Replaces/supersedes | `<version or none>` |
 | Change rationale | `<why this version exists>` |
+
+The AI handoff must include the exact descriptor fields `strategy_definition`, `signal_definitions`, and `production_policy`. The Markdown remains authoritative for formulas and behavioral detail; the descriptor is the bounded catalogue consumed by registration and the web admin page.
 
 ## 2. Research provenance and limitations
 
@@ -119,6 +121,23 @@ Boundary checklist:
 - warning/blocked Observation downgrade;
 - Direction for watch-only classifications;
 - whether displayed “raw research class” differs from operational Action.
+
+## 8A. Machine-readable signal catalogue (descriptor required)
+
+Provide one descriptor entry for every emitted Classification, including `NO_SIGNAL` or another explicit fallback. Do not make the runtime or web page infer these values from signal names.
+
+| Field | Required content |
+|---|---|
+| `signal_code` | Stable machine name matching the Markdown Classification |
+| `display_name` | Human-readable signal name |
+| `strategy_definition` | What market behavior/edge this signal represents |
+| `direction` | `LONG`, `SHORT`, or `NONE` |
+| `trigger_condition` | Complete causal condition with fields, units, operators, precedence, and null behavior |
+| `entry_policy` | Whether/how a plan is created, including entry timing and price source |
+| `exit_conditions` | Every TP, SL, scheduled/time exit, opposing-signal, cancellation, and data-error exit; state exact rules such as `D2 close` |
+| `historical_performance` | `instances`, sample dates, horizon, win rate, profit factor, and source/provenance |
+
+For each `exit_conditions` item provide `kind`, `description`, and `horizon` (use `null` only when genuinely not applicable). For historical performance, `instances: 0` with null statistics is valid for a new signal only when `status` and an explanation explicitly say the sample is unavailable or insufficient.
 
 ## 9. Scheduling
 
@@ -251,3 +270,15 @@ List every unresolved item. For an `IMPLEMENTABLE` contract, write `None` and co
 - research statistics are caveated;
 - fixtures are attached and independently reproducible.
 
+## 19. Production policy declaration (descriptor required)
+
+Declare the operational authority explicitly:
+
+| Field | Required value |
+|---|---|
+| `mode` | `NOTIFICATION_ONLY`, `MANUAL_HUMAN_TRADE`, or separately reviewed `BROKER_AUTOMATED` |
+| `broker_orders_authorized` | `false` for the current project |
+| `human_trade_recording_required` | `true` while trades are manually placed |
+| `notification_default` | Whether an enabled production deployment should notify by default |
+
+Historical research performance is not actual production performance. Actual production executions, entry/exit prices, exit reason, and realized return are populated later by the runtime/operator workflow and must be shown as unavailable until recorded.

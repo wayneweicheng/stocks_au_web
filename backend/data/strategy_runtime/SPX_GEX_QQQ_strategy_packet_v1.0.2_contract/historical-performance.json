@@ -1,0 +1,197 @@
+{
+  "strategy_code": "SPX_GEX_QQQ_V1",
+  "version_code": "1.0.2-contract",
+  "status": "AVAILABLE_WITH_RECONCILIATION_BLOCKER",
+  "overall_reference": {
+    "initial_capital": 100000,
+    "ending_nav": 156341.09184719878,
+    "total_return_pct": 56.34109184719878,
+    "trade_count_portfolio": 59,
+    "win_rate_pct_portfolio": 79.66101694915254,
+    "profit_factor_portfolio": 3.0667296962976534,
+    "realized_exit_to_exit_max_drawdown_pct": 6.082286639672733,
+    "mark_to_market_max_drawdown_pct": 11.511323163765875,
+    "note": "Quoted from prior common-warmup v1.0.2 artifact; cannot be independently regenerated in this packet without NQMain raw data."
+  },
+  "signals": {
+    "SPX_STRONG_YELLOW": {
+      "status": "AVAILABLE_WITH_RECONCILIATION_BLOCKER",
+      "as_of": "2026-08-06T23:59:59-04:00",
+      "source_date_range": {
+        "start": "2025-03-06",
+        "end": "2026-08-06"
+      },
+      "eligible_sample_definition": "Candidate classifications from the prior SPX GEX v1.0.2 common-warmup backtest artifact, using NQMain percentage path proxy for QQQ. Portfolio-independent candidate outcomes are quoted here.",
+      "total_eligible_dates": 352,
+      "number_of_signal_instances": 10,
+      "wins": 8,
+      "losses": 2,
+      "unresolved_excluded_instances": 0,
+      "win_rate_pct": 80.0,
+      "win_rate_denominator": 10,
+      "gross_profit_return_units": 6.813822056424438,
+      "gross_loss_return_units": 2.000000000000008,
+      "profit_factor": 3.406911028212205,
+      "return_units": "percentage points of theoretical NQ-percentage-path proxy return",
+      "average_return_pct": 0.4813822056424429,
+      "median_return_pct": "NOT_AVAILABLE",
+      "holding_period_distribution_bars": "NOT_AVAILABLE",
+      "maximum_adverse_excursion": "NOT_AVAILABLE",
+      "maximum_favourable_excursion": "NOT_AVAILABLE",
+      "transaction_costs": {
+        "commission": "0 in referenced backtest",
+        "slippage": "0 / NOT MODELED in referenced backtest"
+      },
+      "position_sizing": "Candidate stats use one theoretical unit; portfolio backtest used 100% shadow NAV exposure.",
+      "treatment_of_overlapping_signals": "Candidate stats include all independently eligible candidates. Portfolio results separately enforced EXISTING_POSITION_PRIORITY.",
+      "treatment_of_repeated_same_day_signals": "One classification per ObservationDate.",
+      "candidate_inclusion": "All candidates for this signal code, not only portfolio-entered candidates.",
+      "sample_size_limitations": "Small samples and in-sample/selection risk; forward-paper validation required.",
+      "confidence_interval": {
+        "method": "Wilson score 95%",
+        "lower_pct": 49.01624715366418,
+        "upper_pct": 94.33178485456247
+      },
+      "backtest_engine_and_version": "prior SPX GEX v1.0.2 common-warmup artifact; executable engine build hash NOT_AVAILABLE",
+      "source_snapshot_hash": "NOT_AVAILABLE",
+      "per_instance_ledger_reference": "per-instance-ledger.json (records unavailable in current runtime; blocker explained there)"
+    },
+    "SPX_RELIABLE_YELLOW": {
+      "status": "AVAILABLE_WITH_RECONCILIATION_BLOCKER",
+      "as_of": "2026-08-06T23:59:59-04:00",
+      "source_date_range": {
+        "start": "2025-03-06",
+        "end": "2026-08-06"
+      },
+      "eligible_sample_definition": "Candidate classifications from the prior SPX GEX v1.0.2 common-warmup backtest artifact, using NQMain percentage path proxy for QQQ. Portfolio-independent candidate outcomes are quoted here.",
+      "total_eligible_dates": 352,
+      "number_of_signal_instances": 21,
+      "wins": 18,
+      "losses": 3,
+      "unresolved_excluded_instances": 0,
+      "win_rate_pct": 85.71428571428571,
+      "win_rate_denominator": 21,
+      "gross_profit_return_units": 7.200000000000026,
+      "gross_loss_return_units": 2.400000000000001,
+      "profit_factor": 3.0000000000000098,
+      "return_units": "percentage points of theoretical NQ-percentage-path proxy return",
+      "average_return_pct": 0.22857142857142976,
+      "median_return_pct": "NOT_AVAILABLE",
+      "holding_period_distribution_bars": "NOT_AVAILABLE",
+      "maximum_adverse_excursion": "NOT_AVAILABLE",
+      "maximum_favourable_excursion": "NOT_AVAILABLE",
+      "transaction_costs": {
+        "commission": "0 in referenced backtest",
+        "slippage": "0 / NOT MODELED in referenced backtest"
+      },
+      "position_sizing": "Candidate stats use one theoretical unit; portfolio backtest used 100% shadow NAV exposure.",
+      "treatment_of_overlapping_signals": "Candidate stats include all independently eligible candidates. Portfolio results separately enforced EXISTING_POSITION_PRIORITY.",
+      "treatment_of_repeated_same_day_signals": "One classification per ObservationDate.",
+      "candidate_inclusion": "All candidates for this signal code, not only portfolio-entered candidates.",
+      "sample_size_limitations": "Small samples and in-sample/selection risk; forward-paper validation required.",
+      "confidence_interval": {
+        "method": "Wilson score 95%",
+        "lower_pct": 65.36393971937906,
+        "upper_pct": 95.01898750027473
+      },
+      "backtest_engine_and_version": "prior SPX GEX v1.0.2 common-warmup artifact; executable engine build hash NOT_AVAILABLE",
+      "source_snapshot_hash": "NOT_AVAILABLE",
+      "per_instance_ledger_reference": "per-instance-ledger.json (records unavailable in current runtime; blocker explained there)"
+    },
+    "SPX_REVERSAL_GREEN": {
+      "status": "AVAILABLE_WITH_RECONCILIATION_BLOCKER",
+      "as_of": "2026-08-06T23:59:59-04:00",
+      "source_date_range": {
+        "start": "2025-03-06",
+        "end": "2026-08-06"
+      },
+      "eligible_sample_definition": "Candidate classifications from the prior SPX GEX v1.0.2 common-warmup backtest artifact, using NQMain percentage path proxy for QQQ. Portfolio-independent candidate outcomes are quoted here.",
+      "total_eligible_dates": 352,
+      "number_of_signal_instances": 42,
+      "wins": 33,
+      "losses": 9,
+      "unresolved_excluded_instances": 0,
+      "win_rate_pct": 78.57142857142857,
+      "win_rate_denominator": 42,
+      "gross_profit_return_units": 80.84840045255932,
+      "gross_loss_return_units": 19.55002738770314,
+      "profit_factor": 4.135462260447396,
+      "return_units": "percentage points of theoretical NQ-percentage-path proxy return",
+      "average_return_pct": 1.4594850729727662,
+      "median_return_pct": "NOT_AVAILABLE",
+      "holding_period_distribution_bars": "NOT_AVAILABLE",
+      "maximum_adverse_excursion": "NOT_AVAILABLE",
+      "maximum_favourable_excursion": "NOT_AVAILABLE",
+      "transaction_costs": {
+        "commission": "0 in referenced backtest",
+        "slippage": "0 / NOT MODELED in referenced backtest"
+      },
+      "position_sizing": "Candidate stats use one theoretical unit; portfolio backtest used 100% shadow NAV exposure.",
+      "treatment_of_overlapping_signals": "Candidate stats include all independently eligible candidates. Portfolio results separately enforced EXISTING_POSITION_PRIORITY.",
+      "treatment_of_repeated_same_day_signals": "One classification per ObservationDate.",
+      "candidate_inclusion": "All candidates for this signal code, not only portfolio-entered candidates.",
+      "sample_size_limitations": "Small samples and in-sample/selection risk; forward-paper validation required.",
+      "confidence_interval": {
+        "method": "Wilson score 95%",
+        "lower_pct": 64.0601546836771,
+        "upper_pct": 88.29420012399696
+      },
+      "backtest_engine_and_version": "prior SPX GEX v1.0.2 common-warmup artifact; executable engine build hash NOT_AVAILABLE",
+      "source_snapshot_hash": "NOT_AVAILABLE",
+      "per_instance_ledger_reference": "per-instance-ledger.json (records unavailable in current runtime; blocker explained there)"
+    },
+    "SPX_NORMAL_GREEN": {
+      "status": "AVAILABLE_WITH_RECONCILIATION_BLOCKER",
+      "as_of": "2026-08-06T23:59:59-04:00",
+      "source_date_range": {
+        "start": "2025-03-06",
+        "end": "2026-08-06"
+      },
+      "eligible_sample_definition": "Candidate classifications from the prior SPX GEX v1.0.2 common-warmup backtest artifact, using NQMain percentage path proxy for QQQ. Portfolio-independent candidate outcomes are quoted here.",
+      "total_eligible_dates": 352,
+      "number_of_signal_instances": 25,
+      "wins": 18,
+      "losses": 7,
+      "unresolved_excluded_instances": 0,
+      "win_rate_pct": 72.0,
+      "win_rate_denominator": 25,
+      "gross_profit_return_units": 23.709459314633282,
+      "gross_loss_return_units": 10.925330097999662,
+      "profit_factor": 2.170136655090567,
+      "return_units": "percentage points of theoretical NQ-percentage-path proxy return",
+      "average_return_pct": 0.5113651686653449,
+      "median_return_pct": "NOT_AVAILABLE",
+      "holding_period_distribution_bars": "NOT_AVAILABLE",
+      "maximum_adverse_excursion": "NOT_AVAILABLE",
+      "maximum_favourable_excursion": "NOT_AVAILABLE",
+      "transaction_costs": {
+        "commission": "0 in referenced backtest",
+        "slippage": "0 / NOT MODELED in referenced backtest"
+      },
+      "position_sizing": "Candidate stats use one theoretical unit; portfolio backtest used 100% shadow NAV exposure.",
+      "treatment_of_overlapping_signals": "Candidate stats include all independently eligible candidates. Portfolio results separately enforced EXISTING_POSITION_PRIORITY.",
+      "treatment_of_repeated_same_day_signals": "One classification per ObservationDate.",
+      "candidate_inclusion": "All candidates for this signal code, not only portfolio-entered candidates.",
+      "sample_size_limitations": "Small samples and in-sample/selection risk; forward-paper validation required.",
+      "confidence_interval": {
+        "method": "Wilson score 95%",
+        "lower_pct": 52.423394809638424,
+        "upper_pct": 85.71614614904344
+      },
+      "backtest_engine_and_version": "prior SPX GEX v1.0.2 common-warmup artifact; executable engine build hash NOT_AVAILABLE",
+      "source_snapshot_hash": "NOT_AVAILABLE",
+      "per_instance_ledger_reference": "per-instance-ledger.json (records unavailable in current runtime; blocker explained there)"
+    }
+  },
+  "classification_counts": {
+    "NO_SIGNAL": 199,
+    "INSUFFICIENT_HISTORY": 0,
+    "SPX_STRONG_YELLOW": 10,
+    "SPX_RELIABLE_YELLOW": 21,
+    "SPX_WEAK_YELLOW": 51,
+    "SPX_MIXED_YELLOW": 3,
+    "SPX_REVERSAL_GREEN": 42,
+    "SPX_NORMAL_GREEN": 26
+  },
+  "reconciliation_status": "INSUFFICIENT: aggregate metrics are known, but current runtime lacks NQMain raw snapshot and full prior per-instance artifact bytes."
+}

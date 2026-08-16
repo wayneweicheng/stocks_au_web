@@ -53,7 +53,7 @@ const NAV: NavGroup[] = [
       { href: "/market-theme-reports", label: "Market Theme Reports" },
       { href: "/us-equity-analysis-reports", label: "US Equity Analysis" },
       { href: "/option-flow-analysis-reports", label: "Option Flow Analysis" },
-      { href: "/spx-gex-reports", label: "SPX GEX Reports" },
+      { href: "/trading-signal-reports", label: "Trading Signal Reports" },
       { href: "/find-index-bottoms-reports", label: "Find Index Bottoms" },
       { href: "/shiso-leaf-stock-hunter-reports", label: "Shiso Leaf Hunter" },
       { href: "/stock-social-sentiment-reports", label: "Social Sentiment" },

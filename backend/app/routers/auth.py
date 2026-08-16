@@ -63,3 +63,11 @@ def verify_credentials(authorization: str = Header(None)):
             headers={"WWW-Authenticate": "Basic"},
         )
     return username
+
+
+def verify_admin(username: str = Depends(verify_credentials)):
+    """Admin seam kept separate so role-based auth can be added later."""
+    credentials = get_credentials()
+    if not secrets.compare_digest(username, credentials["username"]):
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return username

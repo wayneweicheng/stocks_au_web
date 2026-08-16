@@ -1,0 +1,214 @@
+{
+  "fixture_format": 1,
+  "strategy_code": "META_GEX_PCR_V1",
+  "version_code": "1.0.0",
+  "cases": [
+    {
+      "id": "not_ready_partial",
+      "input": {
+        "rows": [
+          "BC",
+          "BP",
+          "SC"
+        ]
+      },
+      "expected": {
+        "runtime_status": "NOT_READY",
+        "signal_records": 0
+      }
+    },
+    {
+      "id": "insufficient",
+      "input": {
+        "prior_valid_count": 59
+      },
+      "expected": {
+        "signal_code": "INSUFFICIENT_HISTORY"
+      }
+    },
+    {
+      "id": "bear_true",
+      "input": {
+        "continuity": true,
+        "CloseChangePct": -0.5,
+        "PCRChangePct": -10,
+        "AbsPriceMove": 0.5,
+        "P50_AbsPriceMove_60": 0.6
+      },
+      "expected": {
+        "signal_code": "META_STRONG_BEARISH_CONTINUATION",
+        "direction": "SHORT"
+      }
+    },
+    {
+      "id": "bear_abs_boundary_tie_true",
+      "input": {
+        "CloseChangePct": -0.2,
+        "PCRChangePct": -5.0001,
+        "AbsPriceMove": 0.2,
+        "P50_AbsPriceMove_60": 0.2
+      },
+      "expected": {
+        "signal_code": "META_STRONG_BEARISH_CONTINUATION"
+      }
+    },
+    {
+      "id": "bear_pcr_boundary_false",
+      "input": {
+        "CloseChangePct": -0.2,
+        "PCRChangePct": -5.0,
+        "AbsPriceMove": 0.2,
+        "P50_AbsPriceMove_60": 0.3
+      },
+      "expected": {
+        "signal_code": "NO_SIGNAL",
+        "note": "Strong condition is strict PCRChangePct < -5; at exactly -5 no later watch rule in this contract matches."
+      }
+    },
+    {
+      "id": "bull_true",
+      "input": {
+        "CloseChangePct": 0.4,
+        "PCRChangePct": -20,
+        "SCAbs": 10,
+        "P40_SCAbs_60": 12
+      },
+      "expected": {
+        "signal_code": "META_STRONG_BULLISH_CONFIRMATION"
+      }
+    },
+    {
+      "id": "bull_sc_tie_true",
+      "input": {
+        "CloseChangePct": 0.1001,
+        "PCRChangePct": -5.0001,
+        "SCAbs": 12,
+        "P40_SCAbs_60": 12
+      },
+      "expected": {
+        "signal_code": "META_STRONG_BULLISH_CONFIRMATION"
+      }
+    },
+    {
+      "id": "divergence_watch",
+      "input": {
+        "CloseChangePct": 0.4,
+        "PCRChangePct": 20,
+        "SPShare": 0.08,
+        "P65_SPShare_60": 0.06
+      },
+      "expected": {
+        "signal_code": "META_STRONG_BEARISH_DIVERGENCE_WATCH",
+        "notify": false
+      }
+    },
+    {
+      "id": "crowded_watch",
+      "input": {
+        "PutBuyShareChange": -0.2,
+        "AbsPutBuyShareChange": 0.2,
+        "P75_AbsPutBuyShareChange_60": 0.15,
+        "SPShare": 0.08,
+        "P65_SPShare_60": 0.06
+      },
+      "expected": {
+        "signal_code": "META_CROWDED_PUT_SELLING_EXHAUSTION_WATCH"
+      }
+    },
+    {
+      "id": "bull_watch_not_strong",
+      "input": {
+        "CloseChangePct": 0.4,
+        "PCRChangePct": -20,
+        "SCAbs": 20,
+        "P40_SCAbs_60": 12
+      },
+      "expected": {
+        "signal_code": "META_BULLISH_CONFIRMATION_WATCH"
+      }
+    },
+    {
+      "id": "large_drop_watch",
+      "input": {
+        "CloseChangePct": -3.0,
+        "PCRChangePct": -20,
+        "AbsPriceMove": 3.0,
+        "P50_AbsPriceMove_60": 1.0
+      },
+      "expected": {
+        "signal_code": "META_LARGE_DROP_REVERSAL_WATCH"
+      }
+    },
+    {
+      "id": "fear_watch",
+      "input": {
+        "CloseChangePct": -1.0,
+        "PCRChangePct": 30
+      },
+      "expected": {
+        "signal_code": "META_FEAR_EXPANSION_REVERSAL_WATCH"
+      }
+    },
+    {
+      "id": "short_stop_intrabar",
+      "input": {
+        "entry": 100,
+        "bar": {
+          "Open": 101,
+          "High": 103,
+          "Low": 99
+        },
+        "stop_pct": 0.025
+      },
+      "expected": {
+        "exit_price": 102.5,
+        "exit_reason": "STOP_HIT"
+      }
+    },
+    {
+      "id": "short_stop_gap",
+      "input": {
+        "entry": 100,
+        "bar": {
+          "Open": 103,
+          "High": 104,
+          "Low": 102
+        },
+        "stop_pct": 0.025
+      },
+      "expected": {
+        "exit_price": 103,
+        "exit_reason": "STOP_GAP"
+      }
+    },
+    {
+      "id": "missing_terminal",
+      "input": {
+        "D2_1530_bar": null
+      },
+      "expected": {
+        "outcome": "PENDING"
+      }
+    },
+    {
+      "id": "idempotent",
+      "input": {
+        "same_source_revision": true
+      },
+      "expected": {
+        "duplicate_signal": false,
+        "duplicate_push": false
+      }
+    },
+    {
+      "id": "no_signal",
+      "input": {
+        "CloseChangePct": 0.0,
+        "PCRChangePct": 0.0
+      },
+      "expected": {
+        "signal_code": "NO_SIGNAL"
+      }
+    }
+  ]
+}

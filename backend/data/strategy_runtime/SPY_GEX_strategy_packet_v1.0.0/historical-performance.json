@@ -1,0 +1,160 @@
+{
+  "strategy_code": "SPY_GEX_INTENT_V1",
+  "version_code": "1.0.0",
+  "historical_vs_production_separation": "These are historical research outcomes. Future simulated production outcomes MUST be stored separately and must never be merged with this file.",
+  "signals": {
+    "SPY_LOW_SP_MOMENTUM_LONG": {
+      "status": "AVAILABLE",
+      "as_of": "2026-08-14T16:00:00-04:00",
+      "source_date_range": {
+        "start": "2025-10-20",
+        "end": "2026-08-13"
+      },
+      "eligible_sample_definition": "Dates in the research window with a complete current GEX observation, immediate-prior XNYS GEX observation, at least 60 prior valid observations for every threshold used, and all required entry/terminal 30-minute bars.",
+      "total_eligible_dates": 189,
+      "number_of_signal_instances": 22,
+      "wins": 17,
+      "losses": 5,
+      "unresolved_excluded_instances": 0,
+      "win_rate_pct": 77.27272727272727,
+      "win_rate_denominator": 22,
+      "win_rule": "return_pct > 0 after modeled slippage; return_pct <= 0 is a loss. Unresolved instances are excluded from the denominator.",
+      "gross_profit_return_units": 9.6669871357575,
+      "gross_loss_return_units": 2.2525046055017808,
+      "profit_factor": 4.291661429746123,
+      "return_units": "percentage points of entry notional, net of specified slippage and before taxes; no commissions unless listed.",
+      "average_return_pct": 0.33702193319344176,
+      "median_return_pct": 0.37153305931213476,
+      "holding_period_distribution_bars": {
+        "min": 17,
+        "median": 17.0,
+        "max": 17
+      },
+      "maximum_adverse_excursion": {
+        "average_pct": -0.3091153022834596,
+        "worst_pct": -1.3321991378191789
+      },
+      "maximum_favourable_excursion": {
+        "average_pct": 0.6642602578992386,
+        "best_pct": 1.9690467706703574
+      },
+      "entry_rule": "D1 07:30 America/New_York 30-minute bar Open",
+      "exit_rule": "D1 15:30 bar Close; no TP and no SL.",
+      "transaction_costs": "0 commission; 5 bps per side (10 bps round trip) modeled slippage",
+      "position_sizing": "1.0 notional unit per independent signal",
+      "treatment_of_overlapping_signals": "Independent signal-level research; no portfolio occupancy filter.",
+      "treatment_of_repeated_same_day_signals": "One signal code can emit at most once per market date and source revision; duplicates are deduplicated by strategy/version/date/signal/revision.",
+      "candidate_inclusion": "All independently eligible signal candidates are included. No manual-trade filter is used.",
+      "sample_size_limitations": "Small samples; estimates are unstable and should be forward-paper validated. Historical selection may have multiple-testing risk as disclosed in strategy.md.",
+      "confidence_interval": {
+        "method": "Wilson score 95%",
+        "lower_pct": 56.56004682477829,
+        "upper_pct": 89.87696001475148
+      },
+      "backtest_engine_and_version": "gex_contract_backtest_v1.0.0",
+      "source_snapshot_hash": "6fb89d052f4c77b2a4dc7cb86f7994fcc29587c28f71f489933bdb15c75a0fe3",
+      "per_instance_ledger_reference": "per-instance-ledger.json",
+      "train_subperiod": {
+        "start": "2025-10-20",
+        "end": "2026-03-31",
+        "instances": 8,
+        "wins": 7,
+        "losses": 1,
+        "win_rate_pct": 87.5,
+        "average_return_pct": 0.22511990980961666,
+        "profit_factor": 3.5216607469710315
+      },
+      "validation_subperiod": {
+        "start": "2026-04-01",
+        "end": "2026-08-13",
+        "instances": 14,
+        "wins": 10,
+        "losses": 4,
+        "win_rate_pct": 71.42857142857143,
+        "average_return_pct": 0.40096594655562745,
+        "profit_factor": 4.649152166412163
+      }
+    },
+    "SPY_FEAR_EXPANSION_REVERSAL_LONG": {
+      "status": "AVAILABLE",
+      "as_of": "2026-08-14T16:00:00-04:00",
+      "source_date_range": {
+        "start": "2025-10-20",
+        "end": "2026-08-13"
+      },
+      "eligible_sample_definition": "Dates in the research window with a complete current GEX observation, immediate-prior XNYS GEX observation, at least 60 prior valid observations for every threshold used, and all required entry/terminal 30-minute bars.",
+      "total_eligible_dates": 188,
+      "number_of_signal_instances": 18,
+      "wins": 14,
+      "losses": 4,
+      "unresolved_excluded_instances": 0,
+      "win_rate_pct": 77.77777777777779,
+      "win_rate_denominator": 18,
+      "win_rule": "return_pct > 0 after modeled slippage; return_pct <= 0 is a loss. Unresolved instances are excluded from the denominator.",
+      "gross_profit_return_units": 14.467826136757989,
+      "gross_loss_return_units": 3.806254086334837,
+      "profit_factor": 3.801066825438739,
+      "return_units": "percentage points of entry notional, net of specified slippage and before taxes; no commissions unless listed.",
+      "average_return_pct": 0.5923095583568417,
+      "median_return_pct": 0.6157004753920449,
+      "holding_period_distribution_bars": {
+        "min": 49,
+        "median": 49.0,
+        "max": 49
+      },
+      "maximum_adverse_excursion": {
+        "average_pct": -1.0298985214714216,
+        "worst_pct": -2.830202980278007
+      },
+      "maximum_favourable_excursion": {
+        "average_pct": 1.3056479616117729,
+        "best_pct": 3.0512749530927863
+      },
+      "entry_rule": "D1 07:30 America/New_York 30-minute bar Open",
+      "exit_rule": "D2 15:30 bar Close; no TP and no SL.",
+      "transaction_costs": "0 commission; 5 bps per side (10 bps round trip) modeled slippage",
+      "position_sizing": "1.0 notional unit per independent signal",
+      "treatment_of_overlapping_signals": "Independent signal-level research; no portfolio occupancy filter.",
+      "treatment_of_repeated_same_day_signals": "One signal code can emit at most once per market date and source revision; duplicates are deduplicated by strategy/version/date/signal/revision.",
+      "candidate_inclusion": "All independently eligible signal candidates are included. No manual-trade filter is used.",
+      "sample_size_limitations": "Small samples; estimates are unstable and should be forward-paper validated. Historical selection may have multiple-testing risk as disclosed in strategy.md.",
+      "confidence_interval": {
+        "method": "Wilson score 95%",
+        "lower_pct": 54.785415683787384,
+        "upper_pct": 90.9990718913983
+      },
+      "backtest_engine_and_version": "gex_contract_backtest_v1.0.0",
+      "source_snapshot_hash": "6fb89d052f4c77b2a4dc7cb86f7994fcc29587c28f71f489933bdb15c75a0fe3",
+      "per_instance_ledger_reference": "per-instance-ledger.json",
+      "train_subperiod": {
+        "start": "2025-10-20",
+        "end": "2026-03-31",
+        "instances": 10,
+        "wins": 8,
+        "losses": 2,
+        "win_rate_pct": 80.0,
+        "average_return_pct": 0.5439840204607871,
+        "profit_factor": 2.9170591482647494
+      },
+      "validation_subperiod": {
+        "start": "2026-04-01",
+        "end": "2026-08-13",
+        "instances": 8,
+        "wins": 6,
+        "losses": 2,
+        "win_rate_pct": 75.0,
+        "average_return_pct": 0.6527164807269101,
+        "profit_factor": 6.390688689733468
+      }
+    }
+  },
+  "methodology": {
+    "market_dates": "XNYS",
+    "entry_bar": "07:30 ET bar Open",
+    "cash_close": "15:30 ET bar Close (bar interval start representing the cash-close half-hour)",
+    "slippage": "5 bps per side",
+    "commissions": "0",
+    "manual_trades": "ignored",
+    "source_hash": "6fb89d052f4c77b2a4dc7cb86f7994fcc29587c28f71f489933bdb15c75a0fe3"
+  }
+}

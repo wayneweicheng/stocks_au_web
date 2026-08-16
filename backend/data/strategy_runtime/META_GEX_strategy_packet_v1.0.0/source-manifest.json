@@ -1,0 +1,63 @@
+{
+  "manifest_version": 1,
+  "strategy_code": "META_GEX_PCR_V1",
+  "version_code": "1.0.0",
+  "created_at": "2026-08-16",
+  "hash_algorithm": "SHA-256",
+  "source_snapshot_hash": "30e3670c2e044e451ab8dea0434f35351b097509023026013e04e28cbdffa3b9",
+  "implementation_hash": "ba32288a8ef6ccfa5a25da91e88f5906e5318ac697b5036de0b18fe316665ebd",
+  "sources": [
+    {
+      "logical_name": "META GEX history",
+      "availability": "AVAILABLE",
+      "file": "META-20230815-20260813.csv",
+      "google_drive_id": "1s01WZOlMTCSnmebAUk8tNaCZFFScn3zL",
+      "sha256": "7e328baf1473221e33edd85fff2922262f0c134574ed81ea9dbb28df91b52b06",
+      "date_range": [
+        "2023-08-15",
+        "2026-08-13"
+      ],
+      "schema": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "VWAP",
+        "NoOfOption",
+        "GEX"
+      ]
+    },
+    {
+      "logical_name": "META 30-minute price history",
+      "availability": "AVAILABLE",
+      "file": "META-20251020-20260814.csv",
+      "google_drive_id": "1Vm9pTvzmI8OcVZEy3yQAFENrtAmuR4fp",
+      "sha256": "0620ebd3b7bd182df72af55a92f8e40a5ebe2d040519c2d915c0ac4b65f33f06",
+      "date_range": [
+        "2025-10-20",
+        "2026-08-14"
+      ],
+      "schema": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ]
+    },
+    {
+      "logical_name": "META research baseline memo",
+      "availability": "AVAILABLE",
+      "file_reference": "META_GEX_research_baseline_2026-08-15.md",
+      "sha256": "d3c8c4c8de1e82f0d2bb9346d9c349a308f69ee494cc46313c89cdf5a0cefc11",
+      "reason": "Research-lineage memo; raw GEX/price snapshots remain the performance calculation sources."
+    }
+  ],
+  "production_outcome_source": {
+    "status": "NOT_AVAILABLE",
+    "reason": "Historical META 30m file is available, but production DB/schema/table/feed identity for future 30m bars was not supplied. Pushover remains disabled until mapped."
+  }
+}

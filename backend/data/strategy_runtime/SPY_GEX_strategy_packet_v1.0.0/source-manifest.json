@@ -1,0 +1,56 @@
+{
+  "manifest_version": 1,
+  "strategy_code": "SPY_GEX_INTENT_V1",
+  "version_code": "1.0.0",
+  "created_at": "2026-08-16",
+  "hash_algorithm": "SHA-256",
+  "source_snapshot_hash": "6fb89d052f4c77b2a4dc7cb86f7994fcc29587c28f71f489933bdb15c75a0fe3",
+  "implementation_hash": "cf2bd6af01fd6a6811363d63dc05741daf9fa35634a72cdd82b91d5f9545e488",
+  "sources": [
+    {
+      "logical_name": "SPY GEX history",
+      "availability": "AVAILABLE",
+      "file": "SPY-20230815-20260813.csv",
+      "google_drive_id": "1CnU-_w44KMtUHwJ53tCQ9R5xsbE4mClY",
+      "sha256": "ca3e607cbae5568a08b2d216b7e7dcca1a9589978722a0b8e7a40c25c534c66a",
+      "date_range": [
+        "2023-08-15",
+        "2026-08-13"
+      ],
+      "schema": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "VWAP",
+        "NoOfOption",
+        "GEX"
+      ]
+    },
+    {
+      "logical_name": "SPY 30-minute price history",
+      "availability": "AVAILABLE",
+      "file": "SPY-20251020-20260814.csv",
+      "google_drive_id": "1vtr5ggNSWQhLIgZmRvYBhlDZECW9QC8L",
+      "sha256": "9694717c4345582e3e916a69f52a33dc954410db84718628fc7730a13e475fb3",
+      "date_range": [
+        "2025-10-20",
+        "2026-08-14"
+      ],
+      "schema": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ]
+    }
+  ],
+  "production_outcome_source": {
+    "status": "NOT_AVAILABLE",
+    "reason": "The historical 30-minute snapshot is available, but the deployment database/schema/table or live feed that will supply future SPY 30-minute bars was not provided. Runtime must not guess; production push remains disabled until mapped and hashed."
+  }
+}

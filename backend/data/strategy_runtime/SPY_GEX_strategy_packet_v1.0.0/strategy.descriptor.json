@@ -1,0 +1,708 @@
+{
+  "descriptor_format": 2,
+  "strategy_code": "SPY_GEX_INTENT_V1",
+  "display_name": "SPY GEX Intent & SP-Share Strategy",
+  "version_code": "1.0.0",
+  "status": "IMPLEMENTABLE",
+  "implementation_key": "spy_gex_intent_v1_0_0",
+  "owner": "US_STOCKS_INDEXES_STRATEGY_RESEARCH",
+  "research_date": "2026-08-16",
+  "change_summary": "Initial frozen contract from causal SPY GEX/intent screening; implementable as notification-only with explicit deployment enablement and broker execution disabled.",
+  "superseded_strategy_version": "NONE",
+  "validation_method": "Causal 60-observation features; chronological train 2025-10-20..2026-03-31 and robustness validation 2026-04-01..2026-08-13; validation is not strict OOS because it was inspected during rule selection.",
+  "known_limitations": [
+    "No untouched OOS window",
+    "Multiple-testing/data-snooping risk from broad hypothesis screen",
+    "Production 30-minute bar availability and refresh SLA must be monitored",
+    "Small signal samples"
+  ],
+  "definition": {
+    "purpose": "Generate deterministic notification-only SPY paper plans from daily capital-type GEXDelta composition.",
+    "rationale": "Tests whether price direction, change in all-four-capital-type intent, and sell-put share identify short-horizon momentum/reversal regimes.",
+    "trigger_precedence": [
+      "DATA_ERROR",
+      "INSUFFICIENT_HISTORY",
+      "SPY_LOW_SP_MOMENTUM_LONG",
+      "SPY_FEAR_EXPANSION_REVERSAL_LONG",
+      "SPY_HIGH_GEX_MOMENTUM_WATCH",
+      "SPY_BEARISH_CONTINUATION_WATCH",
+      "NO_SIGNAL"
+    ],
+    "source_refresh_gate": {
+      "runtime_frequency": "every 2 minutes",
+      "source_database": "StockDB_US",
+      "source_schema": "Transform",
+      "source_table": "OptionGEXChangeCapitalType",
+      "query_identity": "SELECT ObservationDate, ASXCode, GEXDelta, CapitalType, Close, VWAP, NoOfOption, GEX FROM StockDB_US.Transform.OptionGEXChangeCapitalType WITH (NOLOCK) WHERE ASXCode='SPY.US' ORDER BY ObservationDate, CapitalType",
+      "expected_completed_session": "On an XNYS action date D1, expected D0 = previous XNYS cash session.",
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode",
+        "CapitalType",
+        "GEXDelta",
+        "Close"
+      ],
+      "component_checks": [
+        "Exactly one BC, one BP, one SC and one SP row for D0.",
+        "No duplicate CapitalType row for D0.",
+        "All required numeric fields finite.",
+        "Close values across BC/BP/SC/SP must be identical to 1e-9.",
+        "sum(abs(GEXDelta of BC,BP,SC,SP)) > 0.",
+        "Previous XNYS session must also have exactly BC/BP/SC/SP before any percent-change rule is evaluated."
+      ],
+      "refresh_marker": "Canonical D0 row hash must be identical on two consecutive 2-minute heartbeats, second heartbeat no later than 07:28:00 America/New_York; hash = SHA256 of UTF-8 canonical JSON sorted by CapitalType containing ObservationDate,ASXCode,CapitalType,GEXDelta,GEX,Close,VWAP,NoOfOption.",
+      "decision_time": "07:30 America/New_York",
+      "open_interest_or_revision_marker": "OPEN_INTEREST_NOT_APPLICABLE: this strategy consumes GEX/GEXDelta capital-type rows and does not use an open-interest field. The canonical four-row SHA-256 is the revision marker.",
+      "timezone_normalization": "ObservationDate is interpreted as XNYS market date. Scheduler and timestamps use IANA America/New_York; UI/runtime display may additionally use Australia/Sydney.",
+      "stale_data_threshold": "If D0 != previous XNYS session or stable second heartbeat occurs after 07:28:00, readiness fails for that action date.",
+      "missing_or_partial": "Return NOT_READY. Create no Observation, Signal, report, paper plan or notification.",
+      "revised_data": "Any byte-level change to canonical D0 component values changes source_revision. Re-run evaluation. Preserve prior immutable report and mark it superseded. Recompute any non-final outcome; finalized outcomes are recomputed only under explicit SOURCE_CORRECTION workflow.",
+      "idempotency": "For unchanged source_revision and scheduled action date, reuse the existing evaluation/report/signal; do not create duplicates.",
+      "not_ready_vs_no_signal": "NOT_READY is a runtime readiness status and is not a Signal. NO_SIGNAL is emitted only after readiness passes and rule evaluation finds no signal."
+    },
+    "timezone": "Australia/Sydney",
+    "market_timezone": "America/New_York",
+    "calendar": "XNYS",
+    "confidence_method": {
+      "formula": "score = 0.45*min(train_win_rate,validation_win_rate) + 0.20*min(total_instances/20,1) + 0.20*min(validation_instances/8,1) + 0.15*min(profit_factor/3,1) - discovery_penalty; win rates are fractions 0..1.",
+      "discovery_penalty": 0.05,
+      "bands": {
+        "HIGH": "score >= 0.82",
+        "MEDIUM_HIGH": "0.72 <= score < 0.82",
+        "MEDIUM": "0.60 <= score < 0.72",
+        "LOW": "score < 0.60"
+      },
+      "note": "Confidence is a research-quality label, not a probability of profit."
+    }
+  },
+  "instruments": [
+    {
+      "role": "SUBJECT",
+      "code": "SPY.US",
+      "market": "US",
+      "exchange": "NYSE/Nasdaq consolidated US equity market",
+      "currency": "USD",
+      "timezone": "America/New_York",
+      "market_date_convention": "XNYS cash-session label",
+      "calendar": "XNYS",
+      "holiday_handling": "Skip non-XNYS sessions; Dn counts cash sessions only.",
+      "daylight_saving_handling": "Use IANA America/New_York; never fixed UTC offset.",
+      "early_close_handling": "Use official XNYS early close as cash-close terminal time."
+    },
+    {
+      "role": "SOURCE",
+      "code": "SPY.US",
+      "market": "US options-derived GEX",
+      "exchange": "Derived source",
+      "currency": "USD",
+      "timezone": "America/New_York",
+      "market_date_convention": "ObservationDate is the completed underlying US cash session D0.",
+      "calendar": "XNYS",
+      "holiday_handling": "No row expected for holidays/weekends.",
+      "daylight_saving_handling": "ObservationDate is date-only; scheduling uses America/New_York.",
+      "early_close_handling": "D0 remains that XNYS session date."
+    },
+    {
+      "role": "EXECUTION",
+      "code": "SPY.US",
+      "market": "US",
+      "exchange": "Nasdaq/US consolidated market",
+      "currency": "USD",
+      "timezone": "America/New_York",
+      "market_date_convention": "QQQ market date follows XNYS session date.",
+      "calendar": "XNYS",
+      "holiday_handling": "No entries on non-XNYS sessions.",
+      "daylight_saving_handling": "America/New_York.",
+      "early_close_handling": "Time exits use official XNYS close."
+    }
+  ],
+  "feature_specifications": {
+    "BCAbs": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "column": "GEXDelta where CapitalType=BC",
+      "formula": "abs(BC_GEXDelta)",
+      "units": "GEXDelta absolute units",
+      "rounding": "none for decisions; display only",
+      "null": "DATA_ERROR",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "BPAbs": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "column": "GEXDelta where CapitalType=BP",
+      "formula": "abs(BP_GEXDelta)",
+      "units": "GEXDelta absolute units",
+      "rounding": "none",
+      "null": "DATA_ERROR",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "SCAbs": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "column": "GEXDelta where CapitalType=SC",
+      "formula": "abs(SC_GEXDelta)",
+      "units": "GEXDelta absolute units",
+      "rounding": "none",
+      "null": "DATA_ERROR",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "SPAbs": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "column": "GEXDelta where CapitalType=SP",
+      "formula": "abs(SP_GEXDelta)",
+      "units": "GEXDelta absolute units",
+      "rounding": "none",
+      "null": "DATA_ERROR",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "TotalAbsGEXDelta": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "columns": [
+        "BC/BP/SC/SP GEXDelta"
+      ],
+      "formula": "BCAbs+BPAbs+SCAbs+SPAbs",
+      "units": "GEXDelta absolute units",
+      "sign": "non-negative",
+      "rounding": "none",
+      "null": "DATA_ERROR if any component null or total <= 0",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "PCR": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "formula": "BPAbs / BCAbs",
+      "units": "ratio",
+      "sign": "non-negative",
+      "rounding": "none",
+      "null": "DATA_ERROR if BCAbs=0",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "CloseChangePct": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "column": "Close",
+      "formula": "100*(Close_D0 / Close_previous_XNYS_GEX_observation - 1)",
+      "units": "percentage points",
+      "sign": "positive=price rose; negative=price fell",
+      "rounding": "none",
+      "null": "DATA_ERROR if either Close missing/zero",
+      "lookback": "previous XNYS session",
+      "current_included": true
+    },
+    "PCRChangePct": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "formula": "100*(PCR_D0 / PCR_previous_XNYS_GEX_observation - 1)",
+      "units": "percentage points",
+      "sign": "positive=PCR rose; negative=PCR fell",
+      "rounding": "none",
+      "null": "DATA_ERROR if previous PCR missing/zero",
+      "lookback": "previous XNYS session",
+      "current_included": true
+    },
+    "SPShare": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "formula": "SPAbs / TotalAbsGEXDelta",
+      "units": "fraction 0..1",
+      "sign": "non-negative",
+      "rounding": "none",
+      "null": "DATA_ERROR if total=0",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "BullShare": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "formula": "(BCAbs+SPAbs)/TotalAbsGEXDelta",
+      "units": "fraction 0..1",
+      "rounding": "none",
+      "null": "DATA_ERROR if total=0",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "BearShare": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "formula": "(BPAbs+SCAbs)/TotalAbsGEXDelta",
+      "units": "fraction 0..1",
+      "rounding": "none",
+      "null": "DATA_ERROR if total=0",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "IntentRatio": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "formula": "BearShare/BullShare",
+      "units": "ratio",
+      "sign": "higher=more bearish-side GEXDelta share",
+      "rounding": "none",
+      "null": "DATA_ERROR if BullShare=0",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "IntentChangePct": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "formula": "100*(IntentRatio_D0/IntentRatio_previous_XNYS_GEX_observation - 1)",
+      "units": "percentage points",
+      "rounding": "none",
+      "null": "DATA_ERROR if prior ratio missing/zero",
+      "lookback": "previous XNYS session",
+      "current_included": true
+    },
+    "PutBuyShare": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "formula": "BPAbs/(BPAbs+SPAbs)",
+      "units": "fraction 0..1",
+      "rounding": "none",
+      "null": "DATA_ERROR if denominator=0",
+      "lookback": "D0",
+      "current_included": true
+    },
+    "PutBuyShareChange": {
+      "source": "StockDB_US.Transform.OptionGEXChangeCapitalType rows where ASXCode=SPY.US",
+      "formula": "PutBuyShare_D0 - PutBuyShare_previous_XNYS_GEX_observation",
+      "units": "fraction points",
+      "sign": "negative=put-buy share collapsed",
+      "rounding": "none",
+      "null": "DATA_ERROR if prior missing",
+      "lookback": "previous XNYS session",
+      "current_included": true
+    },
+    "AbsPriceMove": {
+      "source": "derived",
+      "formula": "abs(CloseChangePct)",
+      "units": "percentage points",
+      "rounding": "none",
+      "null": "propagate",
+      "lookback": "D0"
+    },
+    "AbsPutBuyShareChange": {
+      "source": "derived",
+      "formula": "abs(PutBuyShareChange)",
+      "units": "fraction points",
+      "rounding": "none",
+      "null": "propagate",
+      "lookback": "D0"
+    },
+    "CausalQuantile60": {
+      "source": "derived history",
+      "formula": "For any named feature X, threshold Pq uses only the 60 prior valid XNYS observations, current D0 excluded. Sort the 60 prior valid values ascending. Use linear quantile (Hyndman-Fan type 7): h=(60-1)*0.5; j=floor(h); g=h-j; threshold=x[j]+g*(x[j+1]-x[j]). Current observation is excluded.",
+      "units": "same as X",
+      "rounding": "none",
+      "null": "INSUFFICIENT_HISTORY until 60 prior valid values exist",
+      "lookback": "60 prior valid observations",
+      "minimum_observations": 60,
+      "current_included": false,
+      "tie_behavior": "Signal predicates use the written <=, <, >= or > exactly; no epsilon and no pre-rounding.",
+      "duplicate_behavior": "Duplicate capital-type row fails readiness.",
+      "late_corrected": "New canonical source hash creates a new revision and reevaluation.",
+      "future_information_proof": "Every rolling input is filtered ObservationDate < D0 before tail(60); D1/D2 prices are outcome-only and never used in D0 trigger calculation."
+    }
+  },
+  "signal_definitions": [
+    {
+      "priority": 1,
+      "signal_code": "DATA_ERROR",
+      "display_name": "Data Error",
+      "direction": "NONE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "confidence": {
+        "label": "NONE",
+        "score": null
+      },
+      "definition": "Source passed structural readiness but a required derived denominator/value is invalid (for example BCAbs=0 for PCR, BullShare=0 for IntentRatio, non-finite value).",
+      "trigger_condition": "any_required_derived_feature_is_invalid",
+      "entry_policy": "NONE",
+      "exit_conditions": [],
+      "holding_period": "NONE",
+      "cancellation_rule": "Before scheduled entry, a SOURCE_CORRECTION that changes classification away from this signal supersedes and cancels the unentered plan. After modeled entry, later signals do not cancel the outcome unless an explicit exit rule says so.",
+      "stale_data_behavior": "Fail closed at readiness. A stale D0 cannot emit this signal.",
+      "data_error_behavior": "Emit DATA_ERROR instead of this signal; create report but no plan or push.",
+      "same_bar_tp_sl_rule": "NOT_APPLICABLE unless both TP and SL are defined; SPX Yellow overrides with conservative SL-first.",
+      "gap_rule": "For active price levels, a bar opening beyond the level fills at bar Open; scheduled time exits use terminal bar Close.",
+      "missing_bar_rule": "Outcome remains PENDING; do not interpolate or forward-fill. If the entry bar is missing, entry is unresolved and outcome remains PENDING.",
+      "partial_session_rule": "For scheduled cash-close exits, use official XNYS close minus 30 minutes as the terminal 30-minute bar start (normally 15:30 ET; standard early close normally 12:30 ET). If that bar is absent, outcome remains PENDING.",
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification_when_deployment_enabled": false,
+      "pushover_priority": 0,
+      "notification_title_format": "{display_name} | {signal_code} | {direction}",
+      "notification_body_format": "Market date={market_date}; confidence={confidence_label}; entry={entry_policy}; exits={exit_summary}; source revision={source_revision}; report={report_link}. Broker execution is disabled."
+    },
+    {
+      "priority": 2,
+      "signal_code": "INSUFFICIENT_HISTORY",
+      "display_name": "Insufficient 60-observation history",
+      "direction": "NONE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "confidence": {
+        "label": "NONE",
+        "score": null
+      },
+      "definition": "Readiness passed but fewer than 60 prior valid observations exist for a causal threshold required by all candidate rules.",
+      "trigger_condition": "required_prior_valid_count < 60",
+      "entry_policy": "NONE",
+      "exit_conditions": [],
+      "holding_period": "NONE",
+      "cancellation_rule": "Before scheduled entry, a SOURCE_CORRECTION that changes classification away from this signal supersedes and cancels the unentered plan. After modeled entry, later signals do not cancel the outcome unless an explicit exit rule says so.",
+      "stale_data_behavior": "Fail closed at readiness. A stale D0 cannot emit this signal.",
+      "data_error_behavior": "Emit DATA_ERROR instead of this signal; create report but no plan or push.",
+      "same_bar_tp_sl_rule": "NOT_APPLICABLE unless both TP and SL are defined; SPX Yellow overrides with conservative SL-first.",
+      "gap_rule": "For active price levels, a bar opening beyond the level fills at bar Open; scheduled time exits use terminal bar Close.",
+      "missing_bar_rule": "Outcome remains PENDING; do not interpolate or forward-fill. If the entry bar is missing, entry is unresolved and outcome remains PENDING.",
+      "partial_session_rule": "For scheduled cash-close exits, use official XNYS close minus 30 minutes as the terminal 30-minute bar start (normally 15:30 ET; standard early close normally 12:30 ET). If that bar is absent, outcome remains PENDING.",
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification_when_deployment_enabled": false,
+      "pushover_priority": 0,
+      "notification_title_format": "{display_name} | {signal_code} | {direction}",
+      "notification_body_format": "Market date={market_date}; confidence={confidence_label}; entry={entry_policy}; exits={exit_summary}; source revision={source_revision}; report={report_link}. Broker execution is disabled."
+    },
+    {
+      "priority": 10,
+      "signal_code": "SPY_LOW_SP_MOMENTUM_LONG",
+      "display_name": "Low-SP Momentum Long",
+      "direction": "LONG",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "confidence": {
+        "score": 0.8214285714285715,
+        "label": "HIGH",
+        "method": {
+          "formula": "score = 0.45*min(train_win_rate,validation_win_rate) + 0.20*min(total_instances/20,1) + 0.20*min(validation_instances/8,1) + 0.15*min(profit_factor/3,1) - discovery_penalty; win rates are fractions 0..1.",
+          "discovery_penalty": 0.05,
+          "bands": {
+            "HIGH": "score >= 0.82",
+            "MEDIUM_HIGH": "0.72 <= score < 0.82",
+            "MEDIUM": "0.60 <= score < 0.72",
+            "LOW": "score < 0.60"
+          },
+          "note": "Confidence is a research-quality label, not a probability of profit."
+        }
+      },
+      "definition": "A positive SPY day with >10% worsening in BearShare/BullShare IntentRatio but unusually low sell-put delta share; historically this behaved as next-session momentum rather than bearish confirmation.",
+      "trigger_condition": "continuity == true AND CloseChangePct > 0.10 AND IntentChangePct > 10.0 AND SPShare <= P35_SPShare_60",
+      "variables": [
+        "CloseChangePct percentage points",
+        "IntentChangePct percentage points",
+        "SPShare fraction",
+        "P35_SPShare_60 fraction",
+        "continuity boolean"
+      ],
+      "entry_policy": "If source readiness passed by 07:28 ET, plan LONG SPY at D1 07:30 ET 30-minute bar Open / first executable quote consistent with that Open convention. If the entry bar is missing, keep the paper plan/outcome ENTRY_UNRESOLVED/PENDING and do not synthesize a fill.",
+      "exit_conditions": [
+        "Scheduled: D1 15:30 30-minute bar Close (cash close).",
+        "No take-profit.",
+        "No stop-loss.",
+        "No opposing-signal exit."
+      ],
+      "holding_period": "D1",
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 22,
+        "wins": 17,
+        "losses": 5,
+        "win_rate_pct": 77.27272727272727,
+        "profit_factor": 4.291661429746123,
+        "as_of": "2026-08-14T16:00:00-04:00",
+        "source_reference": "historical-performance.json + per-instance-ledger.json"
+      },
+      "cancellation_rule": "Before scheduled entry, a SOURCE_CORRECTION that changes classification away from this signal supersedes and cancels the unentered plan. After modeled entry, later signals do not cancel the outcome unless an explicit exit rule says so.",
+      "stale_data_behavior": "Fail closed at readiness. A stale D0 cannot emit this signal.",
+      "data_error_behavior": "Emit DATA_ERROR instead of this signal; create report but no plan or push.",
+      "same_bar_tp_sl_rule": "NOT_APPLICABLE unless both TP and SL are defined; SPX Yellow overrides with conservative SL-first.",
+      "gap_rule": "For active price levels, a bar opening beyond the level fills at bar Open; scheduled time exits use terminal bar Close.",
+      "missing_bar_rule": "Outcome remains PENDING; do not interpolate or forward-fill. If the entry bar is missing, entry is unresolved and outcome remains PENDING.",
+      "partial_session_rule": "For scheduled cash-close exits, use official XNYS close minus 30 minutes as the terminal 30-minute bar start (normally 15:30 ET; standard early close normally 12:30 ET). If that bar is absent, outcome remains PENDING.",
+      "creates_report": true,
+      "creates_paper_plan": true,
+      "sends_notification_when_deployment_enabled": true,
+      "pushover_priority": 0,
+      "notification_title_format": "{display_name} | {signal_code} | {direction}",
+      "notification_body_format": "Market date={market_date}; confidence={confidence_label}; entry={entry_policy}; exits={exit_summary}; source revision={source_revision}; report={report_link}. Broker execution is disabled."
+    },
+    {
+      "priority": 20,
+      "signal_code": "SPY_FEAR_EXPANSION_REVERSAL_LONG",
+      "display_name": "Fear-Expansion Reversal Long",
+      "direction": "LONG",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "confidence": {
+        "score": 0.8175,
+        "label": "MEDIUM_HIGH",
+        "method": {
+          "formula": "score = 0.45*min(train_win_rate,validation_win_rate) + 0.20*min(total_instances/20,1) + 0.20*min(validation_instances/8,1) + 0.15*min(profit_factor/3,1) - discovery_penalty; win rates are fractions 0..1.",
+          "discovery_penalty": 0.05,
+          "bands": {
+            "HIGH": "score >= 0.82",
+            "MEDIUM_HIGH": "0.72 <= score < 0.82",
+            "MEDIUM": "0.60 <= score < 0.72",
+            "LOW": "score < 0.60"
+          },
+          "note": "Confidence is a research-quality label, not a probability of profit."
+        }
+      },
+      "definition": "A down SPY day with >10% increase in IntentRatio and high sell-put delta share (at/above causal P65), interpreted as a two-session reversal setup.",
+      "trigger_condition": "continuity == true AND CloseChangePct < -0.10 AND IntentChangePct > 10.0 AND SPShare >= P65_SPShare_60",
+      "variables": [
+        "CloseChangePct",
+        "IntentChangePct",
+        "SPShare",
+        "P65_SPShare_60",
+        "continuity"
+      ],
+      "entry_policy": "If readiness passed by 07:28 ET, plan LONG SPY at D1 07:30 ET 30-minute bar Open.",
+      "exit_conditions": [
+        "Scheduled D2 15:30 30-minute bar Close.",
+        "No take-profit.",
+        "No stop-loss.",
+        "No opposing-signal exit."
+      ],
+      "holding_period": "D2",
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 18,
+        "wins": 14,
+        "losses": 4,
+        "win_rate_pct": 77.77777777777779,
+        "profit_factor": 3.801066825438739,
+        "as_of": "2026-08-14T16:00:00-04:00",
+        "source_reference": "historical-performance.json + per-instance-ledger.json"
+      },
+      "cancellation_rule": "Before scheduled entry, a SOURCE_CORRECTION that changes classification away from this signal supersedes and cancels the unentered plan. After modeled entry, later signals do not cancel the outcome unless an explicit exit rule says so.",
+      "stale_data_behavior": "Fail closed at readiness. A stale D0 cannot emit this signal.",
+      "data_error_behavior": "Emit DATA_ERROR instead of this signal; create report but no plan or push.",
+      "same_bar_tp_sl_rule": "NOT_APPLICABLE unless both TP and SL are defined; SPX Yellow overrides with conservative SL-first.",
+      "gap_rule": "For active price levels, a bar opening beyond the level fills at bar Open; scheduled time exits use terminal bar Close.",
+      "missing_bar_rule": "Outcome remains PENDING; do not interpolate or forward-fill. If the entry bar is missing, entry is unresolved and outcome remains PENDING.",
+      "partial_session_rule": "For scheduled cash-close exits, use official XNYS close minus 30 minutes as the terminal 30-minute bar start (normally 15:30 ET; standard early close normally 12:30 ET). If that bar is absent, outcome remains PENDING.",
+      "creates_report": true,
+      "creates_paper_plan": true,
+      "sends_notification_when_deployment_enabled": true,
+      "pushover_priority": 0,
+      "notification_title_format": "{display_name} | {signal_code} | {direction}",
+      "notification_body_format": "Market date={market_date}; confidence={confidence_label}; entry={entry_policy}; exits={exit_summary}; source revision={source_revision}; report={report_link}. Broker execution is disabled."
+    },
+    {
+      "priority": 30,
+      "signal_code": "SPY_HIGH_GEX_MOMENTUM_WATCH",
+      "display_name": "High-GEX Momentum Watch",
+      "direction": "LONG",
+      "action": "WATCH",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "confidence": {
+        "label": "RESEARCH_ONLY",
+        "score": null
+      },
+      "definition": "Informational positive-price / rising-PCR / high-total-GEX configuration retained for shadow research only.",
+      "trigger_condition": "continuity == true AND CloseChangePct > 0.10 AND PCRChangePct > 10.0 AND TotalAbsGEXDelta >= P65_TotalAbs_60",
+      "entry_policy": "NONE",
+      "exit_conditions": [],
+      "holding_period": "D5 research concept",
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Watch-only rule is not an actionable production signal; no frozen implementation-performance claim is made."
+      },
+      "cancellation_rule": "Before scheduled entry, a SOURCE_CORRECTION that changes classification away from this signal supersedes and cancels the unentered plan. After modeled entry, later signals do not cancel the outcome unless an explicit exit rule says so.",
+      "stale_data_behavior": "Fail closed at readiness. A stale D0 cannot emit this signal.",
+      "data_error_behavior": "Emit DATA_ERROR instead of this signal; create report but no plan or push.",
+      "same_bar_tp_sl_rule": "NOT_APPLICABLE unless both TP and SL are defined; SPX Yellow overrides with conservative SL-first.",
+      "gap_rule": "For active price levels, a bar opening beyond the level fills at bar Open; scheduled time exits use terminal bar Close.",
+      "missing_bar_rule": "Outcome remains PENDING; do not interpolate or forward-fill. If the entry bar is missing, entry is unresolved and outcome remains PENDING.",
+      "partial_session_rule": "For scheduled cash-close exits, use official XNYS close minus 30 minutes as the terminal 30-minute bar start (normally 15:30 ET; standard early close normally 12:30 ET). If that bar is absent, outcome remains PENDING.",
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification_when_deployment_enabled": false,
+      "pushover_priority": 0,
+      "notification_title_format": "{display_name} | {signal_code} | {direction}",
+      "notification_body_format": "Market date={market_date}; confidence={confidence_label}; entry={entry_policy}; exits={exit_summary}; source revision={source_revision}; report={report_link}. Broker execution is disabled."
+    },
+    {
+      "priority": 40,
+      "signal_code": "SPY_BEARISH_CONTINUATION_WATCH",
+      "display_name": "Bearish Continuation Watch",
+      "direction": "SHORT",
+      "action": "WATCH",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "confidence": {
+        "label": "RESEARCH_ONLY",
+        "score": null
+      },
+      "definition": "Down-price / falling-PCR configuration. Prior screening did not establish a sufficiently stable production short edge, so it is informational only.",
+      "trigger_condition": "continuity == true AND CloseChangePct < -0.10 AND PCRChangePct < -5.0",
+      "entry_policy": "NONE",
+      "exit_conditions": [],
+      "holding_period": "NONE",
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Watch-only rule; not promoted to an actionable strategy."
+      },
+      "cancellation_rule": "Before scheduled entry, a SOURCE_CORRECTION that changes classification away from this signal supersedes and cancels the unentered plan. After modeled entry, later signals do not cancel the outcome unless an explicit exit rule says so.",
+      "stale_data_behavior": "Fail closed at readiness. A stale D0 cannot emit this signal.",
+      "data_error_behavior": "Emit DATA_ERROR instead of this signal; create report but no plan or push.",
+      "same_bar_tp_sl_rule": "NOT_APPLICABLE unless both TP and SL are defined; SPX Yellow overrides with conservative SL-first.",
+      "gap_rule": "For active price levels, a bar opening beyond the level fills at bar Open; scheduled time exits use terminal bar Close.",
+      "missing_bar_rule": "Outcome remains PENDING; do not interpolate or forward-fill. If the entry bar is missing, entry is unresolved and outcome remains PENDING.",
+      "partial_session_rule": "For scheduled cash-close exits, use official XNYS close minus 30 minutes as the terminal 30-minute bar start (normally 15:30 ET; standard early close normally 12:30 ET). If that bar is absent, outcome remains PENDING.",
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification_when_deployment_enabled": false,
+      "pushover_priority": 0,
+      "notification_title_format": "{display_name} | {signal_code} | {direction}",
+      "notification_body_format": "Market date={market_date}; confidence={confidence_label}; entry={entry_policy}; exits={exit_summary}; source revision={source_revision}; report={report_link}. Broker execution is disabled."
+    },
+    {
+      "priority": 999,
+      "signal_code": "NO_SIGNAL",
+      "display_name": "No Signal",
+      "direction": "NONE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "confidence": {
+        "label": "NONE",
+        "score": null
+      },
+      "definition": "Readiness passed, no error/history gate applies, and none of the preceding predicates is true.",
+      "trigger_condition": "NOT(any higher-precedence condition)",
+      "entry_policy": "NONE",
+      "exit_conditions": [],
+      "holding_period": "NONE",
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Non-actionable classification."
+      },
+      "cancellation_rule": "Before scheduled entry, a SOURCE_CORRECTION that changes classification away from this signal supersedes and cancels the unentered plan. After modeled entry, later signals do not cancel the outcome unless an explicit exit rule says so.",
+      "stale_data_behavior": "Fail closed at readiness. A stale D0 cannot emit this signal.",
+      "data_error_behavior": "Emit DATA_ERROR instead of this signal; create report but no plan or push.",
+      "same_bar_tp_sl_rule": "NOT_APPLICABLE unless both TP and SL are defined; SPX Yellow overrides with conservative SL-first.",
+      "gap_rule": "For active price levels, a bar opening beyond the level fills at bar Open; scheduled time exits use terminal bar Close.",
+      "missing_bar_rule": "Outcome remains PENDING; do not interpolate or forward-fill. If the entry bar is missing, entry is unresolved and outcome remains PENDING.",
+      "partial_session_rule": "For scheduled cash-close exits, use official XNYS close minus 30 minutes as the terminal 30-minute bar start (normally 15:30 ET; standard early close normally 12:30 ET). If that bar is absent, outcome remains PENDING.",
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification_when_deployment_enabled": false,
+      "pushover_priority": 0,
+      "notification_title_format": "{display_name} | {signal_code} | {direction}",
+      "notification_body_format": "Market date={market_date}; confidence={confidence_label}; entry={entry_policy}; exits={exit_summary}; source revision={source_revision}; report={report_link}. Broker execution is disabled."
+    }
+  ],
+  "future_outcome": {
+    "required_source": "StockDB_US.StockData.PriceHistoryTimeFrame where ASXCode='SPY.US' and TimeFrame='30M'; historical snapshot SPY-20251020-20260814.csv.",
+    "source_status": "AVAILABLE_FOR_PRODUCTION_SCHEMA_AND_HISTORICAL_SNAPSHOT",
+    "source_instrument": "SPY.US",
+    "bar_frequency": "30 minutes or finer; the supplied historical contract uses 30-minute bars.",
+    "required_columns": [
+      "TimeIntervalStart",
+      "Open",
+      "High",
+      "Low",
+      "Close"
+    ],
+    "timezone": "America/New_York",
+    "reference_entry_price": "D1 07:30 ET bar Open",
+    "exit_price_rules": {
+      "SPY_LOW_SP_MOMENTUM_LONG": "D1 15:30 bar Close",
+      "SPY_FEAR_EXPANSION_REVERSAL_LONG": "D2 15:30 bar Close"
+    },
+    "holding_horizon": "Per signal definition.",
+    "pending_rule": "Outcome remains PENDING until entry bar and every bar needed to prove an earlier terminal condition through the scheduled terminal bar exist. Missing required bars do not imply no hit.",
+    "market_closed": "Remain PENDING until the next required XNYS/futures data is published; never synthesize a price.",
+    "missing_bar": "PENDING plus MISSING_REQUIRED_BAR audit flag; do not forward-fill OHLC.",
+    "correction": "Every market-bar snapshot has a revision hash. If finalized source bars change under explicit SOURCE_CORRECTION, calculate a new outcome revision, preserve the old finalized record as superseded, and link both revisions.",
+    "gap_rule": "If an active stop/limit is already crossed by a bar Open, fill at Open; otherwise fill at the specified level when High/Low touches it. Time exits use terminal bar Close.",
+    "opposing_signal": "Does not change an already-triggered production outcome unless the signal definition explicitly has an opposing-signal exit. These versions do not, except SPX portfolio admission prevents overlapping plans before entry.",
+    "return_formula": "LONG gross=(exit/entry-1)*100. SHORT gross=(entry-exit)/entry*100. Net return = gross return - modeled round-trip slippage/cost percentage points.",
+    "costs_slippage": "5 bps per side modeled historical/production-paper slippage; commission 0 in model.",
+    "direction_convention": "Positive return_pct is profitable in the signal direction.",
+    "calculation_version": "production_outcome_v1.0.0",
+    "manual_independence": "Outcome worker MUST NOT read TradePlan.ActualEntry, ActualExit, ActualQuantity or broker/manual trade records.",
+    "idempotency": "Key = strategy/version/market_date/signal_code/source_revision/calculation_version. Repeated runs reuse the same PENDING/FINAL record."
+  },
+  "production_policy": {
+    "mode": "NOTIFICATION_ONLY",
+    "broker_execution": "HARD_DISABLED",
+    "manual_trade_required_for_outcome": false,
+    "deployment_state": "LIVE_MANUAL_NOTIFICATION_ONLY",
+    "recipient": "STRATEGY_OWNER logical recipient; deployment resolves PUSHOVER_USER_KEY from secret storage, never from strategy files.",
+    "pushover": {
+      "enabled": true,
+      "priority": 0,
+      "channel": "Pushover"
+    },
+    "report_link_format": "runtime_authenticated_origin + \"/strategy-reports/\" + immutable_public_report_id; authentication flow must preserve this return path. No auth token is embedded in the URL.",
+    "retry_policy": "Transactional outbox. Retry explicit HTTP non-2xx at +30s, +2m and +5m. On network timeout/unknown acknowledgement, do NOT blind-retry; mark DELIVERY_UNKNOWN for operator reconciliation to avoid duplicate pushes.",
+    "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision|notification_kind)",
+    "enablement_change_control": "Enablement is deployment/version-specific. Any logic/source/exit change creates a new version; enabling push requires human approval and audit event DEPLOYMENT_CHANGED.",
+    "notification_title_format": "{display_name} | {signal_code} | {direction} {subject_code}",
+    "notification_body_format": "Market date={market_date}; signal={signal_code}; confidence={confidence_label}; planned entry={entry_policy}; exit={exit_summary}; source revision={source_revision}; report={report_link}. No broker order is submitted.",
+    "secrets": "PUSHOVER_USER_KEY and PUSHOVER_API_TOKEN exist only in secret storage; never reports, notifications, JSON or logs."
+  },
+  "reports_and_audit": {
+    "report": {
+      "kind": "STRATEGY_EVALUATION_HTML",
+      "title_format": "{display_name} — {market_date} — {signal_code}",
+      "market_date": "D0 ObservationDate",
+      "required_fields": [
+        "strategy_code",
+        "version_code",
+        "market_date",
+        "source_revision",
+        "signal_code",
+        "decision_inputs",
+        "trigger_result",
+        "entry_rule",
+        "exit_rule",
+        "provenance",
+        "human_explanation"
+      ],
+      "immutable_public_report_id": "UUIDv7 generated once after evaluation; report body is immutable. Corrections create a new report ID that references superseded_report_id."
+    },
+    "audit_events": [
+      "STRATEGY_REGISTERED",
+      "DEPLOYMENT_CHANGED",
+      "STRATEGY_ENABLED",
+      "STRATEGY_DISABLED",
+      "SOURCE_NOT_READY",
+      "SOURCE_READY",
+      "EVALUATION_COMPLETED",
+      "REPORT_CREATED",
+      "NOTIFICATION_ENQUEUED",
+      "NOTIFICATION_DELIVERED",
+      "NOTIFICATION_FAILED",
+      "NOTIFICATION_DELIVERY_UNKNOWN",
+      "OUTCOME_PENDING",
+      "OUTCOME_FINALIZED",
+      "SOURCE_CORRECTION",
+      "OUTCOME_SUPERSEDED"
+    ],
+    "audit_security": "Never include passwords, API keys, Pushover tokens, connection strings, or authentication cookies."
+  },
+  "provenance": {
+    "research_window": {
+      "start": "2025-10-20",
+      "end": "2026-08-13"
+    },
+    "out_of_sample_window": {
+      "start": "NOT_AVAILABLE",
+      "end": "NOT_AVAILABLE",
+      "reason": "No untouched post-selection holdout exists; the temporal validation segment was inspected during rule selection and is robustness evidence, not strict OOS."
+    },
+    "validation_window": {
+      "start": "2026-04-01",
+      "end": "2026-08-13"
+    },
+    "source_manifest": "source-manifest.json",
+    "source_hash": "6fb89d052f4c77b2a4dc7cb86f7994fcc29587c28f71f489933bdb15c75a0fe3",
+    "implementation_hash": "cf2bd6af01fd6a6811363d63dc05741daf9fa35634a72cdd82b91d5f9545e488",
+    "backtest_engine_version": "gex_contract_backtest_v1.0.0"
+  }
+}

@@ -275,7 +275,7 @@ Signal identity must not include classification. A changed classification for th
 - Strategies create channel-neutral Notification Intents.
 - Runtime templates may add common strategy/version/date/report metadata.
 - Pushover delivery uses the existing generic notification infrastructure after Task 05 hardens it.
-- Message URLs point to `/api/trading-signal-reports/{public_report_id}.html?report_token=...`.
+- Message URLs point to `/trading-signal-reports?public_report_id=...`; the website fetches the immutable HTML with the authenticated user's application credentials.
 - Do not repeat the URL in the body when the Pushover URL field is populated.
 - Application-level duplicate queueing is prohibited by a unique key.
 - Pushover cannot guarantee exactly-once delivery after an ambiguous network timeout. Such attempts become `DELIVERY_UNKNOWN` and require manual resolution.

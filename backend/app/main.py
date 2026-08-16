@@ -52,6 +52,8 @@ from app.routers.market_theme_reports import router as market_theme_reports_rout
 from app.routers.us_equity_analysis_reports import router as us_equity_analysis_reports_router
 from app.routers.skill_report_pages import router as skill_report_pages_router
 from app.routers.spx_gex_strategy import router as spx_gex_strategy_router
+from app.routers.trading_signal_reports import router as trading_signal_reports_router
+from app.routers.trading_signal_admin import router as trading_signal_admin_router
 from app.core.scheduler import start_scheduler, stop_scheduler, get_scheduler_status
 from contextlib import asynccontextmanager
 import logging
@@ -164,6 +166,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Stocks AU Backend", lifespan=lifespan)
+app.include_router(trading_signal_reports_router)
+app.include_router(trading_signal_admin_router)
 
 origins = [origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()]
 logger.info("CORS: allow_origins=%s allow_origin_regex=%s", origins, settings.allowed_origin_regex)

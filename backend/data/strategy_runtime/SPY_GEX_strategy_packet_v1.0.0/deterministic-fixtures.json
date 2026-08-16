@@ -1,0 +1,213 @@
+{
+  "fixture_format": 1,
+  "strategy_code": "SPY_GEX_INTENT_V1",
+  "version_code": "1.0.0",
+  "numeric_comparisons": "unrounded IEEE decimal values; written inequalities are exact",
+  "cases": [
+    {
+      "id": "readiness_missing_sp",
+      "branch": "NOT_READY",
+      "input": {
+        "D0_rows": [
+          "BC",
+          "BP",
+          "SC"
+        ]
+      },
+      "expected": {
+        "runtime_status": "NOT_READY",
+        "observations_created": 0,
+        "signals_created": 0,
+        "reports_created": 0,
+        "plans_created": 0,
+        "notifications": 0
+      }
+    },
+    {
+      "id": "readiness_hash_changes",
+      "branch": "NOT_READY",
+      "input": {
+        "heartbeat_1_hash": "aaa",
+        "heartbeat_2_hash": "bbb"
+      },
+      "expected": {
+        "runtime_status": "NOT_READY"
+      }
+    },
+    {
+      "id": "insufficient_history",
+      "branch": "INSUFFICIENT_HISTORY",
+      "input": {
+        "prior_valid_observations": 59
+      },
+      "expected": {
+        "signal_code": "INSUFFICIENT_HISTORY",
+        "action": "NONE"
+      }
+    },
+    {
+      "id": "data_error_zero_bullshare",
+      "branch": "DATA_ERROR",
+      "input": {
+        "BullShare": 0.0
+      },
+      "expected": {
+        "signal_code": "DATA_ERROR"
+      }
+    },
+    {
+      "id": "low_sp_true",
+      "branch": "ACTIONABLE",
+      "input": {
+        "continuity": true,
+        "CloseChangePct": 0.3,
+        "IntentChangePct": 12.0,
+        "SPShare": 0.02,
+        "P35_SPShare_60": 0.025
+      },
+      "expected": {
+        "signal_code": "SPY_LOW_SP_MOMENTUM_LONG",
+        "direction": "LONG",
+        "action": "PLAN_ENTRY"
+      }
+    },
+    {
+      "id": "low_sp_boundary_tie_true",
+      "branch": "BOUNDARY",
+      "input": {
+        "continuity": true,
+        "CloseChangePct": 0.100001,
+        "IntentChangePct": 10.000001,
+        "SPShare": 0.025,
+        "P35_SPShare_60": 0.025
+      },
+      "expected": {
+        "signal_code": "SPY_LOW_SP_MOMENTUM_LONG",
+        "note": "SPShare tie qualifies because <=."
+      }
+    },
+    {
+      "id": "low_sp_false_at_price_boundary",
+      "branch": "FALSE",
+      "input": {
+        "CloseChangePct": 0.1,
+        "IntentChangePct": 12.0,
+        "SPShare": 0.02,
+        "P35_SPShare_60": 0.025
+      },
+      "expected": {
+        "signal_code": "NO_SIGNAL",
+        "note": "Price condition is strict >0.10."
+      }
+    },
+    {
+      "id": "fear_true",
+      "branch": "ACTIONABLE",
+      "input": {
+        "continuity": true,
+        "CloseChangePct": -0.4,
+        "IntentChangePct": 15.0,
+        "SPShare": 0.08,
+        "P65_SPShare_60": 0.06
+      },
+      "expected": {
+        "signal_code": "SPY_FEAR_EXPANSION_REVERSAL_LONG",
+        "direction": "LONG"
+      }
+    },
+    {
+      "id": "fear_p65_tie_true",
+      "branch": "BOUNDARY",
+      "input": {
+        "continuity": true,
+        "CloseChangePct": -0.100001,
+        "IntentChangePct": 10.000001,
+        "SPShare": 0.06,
+        "P65_SPShare_60": 0.06
+      },
+      "expected": {
+        "signal_code": "SPY_FEAR_EXPANSION_REVERSAL_LONG"
+      }
+    },
+    {
+      "id": "high_gex_watch",
+      "branch": "WATCH",
+      "input": {
+        "CloseChangePct": 0.4,
+        "PCRChangePct": 20.0,
+        "TotalAbsGEXDelta": 100.0,
+        "P65_TotalAbs_60": 90.0
+      },
+      "expected": {
+        "signal_code": "SPY_HIGH_GEX_MOMENTUM_WATCH",
+        "action": "WATCH",
+        "notify": false
+      }
+    },
+    {
+      "id": "bear_watch",
+      "branch": "WATCH",
+      "input": {
+        "CloseChangePct": -0.4,
+        "PCRChangePct": -20.0,
+        "IntentChangePct": 0.0
+      },
+      "expected": {
+        "signal_code": "SPY_BEARISH_CONTINUATION_WATCH"
+      }
+    },
+    {
+      "id": "missing_entry_bar",
+      "branch": "OUTCOME_PENDING",
+      "input": {
+        "signal": "SPY_LOW_SP_MOMENTUM_LONG",
+        "D1_0730_bar": null
+      },
+      "expected": {
+        "outcome": "PENDING",
+        "reason": "MISSING_REQUIRED_BAR"
+      }
+    },
+    {
+      "id": "idempotent_repeat",
+      "branch": "IDEMPOTENCY",
+      "input": {
+        "same_strategy_version": true,
+        "same_market_date": true,
+        "same_source_revision": true
+      },
+      "expected": {
+        "new_evaluation": false,
+        "new_report": false,
+        "new_notification": false
+      }
+    },
+    {
+      "id": "source_revision_change",
+      "branch": "REVISION",
+      "input": {
+        "old_hash": "aaa",
+        "new_hash": "bbb"
+      },
+      "expected": {
+        "reevaluate": true,
+        "new_immutable_report": true,
+        "prior_report_preserved": true
+      }
+    },
+    {
+      "id": "no_condition",
+      "branch": "NO_SIGNAL",
+      "input": {
+        "CloseChangePct": 0.0,
+        "PCRChangePct": 0.0,
+        "IntentChangePct": 0.0
+      },
+      "expected": {
+        "signal_code": "NO_SIGNAL",
+        "action": "NONE",
+        "notify": false
+      }
+    }
+  ]
+}

@@ -29,14 +29,19 @@ Use this packet's template as the starting point. The checked-in runtime copy be
 
 ## Two-layer contract
 
-Use two complementary artifacts per strategy:
+Use two complementary artifacts per strategy, plus the runtime data that is deliberately not supplied by research:
 
 1. A Markdown research contract containing formulas, precedence, timing, edge cases, research provenance, operational policy, reports, and fixtures.
 2. A small machine-readable Strategy Descriptor containing identity and bounded metadata required for registration/deployment.
+3. SQL-backed runtime records for observed Signals, finalized research Outcomes, manually recorded production Trade Plans, and actual production performance. An AI research submission must never fabricate these records.
 
-The descriptor may contain:
+The descriptor must contain:
 
 - Strategy Code, display name, Version Code, Implementation Key;
+- a plain-language strategy definition;
+- one complete `signal_definitions` entry for every emitted classification, including the fallback/no-signal class;
+- for every signal: stable name/code, Direction, Confidence, Action, notification level, exact trigger condition, entry policy, one or more exit conditions, holding-period semantics, and historical-performance provenance;
+- an explicit production policy stating whether the runtime is notification-only/manual-human-trade and whether broker orders are authorized;
 - declared Instrument Roles;
 - supported Environments;
 - run kinds and named schedule requirements;
@@ -44,6 +49,8 @@ The descriptor may contain:
 - required source Adapter names;
 - execution-enabled capability and outcome horizons;
 - contract-format version and Markdown path/hash.
+
+The `signal_definitions` performance block must include the number of evaluated instances, sample window, measurement horizon, win rate, profit factor, and source reference. If no historical sample exists, the AI must set `instances` to `0`, set the unavailable statistics to `null`, and state why; it must not omit or invent them. The descriptor is the source for the admin catalogue, while actual production executions and returns come only from SQL runtime records.
 
 It must not contain executable Python, SQL fragments, templating code, arbitrary boolean expressions, secrets, provider credentials, or an unreviewed generic rules DSL.
 
@@ -59,6 +66,7 @@ The validator must require all template sections and reject unresolved placehold
 - data-validity, stale-data, duplicates, gaps, and fail-closed behavior;
 - causal history/window definitions and minimum sample;
 - ordered Signal rules with boundary operators and fallback;
+- a signal catalogue whose every row is complete enough to render the admin page without inference: name, Direction, definition, trigger, entry, exit, historical instances, win rate, profit factor, and provenance;
 - Direction, Confidence, Action, and notification policy per class;
 - schedule/due window/catch-up/calendar semantics;
 - entry, monitoring, exit, overlap, occupancy, and opposing-Signal behavior;
@@ -112,11 +120,14 @@ One person/model may prepare multiple sections, but the handoff must identify as
 `validate_contract.py` must:
 
 - validate descriptor JSON against the checked-in schema;
+- require descriptor format version `2`, `strategy_definition`, `signal_definitions`, and `production_policy`;
+- validate every signal definition, exit condition, and historical-performance field; reject duplicate signal codes and missing/contradictory values;
 - locate and hash the referenced Markdown;
 - verify mandatory headings and tables exist;
 - reject placeholder markers for `IMPLEMENTABLE` or later states;
 - verify every classification in the ordered rule table has Direction, Confidence, Action, notification level, and lifecycle policy;
 - verify declared report/run kinds and outcome horizons use supported values;
+- verify every descriptor signal appears in the Markdown ordered-rule table and every Markdown actionable class has a descriptor signal definition;
 - verify Strategy Code/Version/Implementation Key agree between descriptor and Markdown;
 - report all errors in one run with stable codes;
 - perform no network or database operation.
@@ -140,6 +151,10 @@ tests/strategy_runtime/<strategy>/ golden and edge fixtures
 deployment seed/configuration
 one declarative registry entry
 ```
+
+The AI strategy finder must hand off a completed descriptor and Markdown contract together. A prose research note, notebook link, or strategy code without the descriptor is not an onboarding submission. Registration must fail closed until the packet states, for every signal, what it is called, which stock/Instrument it applies to, whether it is LONG/SHORT/NONE, the exact trigger and entry condition, every possible exit (including examples such as `D2 close`), the historical instance count/win rate/profit factor and their provenance, and the notification/manual-trade production policy.
+
+Registration materialization must copy `strategy_definition`, `signal_definitions`, and `production_policy` into the immutable `StrategyVersion.ConfigurationJson` and include them in `ConfigurationHash`. Each emitted SQL `Signal` must retain its descriptor `signal_code` in `ResearchMetadataJson`. If the descriptor is complete but those fields cannot be persisted, registration is still rejected; otherwise the report admin page would silently lose the source-of-truth metadata.
 
 Adding a strategy must not require an Instrument branch in runtime, SQL schema changes for ordinary metrics, a new FastAPI route/page, or a new Pushover transport.
 

@@ -32,7 +32,7 @@ Follow the repository's existing component, API-client, styling, and testing con
 - Change navigation text to `Trading Signal Reports` and link it to the canonical route.
 - Keep `/spx-gex-reports` functional by redirecting to the canonical page with `strategy_code=spx-gex`, or by rendering a thin wrapper that uses the same generic component.
 - Preserve supported query parameters during redirects.
-- Do not break immutable HTML URLs opened directly from Pushover; those are backend routes and must not require client-side routing.
+- Pushover links open `/trading-signal-reports?public_report_id=...`; preserve the report ID through the website login screen and load that exact immutable snapshot after authentication.
 
 ## Page behavior
 
@@ -136,4 +136,3 @@ Any `rg` match must be limited to fixture/example data or documented legacy rout
 - iframe sandbox value and rationale.
 - Lint/build/test output.
 - Confirmation that a synthetic non-SPX catalog item renders without component changes.
-
