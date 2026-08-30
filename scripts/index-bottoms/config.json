@@ -1,0 +1,22 @@
+{
+  "name": "find-index-bottoms",
+  "runner_url": "http://192.168.20.112:3205",
+  "endpoint": "/api/jobs/find-index-bottoms",
+  "token_env": "SKILL_RUNNER_API_TOKEN",
+  "token_dotenv": "backend/.env",
+  "http_timeout_seconds": 20,
+  "log_directory": "logs/index-bottoms-scheduler",
+  "log_filename_format": "scheduler-%Y%m%d-%H%M%S-{pid}.log",
+  "current_time": {
+    "timezone": "Australia/Sydney",
+    "format": "%Y-%m-%d %H:%M"
+  },
+  "payload": {
+    "as_at": "{{current_time}} Australia/Sydney",
+    "timeout_minutes": 90
+  },
+  "backfill_payload": {
+    "as_at": "{{scheduled_time}}",
+    "timeout_minutes": 90
+  }
+}

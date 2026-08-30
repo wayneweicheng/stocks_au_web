@@ -57,6 +57,16 @@ class TradingSignalOverviewSignal(BaseModel):
     historical_average_return_pct: Optional[float] = None
 
 
+class TradingSignalPricePerformance(BaseModel):
+    instrument_code: str
+    tradable_date: date
+    tradable_date_open_price: Optional[float] = None
+    close_price: Optional[float] = None
+    close_price_date: Optional[date] = None
+    close_price_source: Optional[str] = None
+    change_pct: Optional[float] = None
+
+
 class TradingSignalOverviewDataError(BaseModel):
     public_report_id: str
     report_date: date

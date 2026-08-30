@@ -6,7 +6,7 @@ import Alert from "../components/ui/Alert";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
-import type { TradingSignalOverview, TradingSignalOverviewItem } from "../../lib/api/trading-signal-reports";
+import type { TradingSignalOverview, TradingSignalOverviewItem, TradingSignalPricePerformance } from "../../lib/api/trading-signal-reports";
 
 type Props = {
   baseUrl: string;
@@ -43,6 +43,33 @@ function signalActionClasses(actionCode: string) {
   return "";
 }
 
+function formatPrice(value: number | null | undefined) {
+  if (value == null) return "—";
+  return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+}
+
+function formatPercent(value: number | null | undefined) {
+  return value == null ? "—" : `${value.toFixed(2)}%`;
+}
+
+function percentClasses(value: number | null | undefined) {
+  if (value == null) return "text-slate-500";
+  return value >= 0 ? "text-emerald-700" : "text-red-700";
+}
+
+function priceSourceLabel(source: string | null) {
+  if (source === "end_date_close") return "End-date cash-session close";
+  if (source === "latest_close") return "Latest cash-session close";
+  if (source) return "Live/delayed cash-session quote";
+  return "Price unavailable";
+}
+
+function earliestTradableSignal(item: TradingSignalOverviewItem) {
+  return item.signals.reduce((earliest, signal) => (
+    signal.tradable_date < earliest.tradable_date ? signal : earliest
+  ));
+}
+
 function formatEndAt(value?: string | null) {
   if (!value) return "Until strategy exit";
   const parsed = new Date(value);
@@ -56,11 +83,17 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
   const [overview, setOverview] = useState<TradingSignalOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [priceResults, setPriceResults] = useState<Record<string, TradingSignalPricePerformance>>({});
+  const [priceLoading, setPriceLoading] = useState<Record<string, boolean>>({});
+  const [priceErrors, setPriceErrors] = useState<Record<string, string>>({});
 
   const loadOverview = useCallback(async () => {
     if (!asOf) return;
     setLoading(true);
     setError("");
+    setPriceResults({});
+    setPriceLoading({});
+    setPriceErrors({});
     try {
       const query = new URLSearchParams({ as_of: asOf });
       const response = await authenticatedFetch(`${baseUrl}/api/trading-signal-reports/overview?${query}`);
@@ -78,6 +111,26 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
   useEffect(() => {
     void loadOverview();
   }, [loadOverview]);
+
+  const loadPricePerformance = useCallback(async (item: TradingSignalOverviewItem) => {
+    if (item.signals.length === 0) return;
+    const comparisonSignal = earliestTradableSignal(item);
+    const key = item.instrument_code;
+    setPriceLoading((current) => ({ ...current, [key]: true }));
+    setPriceErrors((current) => ({ ...current, [key]: "" }));
+    try {
+      const query = new URLSearchParams({ instrument_code: item.instrument_code, tradable_date: comparisonSignal.tradable_date });
+      if (comparisonSignal.end_at) query.set("end_at", comparisonSignal.end_at);
+      const response = await authenticatedFetch(`${baseUrl}/api/trading-signal-reports/price-performance?${query}`);
+      const payload = (await response.json().catch(() => ({}))) as TradingSignalPricePerformance & { detail?: string };
+      if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+      setPriceResults((current) => ({ ...current, [key]: payload }));
+    } catch (caught: unknown) {
+      setPriceErrors((current) => ({ ...current, [key]: caught instanceof Error ? caught.message : "Unable to load price performance" }));
+    } finally {
+      setPriceLoading((current) => ({ ...current, [key]: false }));
+    }
+  }, [baseUrl]);
 
   const items = useMemo(() => {
     const filter = instrumentFilter.trim().toUpperCase();
@@ -140,15 +193,47 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
                 <h2 className="text-lg font-bold text-slate-950">{item.instrument_code.replace(/\.US$/i, "")}</h2>
                 <p className="mt-1 text-xs text-slate-500">Latest active report: {item.latest_report_date}</p>
               </div>
-              <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${verdictClasses(item.verdict)}`}>
-                {item.verdict}
-              </span>
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${verdictClasses(item.verdict)}`}>
+                  {item.verdict}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void loadPricePerformance(item)}
+                  disabled={priceLoading[item.instrument_code]}
+                  aria-label={`Check latest price for ${item.instrument_code.replace(/\.US$/i, "")}`}
+                >
+                  {priceLoading[item.instrument_code] ? "Checking..." : "Check price"}
+                </Button>
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-2 border-b border-slate-100 p-4 text-center text-xs">
               <div><strong className="block text-base text-slate-900">{item.signal_count}</strong><span className="text-slate-500">Signals</span></div>
               <div><strong className="block text-base text-emerald-700">{item.long_count}</strong><span className="text-slate-500">Long</span></div>
               <div><strong className="block text-base text-red-700">{item.short_count}</strong><span className="text-slate-500">Short</span></div>
             </div>
+            {priceResults[item.instrument_code] || priceErrors[item.instrument_code] ? (
+              <div className="border-b border-slate-100 bg-slate-50 p-4">
+                {priceErrors[item.instrument_code] ? <p className="text-xs font-medium text-red-700">{priceErrors[item.instrument_code]}</p> : null}
+                {priceResults[item.instrument_code] ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="block text-xs text-slate-500">Close price</span><strong className="text-slate-900">{formatPrice(priceResults[item.instrument_code].close_price)}</strong></div>
+                      <div><span className="block text-xs text-slate-500">{priceResults[item.instrument_code].tradable_date} open</span><strong className="text-slate-900">{formatPrice(priceResults[item.instrument_code].tradable_date_open_price)}</strong></div>
+                    </div>
+                    <div className="mt-3 flex items-baseline justify-between gap-2">
+                      <span className="text-xs text-slate-500">Change from tradable-date open</span>
+                      <strong className={`text-base ${percentClasses(priceResults[item.instrument_code].change_pct)}`}>
+                        {formatPercent(priceResults[item.instrument_code].change_pct)}
+                      </strong>
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-500">{priceSourceLabel(priceResults[item.instrument_code].close_price_source)}</p>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
             <div className="divide-y divide-slate-100">
               {item.signals.map((signal) => (
                 <div key={`${signal.strategy_code}-${signal.holding_period}-${signal.public_report_id}`} className={`p-4 text-sm ${signalActionClasses(signal.action_code)}`}>

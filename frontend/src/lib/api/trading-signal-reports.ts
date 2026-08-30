@@ -49,6 +49,16 @@ export type TradingSignalOverviewSignal = {
   historical_average_return_pct?: number | null;
 };
 
+export type TradingSignalPricePerformance = {
+  instrument_code: string;
+  tradable_date: string;
+  tradable_date_open_price: number | null;
+  close_price: number | null;
+  close_price_date: string | null;
+  close_price_source: string | null;
+  change_pct: number | null;
+};
+
 export type TradingSignalOverviewDataError = {
   public_report_id: string;
   report_date: string;

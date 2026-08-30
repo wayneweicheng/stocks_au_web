@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hmac
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
@@ -12,6 +12,7 @@ from app.routers.auth import verify_credentials
 from app.repositories.trading_signal_reports import ReportFilters, ReportCursorError, TradingSignalReportRepository
 from app.schemas.trading_signal_reports import (
     TradingSignalOverview,
+    TradingSignalPricePerformance,
     TradingSignalReportItem,
     TradingSignalReportPage,
 )
@@ -88,6 +89,20 @@ def latest_trading_signal_report(
     if row is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return TradingSignalReportItem(**row)
+
+
+@router.get("/price-performance", response_model=TradingSignalPricePerformance)
+def trading_signal_price_performance(
+    instrument_code: str = Query(..., min_length=1, max_length=20),
+    tradable_date: date = Query(...),
+    end_at: Optional[datetime] = Query(default=None),
+    _username: str = Depends(verify_credentials),
+) -> TradingSignalPricePerformance:
+    try:
+        result = TradingSignalReportRepository().price_performance(instrument_code, tradable_date, end_at=end_at)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Unable to fetch price performance: {exc}") from exc
+    return TradingSignalPricePerformance(**result)
 
 
 @router.get("/overview", response_model=TradingSignalOverview)

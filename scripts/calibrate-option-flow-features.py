@@ -143,6 +143,7 @@ def build_observations(features: List[Dict[str, Any]], prices: Dict[date, float]
             "actual_return_pct": actual_return * 100.0,
             "actual_abs_move_pct": abs(actual_return) * 100.0,
             "implied_move_pct": implied_move,
+            "implied_move_valid": expected_abs_move is not None,
             "inside_implied_move": expected_abs_move is not None and abs(actual_return) <= expected_abs_move,
             "max_abs_gamma_strike": candidate,
             "pin_distance_pct": abs(expiry_close - candidate) * 100.0 / spot if candidate is not None else None,
@@ -150,12 +151,15 @@ def build_observations(features: List[Dict[str, Any]], prices: Dict[date, float]
             "pin_within_2pct": candidate is not None and abs(expiry_close - candidate) / spot <= 0.02,
             "realized_vol": realized_vol,
             "implied_iv": implied_iv,
+            "implied_iv_valid": implied_iv is not None and implied_iv > 0,
             "realized_minus_implied_vol": realized_vol - implied_iv if realized_vol is not None and implied_iv is not None and implied_iv > 0 else None,
             "realized_to_implied_vol_ratio": realized_vol / implied_iv if realized_vol is not None and implied_iv is not None and implied_iv > 0 else None,
             "net_gamma_exposure": as_float(row.get("NetGammaExposure")),
+            "absolute_gamma_exposure": as_float(row.get("AbsoluteGammaExposure")),
+            "gamma_valid": as_float(row.get("AbsoluteGammaExposure")) is not None and as_float(row.get("AbsoluteGammaExposure")) > 0,
             "gamma_regime": (
-                "POSITIVE_GAMMA" if as_float(row.get("NetGammaExposure")) is not None and as_float(row.get("NetGammaExposure")) > 0
-                else "NEGATIVE_GAMMA" if as_float(row.get("NetGammaExposure")) is not None and as_float(row.get("NetGammaExposure")) < 0
+                "POSITIVE_GAMMA" if as_float(row.get("AbsoluteGammaExposure")) is not None and as_float(row.get("AbsoluteGammaExposure")) > 0 and as_float(row.get("NetGammaExposure")) is not None and as_float(row.get("NetGammaExposure")) > 0
+                else "NEGATIVE_GAMMA" if as_float(row.get("AbsoluteGammaExposure")) is not None and as_float(row.get("AbsoluteGammaExposure")) > 0 and as_float(row.get("NetGammaExposure")) is not None and as_float(row.get("NetGammaExposure")) < 0
                 else "ZERO_OR_UNKNOWN_GAMMA"
             ),
             "gamma_concentration_pct": as_float(row.get("GammaConcentrationPct")),
@@ -225,6 +229,8 @@ def markdown_report(
     observations: List[Dict[str, Any]],
     summary: Dict[str, Any],
     dte_gamma_summary: Dict[str, Any],
+    calibration_observation_count: int,
+    excluded_observation_count: int,
 ) -> str:
     lines = [
         f"# {stock_code} Option-Flow Feature Calibration",
@@ -232,7 +238,9 @@ def markdown_report(
         "This is a preliminary expiry-outcome calibration. It is descriptive, not a trading recommendation.",
         "Only FULL_CHAIN rows with an exact underlying close on the expiry date are included.",
         "",
-        f"- Usable observations: **{len(observations)}**",
+        f"- Outcome observations: **{len(observations)}**",
+        f"- Calibration-ready observations: **{calibration_observation_count}**",
+        f"- Excluded for invalid implied move or gamma: **{excluded_observation_count}**",
         f"- Observation range: **{min((x['observation_date'] for x in observations), default='n/a')}** to **{max((x['observation_date'] for x in observations), default='n/a')}**",
         "- Pin candidate: `MaxAbsGammaStrike`",
         "- Implied move: near-ATM call/put mid sum divided by spot",
@@ -278,6 +286,7 @@ def markdown_report(
         "- Use the implied-move coverage as the first test for condor/butterfly range calibration.",
         "- Use realized-to-implied volatility ratio as the first test for long- versus short-volatility selection.",
         "- Treat pin rates as conditional on expiry, DTE, gamma regime, liquidity, and data quality.",
+        "- Rows with zero/unknown gamma or zero implied move are excluded from the calibration tables because they are data-quality failures, not market regimes.",
         "- Do not fit production probabilities from this sample alone; it is too short and expiry outcomes overlap.",
     ]
     return "\n".join(lines) + "\n"
@@ -296,13 +305,20 @@ def main() -> None:
     finally:
         cn.close()
     observations = build_observations(features, prices)
-    summary = summarize(observations)
-    dte_gamma_summary = summarize_dte_gamma(observations)
+    calibration_observations = [
+        item for item in observations
+        if item["implied_move_valid"] and item["implied_iv_valid"] and item["gamma_valid"]
+    ]
+    summary = summarize(calibration_observations)
+    dte_gamma_summary = summarize_dte_gamma(calibration_observations)
+    excluded_observation_count = len(observations) - len(calibration_observations)
     output = {
         "stock_code": stock_code,
         "generated_utc": datetime.utcnow().isoformat() + "Z",
         "feature_rows": len(features),
-        "usable_observations": len(observations),
+        "outcome_observations": len(observations),
+        "calibration_observations": len(calibration_observations),
+        "excluded_invalid_move_or_gamma": excluded_observation_count,
         "summary": summary,
         "dte_gamma_summary": dte_gamma_summary,
         "observations": observations,
@@ -311,12 +327,21 @@ def main() -> None:
     stem = f"{stock_code.lower()}-option-flow-calibration"
     (args.output_dir / f"{stem}.json").write_text(json.dumps(output, indent=2), encoding="utf-8")
     (args.output_dir / f"{stem}.md").write_text(
-        markdown_report(stock_code, observations, summary, dte_gamma_summary),
+        markdown_report(
+            stock_code,
+            observations,
+            summary,
+            dte_gamma_summary,
+            len(calibration_observations),
+            excluded_observation_count,
+        ),
         encoding="utf-8",
     )
     print(json.dumps({
         "feature_rows": len(features),
-        "usable_observations": len(observations),
+        "outcome_observations": len(observations),
+        "calibration_observations": len(calibration_observations),
+        "excluded_invalid_move_or_gamma": excluded_observation_count,
         "dte_gamma_summary": dte_gamma_summary,
     }, indent=2))
 

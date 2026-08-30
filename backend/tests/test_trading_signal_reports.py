@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from datetime import date, datetime
+from unittest.mock import patch
 
 from app.repositories.trading_signal_reports import ReportCursorError, ReportFilters, TradingSignalReportRepository
 
@@ -84,6 +85,68 @@ class TradingSignalReportRepositoryTests(unittest.TestCase):
         self.assertEqual(rows[0]["signal_classification"], "LONG_SIGNAL")
         self.assertIn("sig.Classification AS signal_classification", model.calls[0][0])
         self.assertIn("ISNULL(sig.Classification, '') <> 'NO_SIGNAL'", model.calls[0][0])
+
+    def test_price_performance_uses_latest_close_when_cash_market_is_closed(self):
+        model = _Model([{
+            "latest_close": 110,
+            "latest_close_date": date(2026, 8, 21),
+            "tradable_date_open_price": 100,
+        }])
+        repo = TradingSignalReportRepository(lambda: model)
+        with patch("app.repositories.trading_signal_reports.get_live_stock_prices") as live_prices:
+            result = repo.price_performance(
+                "qqq.us",
+                date(2026, 8, 19),
+                now=datetime(2026, 8, 22, 12, 0),
+            )
+
+        self.assertEqual(result["instrument_code"], "QQQ.US")
+        self.assertEqual(result["close_price"], 110.0)
+        self.assertEqual(result["close_price_source"], "latest_close")
+        self.assertEqual(result["change_pct"], 10.0)
+        live_prices.assert_not_called()
+
+    def test_price_performance_uses_end_date_close_after_signal_ends(self):
+        model = _Model([{
+            "latest_close": 140,
+            "latest_close_date": date(2026, 9, 3),
+            "tradable_date_open_price": 100,
+            "end_date_close": 125,
+        }])
+        repo = TradingSignalReportRepository(lambda: model)
+        with patch("app.repositories.trading_signal_reports.get_live_stock_prices") as live_prices:
+            result = repo.price_performance(
+                "QQQ.US",
+                date(2026, 9, 1),
+                end_at=datetime(2026, 9, 1, 16, 0),
+                now=datetime(2026, 9, 2, 10, 0),
+            )
+
+        self.assertEqual(result["close_price"], 125.0)
+        self.assertEqual(result["close_price_date"], date(2026, 9, 1))
+        self.assertEqual(result["close_price_source"], "end_date_close")
+        self.assertEqual(result["change_pct"], 25.0)
+        live_prices.assert_not_called()
+
+    def test_price_performance_uses_live_price_during_cash_session_and_nulls_zero_open(self):
+        model = _Model([{
+            "latest_close": 110,
+            "latest_close_date": date(2026, 8, 19),
+            "tradable_date_open_price": 0,
+        }])
+        repo = TradingSignalReportRepository(lambda: model)
+        with patch(
+            "app.repositories.trading_signal_reports.get_live_stock_prices",
+            return_value={"QQQ.US": {"price": 105, "source": "ib_live"}},
+        ):
+            result = repo.price_performance(
+                "QQQ.US",
+                date(2026, 8, 19),
+                now=datetime(2026, 8, 20, 10, 0),
+            )
+
+        self.assertEqual(result["close_price"], 105.0)
+        self.assertIsNone(result["change_pct"])
 
     def test_overview_keeps_latest_signal_per_strategy_and_horizon_and_requires_history(self):
         configuration = json.dumps({

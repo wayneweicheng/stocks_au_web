@@ -1,0 +1,327 @@
+{
+  "stock_code": "QQQ",
+  "generated_utc": "2026-08-30T11:52:13.730604Z",
+  "feature_rows": 6902,
+  "outcome_observations": 6219,
+  "calibration_observations": 5726,
+  "excluded_invalid_move_or_gamma": 493,
+  "split_sizes": {
+    "train": 3724,
+    "validation": 999,
+    "test": 452
+  },
+  "evaluations": {
+    "validation": {
+      "range": {
+        "n": 999,
+        "raw_inside_implied_move_pct": 0.5015015015015015,
+        "calibrated_inside_move_pct": 0.35735735735735735,
+        "raw_mae_pct": 3.264977603979319,
+        "calibrated_mae_pct": 3.446048858090591,
+        "median_actual_to_implied_ratio": 0.9926431949553324
+      },
+      "pin": {
+        "n": 999,
+        "observed_pin_within_1pct_pct": 0.17217217217217218,
+        "mean_predicted_probability_pct": 0.2637021657533368,
+        "brier_score": 0.13891033828957816
+      },
+      "volatility": {
+        "n": 763,
+        "observed_realized_above_implied_pct": 0.563564875491481,
+        "mean_predicted_probability_pct": 0.16929362753713065,
+        "raw_mae": 0.059818247457452796,
+        "calibrated_mae": 0.07283129334316417,
+        "brier_score": 0.4246485496374401
+      }
+    },
+    "test": {
+      "range": {
+        "n": 452,
+        "raw_inside_implied_move_pct": 0.6327433628318584,
+        "calibrated_inside_move_pct": 0.46017699115044247,
+        "raw_mae_pct": 1.700227049323598,
+        "calibrated_mae_pct": 1.5181148744605193,
+        "median_actual_to_implied_ratio": 0.7424795143331617
+      },
+      "pin": {
+        "n": 452,
+        "observed_pin_within_1pct_pct": 0.25663716814159293,
+        "mean_predicted_probability_pct": 0.29665768695066225,
+        "brier_score": 0.18489242652141455
+      },
+      "volatility": {
+        "n": 295,
+        "observed_realized_above_implied_pct": 0.2847457627118644,
+        "mean_predicted_probability_pct": 0.21026502077226497,
+        "raw_mae": 0.03455928833402816,
+        "calibrated_mae": 0.04191887296212667,
+        "brier_score": 0.20510554048819063
+      }
+    },
+    "test_by_group": {
+      "01-05 / POSITIVE_GAMMA": {
+        "range": {
+          "n": 53,
+          "raw_inside_implied_move_pct": 0.5094339622641509,
+          "calibrated_inside_move_pct": 0.41509433962264153,
+          "raw_mae_pct": 0.7868829680857178,
+          "calibrated_mae_pct": 0.8236065884107968,
+          "median_actual_to_implied_ratio": 0.8914285714285766
+        },
+        "pin": {
+          "n": 53,
+          "observed_pin_within_1pct_pct": 0.41509433962264153,
+          "mean_predicted_probability_pct": 0.5836065573770491,
+          "brier_score": 0.27118739636839356
+        },
+        "volatility": {
+          "n": 0,
+          "observed_realized_above_implied_pct": null,
+          "mean_predicted_probability_pct": null,
+          "raw_mae": null,
+          "calibrated_mae": null,
+          "brier_score": null
+        },
+        "n_total": 53,
+        "learned_range_ratio": 0.691434468524246,
+        "learned_pin_probability": 0.5836065573770491,
+        "learned_vol_ratio": null
+      },
+      "06-10 / NEGATIVE_GAMMA": {
+        "range": {
+          "n": 88,
+          "raw_inside_implied_move_pct": 0.6136363636363636,
+          "calibrated_inside_move_pct": 0.4318181818181818,
+          "raw_mae_pct": 1.5094036027500837,
+          "calibrated_mae_pct": 1.4634629423705945,
+          "median_actual_to_implied_ratio": 0.7799988701425755
+        },
+        "pin": {
+          "n": 88,
+          "observed_pin_within_1pct_pct": 0.26136363636363635,
+          "mean_predicted_probability_pct": 0.21865889212827988,
+          "brier_score": 0.19487638113062042
+        },
+        "volatility": {
+          "n": 64,
+          "observed_realized_above_implied_pct": 0.34375,
+          "mean_predicted_probability_pct": 0.22134387351778656,
+          "raw_mae": 0.034857296367290014,
+          "calibrated_mae": 0.05325795706922697,
+          "brier_score": 0.2405691973003796
+        },
+        "n_total": 88,
+        "learned_range_ratio": 0.7177754677754731,
+        "learned_pin_probability": 0.21865889212827988,
+        "learned_vol_ratio": 0.7469578427743151
+      },
+      "11-30 / NEGATIVE_GAMMA": {
+        "range": {
+          "n": 77,
+          "raw_inside_implied_move_pct": 0.5714285714285714,
+          "calibrated_inside_move_pct": 0.2727272727272727,
+          "raw_mae_pct": 1.7747751454528011,
+          "calibrated_mae_pct": 1.9413952777824353,
+          "median_actual_to_implied_ratio": 0.8449535192563081
+        },
+        "pin": {
+          "n": 77,
+          "observed_pin_within_1pct_pct": 0.14285714285714285,
+          "mean_predicted_probability_pct": 0.15966386554621848,
+          "brier_score": 0.12273144551938422
+        },
+        "volatility": {
+          "n": 77,
+          "observed_realized_above_implied_pct": 0.3116883116883117,
+          "mean_predicted_probability_pct": 0.25840336134453784,
+          "raw_mae": 0.03091910003717655,
+          "calibrated_mae": 0.04004343744932302,
+          "brier_score": 0.21737799397834004
+        },
+        "n_total": 77,
+        "learned_range_ratio": 0.5824188151889427,
+        "learned_pin_probability": 0.15966386554621848,
+        "learned_vol_ratio": 0.7973585190483109
+      },
+      "11-30 / POSITIVE_GAMMA": {
+        "range": {
+          "n": 72,
+          "raw_inside_implied_move_pct": 0.6666666666666666,
+          "calibrated_inside_move_pct": 0.4444444444444444,
+          "raw_mae_pct": 1.878216804739091,
+          "calibrated_mae_pct": 1.6672695760011973,
+          "median_actual_to_implied_ratio": 0.7345718301837296
+        },
+        "pin": {
+          "n": 72,
+          "observed_pin_within_1pct_pct": 0.1388888888888889,
+          "mean_predicted_probability_pct": 0.3353658536585366,
+          "brier_score": 0.15820196311719215
+        },
+        "volatility": {
+          "n": 72,
+          "observed_realized_above_implied_pct": 0.2777777777777778,
+          "mean_predicted_probability_pct": 0.23373983739837398,
+          "raw_mae": 0.03562595337181177,
+          "calibrated_mae": 0.039052319241133816,
+          "brier_score": 0.20255662414347722
+        },
+        "n_total": 72,
+        "learned_range_ratio": 0.644593444005777,
+        "learned_pin_probability": 0.3353658536585366,
+        "learned_vol_ratio": 0.7906895750211933
+      },
+      "31+ / POSITIVE_GAMMA": {
+        "range": {
+          "n": 7,
+          "raw_inside_implied_move_pct": 1.0,
+          "calibrated_inside_move_pct": 1.0,
+          "raw_mae_pct": 4.747708177283636,
+          "calibrated_mae_pct": 1.8695290649122955,
+          "median_actual_to_implied_ratio": 0.25096262740656655
+        },
+        "pin": {
+          "n": 7,
+          "observed_pin_within_1pct_pct": 0.7142857142857143,
+          "mean_predicted_probability_pct": 0.15463917525773196,
+          "brier_score": 0.5172858812990602
+        },
+        "volatility": {
+          "n": 7,
+          "observed_realized_above_implied_pct": 0.42857142857142855,
+          "mean_predicted_probability_pct": 0.08836524300441827,
+          "raw_mae": 0.016625005484333755,
+          "calibrated_mae": 0.03778768746261186,
+          "brier_score": 0.3606382078817285
+        },
+        "n_total": 7,
+        "learned_range_ratio": 0.5389895138226903,
+        "learned_pin_probability": 0.15463917525773196,
+        "learned_vol_ratio": 0.7949185340742879
+      },
+      "31+ / NEGATIVE_GAMMA": {
+        "range": {
+          "n": 32,
+          "raw_inside_implied_move_pct": 1.0,
+          "calibrated_inside_move_pct": 0.90625,
+          "raw_mae_pct": 4.699429695739712,
+          "calibrated_mae_pct": 3.0915165766795556,
+          "median_actual_to_implied_ratio": 0.19974544039943903
+        },
+        "pin": {
+          "n": 32,
+          "observed_pin_within_1pct_pct": 0.03125,
+          "mean_predicted_probability_pct": 0.05153203342618384,
+          "brier_score": 0.03068479837990084
+        },
+        "volatility": {
+          "n": 32,
+          "observed_realized_above_implied_pct": 0.03125,
+          "mean_predicted_probability_pct": 0.07381615598885793,
+          "raw_mae": 0.02530416148067894,
+          "calibrated_mae": 0.02103708600400318,
+          "brier_score": 0.032085315135667786
+        },
+        "n_total": 32,
+        "learned_range_ratio": 0.7297157234661062,
+        "learned_pin_probability": 0.05153203342618384,
+        "learned_vol_ratio": 0.8165667343324106
+      },
+      "01-05 / NEGATIVE_GAMMA": {
+        "range": {
+          "n": 72,
+          "raw_inside_implied_move_pct": 0.5833333333333334,
+          "calibrated_inside_move_pct": 0.4305555555555556,
+          "raw_mae_pct": 0.872663281861352,
+          "calibrated_mae_pct": 0.8591065693008226,
+          "median_actual_to_implied_ratio": 0.8670813924031029
+        },
+        "pin": {
+          "n": 72,
+          "observed_pin_within_1pct_pct": 0.5138888888888888,
+          "mean_predicted_probability_pct": 0.39814814814814814,
+          "brier_score": 0.26320301783264743
+        },
+        "volatility": {
+          "n": 0,
+          "observed_realized_above_implied_pct": null,
+          "mean_predicted_probability_pct": null,
+          "raw_mae": null,
+          "calibrated_mae": null,
+          "brier_score": null
+        },
+        "n_total": 72,
+        "learned_range_ratio": 0.7900433077658606,
+        "learned_pin_probability": 0.39814814814814814,
+        "learned_vol_ratio": null
+      },
+      "06-10 / POSITIVE_GAMMA": {
+        "range": {
+          "n": 51,
+          "raw_inside_implied_move_pct": 0.6274509803921569,
+          "calibrated_inside_move_pct": 0.5490196078431373,
+          "raw_mae_pct": 1.4830108236070991,
+          "calibrated_mae_pct": 1.379417301620498,
+          "median_actual_to_implied_ratio": 0.6245614035087674
+        },
+        "pin": {
+          "n": 51,
+          "observed_pin_within_1pct_pct": 0.13725490196078433,
+          "mean_predicted_probability_pct": 0.3152454780361757,
+          "brier_score": 0.15009663902016948
+        },
+        "volatility": {
+          "n": 43,
+          "observed_realized_above_implied_pct": 0.32558139534883723,
+          "mean_predicted_probability_pct": 0.1896551724137931,
+          "raw_mae": 0.04865524510759635,
+          "calibrated_mae": 0.049412698559789525,
+          "brier_score": 0.23805408843292866
+        },
+        "n_total": 51,
+        "learned_range_ratio": 0.6799031476997717,
+        "learned_pin_probability": 0.3152454780361757,
+        "learned_vol_ratio": 0.7465378642777658
+      }
+    },
+    "training_priors": {
+      "range_ratio": {
+        "01-05 / POSITIVE_GAMMA": 0.691434468524246,
+        "06-10 / POSITIVE_GAMMA": 0.6799031476997717,
+        "06-10 / NEGATIVE_GAMMA": 0.7177754677754731,
+        "11-30 / NEGATIVE_GAMMA": 0.5824188151889427,
+        "11-30 / POSITIVE_GAMMA": 0.644593444005777,
+        "31+ / POSITIVE_GAMMA": 0.5389895138226903,
+        "31+ / NEGATIVE_GAMMA": 0.7297157234661062,
+        "01-05 / NEGATIVE_GAMMA": 0.7900433077658606
+      },
+      "pin_probability": {
+        "01-05 / POSITIVE_GAMMA": 0.5836065573770491,
+        "06-10 / POSITIVE_GAMMA": 0.3152454780361757,
+        "06-10 / NEGATIVE_GAMMA": 0.21865889212827988,
+        "11-30 / NEGATIVE_GAMMA": 0.15966386554621848,
+        "11-30 / POSITIVE_GAMMA": 0.3353658536585366,
+        "31+ / POSITIVE_GAMMA": 0.15463917525773196,
+        "31+ / NEGATIVE_GAMMA": 0.05153203342618384,
+        "01-05 / NEGATIVE_GAMMA": 0.39814814814814814
+      },
+      "vol_ratio": {
+        "06-10 / POSITIVE_GAMMA": 0.7465378642777658,
+        "06-10 / NEGATIVE_GAMMA": 0.7469578427743151,
+        "11-30 / NEGATIVE_GAMMA": 0.7973585190483109,
+        "11-30 / POSITIVE_GAMMA": 0.7906895750211933,
+        "31+ / POSITIVE_GAMMA": 0.7949185340742879,
+        "31+ / NEGATIVE_GAMMA": 0.8165667343324106
+      },
+      "vol_probability": {
+        "06-10 / POSITIVE_GAMMA": 0.1896551724137931,
+        "06-10 / NEGATIVE_GAMMA": 0.22134387351778656,
+        "11-30 / NEGATIVE_GAMMA": 0.25840336134453784,
+        "11-30 / POSITIVE_GAMMA": 0.23373983739837398,
+        "31+ / POSITIVE_GAMMA": 0.08836524300441827,
+        "31+ / NEGATIVE_GAMMA": 0.07381615598885793
+      }
+    }
+  }
+}

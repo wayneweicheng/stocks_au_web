@@ -7,11 +7,12 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any, Callable, Dict, List, Optional
 
 from app.core.config import settings
 from app.core.db import get_timed_sql_model
+from app.services.live_stock_price_service import get_live_stock_prices
 from app.spx_gex_strategy.calendar import USCashCalendar
 
 
@@ -279,6 +280,102 @@ class TradingSignalReportRepository:
             row["html_url"] = self._url(row["public_report_id"])
         next_cursor = self._encode_cursor(filters, normalized[-1]) if len(rows) > filters.limit and normalized else None
         return normalized, next_cursor
+
+    def price_performance(
+        self,
+        instrument_code: str,
+        tradable_date: date,
+        end_at: Optional[datetime] = None,
+        now: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """Return the price move from a signal's entry date.
+
+        Before a signal's fixed end time, live IB quotes are used during the
+        US cash session and the persisted daily close is used outside it. Once
+        the signal has ended, the close from its end date is used instead.
+        """
+        code = instrument_code.strip().upper()
+        if not code:
+            raise ValueError("instrument_code is required")
+
+        local_now = now or datetime.now(self._cash_calendar.timezone)
+        if local_now.tzinfo is None:
+            local_now = local_now.replace(tzinfo=self._cash_calendar.timezone)
+        else:
+            local_now = local_now.astimezone(self._cash_calendar.timezone)
+
+        local_end_at = None
+        if end_at is not None:
+            local_end_at = (
+                end_at.replace(tzinfo=self._cash_calendar.timezone)
+                if end_at.tzinfo is None
+                else end_at.astimezone(self._cash_calendar.timezone)
+            )
+        has_ended = local_end_at is not None and local_end_at <= local_now
+        end_date = local_end_at.date() if local_end_at is not None else None
+
+        model = self._model_factory()
+        try:
+            rows = model.execute_read_query(
+                """
+                SELECT
+                    (SELECT TOP (1) [Close]
+                     FROM [StockDB_US].[StockData].[PriceHistory] WITH (NOLOCK)
+                     WHERE ASXCode = ? AND ObservationDate <= CONVERT(date, ?)
+                     ORDER BY ObservationDate DESC) AS latest_close,
+                    (SELECT TOP (1) ObservationDate
+                     FROM [StockDB_US].[StockData].[PriceHistory] WITH (NOLOCK)
+                     WHERE ASXCode = ? AND ObservationDate <= CONVERT(date, ?)
+                     ORDER BY ObservationDate DESC) AS latest_close_date,
+                    (SELECT TOP (1) [Open]
+                     FROM [StockDB_US].[StockData].[PriceHistory] WITH (NOLOCK)
+                     WHERE ASXCode = ? AND ObservationDate = CONVERT(date, ?)) AS tradable_date_open_price,
+                    (SELECT TOP (1) [Close]
+                     FROM [StockDB_US].[StockData].[PriceHistory] WITH (NOLOCK)
+                     WHERE ASXCode = ? AND ObservationDate = CONVERT(date, ?)) AS end_date_close
+                """,
+                [code, local_now.date(), code, local_now.date(), code, tradable_date, code, end_date],
+            ) or []
+        finally:
+            model.close()
+
+        row = dict(rows[0]) if rows else {}
+        latest_close = _number(row.get("latest_close"))
+        latest_close_date = row.get("latest_close_date")
+        is_cash_session_open = (
+            self._cash_calendar.is_session(local_now.date())
+            and local_now >= datetime.combine(local_now.date(), time(9, 30), tzinfo=self._cash_calendar.timezone)
+            and local_now < self._cash_calendar.cash_close(local_now.date())
+        )
+
+        close_price = _number(row.get("end_date_close")) if has_ended else latest_close
+        close_price_date = end_date if has_ended else latest_close_date
+        close_price_source = "end_date_close" if has_ended and close_price is not None else (
+            "latest_close" if close_price is not None else None
+        )
+        if not has_ended and is_cash_session_open:
+            quote = get_live_stock_prices([code]).get(code) or {}
+            live_price = _number(quote.get("price"))
+            if live_price is not None:
+                close_price = live_price
+                close_price_date = local_now.date()
+                close_price_source = str(quote.get("source") or "ib_live")
+
+        open_price = _number(row.get("tradable_date_open_price"))
+        change_pct = (
+            round((close_price - open_price) * 100.0 / open_price, 2)
+            if close_price is not None and open_price not in (None, 0)
+            else None
+        )
+        return {
+            "instrument_code": code,
+            "tradable_date": tradable_date,
+            "tradable_date_open_price": open_price,
+            "close_price": close_price,
+            "close_price_date": close_price_date,
+            "close_price_source": close_price_source,
+            "change_pct": change_pct,
+        }
 
     def overview(self, as_of: date, filters: Optional[ReportFilters] = None) -> Dict[str, Any]:
         filters = filters or ReportFilters()
