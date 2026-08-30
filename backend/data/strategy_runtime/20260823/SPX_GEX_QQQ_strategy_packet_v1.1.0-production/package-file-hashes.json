@@ -1,0 +1,13 @@
+{
+  "acceptance-status.json": "3e61abb50a1ea7b466ea3c7f9045904001368faecf169d8fdcd1cad325accbcf",
+  "deterministic-fixtures.json": "4e9047ef595da8d9c4e36a4dbe10d52b728198f61c01d3b091f5d2e7f5cf71d6",
+  "historical-instance-ledger.csv": "873da0078d57ae4192c39861004ce08bd25ad6ff02c43c0a83b9be5e2441bab2",
+  "historical-instance-ledger.json": "ea35592472d1a3bfb7952319c9759e19e44ea4edbaaed82b70fddcaeb9885d38",
+  "historical-performance.json": "98a760665f8163abd8bed02959b55e7f301717fcafee288b33670fecb67fc69d",
+  "signal-classification-ledger.csv": "814d2a479a58f518b142178607de0929b2714b35b22615547e9446090ceb6ad7",
+  "source-manifest.json": "d830ad092f7aa1f8ed71289adcfac08e71106bb6f0ed358a8447e8f9681871bf",
+  "strategy.descriptor.json": "0cf2d7217bb9ffc7407d26051680cc6e217d13a3870d30e8d5eece531014809d",
+  "strategy.md": "0bda4731d1e297535dfaa08d0eb5cc1510ebd996a2bdf6bf6670e5791ee32b3e",
+  "strategy_logic.py": "732773e285d2e010a51431413cf5370017deae875f91a590816809f7f2fd0de2",
+  "verify_fixtures.py": "917f32fb336f99edbcac85aa0be67f6ee1dab548bd7ff0f15e4778e87d0ce9a8"
+}

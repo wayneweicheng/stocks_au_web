@@ -1,0 +1,27 @@
+{
+  "strategy_code": "SPX_GEX_QQQ_V1",
+  "version_code": "1.1.0-production",
+  "status": "IMPLEMENTABLE",
+  "production_catalogue_ready": true,
+  "deployment_target": "PRODUCTION",
+  "enabled": true,
+  "broker_execution": "HARD_DISABLED",
+  "notification_only": true,
+  "production_notifications_enabled": true,
+  "manual_order_decision": true,
+  "checks": {
+    "required_files_present": true,
+    "valid_status_enum": true,
+    "historical_performance_reconciled": true,
+    "per_instance_ledger_present": true,
+    "feature_tiers_reconciled": true,
+    "feature_inputs_causal": true,
+    "known_leaking_fields_excluded": true,
+    "nq_roll_adjustment_preserved": true,
+    "portfolio_state_machine_rerun": true,
+    "production_policy_explicit": true,
+    "manual_trade_independent_outcomes": true,
+    "fail_closed_readiness": true
+  },
+  "note": "IMPLEMENTABLE means ready for production registration/deployment and production notifications; broker execution is intentionally disabled and orders remain manual."
+}

@@ -1,0 +1,45 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_IWM_CROSS_GEX_VOL_REVERSAL",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "b834eed0db841e23456937101d71aeb2a7f6a46374cbd6a2d37dbf612a2573ab",
+  "implementation_sha256": "2d5115cd8c4ed441a653c4540be2c9b478ac45c535d3c3178028e7e554e7d0d2",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "IWM-20230828-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/IWM-20230828-20260826.csv",
+      "sha256": "50cc7658d722a5aeb749e1809a2fd9312fa2403ee5e97bd618a4021dd238d525",
+      "size_bytes": 186376
+    },
+    {
+      "role": "FEATURE",
+      "name": "IWM-20221213-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/IWM-20221213-20260825.csv",
+      "sha256": "10e4b7321a7df301c5d3df64a5225700456d6eee9d3db42bcb808c55b671e6b2",
+      "size_bytes": 468577
+    },
+    {
+      "role": "PRICE",
+      "name": "IWM-20251020-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/IWM-20251020-20260827.csv",
+      "sha256": "28978c1371e744ed9889c26d9e5585f94328dfcb0384db9d3bdd8c73fa0decbe",
+      "size_bytes": 523811
+    },
+    {
+      "role": "SPY_FEATURE",
+      "name": "SPY-20221213-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/SPY-20221213-20260826.csv",
+      "sha256": "beef81c22b2c3e0654fd30e7a1491ab25bc19c84e55a70b2c76f2810590a5792",
+      "size_bytes": 469144
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

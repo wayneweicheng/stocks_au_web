@@ -1,0 +1,45 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_AAPL_CALL_BUY_LEADERSHIP",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "1582e70857f1f744c4303e7b1443112bccf327336d472976e48889f8d216f5ea",
+  "implementation_sha256": "ef9d42d66f901a0d489966cd8d4983f076c6abd542065d198d359133a451c032",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "AAPL-20230828-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/AAPL-20230828-20260826.csv",
+      "sha256": "0252dc76d8ef851a39e836a22c5359f425c80255be86364332602d688c6560ba",
+      "size_bytes": 184133
+    },
+    {
+      "role": "FEATURE",
+      "name": "AAPL-20230104-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/AAPL-20230104-20260826.csv",
+      "sha256": "91f275c72a7ddee85b6ffcf0e6c5541960f4118431da51d1ced1a3c2ec2686a5",
+      "size_bytes": 425047
+    },
+    {
+      "role": "PRICE",
+      "name": "AAPL-20251020-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/AAPL-20251020-20260827.csv",
+      "sha256": "124334ff69ec9177196bc0ffc0bf7de1dfe0a8171af68e6b3ac21811c70149e7",
+      "size_bytes": 523162
+    },
+    {
+      "role": "QQQ_FEATURE",
+      "name": "QQQ-20221209-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/QQQ-20221209-20260826.csv",
+      "sha256": "80fc77a6252ab9c6cf31a95f85895fffd0d3b3c40ea36815cd4c82f597454832",
+      "size_bytes": 471624
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

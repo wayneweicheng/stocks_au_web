@@ -21,6 +21,8 @@ from app.services.skill_runner_client import (
 router = APIRouter(prefix="/api", tags=["skill-report-pages"])
 DELETED_REPORTS_PATH = Path(__file__).resolve().parents[2] / "data" / "deleted_skill_reports.json"
 _DELETED_REPORTS_LOCK = threading.Lock()
+_REPORT_SUMMARY_CACHE: Dict[tuple[str, str], "SkillReportSummary"] = {}
+_REPORT_SUMMARY_CACHE_LOCK = threading.Lock()
 
 SKILLS = {
     "shiso-leaf-stock-hunter": {
@@ -42,6 +44,14 @@ SKILLS = {
     "find-index-bottoms": {
         "title": "Find Index Bottoms",
         "route": "find-index-bottoms",
+    },
+    "find-bullish-call-opportunities": {
+        "title": "Bullish Call Opportunities",
+        "route": "find-bullish-call-opportunities",
+    },
+    "find-cash-secured-put-opportunities": {
+        "title": "Cash-Secured Put Opportunities",
+        "route": "find-cash-secured-put-opportunities",
     },
 }
 
@@ -97,6 +107,28 @@ class FindIndexBottomsJobCreate(BaseModel):
     as_at: Optional[str] = Field(default=None, max_length=80)
     timeout_minutes: int = Field(default=90, ge=1, le=240)
     model: Optional[str] = Field(default=None, max_length=200)
+
+
+class BullishCallOpportunitiesJobCreate(BaseModel):
+    observation_date: str = Field(..., min_length=10, max_length=10)
+    option_data_date: str = Field(..., min_length=10, max_length=10)
+    proposed_order_date: str = Field(..., min_length=10, max_length=10)
+    ticker: str = Field(..., min_length=1, max_length=20)
+    top_n: int = Field(default=5, ge=1, le=100)
+    constraints: str = Field(default="", max_length=2000)
+    model: str = Field(default="gpt-5.6-luna", min_length=1, max_length=200)
+    timeout_minutes: int = Field(default=180, ge=1, le=240)
+
+
+class CashSecuredPutOpportunitiesJobCreate(BaseModel):
+    observation_date: str = Field(..., min_length=10, max_length=10)
+    option_data_date: str = Field(..., min_length=10, max_length=10)
+    order_date: str = Field(..., min_length=10, max_length=10)
+    ticker: str = Field(..., min_length=1, max_length=20)
+    top_n: int = Field(default=5, ge=1, le=100)
+    constraints: str = Field(default="", max_length=2000)
+    model: str = Field(default="gpt-5.6-luna", min_length=1, max_length=200)
+    timeout_minutes: int = Field(default=180, ge=1, le=240)
 
 
 class SkillJobResponse(BaseModel):
@@ -256,6 +288,8 @@ def _list_skill_reports(job_type: str) -> SkillReportPage:
         if summary is not None and summary.job_id not in deleted_ids
     ]
     summaries.sort(key=lambda item: item.created_at or "", reverse=True)
+    with _REPORT_SUMMARY_CACHE_LOCK:
+        _REPORT_SUMMARY_CACHE.update({(job_type, item.job_id): item for item in summaries})
     return SkillReportPage(items=summaries)
 
 
@@ -285,11 +319,18 @@ def _get_skill_report(job_type: str, job_id: str) -> SkillReportDetail:
     if _is_skill_report_deleted(job_type, job_id):
         raise HTTPException(status_code=404, detail="Report has been deleted")
 
-    summaries = _list_skill_reports(job_type).items
-    summary = next((item for item in summaries if item.job_id == job_id), None)
+    # The report-list endpoint is backed by the skill runner and can be very slow.
+    # A detail request already has the job id, so do not relist every report before
+    # fetching the requested snapshot. Use metadata cached by a previous list call
+    # when available; the report payload remains the source of truth for content.
+    with _REPORT_SUMMARY_CACHE_LOCK:
+        summary = _REPORT_SUMMARY_CACHE.get((job_type, job_id))
     data = get_job_report(job_id)
+    payload_summary = _normalize_report_summary(job_type, data) if isinstance(data, dict) else None
+    if summary is None and payload_summary is not None and payload_summary.job_id == job_id:
+        summary = payload_summary
 
-    if summary is None:
+    if summary is None or summary.job_id != job_id:
         summary = SkillReportSummary(
             job_id=job_id,
             title=f"{_skill_config(job_type)['title']} {job_id}",
@@ -498,6 +539,62 @@ def get_option_flow_analysis_range_job(
 ) -> SkillJobResponse:
     data = call_skill_runner("GET", f"/api/jobs/{job_id}")
     return SkillJobResponse(data=data)
+
+
+@router.get("/find-bullish-call-opportunities-reports", response_model=SkillReportPage)
+def list_find_bullish_call_opportunity_reports(username: str = Depends(verify_credentials)) -> SkillReportPage:
+    return _list_skill_reports("find-bullish-call-opportunities")
+
+
+@router.get("/find-bullish-call-opportunities-reports/{job_id}", response_model=SkillReportDetail)
+def get_find_bullish_call_opportunity_report(job_id: str, username: str = Depends(verify_credentials)) -> SkillReportDetail:
+    return _get_skill_report("find-bullish-call-opportunities", job_id)
+
+
+@router.post("/find-bullish-call-opportunities/jobs", response_model=SkillJobResponse)
+def create_find_bullish_call_opportunity_job(
+    payload: BullishCallOpportunitiesJobCreate,
+    username: str = Depends(verify_credentials),
+) -> SkillJobResponse:
+    data = call_skill_runner(
+        "POST",
+        "/api/jobs/find-bullish-call-opportunities",
+        payload.model_dump(),
+    )
+    return SkillJobResponse(data=data)
+
+
+@router.get("/find-bullish-call-opportunities/jobs/{job_id}", response_model=SkillJobResponse)
+def get_find_bullish_call_opportunity_job(job_id: str, username: str = Depends(verify_credentials)) -> SkillJobResponse:
+    return SkillJobResponse(data=call_skill_runner("GET", f"/api/jobs/{job_id}"))
+
+
+@router.get("/find-cash-secured-put-opportunities-reports", response_model=SkillReportPage)
+def list_find_cash_secured_put_opportunity_reports(username: str = Depends(verify_credentials)) -> SkillReportPage:
+    return _list_skill_reports("find-cash-secured-put-opportunities")
+
+
+@router.get("/find-cash-secured-put-opportunities-reports/{job_id}", response_model=SkillReportDetail)
+def get_find_cash_secured_put_opportunity_report(job_id: str, username: str = Depends(verify_credentials)) -> SkillReportDetail:
+    return _get_skill_report("find-cash-secured-put-opportunities", job_id)
+
+
+@router.post("/find-cash-secured-put-opportunities/jobs", response_model=SkillJobResponse)
+def create_find_cash_secured_put_opportunity_job(
+    payload: CashSecuredPutOpportunitiesJobCreate,
+    username: str = Depends(verify_credentials),
+) -> SkillJobResponse:
+    data = call_skill_runner(
+        "POST",
+        "/api/jobs/find-cash-secured-put-opportunities",
+        payload.model_dump(),
+    )
+    return SkillJobResponse(data=data)
+
+
+@router.get("/find-cash-secured-put-opportunities/jobs/{job_id}", response_model=SkillJobResponse)
+def get_find_cash_secured_put_opportunity_job(job_id: str, username: str = Depends(verify_credentials)) -> SkillJobResponse:
+    return SkillJobResponse(data=call_skill_runner("GET", f"/api/jobs/{job_id}"))
 
 
 @router.get("/find-index-bottoms-reports", response_model=SkillReportPage)

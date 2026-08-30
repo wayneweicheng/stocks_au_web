@@ -1,0 +1,140 @@
+{
+  "as_of": "2026-08-23T15:20:00+10:00",
+  "backtest_engine_version": "gex-feature-tier-contract-engine/1.1.0",
+  "format_version": 1,
+  "historical_research_vs_production": "This file contains historical research only. Production simulated outcomes must be stored separately.",
+  "ledger": "historical-instance-ledger.csv",
+  "signal_performance": {
+    "GDX_CALL_BUY_SHARE_SURGE_HIGH": {
+      "status": "AVAILABLE",
+      "as_of": "2026-08-23T15:20:00+10:00",
+      "signal_instances": 14,
+      "resolved_instances": 14,
+      "unresolved_instances": 0,
+      "excluded_instances": 0,
+      "wins": 13,
+      "losses": 1,
+      "win_rate_pct": 92.85714286,
+      "win_rate_denominator": "wins + losses among resolved historical candidate outcomes",
+      "average_return_pct": 5.4665213,
+      "median_return_pct": 5.37933674,
+      "gross_profit_return_pct_points": 79.96556213,
+      "gross_loss_return_pct_points": 3.43426399,
+      "profit_factor": 23.28462878,
+      "profit_factor_status": "FINITE",
+      "wilson_95_ci_pct": [
+        68.53129558,
+        98.72777848
+      ],
+      "validation_split": {
+        "method": "chronological resolved-instance half split",
+        "first_half_instances": 7,
+        "first_half_win_rate_pct": 85.71428571,
+        "second_half_instances": 7,
+        "second_half_win_rate_pct": 100.0
+      },
+      "historical_action_interpretation": "ACTIONABLE_PLAN_ENTRY",
+      "candidate_inclusion": "Existing v1.0.0 base-signal instances reclassified using causal D0 GEX_Features only; no future-return target columns used.",
+      "sample_size_limitations": "Feature tiers were discovered by screening the available history; historical figures are not untouched out-of-sample estimates. v1.1.0-production freezes these exact feature predicates for forward use.",
+      "per_instance_ledger_reference": "historical-instance-ledger.csv",
+      "entry_rule": "Open of the 07:30 America/New_York 30-minute bar on D1, the first US trading session after ObservationDate.",
+      "exit_rule": "Close of the final regular-session 30-minute bar on D5; no TP/SL in v1.0.0.",
+      "holding_period_distribution": {
+        "D5": 30
+      },
+      "position_sizing": "Normalized 1.0 notional per signal; no portfolio capital constraint.",
+      "return_units": "percentage points of normalized 1.0 notional directional return",
+      "slippage": "0.0000% in historical research; results are gross/theoretical.",
+      "transaction_costs": "0.0000% in historical research; results are gross/theoretical.",
+      "overlapping_signals": "Included independently. Multiple signal codes may coexist on the same observation date.",
+      "repeated_same_day_signals": "At most one instance per signal_code per ObservationDate.",
+      "maximum_favourable_excursion": {
+        "mean_pct": 8.48586058,
+        "median_pct": 8.42497566,
+        "maximum_pct": 14.549389
+      },
+      "maximum_adverse_excursion": {
+        "mean_pct": -3.30237567,
+        "median_pct": -2.35180546,
+        "minimum_pct": -10.90732418
+      },
+      "source_snapshot_hash": "bdf5b154372127a87f3306e13c95a463b13534c240b81a4ab6aa6ab15e094952"
+    },
+    "GDX_CALL_BUY_SHARE_SURGE_STANDARD": {
+      "status": "AVAILABLE",
+      "as_of": "2026-08-23T15:20:00+10:00",
+      "signal_instances": 16,
+      "resolved_instances": 16,
+      "unresolved_instances": 0,
+      "excluded_instances": 0,
+      "wins": 8,
+      "losses": 8,
+      "win_rate_pct": 50.0,
+      "win_rate_denominator": "wins + losses among resolved historical candidate outcomes",
+      "average_return_pct": -0.54033403,
+      "median_return_pct": 0.14861096,
+      "gross_profit_return_pct_points": 44.98159168,
+      "gross_loss_return_pct_points": 53.6269361,
+      "profit_factor": 0.83878728,
+      "profit_factor_status": "FINITE",
+      "wilson_95_ci_pct": [
+        27.99956361,
+        72.00043639
+      ],
+      "validation_split": {
+        "method": "chronological resolved-instance half split",
+        "first_half_instances": 8,
+        "first_half_win_rate_pct": 62.5,
+        "second_half_instances": 8,
+        "second_half_win_rate_pct": 37.5
+      },
+      "historical_action_interpretation": "ACTIONABLE_PLAN_ENTRY",
+      "candidate_inclusion": "Existing v1.0.0 base-signal instances reclassified using causal D0 GEX_Features only; no future-return target columns used.",
+      "sample_size_limitations": "Feature tiers were discovered by screening the available history; historical figures are not untouched out-of-sample estimates. v1.1.0-production freezes these exact feature predicates for forward use.",
+      "per_instance_ledger_reference": "historical-instance-ledger.csv",
+      "entry_rule": "Open of the 07:30 America/New_York 30-minute bar on D1, the first US trading session after ObservationDate.",
+      "exit_rule": "Close of the final regular-session 30-minute bar on D5; no TP/SL in v1.0.0.",
+      "holding_period_distribution": {
+        "D5": 30
+      },
+      "position_sizing": "Normalized 1.0 notional per signal; no portfolio capital constraint.",
+      "return_units": "percentage points of normalized 1.0 notional directional return",
+      "slippage": "0.0000% in historical research; results are gross/theoretical.",
+      "transaction_costs": "0.0000% in historical research; results are gross/theoretical.",
+      "overlapping_signals": "Included independently. Multiple signal codes may coexist on the same observation date.",
+      "repeated_same_day_signals": "At most one instance per signal_code per ObservationDate.",
+      "maximum_favourable_excursion": {
+        "mean_pct": 5.24520002,
+        "median_pct": 3.78277842,
+        "maximum_pct": 20.82721815
+      },
+      "maximum_adverse_excursion": {
+        "mean_pct": -6.40604201,
+        "median_pct": -4.56889214,
+        "minimum_pct": -23.11752287
+      },
+      "source_snapshot_hash": "bdf5b154372127a87f3306e13c95a463b13534c240b81a4ab6aa6ab15e094952"
+    }
+  },
+  "source_snapshot_hash": "bdf5b154372127a87f3306e13c95a463b13534c240b81a4ab6aa6ab15e094952",
+  "strategy_code": "GEX_GDX_CAPITALTYPE",
+  "version_code": "1.1.0-production",
+  "feature_tier_note": "The base GDX call-buy-share-surge long remains actionable. SPY below its D0 SMA20 elevates the signal to HIGH confidence; otherwise it remains STANDARD.",
+  "feature_leakage_controls": {
+    "excluded": [
+      "TomorrowChange",
+      "Next2DaysChange",
+      "Next5DaysChange",
+      "Next10DaysChange",
+      "Next20DaysChange",
+      "GEX_Vol_Percentile",
+      "GEX_HighVolatility",
+      "GEX_StableRegime",
+      "Setup_Dual_Squeeze",
+      "DarkPool fields pending publication-time proof"
+    ],
+    "allowed_relevant_fields": [
+      "SPY_Price_Above_SMA20"
+    ]
+  }
+}

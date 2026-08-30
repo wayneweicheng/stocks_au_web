@@ -1,0 +1,74 @@
+{
+  "as_of": "2026-08-16T21:15:00+10:00",
+  "canonical_decision_revision": "SHA256 of canonical CSV serialization of current D0 plus previous 60 complete daily rows containing ObservationDate,Close,VWAP,BCAbs,BPAbs,SCAbs,SPAbs.",
+  "combined_source_hash": "34a10d737a8b89ae0647a3383240906f60dbb5179402d0a30751f6d7a84b3769",
+  "implementation_sha256": "586a60961c17703dfc08558e0ddffca2ee80cc323970b9ba65c58b722647eb75",
+  "live_database_schema": "NOT_AVAILABLE \u2014 supplied artifacts identify CSV snapshots, not the live database/schema.",
+  "manifest_format": 1,
+  "sources": [
+    {
+      "date_range": [
+        "2023-09-25",
+        "2026-08-13"
+      ],
+      "extraction_identity": "Google Drive folder Option_GEX_Change_Capital_Type / AMD-20230922-20260813.csv",
+      "google_drive_file_id": "1zBrQRlPhFATTxPbfKnXubYuFLLWEw3Fm",
+      "google_drive_url": "https://drive.google.com/file/d/1zBrQRlPhFATTxPbfKnXubYuFLLWEw3Fm/view",
+      "instrument": "AMD",
+      "name": "AMD-20230922-20260813.csv",
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "VWAP"
+      ],
+      "role": "SOURCE",
+      "sha256": "7e5de0e7749ea22709a4b0a07fefd143b124b526a4abf9af896b4c9f531b8739",
+      "size_bytes": 169675
+    },
+    {
+      "date_range": [
+        "2025-10-20",
+        "2026-08-14"
+      ],
+      "extraction_identity": "Google Drive folder price_history_30m / AMD-20251020-20260814.csv",
+      "google_drive_file_id": "1N5ADVPknXAiLgNcYtjOZ4gzMwhMLQ4zB",
+      "google_drive_url": "https://drive.google.com/file/d/1N5ADVPknXAiLgNcYtjOZ4gzMwhMLQ4zB/view",
+      "instrument": "AMD",
+      "name": "AMD-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ],
+      "role": "EXECUTION_OUTCOME",
+      "sha256": "02cdb1114dcc90935d07151d0c8af5976636314f3a8d06f5b9051a15d3f750bf",
+      "size_bytes": 504207
+    },
+    {
+      "extraction_identity": "Google Drive folder price_history_30m / QQQ-20251020-20260814.csv",
+      "google_drive_file_id": "1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H",
+      "google_drive_url": "https://drive.google.com/file/d/1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H/view",
+      "instrument": "QQQ",
+      "name": "QQQ-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close"
+      ],
+      "role": "BENCHMARK",
+      "sha256": "4414b23861947c77b8a939a2bbef16ede12c316d7a47a84f92559d1b077c8cb6",
+      "size_bytes": 506542
+    }
+  ],
+  "strategy_code": "GEX_AMD_CAPITALTYPE",
+  "version_code": "1.0.0"
+}

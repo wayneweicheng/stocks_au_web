@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_CRWD_CONTROLLED_SC_LONG",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "ceb7bf531ae8b91b7ba459c7da185471608aac02585b9596b24c1ebfdacd2afc",
+  "implementation_sha256": "3ad1ab78f941e2f39507dfdb560c66748074f00be0829e3e8ab2e8e8fb7fd6dc",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "CRWD-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/CRWD-20230922-20260826.csv",
+      "sha256": "cb8bf73f2842fb02491e81f918b717716ef540e86452815efce5c0d27f347090",
+      "size_bytes": 166805
+    },
+    {
+      "role": "FEATURE",
+      "name": "CRWD-20230926-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/CRWD-20230926-20260826.csv",
+      "sha256": "e695cabb62173d34f3a8238bbea9d5a5b43a10aab6d24d6f0da6780b411a6fce",
+      "size_bytes": 337682
+    },
+    {
+      "role": "PRICE",
+      "name": "CRWD-20260506-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/CRWD-20260506-20260827.csv",
+      "sha256": "f99ff81f8af313583084c4701ca89b325d4ab21165b9e187e75a2d909801abeb",
+      "size_bytes": 188442
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

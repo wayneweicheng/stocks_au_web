@@ -218,9 +218,7 @@ function quotePayloadFromEstimate(estimate: EstimateResponse): QuoteSnapshot | n
   };
 }
 
-function chooseAutoExpiry(expirations: ExpirationRow[]) {
-  const preferredMinDte = 13;
-  const preferredMaxDte = 23;
+function chooseAutoExpiry(expirations: ExpirationRow[], preferredMinDte = 13, preferredMaxDte = 23) {
   const sorted = [...expirations]
     .filter((item) => item?.expiry)
     .sort((left, right) => left.dte - right.dte || left.expiry.localeCompare(right.expiry));
@@ -301,6 +299,13 @@ export default function OptionOrdersPage() {
     const requestedRight = params.get("right");
     const requestedAction = params.get("action");
     const requestedTarget = Number(params.get("target"));
+    const requestedMinDte = Number(params.get("min_dte"));
+    const requestedMaxDte = Number(params.get("max_dte"));
+    const requestedBracketExitPct = Number(params.get("bracket_exit_pct"));
+    const hasDtePreference = Number.isInteger(requestedMinDte)
+      && Number.isInteger(requestedMaxDte)
+      && requestedMinDte > 0
+      && requestedMaxDte >= requestedMinDte;
     if (
       !requestedSymbol
       || (requestedRight !== "P" && requestedRight !== "C")
@@ -318,6 +323,11 @@ export default function OptionOrdersPage() {
       setRight(requestedRight);
       setAction(requestedAction);
       setTargetUnderlying(requestedTarget.toFixed(2));
+      setBracketExitPct(
+        Number.isFinite(requestedBracketExitPct) && requestedBracketExitPct >= 0 && requestedBracketExitPct <= 100
+          ? String(requestedBracketExitPct)
+          : "30",
+      );
       setLoadingChain(true);
       setError("");
       setEstimateError("");
@@ -339,7 +349,11 @@ export default function OptionOrdersPage() {
           : [];
         setExpirations(availableExpirations);
         setMarketStatus(expirationData.market_status || null);
-        const chosenExpiry = chooseAutoExpiry(availableExpirations);
+        const chosenExpiry = chooseAutoExpiry(
+          availableExpirations,
+          hasDtePreference ? requestedMinDte : undefined,
+          hasDtePreference ? requestedMaxDte : undefined,
+        );
         if (!chosenExpiry) {
           throw new Error(`No ${requestedSymbol} expiries are available from IB.`);
         }

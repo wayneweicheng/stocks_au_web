@@ -1,0 +1,177 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "SPX_GEX_QQQ_V1",
+  "version_code": "1.1.0-production",
+  "generated_at": "2026-08-23T15:20:00+10:00",
+  "sources": [
+    {
+      "role": "SOURCE",
+      "instrument": "SPXW",
+      "file": "SPXW-20230815-20260813.csv",
+      "drive_file_id": "1wV1kCa50MvzsH7Ry8C7wVlaPE57wqp8q",
+      "date_range": [
+        "2023-08-15",
+        "2026-08-13"
+      ],
+      "sha256": "a85b8b7c0683b5fc12a70f3a45308688e997ed5d6f4d13875a7b780460942f50",
+      "required_for_production": true,
+      "columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "GEX"
+      ]
+    },
+    {
+      "role": "PROXY",
+      "instrument": "NQMain",
+      "file": "NQMAIN-20240627-20260814.csv",
+      "drive_file_id": "1LyjIv7s5DiGHZNle_A6GLXDaphfiyJk8",
+      "date_range": [
+        "2024-06-27",
+        "2026-08-14"
+      ],
+      "sha256": "385be7c794fe3cdc3e1209e066c1fb9749c80a2c86c175441ae6387af2b67f81",
+      "required_for_production": true,
+      "columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ],
+      "timestamp_interpretation": "America/New_York local wall time"
+    },
+    {
+      "role": "EXECUTION_REFERENCE_HISTORY",
+      "instrument": "QQQ",
+      "file": "QQQ-20251020-20260814.csv",
+      "drive_file_id": "1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H",
+      "date_range": [
+        "2025-10-20",
+        "2026-08-14"
+      ],
+      "sha256": "4414b23861947c77b8a939a2bbef16ede12c316d7a47a84f92559d1b077c8cb6",
+      "required_for_historical_performance": false,
+      "note": "Not used for 03:30 historical performance because its historical coverage does not provide the required 03:30 bar. Live production uses current executable QQQ quotes."
+    },
+    {
+      "role": "GEX_FEATURES",
+      "instrument": "SPXW",
+      "file": "SPXW-20221209-20260820.csv",
+      "drive_file_id": "1UoRE56_OeRk6_yPPny9gKRnn9DTNAcXJ",
+      "date_range": [
+        "2022-12-09",
+        "2026-08-20"
+      ],
+      "sha256": "105c9c06405fc08047b7e592a66e6a889bded685cc5c3b7ad36b4ccf5d08ed9a",
+      "required_for_production": true,
+      "production_table": "StockDB_US.Analysis.GEX_Features",
+      "columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEX_Trending_Up",
+        "GEX_Falling",
+        "Price_Above_SMA50"
+      ]
+    },
+    {
+      "role": "GEX_FEATURES",
+      "instrument": "QQQ",
+      "file": "QQQ-20221209-20260820.csv",
+      "drive_file_id": "1cvGsv-5TuvVg1qaSuVBnw5in9OQousOd",
+      "date_range": [
+        "2022-12-09",
+        "2026-08-20"
+      ],
+      "sha256": "a869d653a6fac25a2d7e4dee6b7fb8d4cafc7e52c205184af612541628695736",
+      "required_for_production": true,
+      "production_table": "StockDB_US.Analysis.GEX_Features",
+      "columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEX_Above_SMA20",
+        "MACD_Positive"
+      ]
+    }
+  ],
+  "nq_roll_adjustment": {
+    "method": "FORWARD_RATIO_ROLL_NEUTRALIZATION",
+    "rule": "At a 09:30 America/New_York bar in Mar/Jun/Sep/Dec, if abs(Open/previous_bar_Close-1)>0.005, multiply that bar and every later OHLC/VWAP by cumulative factor previous_raw_close/current_raw_open.",
+    "events": [
+      {
+        "timestamp": "2024-09-12T09:30:00-04:00",
+        "raw_previous_close": 19259.0,
+        "raw_current_open": 19494.75,
+        "step_factor": 0.9879070006027264,
+        "cumulative_factor": 0.9879070006027264
+      },
+      {
+        "timestamp": "2024-12-12T09:30:00-05:00",
+        "raw_previous_close": 21693.75,
+        "raw_current_open": 21963.75,
+        "step_factor": 0.9877070172443231,
+        "cumulative_factor": 0.9757626768801045
+      },
+      {
+        "timestamp": "2025-03-13T09:30:00-04:00",
+        "raw_previous_close": 19573.5,
+        "raw_current_open": 19782.25,
+        "step_factor": 0.9894476108632739,
+        "cumulative_factor": 0.9654660494085722
+      },
+      {
+        "timestamp": "2025-06-12T09:30:00-04:00",
+        "raw_previous_close": 21828.75,
+        "raw_current_open": 22054.25,
+        "step_factor": 0.9897752133942438,
+        "cumulative_factor": 0.955594365078267
+      },
+      {
+        "timestamp": "2025-09-11T09:30:00-04:00",
+        "raw_previous_close": 23976.75,
+        "raw_current_open": 24209.75,
+        "step_factor": 0.9903757783537624,
+        "cumulative_factor": 0.9463975131048581
+      },
+      {
+        "timestamp": "2025-12-11T09:30:00-05:00",
+        "raw_previous_close": 25642.75,
+        "raw_current_open": 25901.0,
+        "step_factor": 0.9900293424964287,
+        "cumulative_factor": 0.936961307639458
+      },
+      {
+        "timestamp": "2026-03-12T09:30:00-04:00",
+        "raw_previous_close": 24775.75,
+        "raw_current_open": 24989.5,
+        "step_factor": 0.9914464074911463,
+        "cumulative_factor": 0.9289469224173473
+      },
+      {
+        "timestamp": "2026-06-11T09:30:00-04:00",
+        "raw_previous_close": 28753.0,
+        "raw_current_open": 29034.75,
+        "step_factor": 0.9902961106949432,
+        "cumulative_factor": 0.9199325243119362
+      }
+    ],
+    "proof_point": {
+      "timestamp": "2025-03-26T03:30:00-04:00",
+      "raw_open": 20490.0,
+      "adjusted_open": 19782.399352381643
+    }
+  },
+  "combined_source_hash": "8fe79dabdb9dc1d01db9c716e052df5d22f56deca4f4317c9292ee39fe8d5353",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "live_qqq_quotes": "Configured production source outside packet"
+  },
+  "implementation_sha256": "732773e285d2e010a51431413cf5370017deae875f91a590816809f7f2fd0de2"
+}

@@ -1,7 +1,6 @@
 import React from "react";
 
 type Variant = "info" | "success" | "warning" | "danger";
-
 const variants: Record<Variant, string> = {
   info: "border-indigo-200 bg-indigo-50 text-indigo-900",
   success: "border-emerald-200 bg-emerald-50 text-emerald-900",
@@ -9,22 +8,6 @@ const variants: Record<Variant, string> = {
   danger: "border-red-200 bg-red-50 text-red-900",
 };
 
-export default function Alert({
-  variant = "info",
-  className = "",
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & { variant?: Variant }) {
-  return (
-    <div
-      role="alert"
-      className={[
-        "rounded-lg border px-4 py-3 text-sm",
-        variants[variant],
-        className,
-      ]
-        .join(" ")
-        .trim()}
-      {...props}
-    />
-  );
+export default function Alert({ variant = "info", className = "", ...props }: React.HTMLAttributes<HTMLDivElement> & { variant?: Variant }) {
+  return <div role="alert" className={["rounded-xl border px-4 py-3 text-sm shadow-sm", variants[variant], className].join(" ").trim()} {...props} />;
 }

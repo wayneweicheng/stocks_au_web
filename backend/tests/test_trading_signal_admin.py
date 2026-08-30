@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from app.repositories.trading_signal_admin import TradingSignalAdminRepository, _actual_return, _metadata_values, _stats
+from app.repositories.trading_signal_admin import TradingSignalAdminRepository, _actual_return, _descriptor_stats, _historical_trade_ledger, _metadata_values, _stats
 from app.schemas.trading_signal_admin import AdminStrategyPage
 
 
@@ -76,6 +76,22 @@ class TradingSignalAdminHelpersTests(unittest.TestCase):
         self.assertEqual(result["losses"], 1)
         self.assertAlmostEqual(result["win_rate_pct"], 33.3333)
         self.assertEqual(result["profit_factor"], 2.0)
+        self.assertAlmostEqual(result["average_return_pct"], 0.3333)
+        self.assertEqual(result["median_return_pct"], 0.0)
+
+    def test_descriptor_stats_expose_packet_average_and_median_returns(self):
+        result = _descriptor_stats([], {
+            "instances_resolved": 4,
+            "wins": 3,
+            "losses": 1,
+            "win_rate_pct": 75.0,
+            "profit_factor": 3.5,
+            "average_return_pct": 2.25,
+            "median_return_pct": 1.5,
+        })
+        self.assertEqual(result["instances"], 4)
+        self.assertEqual(result["average_return_pct"], 2.25)
+        self.assertEqual(result["median_return_pct"], 1.5)
 
     def test_actual_return_is_direction_adjusted(self):
         self.assertEqual(_actual_return("LONG", 100, 110), 10.0)
@@ -87,6 +103,45 @@ class TradingSignalAdminHelpersTests(unittest.TestCase):
             _metadata_values([{"trigger_conditions": ["A", "B"]}, {"entry_rule": "C"}], ("trigger_conditions", "entry_rule")),
             ["A", "B"],
         )
+
+    def test_spx_qqq_fractional_ledger_returns_are_exposed_as_percentage_points(self):
+        trades = _historical_trade_ledger(
+            {"historical_trade_ledger": {"records": [{
+                "signal_code": "RELIABLE_YELLOW",
+                "market_date": "2025-03-07",
+                "direction": "SHORT",
+                "entry_time": "2025-03-10T03:30:00-04:00",
+                "entry_price": 19609.1706952518,
+                "exit_time": "2025-03-10T04:30:00-04:00",
+                "exit_price": 19530.73401247079,
+                "return_pct": 0.004,
+                "mfe_pct": 0.0073,
+                "mae_pct": 0.0015,
+                "status": "CLOSED",
+            }]}}, "SPX_GEX_QQQ_V1", "1.0.2-production"
+        )
+        self.assertAlmostEqual(trades[0]["return_pct"], 0.4)
+        self.assertAlmostEqual(trades[0]["mfe_pct"], 0.73)
+        self.assertAlmostEqual(trades[0]["mae_pct"], 0.15)
+
+    def test_historical_ledger_blank_optional_numbers_are_null(self):
+        trades = _historical_trade_ledger(
+            {"historical_trade_ledger": {"records": [{
+                "signal_code": "GEX_TEST",
+                "market_date": "2025-01-01",
+                "direction": "LONG",
+                "entry_price": "",
+                "exit_price": "",
+                "gross_return_pct": "",
+                "return_pct": "",
+                "mfe_pct": "",
+                "mae_pct": "",
+                "bars_held": "",
+                "status": "UNRESOLVED",
+            }]}}, "GEX_TEST", "1.0.0"
+        )
+        for field in ("entry_price", "exit_price", "gross_return_pct", "return_pct", "mfe_pct", "mae_pct", "bars_held"):
+            self.assertIsNone(trades[0][field])
 
     def test_catalog_joins_stock_metadata_historical_stats_and_actual_executions(self):
         model = _CatalogModel([
@@ -229,6 +284,7 @@ class TradingSignalAdminHelpersTests(unittest.TestCase):
         payload = TradingSignalAdminRepository(lambda: model).list_strategies()
         page = AdminStrategyPage(**payload)
         self.assertEqual(page.stocks[0].strategies[0].signals[0].confidence, "MEDIUM_HIGH")
+        self.assertAlmostEqual(page.stocks[0].strategies[0].signals[0].confidence_score, 0.78)
 
     def test_retired_legacy_versions_are_not_catalogued(self):
         model = _CatalogModel([

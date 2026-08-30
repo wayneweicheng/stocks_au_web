@@ -1,0 +1,140 @@
+{
+  "as_of": "2026-08-23T15:20:00+10:00",
+  "backtest_engine_version": "gex-feature-tier-contract-engine/1.1.0",
+  "format_version": 1,
+  "historical_research_vs_production": "This file contains historical research only. Production simulated outcomes must be stored separately.",
+  "ledger": "historical-instance-ledger.csv",
+  "signal_performance": {
+    "ORCL_FAILED_BULLISH_SUPPORT_HIGH": {
+      "status": "AVAILABLE",
+      "as_of": "2026-08-23T15:20:00+10:00",
+      "signal_instances": 14,
+      "resolved_instances": 14,
+      "unresolved_instances": 0,
+      "excluded_instances": 0,
+      "wins": 14,
+      "losses": 0,
+      "win_rate_pct": 100.0,
+      "win_rate_denominator": "wins + losses among resolved historical candidate outcomes",
+      "average_return_pct": 3.55677291,
+      "median_return_pct": 2.66777666,
+      "gross_profit_return_pct_points": 49.79482077,
+      "gross_loss_return_pct_points": -0.0,
+      "profit_factor": null,
+      "profit_factor_status": "NO_HISTORICAL_LOSSES",
+      "wilson_95_ci_pct": [
+        78.46891973,
+        100.0
+      ],
+      "validation_split": {
+        "method": "chronological resolved-instance half split",
+        "first_half_instances": 7,
+        "first_half_win_rate_pct": 100.0,
+        "second_half_instances": 7,
+        "second_half_win_rate_pct": 100.0
+      },
+      "historical_action_interpretation": "ACTIONABLE_PLAN_ENTRY",
+      "candidate_inclusion": "Existing v1.0.0 base-signal instances reclassified using causal D0 GEX_Features only; no future-return target columns used.",
+      "sample_size_limitations": "Feature tiers were discovered by screening the available history; historical figures are not untouched out-of-sample estimates. v1.1.0-production freezes these exact feature predicates for forward use.",
+      "per_instance_ledger_reference": "historical-instance-ledger.csv",
+      "entry_rule": "Open of the 07:30 America/New_York 30-minute bar on D1, the first US trading session after ObservationDate.",
+      "exit_rule": "Close of the final regular-session 30-minute bar on D2; no TP/SL in v1.0.0.",
+      "holding_period_distribution": {
+        "D2": 34
+      },
+      "position_sizing": "Normalized 1.0 notional per signal; no portfolio capital constraint.",
+      "return_units": "percentage points of normalized 1.0 notional directional return",
+      "slippage": "0.0000% in historical research; results are gross/theoretical.",
+      "transaction_costs": "0.0000% in historical research; results are gross/theoretical.",
+      "overlapping_signals": "Included independently. Multiple signal codes may coexist on the same observation date.",
+      "repeated_same_day_signals": "At most one instance per signal_code per ObservationDate.",
+      "maximum_favourable_excursion": {
+        "mean_pct": 5.28757407,
+        "median_pct": 5.40635972,
+        "maximum_pct": 10.86383225
+      },
+      "maximum_adverse_excursion": {
+        "mean_pct": -1.45755716,
+        "median_pct": -1.22460819,
+        "minimum_pct": -5.11498486
+      },
+      "source_snapshot_hash": "7f49455837ba807985e784826d5de93cf773018f47d58880f862a1af1fd709b9"
+    },
+    "ORCL_FAILED_BULLISH_SUPPORT_STANDARD": {
+      "status": "AVAILABLE",
+      "as_of": "2026-08-23T15:20:00+10:00",
+      "signal_instances": 20,
+      "resolved_instances": 20,
+      "unresolved_instances": 0,
+      "excluded_instances": 0,
+      "wins": 14,
+      "losses": 6,
+      "win_rate_pct": 70.0,
+      "win_rate_denominator": "wins + losses among resolved historical candidate outcomes",
+      "average_return_pct": 1.67955193,
+      "median_return_pct": 0.63848398,
+      "gross_profit_return_pct_points": 50.41012573,
+      "gross_loss_return_pct_points": 16.81908708,
+      "profit_factor": 2.9971975,
+      "profit_factor_status": "FINITE",
+      "wilson_95_ci_pct": [
+        48.10271816,
+        85.45227551
+      ],
+      "validation_split": {
+        "method": "chronological resolved-instance half split",
+        "first_half_instances": 10,
+        "first_half_win_rate_pct": 60.0,
+        "second_half_instances": 10,
+        "second_half_win_rate_pct": 80.0
+      },
+      "historical_action_interpretation": "ACTIONABLE_PLAN_ENTRY",
+      "candidate_inclusion": "Existing v1.0.0 base-signal instances reclassified using causal D0 GEX_Features only; no future-return target columns used.",
+      "sample_size_limitations": "Feature tiers were discovered by screening the available history; historical figures are not untouched out-of-sample estimates. v1.1.0-production freezes these exact feature predicates for forward use.",
+      "per_instance_ledger_reference": "historical-instance-ledger.csv",
+      "entry_rule": "Open of the 07:30 America/New_York 30-minute bar on D1, the first US trading session after ObservationDate.",
+      "exit_rule": "Close of the final regular-session 30-minute bar on D2; no TP/SL in v1.0.0.",
+      "holding_period_distribution": {
+        "D2": 34
+      },
+      "position_sizing": "Normalized 1.0 notional per signal; no portfolio capital constraint.",
+      "return_units": "percentage points of normalized 1.0 notional directional return",
+      "slippage": "0.0000% in historical research; results are gross/theoretical.",
+      "transaction_costs": "0.0000% in historical research; results are gross/theoretical.",
+      "overlapping_signals": "Included independently. Multiple signal codes may coexist on the same observation date.",
+      "repeated_same_day_signals": "At most one instance per signal_code per ObservationDate.",
+      "maximum_favourable_excursion": {
+        "mean_pct": 4.60091008,
+        "median_pct": 3.25966122,
+        "maximum_pct": 12.40284974
+      },
+      "maximum_adverse_excursion": {
+        "mean_pct": -2.9152117,
+        "median_pct": -2.35052744,
+        "minimum_pct": -7.95980902
+      },
+      "source_snapshot_hash": "7f49455837ba807985e784826d5de93cf773018f47d58880f862a1af1fd709b9"
+    }
+  },
+  "source_snapshot_hash": "7f49455837ba807985e784826d5de93cf773018f47d58880f862a1af1fd709b9",
+  "strategy_code": "GEX_ORCL_CAPITALTYPE",
+  "version_code": "1.1.0-production",
+  "feature_tier_note": "The base failed-bullish-support short remains actionable. A signed aggregate-GEX change below -10% elevates the signal to HIGH confidence; otherwise it remains STANDARD.",
+  "feature_leakage_controls": {
+    "excluded": [
+      "TomorrowChange",
+      "Next2DaysChange",
+      "Next5DaysChange",
+      "Next10DaysChange",
+      "Next20DaysChange",
+      "GEX_Vol_Percentile",
+      "GEX_HighVolatility",
+      "GEX_StableRegime",
+      "Setup_Dual_Squeeze",
+      "DarkPool fields pending publication-time proof"
+    ],
+    "allowed_relevant_fields": [
+      "ORCL_GEXChange"
+    ]
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "as_of": "2026-08-16T21:15:00+10:00",
+  "canonical_decision_revision": "SHA256 of canonical CSV serialization of current D0 plus previous 60 complete daily rows containing ObservationDate,Close,VWAP,BCAbs,BPAbs,SCAbs,SPAbs.",
+  "combined_source_hash": "736a6560d5a76d0ee08fd43e9ba24a048592b71dd063b420b1aa83a18e32b833",
+  "implementation_sha256": "8582977e99e2a0a6228637c4414eb994c45c60776b345df7640671fe494a1db8",
+  "live_database_schema": "NOT_AVAILABLE \u2014 supplied artifacts identify CSV snapshots, not the live database/schema.",
+  "manifest_format": 1,
+  "sources": [
+    {
+      "date_range": [
+        "2023-08-15",
+        "2026-08-13"
+      ],
+      "extraction_identity": "Google Drive folder Option_GEX_Change_Capital_Type / TSLA-20230815-20260813.csv",
+      "google_drive_file_id": "1xPq6fplRolbM12WkXG5r1hKoITCYu4Fy",
+      "google_drive_url": "https://drive.google.com/file/d/1xPq6fplRolbM12WkXG5r1hKoITCYu4Fy/view",
+      "instrument": "TSLA",
+      "name": "TSLA-20230815-20260813.csv",
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "VWAP"
+      ],
+      "role": "SOURCE",
+      "sha256": "eb63dc44e0411b1059715947a1a82a8b5a4165bf19afad1604594cf24a92a992",
+      "size_bytes": 188333
+    },
+    {
+      "date_range": [
+        "2025-10-20",
+        "2026-08-14"
+      ],
+      "extraction_identity": "Google Drive folder price_history_30m / TSLA-20251020-20260814.csv",
+      "google_drive_file_id": "1WmeZDaEIkj28JVxlUkN8rFlk9ReFqTxl",
+      "google_drive_url": "https://drive.google.com/file/d/1WmeZDaEIkj28JVxlUkN8rFlk9ReFqTxl/view",
+      "instrument": "TSLA",
+      "name": "TSLA-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ],
+      "role": "EXECUTION_OUTCOME",
+      "sha256": "ef7a0dd7e436d72a0f70aa3ba1a5dd2b2e88571b8d4e225a02eb2414ace8cc4c",
+      "size_bytes": 506252
+    },
+    {
+      "extraction_identity": "Google Drive folder price_history_30m / QQQ-20251020-20260814.csv",
+      "google_drive_file_id": "1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H",
+      "google_drive_url": "https://drive.google.com/file/d/1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H/view",
+      "instrument": "QQQ",
+      "name": "QQQ-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close"
+      ],
+      "role": "BENCHMARK",
+      "sha256": "4414b23861947c77b8a939a2bbef16ede12c316d7a47a84f92559d1b077c8cb6",
+      "size_bytes": 506542
+    }
+  ],
+  "strategy_code": "GEX_TSLA_CAPITALTYPE",
+  "version_code": "1.0.0"
+}

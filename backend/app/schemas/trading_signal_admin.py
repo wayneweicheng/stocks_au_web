@@ -12,6 +12,8 @@ class AdminPerformanceStats(BaseModel):
     losses: int = 0
     win_rate_pct: Optional[float] = None
     profit_factor: Optional[float] = None
+    average_return_pct: Optional[float] = None
+    median_return_pct: Optional[float] = None
     gross_profit_pct: Optional[float] = None
     gross_loss_pct: Optional[float] = None
     source: Optional[str] = None
@@ -60,6 +62,8 @@ class AdminHistoricalPerformance(BaseModel):
     measurement_horizon: str
     win_rate_pct: Optional[float] = None
     profit_factor: Optional[float] = None
+    average_return_pct: Optional[float] = None
+    median_return_pct: Optional[float] = None
     source_reference: str
     as_of_utc: str
     notes: str
@@ -72,6 +76,7 @@ class AdminSignalDefinition(BaseModel):
     trigger_condition: str
     direction: str
     confidence: str
+    confidence_score: Optional[float] = None
     action: str
     notification_level: str
     entry_policy: str
@@ -99,6 +104,14 @@ class AdminHistoricalTrade(BaseModel):
     features: Dict[str, Any] = Field(default_factory=dict)
 
 
+class AdminEvaluationSchedule(BaseModel):
+    timezone_name: Optional[str] = None
+    local_time: Optional[str] = None
+    cadence_seconds: Optional[int] = None
+    interval_minutes: Optional[int] = None
+    window_end: Optional[str] = None
+
+
 class AdminDeployment(BaseModel):
     strategy_deployment_id: int
     deployment_key: str
@@ -108,6 +121,7 @@ class AdminDeployment(BaseModel):
     execution_enabled: bool = False
     is_production: bool = False
     notification_only: bool = True
+    evaluation_schedule: Optional[AdminEvaluationSchedule] = None
     production_stats: AdminPerformanceStats = Field(default_factory=AdminPerformanceStats)
     executions: List[AdminExecution] = Field(default_factory=list)
 

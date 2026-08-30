@@ -1,0 +1,45 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_WDC_HEALTHY_GEX_FADE",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "40b9a7e574fa9188a97a080b49ff7bac7ce2699a7f3832c2fc96935d12cd6720",
+  "implementation_sha256": "a74f687427452d9a9446c6aee66e95bfd85646fbd557c6b8ffc838c567f1ce1d",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "WDC-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/WDC-20230922-20260826.csv",
+      "sha256": "8241a234325b0a2ed26110520c75a4f820fb6c5d004af72d8a5a9e31951d9752",
+      "size_bytes": 124447
+    },
+    {
+      "role": "FEATURE",
+      "name": "WDC-20241022-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/WDC-20241022-20260825.csv",
+      "sha256": "91aa03c4ce15ab8d6c7ca5c5302d36327a7eec580ba62bd2da23d714c392bd50",
+      "size_bytes": 162430
+    },
+    {
+      "role": "PRICE",
+      "name": "WDC-20260511-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/WDC-20260511-20260827.csv",
+      "sha256": "f3110427e83817309869c56754788758177719b46e1dae13395599b9ace76b09",
+      "size_bytes": 182536
+    },
+    {
+      "role": "QQQ_FEATURE",
+      "name": "QQQ-20221209-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/QQQ-20221209-20260826.csv",
+      "sha256": "80fc77a6252ab9c6cf31a95f85895fffd0d3b3c40ea36815cd4c82f597454832",
+      "size_bytes": 471624
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

@@ -19,8 +19,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Stocks AU Dashboard",
-  description: "ASX tools – Next.js + FastAPI",
+  title: "Stocks AU | Market Workspace",
+  description: "Professional market analysis and trading tools for ASX and US markets.",
   icons: {
     icon: "/icon.svg",
   },

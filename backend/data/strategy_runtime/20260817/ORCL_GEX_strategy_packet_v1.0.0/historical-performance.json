@@ -1,0 +1,74 @@
+{
+  "as_of": "2026-08-16T21:15:00+10:00",
+  "backtest_engine_version": "gex-contract-engine/1.0.0",
+  "format_version": 1,
+  "historical_research_vs_production": "This file contains historical research only. Production simulated outcomes must be stored separately.",
+  "ledger": "historical-instance-ledger.csv",
+  "signal_performance": {
+    "ORCL_FAILED_BULLISH_SUPPORT": {
+      "as_of": "2026-08-16T21:15:00+10:00",
+      "average_return_pct": 2.45252528,
+      "backtest_engine": "gex-contract-engine/1.0.0",
+      "candidate_inclusion": "All triggered candidates with available entry/exit bars; no manual-trade filter.",
+      "eligible_sample_definition": "Complete four-capital-type GEX observation with 60 prior complete GEX observations; D1 07:30 ET entry bar exists; trigger evaluated using D0 or earlier information only.",
+      "entry_rule": "Open of the 07:30 America/New_York 30-minute bar on D1, the first US trading session after ObservationDate.",
+      "excluded_instances": 0,
+      "exit_rule": "Close of the final regular-session 30-minute bar on D2; no TP/SL in v1.0.0.",
+      "gross_loss_return_pct_points": 16.81908708,
+      "gross_profit_return_pct_points": 100.20494648,
+      "holding_period_distribution": {
+        "D2": 34
+      },
+      "losses": 6,
+      "maximum_adverse_excursion": {
+        "mean_pct": -2.31500101,
+        "median_pct": -1.55382972,
+        "minimum_pct": -7.95980902
+      },
+      "maximum_favourable_excursion": {
+        "maximum_pct": 12.40284974,
+        "mean_pct": 4.88365408,
+        "median_pct": 4.47115296
+      },
+      "median_return_pct": 1.97808372,
+      "overlapping_signals": "Included independently. Multiple signal codes may coexist on the same observation date.",
+      "per_instance_ledger_reference": "historical-instance-ledger.csv",
+      "position_sizing": "Normalized 1.0 notional per signal; no portfolio capital constraint.",
+      "profit_factor": 5.95781126,
+      "repeated_same_day_signals": "At most one instance per signal_code per ObservationDate.",
+      "resolved_instances": 34,
+      "return_units": "percentage points of normalized 1.0 notional directional return",
+      "sample_size_limitations": "Research-selected rules; full history was used for rule discovery, so reported statistics are not untouched out-of-sample estimates.",
+      "signal_instances": 34,
+      "slippage": "0.0000% in historical research; results are gross/theoretical.",
+      "source_date_range": {
+        "gex_end": "2026-08-13",
+        "gex_start": "2023-09-25",
+        "price_end": "2026-08-14",
+        "price_start": "2025-10-20"
+      },
+      "source_snapshot_hash": "5deb7941eddc6a75b90e6d3375c6ec98c75590bf553a0edda4a29d57d2f8966b",
+      "status": "AVAILABLE",
+      "total_eligible_dates": 192,
+      "transaction_costs": "0.0000% in historical research; results are gross/theoretical.",
+      "unresolved_instances": 0,
+      "validation_split": {
+        "first_half_instances": 17,
+        "first_half_win_rate_pct": 76.47058824,
+        "method": "chronological resolved-instance half split",
+        "second_half_instances": 17,
+        "second_half_win_rate_pct": 88.23529412
+      },
+      "wilson_95_ci_pct": [
+        66.48593226,
+        91.6511444
+      ],
+      "win_rate_denominator": "wins + losses among resolved instances; unresolved and excluded instances are not in denominator.",
+      "win_rate_pct": 82.35294118,
+      "wins": 28
+    }
+  },
+  "source_snapshot_hash": "5deb7941eddc6a75b90e6d3375c6ec98c75590bf553a0edda4a29d57d2f8966b",
+  "strategy_code": "GEX_ORCL_CAPITALTYPE",
+  "version_code": "1.0.0"
+}

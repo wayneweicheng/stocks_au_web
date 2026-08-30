@@ -1,0 +1,213 @@
+{
+  "descriptor_format": 2,
+  "strategy_code": "GEX_TLT_SELL_CALL_EXHAUSTION",
+  "display_name": "TLT Sell-Call Trend Exhaustion GEX Strategy",
+  "version_code": "1.0.0-production",
+  "implementation_key": "gex_tlt_sell_call_exhaustion.v1_0_0",
+  "status": "IMPLEMENTABLE",
+  "definition": {
+    "purpose": "TLT bearish exhaustion when price is near/above its 50-observation trend and sell-call share is rotating upward relative to recent history.",
+    "rationale": "TLT bearish exhaustion when price is near/above its 50-observation trend and sell-call share is rotating upward relative to recent history.",
+    "market_timezone": "America/New_York",
+    "calendar": "US listed-equity trading sessions derived from production market calendar; holidays skipped; America/New_York DST; official early close respected.",
+    "multiple_signal_policy": "Single actionable predicate. DATA_ERROR precedes NO_SIGNAL.",
+    "trigger_precedence": [
+      "TLT_SELL_CALL_TREND_EXHAUSTION",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ],
+    "source_refresh_gate": "At/after 07:30 America/New_York on D1 require complete previous US trading session D0 capital-type rows BC/BP/SC/SP, required D0 GEX_Features rows, any required QQQ/SPY D0 feature row, and any required D0 30-minute feature bars. Missing/null/stale data => NOT_READY; create no Observation/Signal/report/plan/notification."
+  },
+  "research_governance": {
+    "owner": "USER",
+    "research_date": "2026-08-28",
+    "freeze_date": "2026-08-28",
+    "change_summary": "New standalone production notification strategy selected from broad GEX/flow discovery. Exact predicate frozen for forward OOS monitoring.",
+    "superseded_strategy_version": null,
+    "validation_method": "Broad historical discovery with chronological research splits. Because many features/hypotheses were screened, historical tail is research evidence, not pristine untouched OOS. True forward OOS begins after freeze date.",
+    "bias_controls": [
+      "no future-return labels in trigger",
+      "causal prior-only rank60 features",
+      "historical entry fixed to D1 07:30 ET Open",
+      "no broker/manual fill dependency",
+      "survivorship/selection bias cannot be fully eliminated because ticker universe was user-selected",
+      "multiple-testing risk explicitly acknowledged and forward freeze required"
+    ]
+  },
+  "instruments": [
+    {
+      "code": "TLT",
+      "role": "SUBJECT",
+      "market": "US listed market",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "TLT",
+      "role": "SOURCE",
+      "market": "INTERNAL StockDB_US",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "TLT",
+      "role": "EXECUTION",
+      "market": "US listed market",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    }
+  ],
+  "feature_specification": [
+    {
+      "name": "PriceDistSMA50Pct",
+      "source": "GEX_Features",
+      "formula": "100*(Close/Price_SMA50-1)",
+      "units": "percent",
+      "lookback": "prior 60 observations excluding current for rank fields; otherwise as defined by source field",
+      "minimum_prior_observations": null,
+      "current_D0_in_reference_distribution": "SOURCE_DEFINED",
+      "null_behavior": "NOT_READY",
+      "boundary_behavior": "trigger comparisons are inclusive exactly as written except strict >/< operators",
+      "future_information_proof": "Uses only completed D0 or earlier observations. No D1 post-entry or future-return columns."
+    },
+    {
+      "name": "SCShareChgRank60",
+      "source": "Option_GEX_Change_Capital_Type",
+      "formula": "causal_rank60(SCShare[D0]-SCShare[D-1])",
+      "units": "percentile 0..1",
+      "lookback": "prior 60 observations excluding current for rank fields; otherwise as defined by source field",
+      "minimum_prior_observations": 10,
+      "current_D0_in_reference_distribution": false,
+      "null_behavior": "NOT_READY",
+      "boundary_behavior": "trigger comparisons are inclusive exactly as written except strict >/< operators",
+      "future_information_proof": "Uses only completed D0 or earlier observations. No D1 post-entry or future-return columns."
+    }
+  ],
+  "signal_definitions": [
+    {
+      "signal_code": "TLT_SELL_CALL_TREND_EXHAUSTION",
+      "display_name": "Sell-Call Trend Exhaustion",
+      "direction": "SHORT",
+      "confidence": "SELECTED_PRODUCTION",
+      "confidence_method": "User-selected after broad historical research; fixed for forward validation.",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "definition": "TLT bearish exhaustion when price is near/above its 50-observation trend and sell-call share is rotating upward relative to recent history.",
+      "trigger_condition": "PriceDistSMA50Pct >= -1.0 AND SCShareChgRank60 >= 0.60",
+      "variables": [
+        "PriceDistSMA50Pct",
+        "SCShareChgRank60"
+      ],
+      "entry_policy": "D1 07:30 America/New_York 30-minute bar Open; D1 is first valid US trading session after D0.",
+      "holding_period": "D5",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this instance outcome",
+        "Missing required exit bar: outcome remains PENDING"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": true,
+      "sends_notification": true,
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 35,
+        "wins": 28,
+        "losses": 7,
+        "win_rate_pct": 80.0,
+        "profit_factor": 5.981568792056229,
+        "profit_factor_infinite": false,
+        "as_of": "2026-08-28T18:49:00+10:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      }
+    },
+    {
+      "signal_code": "DATA_ERROR",
+      "display_name": "Data Error",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed but deterministic evaluation encounters invalid/non-finite state.",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": [],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Operational data-quality state."
+      }
+    },
+    {
+      "signal_code": "NO_SIGNAL",
+      "display_name": "No Signal",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed and actionable predicate is false.",
+      "trigger_condition": "NOT(PriceDistSMA50Pct >= -1.0 AND SCShareChgRank60 >= 0.60)",
+      "variables": [
+        "PriceDistSMA50Pct",
+        "SCShareChgRank60"
+      ],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Non-actionable classification."
+      }
+    }
+  ],
+  "production_policy": {
+    "deployment_state": "PRODUCTION",
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "mode": "NOTIFICATION_ONLY",
+    "broker_execution": "HARD_DISABLED",
+    "manual_trade_optional": true,
+    "manual_trade_required_for_outcome": false,
+    "notifications": {
+      "enabled": true,
+      "channel": "PUSHOVER",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "recipient": "Configured production recipient from secrets; never embedded"
+    },
+    "report_authentication_required": true,
+    "change_control": "Any trigger/feature/direction/entry/exit/notification change requires a new version."
+  },
+  "provenance": {
+    "as_of": "2026-08-28T18:49:00+10:00",
+    "research_window": {
+      "start": "2023-08-28",
+      "end": "2026-08-26"
+    },
+    "executable_price_window": {
+      "start": "2025-10-20",
+      "end": "2026-08-27"
+    },
+    "out_of_sample_window": {
+      "status": "NOT_AVAILABLE",
+      "reason": "Selected after broad historical feature screening; true forward OOS begins after 2026-08-28."
+    },
+    "source_hash": "7326807b919511c3441f0808f0506c2ab35946389423af0399b8367f16379eb5",
+    "implementation_hash": "e0cec7d6b69be3b9a15d434b5d0e7e523b2aa17602a2319805884db9165fd91d",
+    "source_manifest": "source-manifest.json"
+  }
+}

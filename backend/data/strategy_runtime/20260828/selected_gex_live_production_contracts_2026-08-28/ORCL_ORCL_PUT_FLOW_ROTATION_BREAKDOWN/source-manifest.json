@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_ORCL_PUT_FLOW_ROTATION",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "9d356b6e02703d8052487c1ad4b7fc679e77bbf5b69fa552463af9a331fe3161",
+  "implementation_sha256": "8c5fc3262b9d5615c901f51c5ad3dd90cc13c7e464cf2f7ba984f3f1430ed4f3",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "ORCL-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/ORCL-20230922-20260826.csv",
+      "sha256": "3f277d05b1966789cb16af56fa49108c55dafcad9fa7d4d827d67408aac604d5",
+      "size_bytes": 173998
+    },
+    {
+      "role": "FEATURE",
+      "name": "ORCL-20230925-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/ORCL-20230925-20260825.csv",
+      "sha256": "d74ca9022dbcc22c29c7538586320c7cc3c273860e8674c11a622b3d12847996",
+      "size_bytes": 338229
+    },
+    {
+      "role": "PRICE",
+      "name": "ORCL-20251020-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/ORCL-20251020-20260827.csv",
+      "sha256": "91dadd7c8ef729e8fe009e6a4993ca8dad9dc82caf35cf367b5a1d26f6d26da8",
+      "size_bytes": 523455
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

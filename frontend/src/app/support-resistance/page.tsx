@@ -145,6 +145,16 @@ function LevelActions({
     target: midpoint.toFixed(2),
     auto: "1",
   });
+  const shortDteOptionParams = new URLSearchParams({
+    symbol: stockCode,
+    right: "P",
+    action: "SELL",
+    target: midpoint.toFixed(2),
+    auto: "1",
+    min_dte: "5",
+    max_dte: "7",
+    bracket_exit_pct: "70",
+  });
 
   return (
     <div className="flex shrink-0 items-center gap-1">
@@ -174,6 +184,16 @@ function LevelActions({
           <path d="M9 16V8h3.5a2.5 2.5 0 0 1 0 5H9" />
         </svg>
       </a>
+      {tone === "support" ? <a
+        href={`/option-orders?${shortDteOptionParams.toString()}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`Open short-dated sell put order for ${stockCode} (5–7 DTE, 70% bracket exit)`}
+        aria-label={`Open short-dated sell put order for ${stockCode}, 5 to 7 DTE, 70 percent below entry bracket exit`}
+        className="inline-flex h-7 min-w-8 items-center justify-center rounded border border-amber-200 bg-amber-50 px-1 text-[10px] font-bold leading-none text-amber-800 hover:border-amber-300 hover:bg-amber-100"
+      >
+        P<span className="ml-0.5 text-[8px]">5–7</span>
+      </a> : null}
     </div>
   );
 }

@@ -1041,7 +1041,7 @@ export default function ResearchHubPage() {
                 <h3 className="text-lg font-medium mb-4">
                   {stockSummary.stock_code} - Rating Summary
                 </h3>
-                <div className="grid grid-cols-4 gap-4 text-center">
+                <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4 sm:gap-4">
                   <div className="p-4 rounded-lg bg-slate-50">
                     <div className="text-2xl font-bold text-slate-800">
                       {stockSummary.total_ratings}

@@ -1,0 +1,25 @@
+{
+  "strategy_code": "SPX_GEX_QQQ_V1",
+  "version_code": "1.0.2-production",
+  "status": "IMPLEMENTABLE",
+  "production_catalogue_ready": true,
+  "deployment_target": "PRODUCTION",
+  "broker_execution": "HARD_DISABLED",
+  "notification_only": true,
+  "checks": {
+    "required_files_present": true,
+    "valid_status_enum": true,
+    "historical_performance_status_enums_valid": true,
+    "all_actionable_signals_have_reconciled_stats": true,
+    "per_instance_ledger_present": true,
+    "source_hashes_present": true,
+    "implementation_hash_present_after_packaging": true,
+    "deterministic_core_fixtures_present": true,
+    "causal_thresholds": true,
+    "nq_roll_adjustment_reconciled": true,
+    "production_policy_explicit": true,
+    "manual_trade_independent_outcomes": true,
+    "fail_closed_readiness": true
+  },
+  "note": "IMPLEMENTABLE means the contract is complete for production registration/deployment. It does not mean this ZIP has already been imported into the user application."
+}

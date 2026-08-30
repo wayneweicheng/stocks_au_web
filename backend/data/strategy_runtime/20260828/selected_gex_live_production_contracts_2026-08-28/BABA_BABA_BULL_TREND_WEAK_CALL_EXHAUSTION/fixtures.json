@@ -1,0 +1,53 @@
+{
+  "strategy_code": "GEX_BABA_WEAK_CALL_EXHAUSTION",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "Price_SMA20": 173.7885,
+        "Price_SMA50": 150.961458,
+        "BuyCall_GEXDeltaPerc_Rank60": 0.0
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "Price_SMA20 > Price_SMA50 AND BuyCall_GEXDeltaPerc_Rank60 <= 0.80",
+      "expected_signal": "BABA_BULL_TREND_WEAK_CALL_EXHAUSTION"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "Price_SMA20": 174.0005,
+        "Price_SMA50": 151.921666,
+        "BuyCall_GEXDeltaPerc_Rank60": 0.8846153846153846
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "Price_SMA20 > Price_SMA50 AND BuyCall_GEXDeltaPerc_Rank60 <= 0.80"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "strategy_code": "GEX_WDC_HEALTHY_GEX_FADE",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "GEX_Rank60": 0.21666666666666667,
+        "QQQ_GEX_ZScore_60day": -0.3582194117904659
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "GEX_Rank60 >= 0.20 AND QQQ_GEX_ZScore_60day > -1.5",
+      "expected_signal": "WDC_HEALTHY_GEX_SEMI_FADE"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "GEX_Rank60": 0.13333333333333333,
+        "QQQ_GEX_ZScore_60day": -0.3862159377839626
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "GEX_Rank60 >= 0.20 AND QQQ_GEX_ZScore_60day > -1.5"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}

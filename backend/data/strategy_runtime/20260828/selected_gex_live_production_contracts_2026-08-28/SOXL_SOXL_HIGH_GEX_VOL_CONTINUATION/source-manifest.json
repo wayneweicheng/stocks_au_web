@@ -1,0 +1,45 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_SOXL_HIGH_GEX_VOL_CONTINUATION",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "9f15b68b8cd64d45eef6de0f9ddbc0f557f1c7c77f8b889d2f172d95446ab791",
+  "implementation_sha256": "2e9b879082578f2216297a16d16838ed82d10b2dd0a26217ccd28a30e5c633e9",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "SOXL-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/SOXL-20230922-20260826.csv",
+      "sha256": "5aa7ee3750780db160203fafcd31f209451050080b614120393dbe8186b6f254",
+      "size_bytes": 176115
+    },
+    {
+      "role": "FEATURE",
+      "name": "SOXL-20230926-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/SOXL-20230926-20260826.csv",
+      "sha256": "e55ec3da00c29926fb15836585bc4d4a54ea9113f05902e55085e2f04caad2f5",
+      "size_bytes": 348952
+    },
+    {
+      "role": "PRICE",
+      "name": "SOXL-20251020-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/SOXL-20251020-20260827.csv",
+      "sha256": "a32b01f36bcde7acd9d4726a9f718c990ce8d367a664d68204c9b04cb5df57a3",
+      "size_bytes": 508410
+    },
+    {
+      "role": "QQQ_FEATURE",
+      "name": "QQQ-20221209-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/QQQ-20221209-20260826.csv",
+      "sha256": "80fc77a6252ab9c6cf31a95f85895fffd0d3b3c40ea36815cd4c82f597454832",
+      "size_bytes": 471624
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

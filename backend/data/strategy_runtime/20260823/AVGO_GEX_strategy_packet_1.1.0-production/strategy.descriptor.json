@@ -1,0 +1,236 @@
+{
+  "definition": {
+    "calendar": "NASDAQ US equity trading calendar; exchange holidays skipped; DST by America/New_York; early close uses official last regular-session bar.",
+    "market_timezone": "America/New_York",
+    "multiple_signal_policy": "CO_EMIT_ALL_MATCHES_IN_PRECEDENCE_ORDER; precedence is ordering, not suppression.",
+    "purpose": "Classify AVGO directional setups from prior-session option GEX capital-type structure and issue notification-only paper plans; v1.1 adds production feature-tier confirmation using AVGO and QQQ GEX_Features.",
+    "rationale": "Ticker-specific GEX rules selected from full-period research; see strategy.md for rule-level rationale.",
+    "source_refresh_gate": "At/after 07:30 America/New_York on current US trading session D1: latest complete GEX ObservationDate must equal previous US trading session D0; exactly one BC/BP/SC/SP row; non-null GEXDelta/Close/VWAP; 60 prior complete observations; canonical source revision stable for this heartbeat. Otherwise NOT_READY and create nothing. Additionally require D0 rows from StockDB_US.Analysis.GEX_Features for AVGO and QQQ with all tier variables non-null; otherwise NOT_READY.",
+    "timezone": "Australia/Sydney",
+    "trigger_precedence": [
+      "AVGO_BULLISH_INTENT_RALLY_EXHAUSTION_HIGH",
+      "AVGO_BULLISH_INTENT_RALLY_EXHAUSTION_WEAK",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ]
+  },
+  "descriptor_format": 2,
+  "display_name": "AVGO GEX Capital-Type Feature-Aware Strategy",
+  "implementation_key": "gex.avgo.capital_type.v1_1_0",
+  "instruments": [
+    {
+      "code": "AVGO",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "SUBJECT",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "AVGO_OPTION_GEX_CAPITAL_TYPE",
+      "currency": "USD",
+      "market": "INTERNAL",
+      "role": "SOURCE",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "AVGO",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "EXECUTION",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "QQQ",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "BENCHMARK",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "NOT_AVAILABLE",
+      "market": "NOT_AVAILABLE",
+      "role": "PROXY"
+    }
+  ],
+  "production_policy": {
+    "broker_execution": "HARD_DISABLED",
+    "deployment_state": "PRODUCTION",
+    "manual_trade_required_for_outcome": false,
+    "mode": "NOTIFICATION_ONLY",
+    "pushover": {
+      "body_template": "{signal_code} | {feature_tier} | {direction} | {holding_period} | {key_values} | {report_url}",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "enabled": true,
+      "priority": 0,
+      "recipient": "Configured production Pushover user key from secrets; never embedded in packet",
+      "retry_schedule_minutes": [
+        0,
+        2,
+        5,
+        15
+      ],
+      "title_template": "[GEX AVGO] {signal_code} \u2014 {market_date}"
+    },
+    "report_authentication_required": true,
+    "report_link_format": "/reports/strategy/{strategy_code}/{version_code}/{public_report_id}",
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "manual_trade_optional": true,
+    "change_control": "Any base trigger, feature-tier predicate, direction, entry/exit rule, or notification policy change requires a new version."
+  },
+  "provenance": {
+    "backtest_engine_version": "gex-feature-tier-contract-engine/1.1.0",
+    "executable_price_window": {
+      "end": "2026-08-14",
+      "start": "2025-10-20"
+    },
+    "implementation_hash": "51a1d278e1601988a360749f5289ad8a4b7d61656e36d3fa0f322806da36341d",
+    "out_of_sample_window": {
+      "status": "NOT_AVAILABLE",
+      "start": null,
+      "end": null,
+      "reason": "Feature-tier predicates were selected after screening the available historical sample; exact v1.1 predicates are now frozen for forward production validation."
+    },
+    "research_window": {
+      "end": "2026-08-20",
+      "start": "2023-09-25"
+    },
+    "source_hash": "eef6f4c2f1e6fe60a40085b39158c2a3634732eee780c36164e8d847e11cd6e5",
+    "source_manifest": "source-manifest.json"
+  },
+  "signal_definitions": [
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "AVGO rallies while the all-four-capital-type intent becomes even more bullish; the combination behaves as crowding/exhaustion rather than confirmation. Feature-confirmed HIGH tier.",
+      "direction": "SHORT",
+      "display_name": "Bullish-Intent Rally Exhaustion \u2014 High",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 20,
+        "wins": 19,
+        "losses": 1,
+        "win_rate_pct": 95.0,
+        "profit_factor": 23.59311366,
+        "as_of": "2026-08-23T15:20:00+10:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      },
+      "holding_period": "D5",
+      "notification_level": "HIGH",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "AVGO_BULLISH_INTENT_RALLY_EXHAUSTION_HIGH",
+      "trigger_condition": "(PriceChangePct > 0.10 AND IntentRatioChangePct < -10.0) AND (QQQ.Is_Potential_Swing_Up == 1 OR QQQ.TodayChange < 0)",
+      "variables": [
+        "PriceChangePct",
+        "IntentRatioChangePct",
+        "QQQ_Is_Potential_Swing_Up",
+        "QQQ_TodayChange"
+      ]
+    },
+    {
+      "action": "WATCH",
+      "confidence": "LOW",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "AVGO rallies while the all-four-capital-type intent becomes even more bullish; the combination behaves as crowding/exhaustion rather than confirmation. Feature-rejected WEAK tier; notify but do not create a paper plan.",
+      "direction": "SHORT",
+      "display_name": "Bullish-Intent Rally Exhaustion \u2014 Weak",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 33,
+        "wins": 17,
+        "losses": 16,
+        "win_rate_pct": 51.51515152,
+        "profit_factor": 0.90118387,
+        "as_of": "2026-08-23T15:20:00+10:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      },
+      "holding_period": "D5",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "AVGO_BULLISH_INTENT_RALLY_EXHAUSTION_WEAK",
+      "trigger_condition": "(PriceChangePct > 0.10 AND IntentRatioChangePct < -10.0) AND (NOT(QQQ.Is_Potential_Swing_Up == 1 OR QQQ.TodayChange < 0))",
+      "variables": [
+        "PriceChangePct",
+        "IntentRatioChangePct",
+        "QQQ_Is_Potential_Swing_Up",
+        "QQQ_TodayChange"
+      ]
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed but deterministic evaluation encounters invalid/non-finite state.",
+      "direction": "NONE",
+      "display_name": "Data Error",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Operational data-quality state, not a trading signal.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "DATA_ERROR",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": []
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed and no PLAN_ENTRY/WATCH predicate matched.",
+      "direction": "NONE",
+      "display_name": "No Signal",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Non-actionable classification.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "NO_SIGNAL",
+      "trigger_condition": "count(matching_signal_predicates) == 0",
+      "variables": []
+    }
+  ],
+  "status": "IMPLEMENTABLE",
+  "strategy_code": "GEX_AVGO_CAPITALTYPE",
+  "version_code": "1.1.0-production"
+}

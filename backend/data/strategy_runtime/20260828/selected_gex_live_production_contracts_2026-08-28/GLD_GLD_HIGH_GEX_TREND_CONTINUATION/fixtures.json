@@ -1,0 +1,53 @@
+{
+  "strategy_code": "GEX_GLD_HIGH_GEX_TREND",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "GEX": 925210.0,
+        "GEX_SMA20": 484134.25,
+        "RSI": 68.84112024897192
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "GEX > GEX_SMA20 AND RSI > 65",
+      "expected_signal": "GLD_HIGH_GEX_TREND_CONTINUATION"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "GEX": 1414750.0,
+        "GEX_SMA20": 1623725.2,
+        "RSI": 87.73011554795586
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "GEX > GEX_SMA20 AND RSI > 65"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,201 @@
+{
+  "fixture_format": 1,
+  "rules": {
+    "AVGO_BULLISH_INTENT_RALLY_EXHAUSTION": {
+      "boundary_false_case": {
+        "expected_target_predicate": false,
+        "inputs": {
+          "AbsPriceMovePct60": 0.4,
+          "BCShareAbsShockPct60": 0.8,
+          "BCShareChange": 0.2,
+          "BPShareAbsShockPct60": 0.8,
+          "BPShareChange": 0.2,
+          "BullShareAbsShockPct60": 0.8,
+          "BullShareChange": -0.2,
+          "BullSharePct60": 0.8,
+          "CallBuyShareAbsShockPct60": 0.8,
+          "CallBuyShareChange": -0.2,
+          "Close": 99.0,
+          "GEXConcentrationPct60": 0.8,
+          "IntentRatioChangePct": -20,
+          "Momentum3Pct": 2.0,
+          "NetBullSharePct60": 0.2,
+          "PCRAbsShockPct60": 0.8,
+          "PCRChangePct": 10.0,
+          "PriceChangePct": 0.1,
+          "PutBuyShareAbsShockPct60": 0.8,
+          "PutBuyShareChange": 0.2,
+          "SCAbsPct60": 0.8,
+          "SPSharePct60": 0.8,
+          "TotalGEXPct60": 0.2,
+          "VWAP": 100.0,
+          "VWAPDiffPct": -0.5
+        }
+      },
+      "fixture_scope": "SIGNAL_PREDICATE_WITH_FULL_FEATURE_VECTOR",
+      "true_case": {
+        "expected_target_predicate": true,
+        "inputs": {
+          "AbsPriceMovePct60": 0.4,
+          "BCShareAbsShockPct60": 0.8,
+          "BCShareChange": 0.2,
+          "BPShareAbsShockPct60": 0.8,
+          "BPShareChange": 0.2,
+          "BullShareAbsShockPct60": 0.8,
+          "BullShareChange": -0.2,
+          "BullSharePct60": 0.8,
+          "CallBuyShareAbsShockPct60": 0.8,
+          "CallBuyShareChange": -0.2,
+          "Close": 99.0,
+          "GEXConcentrationPct60": 0.8,
+          "IntentRatioChangePct": -20,
+          "Momentum3Pct": 2.0,
+          "NetBullSharePct60": 0.2,
+          "PCRAbsShockPct60": 0.8,
+          "PCRChangePct": 10.0,
+          "PriceChangePct": 1,
+          "PutBuyShareAbsShockPct60": 0.8,
+          "PutBuyShareChange": 0.2,
+          "SCAbsPct60": 0.8,
+          "SPSharePct60": 0.8,
+          "TotalGEXPct60": 0.2,
+          "VWAP": 100.0,
+          "VWAPDiffPct": -0.5
+        }
+      }
+    }
+  },
+  "strategy_code": "GEX_AVGO_CAPITALTYPE",
+  "system_branches": [
+    {
+      "expected": {
+        "create_observation": false,
+        "gate": "NOT_READY",
+        "notification": false,
+        "paper_plan": false,
+        "report": false,
+        "signals": []
+      },
+      "fixture_id": "NOT_READY_STALE",
+      "input": {
+        "expected_D0": "2026-08-14",
+        "latest_complete_observation": "2026-08-13",
+        "now_et": "2026-08-17T07:32:00-04:00"
+      }
+    },
+    {
+      "expected": {
+        "gate": "NOT_READY"
+      },
+      "fixture_id": "NOT_READY_MISSING_CAPITAL_TYPE",
+      "input": {
+        "expected_D0": "2026-08-14",
+        "present_capital_types": [
+          "BC",
+          "BP",
+          "SC"
+        ]
+      }
+    },
+    {
+      "expected": {
+        "gate": "NOT_READY"
+      },
+      "fixture_id": "NOT_READY_DUPLICATE_CAPITAL_TYPE",
+      "input": {
+        "capital_type_counts": {
+          "BC": 1,
+          "BP": 1,
+          "SC": 2,
+          "SP": 1
+        },
+        "expected_D0": "2026-08-14"
+      }
+    },
+    {
+      "expected": {
+        "notification": false,
+        "paper_plan": false,
+        "report": true,
+        "signals": [
+          "NO_SIGNAL"
+        ]
+      },
+      "fixture_id": "NO_SIGNAL",
+      "input": {
+        "all_rule_predicates": false,
+        "readiness": "READY"
+      }
+    },
+    {
+      "expected": {
+        "duplicate_notifications": 0,
+        "evaluations_created": 1
+      },
+      "fixture_id": "IDEMPOTENT_REPEAT",
+      "input": {
+        "heartbeat_count": 2,
+        "market_date": "2026-08-14",
+        "source_revision": "abc123",
+        "strategy_version": "1.0.0"
+      }
+    },
+    {
+      "expected": {
+        "audit_event": "SOURCE_CORRECTED",
+        "overwrite_old_report": false,
+        "reevaluate": true
+      },
+      "fixture_id": "SOURCE_CORRECTION",
+      "input": {
+        "new_source_revision": "def456",
+        "old_source_revision": "abc123",
+        "same_market_date": true
+      }
+    },
+    {
+      "expected": {
+        "manual_fill_allowed": false,
+        "outcome": "PENDING",
+        "paper_plan_status": "PENDING_OR_CANCELLED_PRE_ENTRY"
+      },
+      "fixture_id": "MISSING_ENTRY_BAR",
+      "input": {
+        "D1_0730_bar": null,
+        "signal_action": "PLAN_ENTRY"
+      }
+    },
+    {
+      "expected": {
+        "outcome": "PENDING"
+      },
+      "fixture_id": "MISSING_EXIT_BAR",
+      "input": {
+        "entry_bar_exists": true,
+        "scheduled_exit_bar": null
+      }
+    },
+    {
+      "expected": {
+        "exit_price_source": "Close of 12:30-13:00 regular-session bar",
+        "scheduled_exit_timestamp_local": "13:00:00"
+      },
+      "fixture_id": "EARLY_CLOSE",
+      "input": {
+        "regular_session_last_bar_start": "12:30:00"
+      }
+    },
+    {
+      "expected": {
+        "percentile": 0.5,
+        "tie_counts_as_less_or_equal": true
+      },
+      "fixture_id": "PERCENTILE_TIE",
+      "input": {
+        "prior_60_equal_to_current_count": 10,
+        "prior_60_less_than_current_count": 20
+      }
+    }
+  ],
+  "version_code": "1.0.0"
+}

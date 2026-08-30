@@ -1,0 +1,51 @@
+{
+  "strategy_code": "GEX_ZS_CONTROLLED_BULL_REBOUND",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "BTC_chg5": -30.767620496804536,
+        "BullShareChgAbsRank60": 0.08928571428571429
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "BTC_chg5 <= 2.1 AND BullShareChgAbsRank60 <= 0.65",
+      "expected_signal": "ZS_CONTROLLED_BULL_FLOW_REBOUND"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "BTC_chg5": -4.579021487797997,
+        "BullShareChgAbsRank60": 0.8571428571428571
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "BTC_chg5 <= 2.1 AND BullShareChgAbsRank60 <= 0.65"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,227 @@
+{
+  "descriptor_format": 2,
+  "strategy_code": "GEX_BABA_WEAK_CALL_EXHAUSTION",
+  "display_name": "BABA Bull-Trend Weak-Call Exhaustion GEX Strategy",
+  "version_code": "1.0.0-production",
+  "implementation_key": "gex_baba_weak_call_exhaustion.v1_0_0",
+  "status": "IMPLEMENTABLE",
+  "definition": {
+    "purpose": "BABA bearish exhaustion when the intermediate price trend is bullish but bought-call GEX participation is not in its extreme upper tail.",
+    "rationale": "BABA bearish exhaustion when the intermediate price trend is bullish but bought-call GEX participation is not in its extreme upper tail.",
+    "market_timezone": "America/New_York",
+    "calendar": "US listed-equity trading sessions derived from production market calendar; holidays skipped; America/New_York DST; official early close respected.",
+    "multiple_signal_policy": "Single actionable predicate. DATA_ERROR precedes NO_SIGNAL.",
+    "trigger_precedence": [
+      "BABA_BULL_TREND_WEAK_CALL_EXHAUSTION",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ],
+    "source_refresh_gate": "At/after 07:30 America/New_York on D1 require complete previous US trading session D0 capital-type rows BC/BP/SC/SP, required D0 GEX_Features rows, any required QQQ/SPY D0 feature row, and any required D0 30-minute feature bars. Missing/null/stale data => NOT_READY; create no Observation/Signal/report/plan/notification."
+  },
+  "research_governance": {
+    "owner": "USER",
+    "research_date": "2026-08-28",
+    "freeze_date": "2026-08-28",
+    "change_summary": "New standalone production notification strategy selected from broad GEX/flow discovery. Exact predicate frozen for forward OOS monitoring.",
+    "superseded_strategy_version": null,
+    "validation_method": "Broad historical discovery with chronological research splits. Because many features/hypotheses were screened, historical tail is research evidence, not pristine untouched OOS. True forward OOS begins after freeze date.",
+    "bias_controls": [
+      "no future-return labels in trigger",
+      "causal prior-only rank60 features",
+      "historical entry fixed to D1 07:30 ET Open",
+      "no broker/manual fill dependency",
+      "survivorship/selection bias cannot be fully eliminated because ticker universe was user-selected",
+      "multiple-testing risk explicitly acknowledged and forward freeze required"
+    ]
+  },
+  "instruments": [
+    {
+      "code": "BABA",
+      "role": "SUBJECT",
+      "market": "US listed market",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "BABA",
+      "role": "SOURCE",
+      "market": "INTERNAL StockDB_US",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "BABA",
+      "role": "EXECUTION",
+      "market": "US listed market",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    }
+  ],
+  "feature_specification": [
+    {
+      "name": "Price_SMA20",
+      "source": "GEX_Features",
+      "formula": "source Price_SMA20",
+      "units": "USD",
+      "lookback": "prior 60 observations excluding current for rank fields; otherwise as defined by source field",
+      "minimum_prior_observations": null,
+      "current_D0_in_reference_distribution": "SOURCE_DEFINED",
+      "null_behavior": "NOT_READY",
+      "boundary_behavior": "trigger comparisons are inclusive exactly as written except strict >/< operators",
+      "future_information_proof": "Uses only completed D0 or earlier observations. No D1 post-entry or future-return columns."
+    },
+    {
+      "name": "Price_SMA50",
+      "source": "GEX_Features",
+      "formula": "source Price_SMA50",
+      "units": "USD",
+      "lookback": "prior 60 observations excluding current for rank fields; otherwise as defined by source field",
+      "minimum_prior_observations": null,
+      "current_D0_in_reference_distribution": "SOURCE_DEFINED",
+      "null_behavior": "NOT_READY",
+      "boundary_behavior": "trigger comparisons are inclusive exactly as written except strict >/< operators",
+      "future_information_proof": "Uses only completed D0 or earlier observations. No D1 post-entry or future-return columns."
+    },
+    {
+      "name": "BuyCall_GEXDeltaPerc_Rank60",
+      "source": "GEX_Features",
+      "formula": "causal_rank60(BuyCall_GEXDeltaPerc)",
+      "units": "percentile 0..1",
+      "lookback": "prior 60 observations excluding current for rank fields; otherwise as defined by source field",
+      "minimum_prior_observations": 10,
+      "current_D0_in_reference_distribution": false,
+      "null_behavior": "NOT_READY",
+      "boundary_behavior": "trigger comparisons are inclusive exactly as written except strict >/< operators",
+      "future_information_proof": "Uses only completed D0 or earlier observations. No D1 post-entry or future-return columns."
+    }
+  ],
+  "signal_definitions": [
+    {
+      "signal_code": "BABA_BULL_TREND_WEAK_CALL_EXHAUSTION",
+      "display_name": "Bull-Trend Weak-Call Exhaustion",
+      "direction": "SHORT",
+      "confidence": "SELECTED_PRODUCTION",
+      "confidence_method": "User-selected after broad historical research; fixed for forward validation.",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "definition": "BABA bearish exhaustion when the intermediate price trend is bullish but bought-call GEX participation is not in its extreme upper tail.",
+      "trigger_condition": "Price_SMA20 > Price_SMA50 AND BuyCall_GEXDeltaPerc_Rank60 <= 0.80",
+      "variables": [
+        "Price_SMA20",
+        "Price_SMA50",
+        "BuyCall_GEXDeltaPerc_Rank60"
+      ],
+      "entry_policy": "D1 07:30 America/New_York 30-minute bar Open; D1 is first valid US trading session after D0.",
+      "holding_period": "D5",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this instance outcome",
+        "Missing required exit bar: outcome remains PENDING"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": true,
+      "sends_notification": true,
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 59,
+        "wins": 51,
+        "losses": 8,
+        "win_rate_pct": 86.44067796610169,
+        "profit_factor": 8.334078375290384,
+        "profit_factor_infinite": false,
+        "as_of": "2026-08-28T18:49:00+10:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      }
+    },
+    {
+      "signal_code": "DATA_ERROR",
+      "display_name": "Data Error",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed but deterministic evaluation encounters invalid/non-finite state.",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": [],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Operational data-quality state."
+      }
+    },
+    {
+      "signal_code": "NO_SIGNAL",
+      "display_name": "No Signal",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed and actionable predicate is false.",
+      "trigger_condition": "NOT(Price_SMA20 > Price_SMA50 AND BuyCall_GEXDeltaPerc_Rank60 <= 0.80)",
+      "variables": [
+        "Price_SMA20",
+        "Price_SMA50",
+        "BuyCall_GEXDeltaPerc_Rank60"
+      ],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Non-actionable classification."
+      }
+    }
+  ],
+  "production_policy": {
+    "deployment_state": "PRODUCTION",
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "mode": "NOTIFICATION_ONLY",
+    "broker_execution": "HARD_DISABLED",
+    "manual_trade_optional": true,
+    "manual_trade_required_for_outcome": false,
+    "notifications": {
+      "enabled": true,
+      "channel": "PUSHOVER",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "recipient": "Configured production recipient from secrets; never embedded"
+    },
+    "report_authentication_required": true,
+    "change_control": "Any trigger/feature/direction/entry/exit/notification change requires a new version."
+  },
+  "provenance": {
+    "as_of": "2026-08-28T18:49:00+10:00",
+    "research_window": {
+      "start": "2024-10-22",
+      "end": "2026-08-25"
+    },
+    "executable_price_window": {
+      "start": "2025-10-20",
+      "end": "2026-08-27"
+    },
+    "out_of_sample_window": {
+      "status": "NOT_AVAILABLE",
+      "reason": "Selected after broad historical feature screening; true forward OOS begins after 2026-08-28."
+    },
+    "source_hash": "5093e7cce91082a8c5dc23fb3e0801953669b9860437ad33042e9b435ea8d66e",
+    "implementation_hash": "5efed5a0f0b0d55e0d3e882c7a07a3d6d3302206de27f12f9912511a5b7fc486",
+    "source_manifest": "source-manifest.json"
+  }
+}

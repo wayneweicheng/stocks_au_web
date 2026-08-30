@@ -1,0 +1,383 @@
+{
+  "descriptor_format": 2,
+  "strategy_code": "SPX_GEX_QQQ_V1",
+  "display_name": "SPXW GEX \u2192 QQQ Strategy (NQMain Proxy)",
+  "version_code": "1.0.2-production",
+  "status": "IMPLEMENTABLE",
+  "implementation_key": "spx_gex_qqq_v1_0_2_production",
+  "owner": "wayne cheng",
+  "research_date": "2026-08-16",
+  "change_summary": "Production-ready repair of 1.0.2-contract. Adds reconciled NQMain per-instance ledger, valid historical-performance enums, exact four-branch base signal, deterministic roll-neutralization, and production deployment metadata. No threshold, entry, exit, or portfolio rule was optimized or changed.",
+  "supersedes": {
+    "strategy_code": "SPX_GEX_QQQ_V1",
+    "version_code": "1.0.2-contract"
+  },
+  "definition": {
+    "purpose": "Generate production notification-only QQQ trade plans from daily SPXW GEX changes, using NQMain as the historical price-path proxy.",
+    "rationale": "SPXW capital-type GEX changes identify bearish continuation and bullish rebound regimes; NQMain provides the 03:30 historical percentage path where QQQ 30-minute history is unavailable.",
+    "trigger_precedence": [
+      "STRONG_YELLOW",
+      "RELIABLE_YELLOW",
+      "REVERSAL_GREEN",
+      "NORMAL_GREEN"
+    ],
+    "source_refresh_gate": "NOT_READY unless the expected latest completed XNYS ObservationDate has exactly one BC/BP/SC/SP row, required GEX/GEXDelta/Close values are non-null, TotalAbsGEXDelta>0, previous daily observation continuity is valid, 60 prior valid rows exist for Yellow thresholds, and NQMain contains required D0 cash-close history for Prior5D when base_signal is BULLISH. Before NOT_READY clears: create no Observation, Signal, report, plan, or notification. Entry worker separately requires a current non-stale QQQ executable quote at the planned action timestamp.",
+    "timezone": "America/New_York",
+    "calendar": "XNYS",
+    "base_signal_formula": "BEARISH = (CloseChangePct > 0 AND PCRChangePct > 5) OR (abs(CloseChangePct) < 0.1 AND PCRChangePct > 20); BULLISH = (CloseChangePct < 0 AND PCRChangePct < -5) OR (abs(CloseChangePct) < 0.1 AND PCRChangePct < -20); otherwise NONE.",
+    "portfolio_conflict_policy": "EXISTING_POSITION_PRIORITY",
+    "max_active_positions": 1
+  },
+  "instruments": [
+    {
+      "role": "SOURCE",
+      "code": "SPXW",
+      "market": "CBOE/SPX options-derived dataset",
+      "currency": "USD",
+      "timezone": "America/New_York",
+      "market_date_convention": "ObservationDate is completed US cash trading date",
+      "calendar": "XNYS"
+    },
+    {
+      "role": "PROXY",
+      "code": "NQMain",
+      "market": "CME continuous futures history",
+      "currency": "USD",
+      "timezone": "America/New_York",
+      "market_date_convention": "30-minute local New York wall-time bars; roll-neutralized for historical percentage paths",
+      "calendar": "XNYS for Dn counting"
+    },
+    {
+      "role": "EXECUTION",
+      "code": "QQQ",
+      "market": "NASDAQ",
+      "currency": "USD",
+      "timezone": "America/New_York",
+      "market_date_convention": "Live/manual execution instrument; action timestamps follow America/New_York",
+      "calendar": "XNYS-equivalent US equity calendar"
+    }
+  ],
+  "signal_definitions": [
+    {
+      "signal_code": "STRONG_YELLOW",
+      "display_name": "Strong Yellow",
+      "direction": "SHORT",
+      "confidence": "HIGH",
+      "action": "PLAN_ENTRY",
+      "notification_level": "HIGH",
+      "production_notification_allowed": true,
+      "definition": "SPX base signal is BEARISH, current SC GEX level is at or below the causal prior-60 median, and current SPDeltaShare is strictly above the causal prior-60 P75.",
+      "trigger_condition": "base_signal == BEARISH AND history_count_sc == 60 AND history_count_sp == 60 AND SC_GEX_current <= SC_GEX_median_prior60 AND SPDeltaShare_current > SPDeltaShare_P75_prior60",
+      "entry_policy": "At D1 03:30 America/New_York, create SHORT QQQ plan using the current executable QQQ price. Historical proxy uses roll-adjusted NQMain D1 03:30 Open for percentage-path simulation.",
+      "exit_conditions": [
+        "TP when QQQ/NQ-proxy falls 0.80% from entry",
+        "SL when QQQ/NQ-proxy rises 1.00% from entry",
+        "If a bar opens beyond TP or SL, fill at bar Open",
+        "If TP and SL are both touched in the same 30-minute bar, SL wins conservatively",
+        "No scheduled time exit in frozen v1.0.2; remain active until TP or SL"
+      ],
+      "holding_period": "CUSTOM_UNTIL_TP_OR_SL",
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 10,
+        "resolved_instances": 10,
+        "wins": 8,
+        "losses": 2,
+        "unresolved_instances": 0,
+        "excluded_instances": 0,
+        "win_rate_pct": 80.0,
+        "win_rate_denominator": "resolved_instances",
+        "wilson_95_pct": [
+          49.0162,
+          94.3318
+        ],
+        "gross_profit_return_sum": 0.06813822056424437,
+        "gross_loss_return_sum_abs": 0.02000000000000008,
+        "profit_factor": 3.406911028212205,
+        "average_return_pct": 0.4813822056424429,
+        "median_return_pct": 0.7999999999999943,
+        "average_mfe_pct": 0.9988578206013112,
+        "median_mfe_pct": 1.0328950356276911,
+        "average_mae_pct": 0.7227776456781287,
+        "median_mae_pct": 0.7413610611099006,
+        "as_of": "2026-08-16T22:04:00+10:00",
+        "source_reference": "historical-instance-ledger.json#STRONG_YELLOW"
+      }
+    },
+    {
+      "signal_code": "RELIABLE_YELLOW",
+      "display_name": "Reliable Yellow",
+      "direction": "SHORT",
+      "confidence": "MEDIUM_HIGH",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "definition": "SPX base signal is BEARISH, current SC GEX level is at or below the causal prior-60 median, and current SPDeltaShare is at or below the causal prior-60 P75.",
+      "trigger_condition": "base_signal == BEARISH AND history_count_sc == 60 AND history_count_sp == 60 AND SC_GEX_current <= SC_GEX_median_prior60 AND SPDeltaShare_current <= SPDeltaShare_P75_prior60",
+      "entry_policy": "At D1 03:30 America/New_York, create SHORT QQQ plan using current executable QQQ price; NQMain is historical percentage-path proxy.",
+      "exit_conditions": [
+        "TP when price falls 0.40% from entry",
+        "SL when price rises 0.80% from entry",
+        "Gap-aware Open fill",
+        "Same-bar TP+SL => SL first",
+        "No scheduled time exit in frozen v1.0.2"
+      ],
+      "holding_period": "CUSTOM_UNTIL_TP_OR_SL",
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 21,
+        "resolved_instances": 21,
+        "wins": 18,
+        "losses": 3,
+        "unresolved_instances": 0,
+        "excluded_instances": 0,
+        "win_rate_pct": 85.71428571428571,
+        "win_rate_denominator": "resolved_instances",
+        "wilson_95_pct": [
+          65.3639,
+          95.019
+        ],
+        "gross_profit_return_sum": 0.07200000000000026,
+        "gross_loss_return_sum_abs": 0.02400000000000001,
+        "profit_factor": 3.0000000000000093,
+        "average_return_pct": 0.22857142857142976,
+        "median_return_pct": 0.40000000000000147,
+        "average_mfe_pct": 0.5219736577227764,
+        "median_mfe_pct": 0.495447890710583,
+        "average_mae_pct": 0.29326090592045295,
+        "median_mae_pct": 0.15301362194440207,
+        "as_of": "2026-08-16T22:04:00+10:00",
+        "source_reference": "historical-instance-ledger.json#RELIABLE_YELLOW"
+      }
+    },
+    {
+      "signal_code": "MIXED_YELLOW",
+      "display_name": "Mixed Yellow",
+      "direction": "NONE",
+      "confidence": "LOW",
+      "action": "WATCH",
+      "notification_level": "INFO",
+      "production_notification_allowed": false,
+      "definition": "BEARISH base signal with SC above prior-60 median and SPDeltaShare above prior-60 P75.",
+      "trigger_condition": "base_signal == BEARISH AND SC_GEX_current > SC_GEX_median_prior60 AND SPDeltaShare_current > SPDeltaShare_P75_prior60",
+      "entry_policy": "NONE",
+      "exit_conditions": [],
+      "holding_period": "NONE",
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Non-actionable signal; no trade performance is defined."
+      }
+    },
+    {
+      "signal_code": "WEAK_YELLOW",
+      "display_name": "Weak Yellow",
+      "direction": "NONE",
+      "confidence": "LOW",
+      "action": "WATCH",
+      "notification_level": "INFO",
+      "production_notification_allowed": false,
+      "definition": "BEARISH base signal with SC above prior-60 median and SPDeltaShare at or below prior-60 P75.",
+      "trigger_condition": "base_signal == BEARISH AND SC_GEX_current > SC_GEX_median_prior60 AND SPDeltaShare_current <= SPDeltaShare_P75_prior60",
+      "entry_policy": "NONE",
+      "exit_conditions": [],
+      "holding_period": "NONE",
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Non-actionable signal; no trade performance is defined."
+      }
+    },
+    {
+      "signal_code": "REVERSAL_GREEN",
+      "display_name": "Reversal Green",
+      "direction": "LONG",
+      "confidence": "MEDIUM_HIGH",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "definition": "SPX base signal is BULLISH and the causal prior-five-XNYS-session roll-adjusted NQ cash-close return is <= 0.",
+      "trigger_condition": "base_signal == BULLISH AND Prior5D_NQ_Return <= 0",
+      "entry_policy": "At D1 03:30 record live QQQ reference. Place/plan a buy limit 1.00% below reference until D3 03:30. If not filled by D3 03:30, buy at D3 03:30. Historical proxy applies same rule to roll-adjusted NQMain.",
+      "exit_conditions": [
+        "If dip limit fills, hold until D5 cash close",
+        "If dip does not fill by D3 03:30, fallback buy at D3 03:30 then hold to D5 cash close",
+        "No fixed TP",
+        "No fixed SL in frozen v1.0.2",
+        "Gap below dip limit fills at bar Open"
+      ],
+      "holding_period": "D5",
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 43,
+        "resolved_instances": 42,
+        "wins": 33,
+        "losses": 9,
+        "unresolved_instances": 1,
+        "excluded_instances": 0,
+        "win_rate_pct": 78.57142857142857,
+        "win_rate_denominator": "resolved_instances",
+        "wilson_95_pct": [
+          64.0602,
+          88.2942
+        ],
+        "gross_profit_return_sum": 0.8084840045255932,
+        "gross_loss_return_sum_abs": 0.1955002738770314,
+        "profit_factor": 4.135462260447396,
+        "average_return_pct": 1.4594850729727664,
+        "median_return_pct": 1.5537859806872945,
+        "average_mfe_pct": 2.779411465753365,
+        "median_mfe_pct": 2.4377603953169213,
+        "average_mae_pct": 1.8913143652687618,
+        "median_mae_pct": 1.3282022396763438,
+        "as_of": "2026-08-16T22:04:00+10:00",
+        "source_reference": "historical-instance-ledger.json#REVERSAL_GREEN"
+      }
+    },
+    {
+      "signal_code": "NORMAL_GREEN",
+      "display_name": "Normal Green",
+      "direction": "LONG",
+      "confidence": "MEDIUM",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "definition": "SPX base signal is BULLISH and causal prior-five-XNYS-session roll-adjusted NQ cash-close return is > 0.",
+      "trigger_condition": "base_signal == BULLISH AND Prior5D_NQ_Return > 0",
+      "entry_policy": "Buy QQQ at D3 03:30 America/New_York using current executable quote; historical proxy uses roll-adjusted NQMain D3 03:30 Open.",
+      "exit_conditions": [
+        "TP at +2.50% from entry",
+        "Otherwise D5 XNYS cash close",
+        "Gap above TP fills at bar Open",
+        "No fixed SL in frozen v1.0.2"
+      ],
+      "holding_period": "D5",
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 26,
+        "resolved_instances": 26,
+        "wins": 19,
+        "losses": 7,
+        "unresolved_instances": 0,
+        "excluded_instances": 0,
+        "win_rate_pct": 73.07692307692308,
+        "win_rate_denominator": "resolved_instances",
+        "wilson_95_pct": [
+          53.917,
+          86.2956
+        ],
+        "gross_profit_return_sum": 0.2522319726398483,
+        "gross_loss_return_sum_abs": 0.10925330097999664,
+        "profit_factor": 2.308689718089432,
+        "average_return_pct": 0.5499179679225064,
+        "median_return_pct": 0.5754733089798014,
+        "average_mfe_pct": 1.395738199994666,
+        "median_mfe_pct": 1.1515124276503486,
+        "average_mae_pct": 1.3162226069453216,
+        "median_mae_pct": 1.0222504326119792,
+        "as_of": "2026-08-16T22:04:00+10:00",
+        "source_reference": "historical-instance-ledger.json#NORMAL_GREEN"
+      }
+    },
+    {
+      "signal_code": "NO_SIGNAL",
+      "display_name": "No Signal",
+      "direction": "NONE",
+      "confidence": "NONE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "definition": "No base-signal predicate matches.",
+      "trigger_condition": "base_signal == NONE",
+      "entry_policy": "NONE",
+      "exit_conditions": [],
+      "holding_period": "NONE",
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "No trade is defined."
+      }
+    }
+  ],
+  "feature_specification": {
+    "BCAbs": "abs(BC.GEXDelta)",
+    "BPAbs": "abs(BP.GEXDelta)",
+    "SCAbs": "abs(SC.GEXDelta)",
+    "SPAbs": "abs(SP.GEXDelta)",
+    "TotalAbsGEXDelta": "BCAbs+BPAbs+SCAbs+SPAbs",
+    "PutCallRatio": "BPAbs / BCAbs; null/fail-closed if BCAbs==0",
+    "SPDeltaShare": "SPAbs / TotalAbsGEXDelta",
+    "CloseChangePct": "100*(Close_D0/Close_previous_valid_observation - 1)",
+    "PCRChangePct": "100*(PCR_D0/PCR_previous_valid_observation - 1)",
+    "SC_GEX_median_prior60": "median of SC.GEX from exactly 60 valid ObservationDates strictly before D0; current excluded",
+    "SPDeltaShare_P75_prior60": "linear 75th percentile of exactly 60 valid SPDeltaShare values strictly before D0; current excluded",
+    "Prior5D_NQ_Return": "roll-adjusted NQ cash-session Close(D0)/Close(D-5 XNYS sessions)-1",
+    "rounding": "No rounding before comparisons; display rounding only",
+    "ties": "SC equality counts as SC_LOW; SP equality to P75 is not SP_HIGH; Prior5D equality to 0 is REVERSAL_GREEN",
+    "duplicate_rows": "Any duplicate BC/BP/SC/SP row for D0 => NOT_READY",
+    "late_corrections": "Recompute only when canonical source_revision hash changes; preserve prior report and link revision lineage."
+  },
+  "production_policy": {
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "mode": "NOTIFICATION_ONLY",
+    "broker_execution": "HARD_DISABLED",
+    "manual_trade_optional": true,
+    "manual_trade_required_for_outcome": false,
+    "environment_record": "LIVE_MANUAL for generated plans; forward model outcomes stored separately from BACKTEST",
+    "pushover": {
+      "enabled": true,
+      "priority_default": 0,
+      "priority_strong_yellow": 1,
+      "recipient": "Configured production Pushover user key from secrets; never embedded in packet",
+      "title_template": "{signal_code} \u2014 {direction} QQQ",
+      "body_template": "Observation {market_date}; action {action_time}; QQQ reference/entry; TP/SL/time exit; causal metrics; portfolio state; strategy/version; immutable report link",
+      "report_link_format": "/reports/{immutable_report_id}",
+      "retry_policy": "Retry transient delivery failures with bounded exponential backoff; never retry validation failures as notifications",
+      "deduplication_key": "strategy_code|version_code|ObservationDate|signal_code|actionable_timestamp|source_revision"
+    },
+    "change_control": "Any threshold, base signal, entry timing, exit rule, proxy method, conflict rule or position sizing change requires a new strategy version."
+  },
+  "future_outcome_calculation": {
+    "source": "NQMain 30-minute roll-adjusted proxy for historical/model outcome; live QQQ market data when available",
+    "required_columns": [
+      "TimeIntervalStart",
+      "Open",
+      "High",
+      "Low",
+      "Close"
+    ],
+    "pending_rule": "PENDING until all bars required by the terminal rule exist",
+    "manual_fields_forbidden": true,
+    "direction_convention": "Positive return means profitable in signal direction",
+    "correction_rule": "Finalized model outcome is immutable unless source_revision changes, in which case create a revision-linked recalculation",
+    "calculation_version": "spx-gex-outcome-v1.0.2-prod-r1"
+  },
+  "provenance": {
+    "research_window": {
+      "start": "2025-03-06",
+      "end": "2026-08-13"
+    },
+    "out_of_sample_window": {
+      "start": "2026-08-07",
+      "end": "2026-08-13",
+      "note": "Forward-like continuation after original reference through Aug-06; only Aug-11 is actionable and remains unresolved at D5, while portfolio policy skips it behind Aug-06 Normal Green."
+    },
+    "source_manifest": "source-manifest.json",
+    "source_hash": "ffd5d7e15d2bf135df37e10d9ca49926015425298da84ccbdf335d791bb360ad",
+    "backtest_engine_version": "spx-gex-contract-rebuilder/1.0.2-prod-r1",
+    "bias_controls": [
+      "Causal prior-only 60-observation thresholds",
+      "Dn uses XNYS sessions, not calendar days",
+      "NQ quarterly roll gaps neutralized deterministically",
+      "Current observation excluded from thresholds",
+      "Frozen v1.0.2 TP/SL/dip rules; no optimization during repair",
+      "All actionable candidates retained in signal-level ledger, including conflicts and unresolved candidates"
+    ],
+    "implementation_hash": "ac90352adacd2a71487857a6f4bba6e563b1a6fcb075a32b7f3e5230681f3b61"
+  },
+  "known_limitations": [
+    "Historical return is an NQ percentage-path proxy, not a historical QQQ fill series.",
+    "Historical statistics are gross of commissions, QQQ spread and slippage.",
+    "Yellow has no scheduled time exit in frozen v1.0.2 and can remain open across sessions until TP/SL; changing this requires a new version.",
+    "Normal/Reversal Green have no fixed stop in frozen v1.0.2.",
+    "The source files are snapshots; live production must use configured database/file refresh markers and current QQQ quotes."
+  ]
+}

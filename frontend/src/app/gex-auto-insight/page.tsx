@@ -340,21 +340,21 @@ export default function GEXAutoInsightPage() {
 
         {/* Processing Status */}
         <div className="mb-6 p-4 rounded-lg border border-slate-200 bg-white">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-medium">
               Processing Status {status && <span className="text-sm font-normal text-slate-500">({status.target_date})</span>}
             </h2>
             <button
               onClick={processAllPending}
               disabled={processing || !status?.pending_count}
-              className="px-4 py-2 rounded-md bg-emerald-600 text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-md bg-emerald-600 px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               {processing ? "Processing..." : `Process ${status?.pending_count || 0} Pending`}
             </button>
           </div>
 
           {status && (
-            <div className="grid grid-cols-4 gap-4 mb-4">
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
               <div className="text-center p-3 rounded-lg bg-slate-50">
                 <p className="text-2xl font-semibold">{status.total_configured}</p>
                 <p className="text-xs text-slate-500">Configured</p>

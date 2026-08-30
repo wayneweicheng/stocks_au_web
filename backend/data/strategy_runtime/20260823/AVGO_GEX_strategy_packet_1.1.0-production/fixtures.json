@@ -1,0 +1,33 @@
+{
+  "strategy_code": "GEX_AVGO_CAPITALTYPE",
+  "version_code": "1.1.0-production",
+  "fixtures": [
+    {
+      "id": "high-tier",
+      "inputs": {
+        "QQQ_Is_Potential_Swing_Up": 1,
+        "QQQ_TodayChange": 1
+      },
+      "expected_signal": "AVGO_BULLISH_INTENT_RALLY_EXHAUSTION_HIGH",
+      "purpose": "Tier predicate TRUE; base trigger assumed TRUE in fixture harness."
+    },
+    {
+      "id": "non-high-tier",
+      "inputs": {
+        "QQQ_Is_Potential_Swing_Up": 0,
+        "QQQ_TodayChange": 0
+      },
+      "expected_signal": "AVGO_BULLISH_INTENT_RALLY_EXHAUSTION_WEAK",
+      "purpose": "Tier predicate FALSE; base trigger assumed TRUE in fixture harness."
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "broker_execution": "HARD_DISABLED"
+      }
+    }
+  ]
+}

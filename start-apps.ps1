@@ -846,7 +846,31 @@ if ($FrontendDev) {
         $frontendArgs = @("run", "dev", "--", "--port", $FrontendPort)
     }
 } else {
-    if ($FrontendBuild) {
+    $prerenderManifest = Join-Path $frontendWD ".next\prerender-manifest.json"
+    $buildIsStale = $false
+    if (Test-Path $prerenderManifest) {
+        $buildTimeUtc = (Get-Item $prerenderManifest).LastWriteTimeUtc
+        $buildInputs = @(
+            (Join-Path $frontendWD "src"),
+            (Join-Path $frontendWD "package.json"),
+            (Join-Path $frontendWD "package-lock.json"),
+            (Join-Path $frontendWD "next.config.ts"),
+            (Join-Path $frontendWD "next.config.js")
+        )
+        foreach ($buildInput in $buildInputs) {
+            if (Test-Path $buildInput) {
+                $newerInput = Get-ChildItem -Path $buildInput -Recurse -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.LastWriteTimeUtc -gt $buildTimeUtc } |
+                    Select-Object -First 1
+                if ($newerInput) { $buildIsStale = $true; break }
+            }
+        }
+    }
+    if ($FrontendBuild -or !(Test-Path $prerenderManifest) -or $buildIsStale) {
+        if (!$FrontendBuild) {
+            $reason = if (!(Test-Path $prerenderManifest)) { "missing or incomplete" } else { "older than source files" }
+            Write-Log "Frontend production build is $reason ($prerenderManifest); rebuilding"
+        }
         Invoke-FrontendBuild
     } else {
         Write-Log "Using existing frontend production build"

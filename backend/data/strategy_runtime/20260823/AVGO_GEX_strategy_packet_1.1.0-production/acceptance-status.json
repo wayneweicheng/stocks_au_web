@@ -1,0 +1,29 @@
+{
+  "strategy_code": "GEX_AVGO_CAPITALTYPE",
+  "version_code": "1.1.0-production",
+  "status": "IMPLEMENTABLE",
+  "production_catalogue_ready": true,
+  "deployment_target": "PRODUCTION",
+  "enabled": true,
+  "notification_only": true,
+  "notifications_enabled": true,
+  "manual_order_decision": true,
+  "broker_execution": "HARD_DISABLED",
+  "checks": {
+    "all_emitted_signals_defined": "PASS",
+    "feature_tier_predicates_exact_testable": "PASS",
+    "causal_feature_whitelist": "PASS",
+    "known_future_leak_fields_excluded": "PASS",
+    "source_refresh_gate_fail_closed": "PASS",
+    "historical_statistics_reconciled_to_ledger": "PASS",
+    "per_instance_feature_tier_audit_columns": "PASS",
+    "production_notifications_enabled": "PASS",
+    "broker_execution_hard_disabled": "PASS",
+    "manual_trade_independent_historical_outcomes": "PASS",
+    "source_and_implementation_hashes": "PASS"
+  },
+  "limitations": [
+    "Feature-tier predicates were selected using inspected history and therefore are not untouched OOS estimates. Exact predicates are frozen for forward production validation.",
+    "Historical transaction costs/slippage remain as documented in the underlying v1.0.0 backtest."
+  ]
+}

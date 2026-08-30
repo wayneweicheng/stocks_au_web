@@ -42,6 +42,24 @@ def test_find_index_bottoms_report_list_and_read_from_skill_runner(monkeypatch):
     assert detail.json()["content"] == "# Index Bottoms\n\n- SPX risk/reward improved."
 
 
+def test_find_index_bottoms_detail_does_not_relist_reports(monkeypatch):
+    def fail_list_reports(job_type):
+        raise AssertionError("detail lookup should not call the slow report-list endpoint")
+
+    monkeypatch.setattr(skill_report_pages, "list_reports", fail_list_reports)
+    monkeypatch.setattr(
+        skill_report_pages,
+        "get_job_report",
+        lambda job_id: {"job_id": job_id, "content": "# Index Bottoms"},
+    )
+    client = TestClient(app)
+
+    detail = client.get("/api/find-index-bottoms-reports/bottom-fast", headers=_auth())
+
+    assert detail.status_code == 200
+    assert detail.json()["content"] == "# Index Bottoms"
+
+
 def test_find_index_bottoms_current_job_submit_and_status(monkeypatch):
     calls = []
 

@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_FORM_DIVERSIFIED_GEX_BREAKDOWN",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "c3932c6333b470c1e9bb14f3317101d89048f4e24b2a4a0d7a77ab84ff31cb38",
+  "implementation_sha256": "41cb1b700e10ccfb1f8b1898ffbdbec21ecf1b6e88236e6534b0114a302f2420",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "FORM-20260617-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/FORM-20260617-20260826.csv",
+      "sha256": "af1e756adfe66a56fe76cd7cd350624c508bba14c8c5855d6f4a80ed8ca596e3",
+      "size_bytes": 11473
+    },
+    {
+      "role": "FEATURE",
+      "name": "FORM-features-20260617-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/FORM-features-20260617-20260826.csv",
+      "sha256": "447f2014b62a3ce3e17f78fd658da35fa5e43b1323fd48a5446763a5a45e7078",
+      "size_bytes": 20555
+    },
+    {
+      "role": "PRICE",
+      "name": "FORM-20260506-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/FORM-20260506-20260827.csv",
+      "sha256": "3ff7a69fe52b87c9a7a8b42a8f13f6aceee70f3df73f8757691ffb8ed86472fa",
+      "size_bytes": 180987
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

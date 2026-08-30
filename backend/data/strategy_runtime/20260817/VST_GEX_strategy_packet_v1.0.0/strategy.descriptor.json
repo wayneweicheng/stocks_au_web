@@ -1,0 +1,228 @@
+{
+  "definition": {
+    "calendar": "NYSE US equity trading calendar; exchange holidays skipped; DST by America/New_York; early close uses official last regular-session bar.",
+    "market_timezone": "America/New_York",
+    "multiple_signal_policy": "CO_EMIT_ALL_MATCHES_IN_PRECEDENCE_ORDER; precedence is ordering, not suppression.",
+    "purpose": "Classify VST directional setups from prior-session option GEX capital-type structure and issue notification-only paper plans.",
+    "rationale": "Ticker-specific GEX rules selected from full-period research; see strategy.md for rule-level rationale.",
+    "source_refresh_gate": "At/after 07:30 America/New_York on current US trading session D1: latest complete GEX ObservationDate must equal previous US trading session D0; exactly one BC/BP/SC/SP row; non-null GEXDelta/Close/VWAP; 60 prior complete observations; canonical source revision stable for this heartbeat. Otherwise NOT_READY and create nothing.",
+    "timezone": "Australia/Sydney",
+    "trigger_precedence": [
+      "VST_DOUBLE_DOWN_CONTINUATION_D1",
+      "VST_DOUBLE_DOWN_REVERSAL_D5",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ]
+  },
+  "descriptor_format": 2,
+  "display_name": "VST GEX Capital-Type Strategy",
+  "implementation_key": "gex.vst.capital_type.v1_0_0",
+  "instruments": [
+    {
+      "code": "VST",
+      "currency": "USD",
+      "market": "NYSE",
+      "role": "SUBJECT",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "VST_OPTION_GEX_CAPITAL_TYPE",
+      "currency": "USD",
+      "market": "INTERNAL",
+      "role": "SOURCE",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "VST",
+      "currency": "USD",
+      "market": "NYSE",
+      "role": "EXECUTION",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "QQQ",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "BENCHMARK",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "NOT_AVAILABLE",
+      "market": "NOT_AVAILABLE",
+      "role": "PROXY"
+    }
+  ],
+  "production_policy": {
+    "broker_execution": "HARD_DISABLED",
+    "deployment_state": "SHADOW",
+    "manual_trade_required_for_outcome": false,
+    "mode": "NOTIFICATION_ONLY",
+    "pushover": {
+      "body_template": "{direction} | {holding_period} | {key_values} | {report_url}",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "enabled": false,
+      "priority": 0,
+      "recipient": "Wayne Cheng via runtime secret/configuration",
+      "retry_schedule_minutes": [
+        0,
+        2,
+        5,
+        15
+      ],
+      "title_template": "[GEX VST] {signal_code} \u2014 {market_date}"
+    },
+    "report_authentication_required": true,
+    "report_link_format": "/reports/strategy/{strategy_code}/{version_code}/{public_report_id}"
+  },
+  "provenance": {
+    "backtest_engine_version": "gex-contract-engine/1.0.0",
+    "executable_price_window": {
+      "end": "2026-08-14",
+      "start": "2026-05-11"
+    },
+    "implementation_hash": "f6c33371ab5828754e87b7fb790c2d4b7cb57511467791d13f4936674b91d0a2",
+    "out_of_sample_window": {
+      "end": null,
+      "reason": "Full available period was inspected during rule discovery/selection.",
+      "start": null,
+      "status": "NOT_AVAILABLE"
+    },
+    "research_window": {
+      "end": "2026-08-13",
+      "start": "2023-09-26"
+    },
+    "source_hash": "576ce3c01f316c17f4a4c4b6fdcc1ebc015e16f2a62b676e7bda79751219ef8d",
+    "source_manifest": "source-manifest.json"
+  },
+  "signal_definitions": [
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "MEDIUM_HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "VST price and PCR both decline; historically downside tends to continue for one additional session.",
+      "direction": "SHORT",
+      "display_name": "Double-Down D1 Continuation",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D1 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "as_of": "2026-08-16T21:15:00+10:00",
+        "instances": 12,
+        "losses": 2,
+        "profit_factor": 4.02013692,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "status": "AVAILABLE",
+        "win_rate_pct": 83.33333333,
+        "wins": 10
+      },
+      "holding_period": "D1",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "VST_DOUBLE_DOWN_CONTINUATION_D1",
+      "trigger_condition": "PriceChangePct < -0.10 AND PCRChangePct < -5.0",
+      "variables": [
+        "PriceChangePct",
+        "PCRChangePct"
+      ]
+    },
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "MEDIUM_HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "The same VST double-down condition that predicts D1 continuation historically mean-reverts by D5; this is intentionally a two-horizon co-emission.",
+      "direction": "LONG",
+      "display_name": "Double-Down D5 Reversal",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "as_of": "2026-08-16T21:15:00+10:00",
+        "instances": 12,
+        "losses": 2,
+        "profit_factor": 5.02209998,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "status": "AVAILABLE",
+        "win_rate_pct": 83.33333333,
+        "wins": 10
+      },
+      "holding_period": "D5",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "VST_DOUBLE_DOWN_REVERSAL_D5",
+      "trigger_condition": "PriceChangePct < -0.10 AND PCRChangePct < -5.0",
+      "variables": [
+        "PriceChangePct",
+        "PCRChangePct"
+      ]
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed but deterministic evaluation encounters invalid/non-finite state.",
+      "direction": "NONE",
+      "display_name": "Data Error",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Operational data-quality state, not a trading signal.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "DATA_ERROR",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": []
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed and no PLAN_ENTRY/WATCH predicate matched.",
+      "direction": "NONE",
+      "display_name": "No Signal",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Non-actionable classification.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "NO_SIGNAL",
+      "trigger_condition": "count(matching_signal_predicates) == 0",
+      "variables": []
+    }
+  ],
+  "status": "REVIEW_READY",
+  "strategy_code": "GEX_VST_CAPITALTYPE",
+  "version_code": "1.0.0"
+}

@@ -1,0 +1,236 @@
+{
+  "definition": {
+    "calendar": "NYSE US equity trading calendar; exchange holidays skipped; DST by America/New_York; early close uses official last regular-session bar.",
+    "market_timezone": "America/New_York",
+    "multiple_signal_policy": "CO_EMIT_ALL_MATCHES_IN_PRECEDENCE_ORDER; precedence is ordering, not suppression.",
+    "purpose": "Classify ORCL directional setups from prior-session option GEX capital-type structure and issue notification-only paper plans; v1.1 adds production feature-tier confirmation using ORCL and QQQ GEX_Features.",
+    "rationale": "Ticker-specific GEX rules selected from full-period research; see strategy.md for rule-level rationale.",
+    "source_refresh_gate": "At/after 07:30 America/New_York on current US trading session D1: latest complete GEX ObservationDate must equal previous US trading session D0; exactly one BC/BP/SC/SP row; non-null GEXDelta/Close/VWAP; 60 prior complete observations; canonical source revision stable for this heartbeat. Otherwise NOT_READY and create nothing. Additionally require D0 rows from StockDB_US.Analysis.GEX_Features for ORCL and QQQ with all tier variables non-null; otherwise NOT_READY.",
+    "timezone": "Australia/Sydney",
+    "trigger_precedence": [
+      "ORCL_FAILED_BULLISH_SUPPORT_HIGH",
+      "ORCL_FAILED_BULLISH_SUPPORT_STANDARD",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ]
+  },
+  "descriptor_format": 2,
+  "display_name": "ORCL GEX Capital-Type Feature-Aware Strategy",
+  "implementation_key": "gex.orcl.capital_type.v1_1_0",
+  "instruments": [
+    {
+      "code": "ORCL",
+      "currency": "USD",
+      "market": "NYSE",
+      "role": "SUBJECT",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "ORCL_OPTION_GEX_CAPITAL_TYPE",
+      "currency": "USD",
+      "market": "INTERNAL",
+      "role": "SOURCE",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "ORCL",
+      "currency": "USD",
+      "market": "NYSE",
+      "role": "EXECUTION",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "QQQ",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "BENCHMARK",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "NOT_AVAILABLE",
+      "market": "NOT_AVAILABLE",
+      "role": "PROXY"
+    }
+  ],
+  "production_policy": {
+    "broker_execution": "HARD_DISABLED",
+    "deployment_state": "PRODUCTION",
+    "manual_trade_required_for_outcome": false,
+    "mode": "NOTIFICATION_ONLY",
+    "pushover": {
+      "body_template": "{signal_code} | {feature_tier} | {direction} | {holding_period} | {key_values} | {report_url}",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "enabled": true,
+      "priority": 0,
+      "recipient": "Configured production Pushover user key from secrets; never embedded in packet",
+      "retry_schedule_minutes": [
+        0,
+        2,
+        5,
+        15
+      ],
+      "title_template": "[GEX ORCL] {signal_code} \u2014 {market_date}"
+    },
+    "report_authentication_required": true,
+    "report_link_format": "/reports/strategy/{strategy_code}/{version_code}/{public_report_id}",
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "manual_trade_optional": true,
+    "change_control": "Any base trigger, feature-tier predicate, direction, entry/exit rule, or notification policy change requires a new version."
+  },
+  "provenance": {
+    "backtest_engine_version": "gex-feature-tier-contract-engine/1.1.0",
+    "executable_price_window": {
+      "end": "2026-08-14",
+      "start": "2025-10-20"
+    },
+    "implementation_hash": "7ec124d989f5fe9116661cd0e6f3ded643d55301f1c8d7c1bce684b1f6740dbb",
+    "out_of_sample_window": {
+      "status": "NOT_AVAILABLE",
+      "start": null,
+      "end": null,
+      "reason": "Feature-tier predicates were selected after screening the available historical sample; exact v1.1 predicates are now frozen for forward production validation."
+    },
+    "research_window": {
+      "end": "2026-08-20",
+      "start": "2023-09-25"
+    },
+    "source_hash": "7f49455837ba807985e784826d5de93cf773018f47d58880f862a1af1fd709b9",
+    "source_manifest": "source-manifest.json"
+  },
+  "signal_definitions": [
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "Bullish GEX composition fails to keep ORCL above its observation-day VWAP; the failure historically precedes additional downside. Feature-confirmed HIGH tier.",
+      "direction": "SHORT",
+      "display_name": "Failed Bullish Support Below VWAP \u2014 High",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D2 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 14,
+        "wins": 14,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "profit_factor": null,
+        "as_of": "2026-08-23T15:20:00+10:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      },
+      "holding_period": "D2",
+      "notification_level": "HIGH",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "ORCL_FAILED_BULLISH_SUPPORT_HIGH",
+      "trigger_condition": "(Close < VWAP AND BullSharePct60 >= 0.65) AND (ORCL.GEXChange < -10.0)",
+      "variables": [
+        "Close",
+        "VWAP",
+        "BullSharePct60",
+        "ORCL_GEXChange"
+      ]
+    },
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "MEDIUM_HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "Bullish GEX composition fails to keep ORCL above its observation-day VWAP; the failure historically precedes additional downside. Feature-unconfirmed STANDARD tier; base signal remains actionable.",
+      "direction": "SHORT",
+      "display_name": "Failed Bullish Support Below VWAP \u2014 Standard",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D2 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 20,
+        "wins": 14,
+        "losses": 6,
+        "win_rate_pct": 70.0,
+        "profit_factor": 2.9971975,
+        "as_of": "2026-08-23T15:20:00+10:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      },
+      "holding_period": "D2",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "ORCL_FAILED_BULLISH_SUPPORT_STANDARD",
+      "trigger_condition": "(Close < VWAP AND BullSharePct60 >= 0.65) AND (NOT(ORCL.GEXChange < -10.0))",
+      "variables": [
+        "Close",
+        "VWAP",
+        "BullSharePct60",
+        "ORCL_GEXChange"
+      ]
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed but deterministic evaluation encounters invalid/non-finite state.",
+      "direction": "NONE",
+      "display_name": "Data Error",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Operational data-quality state, not a trading signal.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "DATA_ERROR",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": []
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed and no PLAN_ENTRY/WATCH predicate matched.",
+      "direction": "NONE",
+      "display_name": "No Signal",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Non-actionable classification.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "NO_SIGNAL",
+      "trigger_condition": "count(matching_signal_predicates) == 0",
+      "variables": []
+    }
+  ],
+  "status": "IMPLEMENTABLE",
+  "strategy_code": "GEX_ORCL_CAPITALTYPE",
+  "version_code": "1.1.0-production"
+}

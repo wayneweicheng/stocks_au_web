@@ -1,0 +1,45 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_PANW_PCR_VOL_REBOUND",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "05375f3bc185e54184fe68ebe492af53538c8fff43276dfbc58e9b8e779dd488",
+  "implementation_sha256": "fb3faa453bbaf045bf0d29521718ecb8b9bc49126d74ad1db238b1e8b32ecc69",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "PANW-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/PANW-20230922-20260826.csv",
+      "sha256": "17a8dea4732da4597e724a2c0fc84b0c6068821102facc468b1cf5ad5924f1f4",
+      "size_bytes": 167156
+    },
+    {
+      "role": "FEATURE",
+      "name": "PANW-20230925-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/PANW-20230925-20260825.csv",
+      "sha256": "defaee194a909f75bd3cd3f9cf4e89719e40bfc0389b6d07465cbe481e57b59e",
+      "size_bytes": 336779
+    },
+    {
+      "role": "PRICE",
+      "name": "PANW-20260506-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/PANW-20260506-20260827.csv",
+      "sha256": "4b0a37b1144ccc9bd391d05b70308289a35389797d486fdf981bc384ea44037a",
+      "size_bytes": 187132
+    },
+    {
+      "role": "QQQ_FEATURE",
+      "name": "QQQ-20221209-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/QQQ-20221209-20260826.csv",
+      "sha256": "80fc77a6252ab9c6cf31a95f85895fffd0d3b3c40ea36815cd4c82f597454832",
+      "size_bytes": 471624
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

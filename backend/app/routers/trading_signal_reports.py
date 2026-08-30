@@ -10,7 +10,11 @@ from fastapi.responses import HTMLResponse, Response
 from app.core.config import settings
 from app.routers.auth import verify_credentials
 from app.repositories.trading_signal_reports import ReportFilters, ReportCursorError, TradingSignalReportRepository
-from app.schemas.trading_signal_reports import TradingSignalReportItem, TradingSignalReportPage
+from app.schemas.trading_signal_reports import (
+    TradingSignalOverview,
+    TradingSignalReportItem,
+    TradingSignalReportPage,
+)
 
 
 router = APIRouter(prefix="/api/trading-signal-reports", tags=["trading-signal-reports"])
@@ -23,6 +27,7 @@ def _filters(
     instrument_code: Optional[str],
     environment: Optional[str],
     report_kind: Optional[str],
+    exclude_no_signal: bool,
     search: Optional[str],
     limit: int,
     cursor: Optional[str],
@@ -30,7 +35,19 @@ def _filters(
 ) -> ReportFilters:
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from must be on or before date_to")
-    return ReportFilters(date_from, date_to, strategy_code, instrument_code, environment, report_kind, search, limit, cursor, public_report_id=public_report_id)
+    return ReportFilters(
+        date_from=date_from,
+        date_to=date_to,
+        strategy_code=strategy_code,
+        instrument_code=instrument_code,
+        environment=environment,
+        report_kind=report_kind,
+        search=search,
+        limit=limit,
+        cursor=cursor,
+        public_report_id=public_report_id,
+        exclude_no_signal=exclude_no_signal,
+    )
 
 
 @router.get("", response_model=TradingSignalReportPage)
@@ -41,13 +58,14 @@ def list_trading_signal_reports(
     instrument_code: Optional[str] = Query(default=None),
     environment: Optional[str] = Query(default=None),
     report_kind: Optional[str] = Query(default=None),
+    exclude_no_signal: bool = Query(default=False),
     search: Optional[str] = Query(default=None, max_length=200),
     limit: int = Query(default=50, ge=1, le=200),
     cursor: Optional[str] = Query(default=None),
     public_report_id: Optional[str] = Query(default=None),
     _username: str = Depends(verify_credentials),
 ) -> TradingSignalReportPage:
-    filters = _filters(date_from, date_to, strategy_code, instrument_code, environment, report_kind, search, limit, cursor, public_report_id)
+    filters = _filters(date_from, date_to, strategy_code, instrument_code, environment, report_kind, exclude_no_signal, search, limit, cursor, public_report_id)
     try:
         rows, next_cursor = TradingSignalReportRepository().list(filters)
     except ReportCursorError as exc:
@@ -70,6 +88,31 @@ def latest_trading_signal_report(
     if row is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return TradingSignalReportItem(**row)
+
+
+@router.get("/overview", response_model=TradingSignalOverview)
+def trading_signal_overview(
+    as_of: date = Query(...),
+    strategy_code: Optional[str] = Query(default=None),
+    instrument_code: Optional[str] = Query(default=None),
+    environment: Optional[str] = Query(default=None),
+    report_kind: Optional[str] = Query(default=None),
+    _username: str = Depends(verify_credentials),
+) -> TradingSignalOverview:
+    try:
+        data = TradingSignalReportRepository().overview(
+            as_of,
+            ReportFilters(
+                strategy_code=strategy_code,
+                instrument_code=instrument_code,
+                environment=environment,
+                report_kind=report_kind,
+                limit=2000,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return TradingSignalOverview(**data)
 
 
 def _authorize_html(request: Request, report_token: Optional[str]) -> None:

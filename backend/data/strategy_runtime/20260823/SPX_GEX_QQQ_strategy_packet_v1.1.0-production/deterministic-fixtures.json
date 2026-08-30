@@ -1,0 +1,57 @@
+{
+  "strategy_code": "SPX_GEX_QQQ_V1",
+  "version_code": "1.1.0-production",
+  "fixtures": [
+    {
+      "id": "rg-high",
+      "inputs": {
+        "base": "BULLISH",
+        "prior5d": -0.01,
+        "spx_gex_trending_up": 1,
+        "spx_gex_falling": 0,
+        "qqq_gex_above_sma20": 0,
+        "spx_price_above_sma50": 0,
+        "qqq_macd_positive": 0,
+        "history": 60
+      },
+      "expected": "REVERSAL_GREEN_HIGH"
+    },
+    {
+      "id": "rg-standard",
+      "inputs": {
+        "base": "BULLISH",
+        "prior5d": -0.01,
+        "spx_gex_trending_up": 0,
+        "spx_gex_falling": 0,
+        "qqq_gex_above_sma20": 0,
+        "spx_price_above_sma50": 1,
+        "qqq_macd_positive": 0,
+        "history": 60
+      },
+      "expected": "REVERSAL_GREEN_STANDARD"
+    },
+    {
+      "id": "rg-weak",
+      "inputs": {
+        "base": "BULLISH",
+        "prior5d": -0.01,
+        "spx_gex_trending_up": 0,
+        "spx_gex_falling": 0,
+        "qqq_gex_above_sma20": 0,
+        "spx_price_above_sma50": 0,
+        "qqq_macd_positive": 0,
+        "history": 60
+      },
+      "expected": "REVERSAL_GREEN_WEAK"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "broker_execution": "HARD_DISABLED"
+      }
+    }
+  ]
+}

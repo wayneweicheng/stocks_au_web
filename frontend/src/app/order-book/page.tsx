@@ -93,7 +93,7 @@ export default function OrderBookPage() {
   return (
     <div className="min-h-screen text-slate-800">
       <div className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-3xl sm:text-4xl font-semibold mb-6 bg-gradient-to-r from-emerald-500 to-green-600 bg-clip-text text-transparent">Order Book & Transaction History</h1>
+        <h1 className="mb-6 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Order Book & Transaction History</h1>
 
         <div className="grid gap-4 sm:grid-cols-3 mb-6">
           <div>
@@ -108,7 +108,7 @@ export default function OrderBookPage() {
                   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
                   setDateFrom(d.toISOString().slice(0, 10));
                 }}
-                className="rounded-md border border-white/20 bg-white/5 px-2 py-2 text-sm hover:bg-white/10"
+                className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm shadow-sm hover:bg-slate-50"
               >
                 ←
               </button>
@@ -128,7 +128,7 @@ export default function OrderBookPage() {
                   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
                   setDateFrom(d.toISOString().slice(0, 10));
                 }}
-                className="rounded-md border border-white/20 bg-white/5 px-2 py-2 text-sm hover:bg-white/10"
+                className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm shadow-sm hover:bg-slate-50"
               >
                 →
               </button>
@@ -157,7 +157,7 @@ export default function OrderBookPage() {
         <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto relative">
           {loading && (
             <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm flex items-center justify-center z-10">
-              <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-300/40 border-t-emerald-500" />
+              <div className="h-10 w-10 animate-spin rounded-full border-2 border-indigo-300/40 border-t-indigo-600" />
             </div>
           )}
           <table className="min-w-full text-sm">

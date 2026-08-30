@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Alert from "./ui/Alert";
 import Badge from "./ui/Badge";
@@ -125,6 +125,7 @@ type Props = {
   optionCountsObservationDateField?: string;
   optionCountsDateRangeFields?: OptionCountsDateRangeFields;
   canDeleteReports?: boolean;
+  initialTab?: "viewer" | "html" | "runner";
   htmlReports?: {
     label?: string;
     getReportFileType: (report: ReportSummary) => ReportFileType | null;
@@ -240,6 +241,7 @@ export default function SkillReportPage({
   optionCountsObservationDateField = "observation_date",
   optionCountsDateRangeFields,
   canDeleteReports = false,
+  initialTab = "viewer",
   htmlReports,
   alternateJobMode,
 }: Props) {
@@ -252,11 +254,12 @@ export default function SkillReportPage({
     return values;
   }, [fields]);
 
-  const [activeTab, setActiveTab] = useState<"viewer" | "html" | "runner">("viewer");
+  const [activeTab, setActiveTab] = useState<"viewer" | "html" | "runner">(initialTab);
   const [activeJobModeKey, setActiveJobModeKey] = useState("default");
   const [values, setValues] = useState<Record<string, string | number>>(initialValues);
   const [items, setItems] = useState<ReportSummary[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
+  const selectedJobIdRef = useRef("");
   const [detail, setDetail] = useState<ReportDetail | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -426,6 +429,7 @@ export default function SkillReportPage({
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload.detail || `HTTP ${res.status}`);
         setDetail(payload as ReportDetail);
+        selectedJobIdRef.current = (payload as ReportDetail).job_id;
         setSelectedJobId((payload as ReportDetail).job_id);
         setReportPrompt("");
         setReportPromptCopied(false);
@@ -465,10 +469,11 @@ export default function SkillReportPage({
       setItems(nextItems);
       const reportTab = activeTab === "html" ? "html" : "viewer";
       const visibleItems = getReportsForTab(nextItems, reportTab);
-      const stillSelected = visibleItems.some((item) => item.job_id === selectedJobId);
-      const jobIdToLoad = stillSelected ? selectedJobId : visibleItems[0]?.job_id || "";
+      const stillSelected = visibleItems.some((item) => item.job_id === selectedJobIdRef.current);
+      const jobIdToLoad = stillSelected ? selectedJobIdRef.current : visibleItems[0]?.job_id || "";
       if (jobIdToLoad) await loadDetail(jobIdToLoad);
       else {
+        selectedJobIdRef.current = "";
         setSelectedJobId("");
         setDetail(null);
       }
@@ -477,7 +482,7 @@ export default function SkillReportPage({
     } finally {
       setLoadingList(false);
     }
-  }, [activeTab, baseUrl, getReportsForTab, loadDetail, reportsEndpoint, selectedJobId]);
+  }, [activeTab, baseUrl, getReportsForTab, loadDetail, reportsEndpoint]);
 
   const selectReportDate = useCallback(
     (reportDate: string) => {
@@ -551,6 +556,7 @@ export default function SkillReportPage({
 
         setItems((current) => current.filter((item) => item.job_id !== report.job_id));
         if (selectedJobId === report.job_id) {
+          selectedJobIdRef.current = "";
           setSelectedJobId("");
           setDetail(null);
           setReportPrompt("");
@@ -927,7 +933,7 @@ export default function SkillReportPage({
                       title={detail.title}
                       srcDoc={detail.content}
                       sandbox="allow-forms allow-modals allow-popups allow-scripts"
-                      className="h-[calc(100vh-300px)] min-h-[620px] w-full rounded-md border border-slate-200 bg-white"
+                      className="h-[60vh] min-h-[420px] w-full rounded-md border border-slate-200 bg-white sm:h-[calc(100vh-300px)] sm:min-h-[620px]"
                     />
                   ) : (
                     <MarkdownRenderer content={detail.content} />

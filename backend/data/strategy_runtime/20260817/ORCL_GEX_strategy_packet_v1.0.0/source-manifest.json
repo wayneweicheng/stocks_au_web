@@ -1,0 +1,74 @@
+{
+  "as_of": "2026-08-16T21:15:00+10:00",
+  "canonical_decision_revision": "SHA256 of canonical CSV serialization of current D0 plus previous 60 complete daily rows containing ObservationDate,Close,VWAP,BCAbs,BPAbs,SCAbs,SPAbs.",
+  "combined_source_hash": "5deb7941eddc6a75b90e6d3375c6ec98c75590bf553a0edda4a29d57d2f8966b",
+  "implementation_sha256": "8117025d1fb101d9b6128c68bd91c8c216e7f42d6e59a78b2d5db7518aa7f08f",
+  "live_database_schema": "NOT_AVAILABLE \u2014 supplied artifacts identify CSV snapshots, not the live database/schema.",
+  "manifest_format": 1,
+  "sources": [
+    {
+      "date_range": [
+        "2023-09-25",
+        "2026-08-13"
+      ],
+      "extraction_identity": "Google Drive folder Option_GEX_Change_Capital_Type / ORCL-20230922-20260813.csv",
+      "google_drive_file_id": "1w-A_K1sNsoDirlVcQDXL1_JPwsy6N-5A",
+      "google_drive_url": "https://drive.google.com/file/d/1w-A_K1sNsoDirlVcQDXL1_JPwsy6N-5A/view",
+      "instrument": "ORCL",
+      "name": "ORCL-20230922-20260813.csv",
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "VWAP"
+      ],
+      "role": "SOURCE",
+      "sha256": "5b8b37a2284d5be73108915599a09a0d9a0c54e136da52a940a951869767d6d2",
+      "size_bytes": 171427
+    },
+    {
+      "date_range": [
+        "2025-10-20",
+        "2026-08-14"
+      ],
+      "extraction_identity": "Google Drive folder price_history_30m / ORCL-20251020-20260814.csv",
+      "google_drive_file_id": "1li23cJ7Xz1-lTobyjmEfb25tLZSLtZ4R",
+      "google_drive_url": "https://drive.google.com/file/d/1li23cJ7Xz1-lTobyjmEfb25tLZSLtZ4R/view",
+      "instrument": "ORCL",
+      "name": "ORCL-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ],
+      "role": "EXECUTION_OUTCOME",
+      "sha256": "722fa3d8e4cea2877f414798282f0f346cf05cf626fa6b8c939f18e586aa7df0",
+      "size_bytes": 503716
+    },
+    {
+      "extraction_identity": "Google Drive folder price_history_30m / QQQ-20251020-20260814.csv",
+      "google_drive_file_id": "1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H",
+      "google_drive_url": "https://drive.google.com/file/d/1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H/view",
+      "instrument": "QQQ",
+      "name": "QQQ-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close"
+      ],
+      "role": "BENCHMARK",
+      "sha256": "4414b23861947c77b8a939a2bbef16ede12c316d7a47a84f92559d1b077c8cb6",
+      "size_bytes": 506542
+    }
+  ],
+  "strategy_code": "GEX_ORCL_CAPITALTYPE",
+  "version_code": "1.0.0"
+}

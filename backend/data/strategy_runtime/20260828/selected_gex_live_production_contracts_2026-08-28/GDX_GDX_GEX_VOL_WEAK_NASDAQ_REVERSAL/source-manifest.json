@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_GDX_VOL_NASDAQ_REVERSAL",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "f2b537d2325cc853ec1eadbafdcb92b272e1633c7eb2156050696303816c8516",
+  "implementation_sha256": "71969f03985877b9eaeee6cd663e88be535f72b395a65e4855fb1c580b3da02e",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "GDX-20230828-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/GDX-20230828-20260826.csv",
+      "sha256": "52013bad3f42950b4dfb95e63891be4226f29ae0e2c466915d89a1515f5e4996",
+      "size_bytes": 206036
+    },
+    {
+      "role": "FEATURE",
+      "name": "GDX-20230104-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/GDX-20230104-20260825.csv",
+      "sha256": "69bab40b5d33c82044d58e6240388042a907574e215ec4c908bc8a6d863c55ac",
+      "size_bytes": 456603
+    },
+    {
+      "role": "PRICE",
+      "name": "GDX-20251020-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/GDX-20251020-20260827.csv",
+      "sha256": "61622f903ba907fdef809fe3e056cfbc78aa8278683b7ee199aee2ad0f8dfbad",
+      "size_bytes": 493590
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

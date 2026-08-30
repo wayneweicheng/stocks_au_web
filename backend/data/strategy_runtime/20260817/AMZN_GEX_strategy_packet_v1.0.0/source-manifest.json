@@ -1,0 +1,74 @@
+{
+  "as_of": "2026-08-16T21:15:00+10:00",
+  "canonical_decision_revision": "SHA256 of canonical CSV serialization of current D0 plus previous 60 complete daily rows containing ObservationDate,Close,VWAP,BCAbs,BPAbs,SCAbs,SPAbs.",
+  "combined_source_hash": "76b20e109dbe9824aea72a8492836240d32d996ea2c2d711cc5aef4905fa6012",
+  "implementation_sha256": "b628d617cef3f32f36448b9bc5ccba04c09544838cdcc957cb20cb0687b232b5",
+  "live_database_schema": "NOT_AVAILABLE \u2014 supplied artifacts identify CSV snapshots, not the live database/schema.",
+  "manifest_format": 1,
+  "sources": [
+    {
+      "date_range": [
+        "2023-08-15",
+        "2026-08-13"
+      ],
+      "extraction_identity": "Google Drive folder Option_GEX_Change_Capital_Type / AMZN-20230815-20260813.csv",
+      "google_drive_file_id": "1Bu9UhW9qfyqoWtT5vuHku775ivZ1QIPd",
+      "google_drive_url": "https://drive.google.com/file/d/1Bu9UhW9qfyqoWtT5vuHku775ivZ1QIPd/view",
+      "instrument": "AMZN",
+      "name": "AMZN-20230815-20260813.csv",
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "VWAP"
+      ],
+      "role": "SOURCE",
+      "sha256": "0b7398734f008f3433b6e7b2936c36806060caf7cb9952faf28805fb51937b64",
+      "size_bytes": 180909
+    },
+    {
+      "date_range": [
+        "2025-10-20",
+        "2026-08-14"
+      ],
+      "extraction_identity": "Google Drive folder price_history_30m / AMZN-20251020-20260814.csv",
+      "google_drive_file_id": "1p_mgD0npORR8iJyzpeYS7YVzdPXU2Jkr",
+      "google_drive_url": "https://drive.google.com/file/d/1p_mgD0npORR8iJyzpeYS7YVzdPXU2Jkr/view",
+      "instrument": "AMZN",
+      "name": "AMZN-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ],
+      "role": "EXECUTION_OUTCOME",
+      "sha256": "3d181ea07a8ff3d679ba7dc48693b8bb010d2f137761525cd422c87865ca665f",
+      "size_bytes": 504289
+    },
+    {
+      "extraction_identity": "Google Drive folder price_history_30m / QQQ-20251020-20260814.csv",
+      "google_drive_file_id": "1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H",
+      "google_drive_url": "https://drive.google.com/file/d/1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H/view",
+      "instrument": "QQQ",
+      "name": "QQQ-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close"
+      ],
+      "role": "BENCHMARK",
+      "sha256": "4414b23861947c77b8a939a2bbef16ede12c316d7a47a84f92559d1b077c8cb6",
+      "size_bytes": 506542
+    }
+  ],
+  "strategy_code": "GEX_AMZN_CAPITALTYPE",
+  "version_code": "1.0.0"
+}

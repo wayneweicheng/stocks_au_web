@@ -1,0 +1,25 @@
+{
+  "strategy_code": "GEX_PLTR_CAPITALTYPE",
+  "version_code": "1.0.0",
+  "status": "REVIEW_READY",
+  "checks": {
+    "all_emitted_signals_defined": "PASS",
+    "triggers_exact_testable": "PASS",
+    "exits_explicit": "PASS",
+    "variables_sourced_unit_timestamp_null_rule": "PASS",
+    "refresh_gate_fail_closed": "PASS",
+    "historical_statistics_per_actionable_signal": "PASS",
+    "ledger_reconciliation": "PASS",
+    "async_outcomes_manual_trade_independent": "PASS",
+    "notification_only": "PASS",
+    "broker_execution_hard_disabled": "PASS",
+    "fixtures_cover_rule_and_system_branches": "PASS",
+    "source_implementation_hashes": "PASS",
+    "untouched_out_of_sample_validation": "NOT_AVAILABLE"
+  },
+  "blocking_limitations": [
+    "Untouched out-of-sample validation is NOT_AVAILABLE because rule discovery used the supplied history.",
+    "Live database/schema and independent GEX publication timestamp are NOT_AVAILABLE from supplied artifacts.",
+    "Historical transaction costs/slippage are zero."
+  ]
+}

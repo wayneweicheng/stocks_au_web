@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_TLT_SELL_CALL_EXHAUSTION",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "7326807b919511c3441f0808f0506c2ab35946389423af0399b8367f16379eb5",
+  "implementation_sha256": "e0cec7d6b69be3b9a15d434b5d0e7e523b2aa17602a2319805884db9165fd91d",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "TLT-20230828-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/TLT-20230828-20260826.csv",
+      "sha256": "185f3b769cb749a725f652486800b6ee1d21dbcf9244dbcb8f0c80723809c937",
+      "size_bytes": 211790
+    },
+    {
+      "role": "FEATURE",
+      "name": "TLT-20230104-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/TLT-20230104-20260826.csv",
+      "sha256": "091c0ffde48db3a27a337fcd5bbaa19b6719a68d0c1fe8576ad698cbff12e322",
+      "size_bytes": 464102
+    },
+    {
+      "role": "PRICE",
+      "name": "TLT-20251020-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/TLT-20251020-20260827.csv",
+      "sha256": "a083f239cc02d060125f2eafda512d9e02a0af44eb4ee111765370d6c9a7cb3c",
+      "size_bytes": 482364
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

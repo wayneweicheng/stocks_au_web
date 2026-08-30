@@ -1,0 +1,74 @@
+{
+  "as_of": "2026-08-16T21:15:00+10:00",
+  "canonical_decision_revision": "SHA256 of canonical CSV serialization of current D0 plus previous 60 complete daily rows containing ObservationDate,Close,VWAP,BCAbs,BPAbs,SCAbs,SPAbs.",
+  "combined_source_hash": "5c79a3cf8de4f787043149fc199de61d082ce91a09cc2cf6fe366825d1ae457f",
+  "implementation_sha256": "fe4adc0fd58b5b9383b976ca89156e99f30f4bcb9bc26c258d946dfd0f4badcf",
+  "live_database_schema": "NOT_AVAILABLE \u2014 supplied artifacts identify CSV snapshots, not the live database/schema.",
+  "manifest_format": 1,
+  "sources": [
+    {
+      "date_range": [
+        "2023-09-25",
+        "2026-08-13"
+      ],
+      "extraction_identity": "Google Drive folder Option_GEX_Change_Capital_Type / AVGO-20230922-20260813.csv",
+      "google_drive_file_id": "1QmEYTz4VfDqJAzVRwLOj7NfDVcLm0dPU",
+      "google_drive_url": "https://drive.google.com/file/d/1QmEYTz4VfDqJAzVRwLOj7NfDVcLm0dPU/view",
+      "instrument": "AVGO",
+      "name": "AVGO-20230922-20260813.csv",
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "VWAP"
+      ],
+      "role": "SOURCE",
+      "sha256": "a3867a46f87a748fe8f955d5473552321a5e8cd12bc976da9eda1353b0222d44",
+      "size_bytes": 173018
+    },
+    {
+      "date_range": [
+        "2025-10-20",
+        "2026-08-14"
+      ],
+      "extraction_identity": "Google Drive folder price_history_30m / AVGO-20251020-20260814.csv",
+      "google_drive_file_id": "1vBkA0hnqpbLlqTYoGQfTFa1reYH2RpQE",
+      "google_drive_url": "https://drive.google.com/file/d/1vBkA0hnqpbLlqTYoGQfTFa1reYH2RpQE/view",
+      "instrument": "AVGO",
+      "name": "AVGO-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ],
+      "role": "EXECUTION_OUTCOME",
+      "sha256": "faf56ce615d3aa9c36f2ae32b5f9bd741667116a4285b550e5247633c749a03d",
+      "size_bytes": 502272
+    },
+    {
+      "extraction_identity": "Google Drive folder price_history_30m / QQQ-20251020-20260814.csv",
+      "google_drive_file_id": "1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H",
+      "google_drive_url": "https://drive.google.com/file/d/1eqFUfg6fyhq9maCP2nQhDTjRS13kBO_H/view",
+      "instrument": "QQQ",
+      "name": "QQQ-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close"
+      ],
+      "role": "BENCHMARK",
+      "sha256": "4414b23861947c77b8a939a2bbef16ede12c316d7a47a84f92559d1b077c8cb6",
+      "size_bytes": 506542
+    }
+  ],
+  "strategy_code": "GEX_AVGO_CAPITALTYPE",
+  "version_code": "1.0.0"
+}

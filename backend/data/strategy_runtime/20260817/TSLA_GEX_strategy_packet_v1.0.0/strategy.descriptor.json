@@ -1,0 +1,310 @@
+{
+  "definition": {
+    "calendar": "NASDAQ US equity trading calendar; exchange holidays skipped; DST by America/New_York; early close uses official last regular-session bar.",
+    "market_timezone": "America/New_York",
+    "multiple_signal_policy": "CO_EMIT_ALL_MATCHES_IN_PRECEDENCE_ORDER; precedence is ordering, not suppression.",
+    "purpose": "Classify TSLA directional setups from prior-session option GEX capital-type structure and issue notification-only paper plans.",
+    "rationale": "Ticker-specific GEX rules selected from full-period research; see strategy.md for rule-level rationale.",
+    "source_refresh_gate": "At/after 07:30 America/New_York on current US trading session D1: latest complete GEX ObservationDate must equal previous US trading session D0; exactly one BC/BP/SC/SP row; non-null GEXDelta/Close/VWAP; 60 prior complete observations; canonical source revision stable for this heartbeat. Otherwise NOT_READY and create nothing.",
+    "timezone": "Australia/Sydney",
+    "trigger_precedence": [
+      "TSLA_BEARISH_RALLY_DIVERGENCE",
+      "TSLA_FAILED_PUT_SELL_SUPPORT",
+      "TSLA_FAILED_RALLY",
+      "TSLA_CROWDED_BULLISH_EXHAUSTION",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ]
+  },
+  "descriptor_format": 2,
+  "display_name": "TSLA GEX Capital-Type Strategy",
+  "implementation_key": "gex.tsla.capital_type.v1_0_0",
+  "instruments": [
+    {
+      "code": "TSLA",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "SUBJECT",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "TSLA_OPTION_GEX_CAPITAL_TYPE",
+      "currency": "USD",
+      "market": "INTERNAL",
+      "role": "SOURCE",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "TSLA",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "EXECUTION",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "QQQ",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "BENCHMARK",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "NOT_AVAILABLE",
+      "market": "NOT_AVAILABLE",
+      "role": "PROXY"
+    }
+  ],
+  "production_policy": {
+    "broker_execution": "HARD_DISABLED",
+    "deployment_state": "SHADOW",
+    "manual_trade_required_for_outcome": false,
+    "mode": "NOTIFICATION_ONLY",
+    "pushover": {
+      "body_template": "{direction} | {holding_period} | {key_values} | {report_url}",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "enabled": false,
+      "priority": 0,
+      "recipient": "Wayne Cheng via runtime secret/configuration",
+      "retry_schedule_minutes": [
+        0,
+        2,
+        5,
+        15
+      ],
+      "title_template": "[GEX TSLA] {signal_code} \u2014 {market_date}"
+    },
+    "report_authentication_required": true,
+    "report_link_format": "/reports/strategy/{strategy_code}/{version_code}/{public_report_id}"
+  },
+  "provenance": {
+    "backtest_engine_version": "gex-contract-engine/1.0.0",
+    "executable_price_window": {
+      "end": "2026-08-14",
+      "start": "2025-10-20"
+    },
+    "implementation_hash": "8582977e99e2a0a6228637c4414eb994c45c60776b345df7640671fe494a1db8",
+    "out_of_sample_window": {
+      "end": null,
+      "reason": "Full available period was inspected during rule discovery/selection.",
+      "start": null,
+      "status": "NOT_AVAILABLE"
+    },
+    "research_window": {
+      "end": "2026-08-13",
+      "start": "2023-08-15"
+    },
+    "source_hash": "736a6560d5a76d0ee08fd43e9ba24a048592b71dd063b420b1aa83a18e32b833",
+    "source_manifest": "source-manifest.json"
+  },
+  "signal_definitions": [
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "Price rises while the all-four-flow intent turns more bearish and sell-call GEX is elevated; rallies tend to fade.",
+      "direction": "SHORT",
+      "display_name": "Bearish Rally Divergence",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D3 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "as_of": "2026-08-16T21:15:00+10:00",
+        "instances": 31,
+        "losses": 7,
+        "profit_factor": 3.37882819,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "status": "AVAILABLE",
+        "win_rate_pct": 77.41935484,
+        "wins": 24
+      },
+      "holding_period": "D3",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "TSLA_BEARISH_RALLY_DIVERGENCE",
+      "trigger_condition": "PriceChangePct > 0.10 AND IntentRatioChangePct > 10.0 AND SCAbsPct60 >= 0.65",
+      "variables": [
+        "PriceChangePct",
+        "IntentRatioChangePct",
+        "SCAbsPct60"
+      ]
+    },
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "Heavy sell-put share does not prevent a falling price and falling PCR; support is treated as failing.",
+      "direction": "SHORT",
+      "display_name": "Failed Put-Sell Support",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D3 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "as_of": "2026-08-16T21:15:00+10:00",
+        "instances": 24,
+        "losses": 5,
+        "profit_factor": 2.43801066,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "status": "AVAILABLE",
+        "win_rate_pct": 79.16666667,
+        "wins": 19
+      },
+      "holding_period": "D3",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "TSLA_FAILED_PUT_SELL_SUPPORT",
+      "trigger_condition": "PriceChangePct < -0.10 AND PCRChangePct < -5.0 AND SPSharePct60 >= 0.65",
+      "variables": [
+        "PriceChangePct",
+        "PCRChangePct",
+        "SPSharePct60"
+      ]
+    },
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "MEDIUM_HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "A prior short-term rally fails below observation-day VWAP while GEX composition is not supportive; next-session downside is favored.",
+      "direction": "SHORT",
+      "display_name": "Failed Rally",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D1 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "as_of": "2026-08-16T21:15:00+10:00",
+        "instances": 11,
+        "losses": 1,
+        "profit_factor": 5.89247168,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "status": "AVAILABLE",
+        "win_rate_pct": 90.90909091,
+        "wins": 10
+      },
+      "holding_period": "D1",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "TSLA_FAILED_RALLY",
+      "trigger_condition": "VWAPDiffPct < -0.15 AND NetBullSharePct60 <= 0.35 AND Momentum3Pct > 1.0",
+      "variables": [
+        "Momentum3Pct",
+        "VWAPDiffPct",
+        "NetBullSharePct60"
+      ]
+    },
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "MEDIUM",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "A large collapse in bought-put share combined with already-bullish GEX composition is treated as crowding/exhaustion.",
+      "direction": "SHORT",
+      "display_name": "Crowded Bullish Exhaustion",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D3 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "as_of": "2026-08-16T21:15:00+10:00",
+        "instances": 16,
+        "losses": 2,
+        "profit_factor": 7.37019408,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "status": "AVAILABLE",
+        "win_rate_pct": 87.5,
+        "wins": 14
+      },
+      "holding_period": "D3",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "TSLA_CROWDED_BULLISH_EXHAUSTION",
+      "trigger_condition": "PutBuyShareChange < 0 AND PutBuyShareAbsShockPct60 >= 0.75 AND BullSharePct60 >= 0.65",
+      "variables": [
+        "PutBuyShareChange",
+        "PutBuyShareAbsShockPct60",
+        "BullSharePct60"
+      ]
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed but deterministic evaluation encounters invalid/non-finite state.",
+      "direction": "NONE",
+      "display_name": "Data Error",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Operational data-quality state, not a trading signal.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "DATA_ERROR",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": []
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed and no PLAN_ENTRY/WATCH predicate matched.",
+      "direction": "NONE",
+      "display_name": "No Signal",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Non-actionable classification.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "NO_SIGNAL",
+      "trigger_condition": "count(matching_signal_predicates) == 0",
+      "variables": []
+    }
+  ],
+  "status": "REVIEW_READY",
+  "strategy_code": "GEX_TSLA_CAPITALTYPE",
+  "version_code": "1.0.0"
+}

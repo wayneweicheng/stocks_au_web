@@ -1,0 +1,213 @@
+{
+  "descriptor_format": 2,
+  "strategy_code": "GEX_FORM_DIVERSIFIED_GEX_BREAKDOWN",
+  "display_name": "FORM Diversified GEX Regime Breakdown GEX Strategy",
+  "version_code": "1.0.0-production",
+  "implementation_key": "gex_form_diversified_gex_breakdown.v1_0_0",
+  "status": "IMPLEMENTABLE",
+  "definition": {
+    "purpose": "FORM bearish D5 setup when short-term aggregate GEX is not deeply negative and capital-type positioning is relatively diversified rather than concentrated.",
+    "rationale": "FORM bearish D5 setup when short-term aggregate GEX is not deeply negative and capital-type positioning is relatively diversified rather than concentrated.",
+    "market_timezone": "America/New_York",
+    "calendar": "US listed-equity trading sessions derived from production market calendar; holidays skipped; America/New_York DST; official early close respected.",
+    "multiple_signal_policy": "Single actionable predicate. DATA_ERROR precedes NO_SIGNAL.",
+    "trigger_precedence": [
+      "FORM_DIVERSIFIED_GEX_REGIME_BREAKDOWN",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ],
+    "source_refresh_gate": "At/after 07:30 America/New_York on D1 require complete previous US trading session D0 capital-type rows BC/BP/SC/SP, required D0 GEX_Features rows, any required QQQ/SPY D0 feature row, and any required D0 30-minute feature bars. Missing/null/stale data => NOT_READY; create no Observation/Signal/report/plan/notification."
+  },
+  "research_governance": {
+    "owner": "USER",
+    "research_date": "2026-08-28",
+    "freeze_date": "2026-08-28",
+    "change_summary": "New standalone production notification strategy selected from broad GEX/flow discovery. Exact predicate frozen for forward OOS monitoring.",
+    "superseded_strategy_version": null,
+    "validation_method": "Broad historical discovery with chronological research splits. Because many features/hypotheses were screened, historical tail is research evidence, not pristine untouched OOS. True forward OOS begins after freeze date.",
+    "bias_controls": [
+      "no future-return labels in trigger",
+      "causal prior-only rank60 features",
+      "historical entry fixed to D1 07:30 ET Open",
+      "no broker/manual fill dependency",
+      "survivorship/selection bias cannot be fully eliminated because ticker universe was user-selected",
+      "multiple-testing risk explicitly acknowledged and forward freeze required"
+    ]
+  },
+  "instruments": [
+    {
+      "code": "FORM",
+      "role": "SUBJECT",
+      "market": "US listed market",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "FORM",
+      "role": "SOURCE",
+      "market": "INTERNAL StockDB_US",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "FORM",
+      "role": "EXECUTION",
+      "market": "US listed market",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    }
+  ],
+  "feature_specification": [
+    {
+      "name": "GEX_SMA5",
+      "source": "GEX_Features",
+      "formula": "source GEX_SMA5",
+      "units": "GEX units",
+      "lookback": "prior 60 observations excluding current for rank fields; otherwise as defined by source field",
+      "minimum_prior_observations": null,
+      "current_D0_in_reference_distribution": "SOURCE_DEFINED",
+      "null_behavior": "NOT_READY",
+      "boundary_behavior": "trigger comparisons are inclusive exactly as written except strict >/< operators",
+      "future_information_proof": "Uses only completed D0 or earlier observations. No D1 post-entry or future-return columns."
+    },
+    {
+      "name": "ConcentrationHHI",
+      "source": "Option_GEX_Change_Capital_Type",
+      "formula": "BCShare^2+BPShare^2+SCShare^2+SPShare^2",
+      "units": "0.25..1",
+      "lookback": "prior 60 observations excluding current for rank fields; otherwise as defined by source field",
+      "minimum_prior_observations": null,
+      "current_D0_in_reference_distribution": "SOURCE_DEFINED",
+      "null_behavior": "NOT_READY",
+      "boundary_behavior": "trigger comparisons are inclusive exactly as written except strict >/< operators",
+      "future_information_proof": "Uses only completed D0 or earlier observations. No D1 post-entry or future-return columns."
+    }
+  ],
+  "signal_definitions": [
+    {
+      "signal_code": "FORM_DIVERSIFIED_GEX_REGIME_BREAKDOWN",
+      "display_name": "Diversified GEX Regime Breakdown",
+      "direction": "SHORT",
+      "confidence": "SELECTED_PRODUCTION",
+      "confidence_method": "User-selected after broad historical research; fixed for forward validation.",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "definition": "FORM bearish D5 setup when short-term aggregate GEX is not deeply negative and capital-type positioning is relatively diversified rather than concentrated.",
+      "trigger_condition": "GEX_SMA5 >= -814.3 AND ConcentrationHHI <= 0.5445",
+      "variables": [
+        "GEX_SMA5",
+        "ConcentrationHHI"
+      ],
+      "entry_policy": "D1 07:30 America/New_York 30-minute bar Open; D1 is first valid US trading session after D0.",
+      "holding_period": "D5",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this instance outcome",
+        "Missing required exit bar: outcome remains PENDING"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": true,
+      "sends_notification": true,
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 15,
+        "wins": 14,
+        "losses": 1,
+        "win_rate_pct": 93.33333333333333,
+        "profit_factor": 136.9115942734253,
+        "profit_factor_infinite": false,
+        "as_of": "2026-08-28T18:49:00+10:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      }
+    },
+    {
+      "signal_code": "DATA_ERROR",
+      "display_name": "Data Error",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed but deterministic evaluation encounters invalid/non-finite state.",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": [],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Operational data-quality state."
+      }
+    },
+    {
+      "signal_code": "NO_SIGNAL",
+      "display_name": "No Signal",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed and actionable predicate is false.",
+      "trigger_condition": "NOT(GEX_SMA5 >= -814.3 AND ConcentrationHHI <= 0.5445)",
+      "variables": [
+        "GEX_SMA5",
+        "ConcentrationHHI"
+      ],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "reason": "Non-actionable classification."
+      }
+    }
+  ],
+  "production_policy": {
+    "deployment_state": "PRODUCTION",
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "mode": "NOTIFICATION_ONLY",
+    "broker_execution": "HARD_DISABLED",
+    "manual_trade_optional": true,
+    "manual_trade_required_for_outcome": false,
+    "notifications": {
+      "enabled": true,
+      "channel": "PUSHOVER",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "recipient": "Configured production recipient from secrets; never embedded"
+    },
+    "report_authentication_required": true,
+    "change_control": "Any trigger/feature/direction/entry/exit/notification change requires a new version."
+  },
+  "provenance": {
+    "as_of": "2026-08-28T18:49:00+10:00",
+    "research_window": {
+      "start": "2026-06-17",
+      "end": "2026-08-26"
+    },
+    "executable_price_window": {
+      "start": "2026-05-06",
+      "end": "2026-08-27"
+    },
+    "out_of_sample_window": {
+      "status": "NOT_AVAILABLE",
+      "reason": "Selected after broad historical feature screening; true forward OOS begins after 2026-08-28."
+    },
+    "source_hash": "c3932c6333b470c1e9bb14f3317101d89048f4e24b2a4a0d7a77ab84ff31cb38",
+    "implementation_hash": "41cb1b700e10ccfb1f8b1898ffbdbec21ecf1b6e88236e6534b0114a302f2420",
+    "source_manifest": "source-manifest.json"
+  }
+}

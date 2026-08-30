@@ -1,0 +1,26 @@
+{
+  "strategy_code": "GEX_PANW_PCR_VOL_REBOUND",
+  "version_code": "1.0.0-production",
+  "status": "IMPLEMENTABLE",
+  "deployment_target": "PRODUCTION",
+  "enabled": true,
+  "checks": {
+    "descriptor_format_2": "PASS",
+    "complete_signal_catalogue": "PASS",
+    "exact_trigger_frozen": "PASS",
+    "readiness_fail_closed": "PASS",
+    "future_leak_fields_excluded": "PASS",
+    "causal_rank60_excludes_current": "PASS",
+    "historical_statistics_reconciled_to_ledger": "PASS",
+    "production_notifications_enabled": "PASS",
+    "broker_execution_hard_disabled": "PASS",
+    "manual_trade_independent_outcomes": "PASS",
+    "source_and_implementation_hashes": "PASS",
+    "strategy_logic_compiles": "PASS"
+  },
+  "limitations": [
+    "Historical rule selected after broad hypothesis screening; no claim of untouched OOS.",
+    "Gross historical returns use zero modeled costs/slippage.",
+    "Production packet enables notification-only signal generation; it does not auto-submit broker orders."
+  ]
+}

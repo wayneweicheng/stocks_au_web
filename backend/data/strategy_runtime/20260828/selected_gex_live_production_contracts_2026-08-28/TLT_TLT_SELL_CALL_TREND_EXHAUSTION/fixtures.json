@@ -1,0 +1,51 @@
+{
+  "strategy_code": "GEX_TLT_SELL_CALL_EXHAUSTION",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "PriceDistSMA50Pct": 3.627176452301084,
+        "SCShareChgRank60": 0.896551724137931
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "PriceDistSMA50Pct >= -1.0 AND SCShareChgRank60 >= 0.60",
+      "expected_signal": "TLT_SELL_CALL_TREND_EXHAUSTION"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "PriceDistSMA50Pct": 3.1619464109039486,
+        "SCShareChgRank60": 0.06896551724137931
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "PriceDistSMA50Pct >= -1.0 AND SCShareChgRank60 >= 0.60"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}

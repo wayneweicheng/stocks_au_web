@@ -1,0 +1,51 @@
+{
+  "strategy_code": "GEX_IWM_CROSS_GEX_VOL_REVERSAL",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "SafeGEXVolRank60": 0.6166666666666667,
+        "SPY_SafeGEXVolRank60": 0.7333333333333333
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "SafeGEXVolRank60 >= 0.60 AND SPY_SafeGEXVolRank60 >= 0.65",
+      "expected_signal": "IWM_HIGH_GEX_VOL_REGIME_LONG"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "SafeGEXVolRank60": 0.5333333333333333,
+        "SPY_SafeGEXVolRank60": 0.6833333333333333
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "SafeGEXVolRank60 >= 0.60 AND SPY_SafeGEXVolRank60 >= 0.65"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}

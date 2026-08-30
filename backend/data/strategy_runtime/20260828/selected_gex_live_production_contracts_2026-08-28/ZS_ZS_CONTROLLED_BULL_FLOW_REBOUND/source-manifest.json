@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_ZS_CONTROLLED_BULL_REBOUND",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "c0342ce8eab06c44a6c508d63a06ed9678769a948650ca95fe8018201814524a",
+  "implementation_sha256": "e5465fda93278c75276ad6cef68409d0fb9dfc1a8a9f372c65fe039b747e9f5f",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "ZS-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/ZS-20230922-20260826.csv",
+      "sha256": "ecb32c6c192b2d47c54c44647918a9c12fc829e342e2a4c3e01dd425da3800d9",
+      "size_bytes": 124796
+    },
+    {
+      "role": "FEATURE",
+      "name": "ZS-20241022-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/ZS-20241022-20260826.csv",
+      "sha256": "37ab8fcbe27f5866dcba34eb6bcb3b52187ccd35a78a72703dd272ef8b09d28a",
+      "size_bytes": 162918
+    },
+    {
+      "role": "PRICE",
+      "name": "ZS-20260506-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/ZS-20260506-20260827.csv",
+      "sha256": "7cd5d7278f7baea6aa117e0002fc73265e575162a47d142dfea636b44ce20542",
+      "size_bytes": 186022
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

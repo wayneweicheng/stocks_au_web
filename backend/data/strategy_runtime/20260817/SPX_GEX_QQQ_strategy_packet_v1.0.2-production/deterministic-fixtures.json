@@ -1,0 +1,280 @@
+{
+  "fixture_format": 1,
+  "strategy_code": "SPX_GEX_QQQ_V1",
+  "version_code": "1.0.2-production",
+  "fixtures": [
+    {
+      "id": "base_bear_directional",
+      "kind": "BASE_SIGNAL",
+      "input": {
+        "CloseChangePct": 0.2,
+        "PCRChangePct": 6.0
+      },
+      "expected": "BEARISH"
+    },
+    {
+      "id": "base_bear_flat_extreme",
+      "kind": "BASE_SIGNAL",
+      "input": {
+        "CloseChangePct": 0.05,
+        "PCRChangePct": 20.1
+      },
+      "expected": "BEARISH"
+    },
+    {
+      "id": "base_bull_directional",
+      "kind": "BASE_SIGNAL",
+      "input": {
+        "CloseChangePct": -0.2,
+        "PCRChangePct": -6.0
+      },
+      "expected": "BULLISH"
+    },
+    {
+      "id": "base_bull_flat_extreme",
+      "kind": "BASE_SIGNAL",
+      "input": {
+        "CloseChangePct": -0.05,
+        "PCRChangePct": -20.1
+      },
+      "expected": "BULLISH"
+    },
+    {
+      "id": "base_none_boundary",
+      "kind": "BASE_SIGNAL",
+      "input": {
+        "CloseChangePct": 0.0,
+        "PCRChangePct": 20.0
+      },
+      "expected": "NONE"
+    },
+    {
+      "id": "strong_yellow",
+      "kind": "CLASSIFY",
+      "input": {
+        "base": "BEARISH",
+        "SC": 100,
+        "SCMed60": 100,
+        "SPShare": 0.2,
+        "SPP75": 0.19,
+        "history": 60
+      },
+      "expected": "STRONG_YELLOW"
+    },
+    {
+      "id": "reliable_yellow_sp_tie",
+      "kind": "CLASSIFY",
+      "input": {
+        "base": "BEARISH",
+        "SC": 100,
+        "SCMed60": 100,
+        "SPShare": 0.19,
+        "SPP75": 0.19,
+        "history": 60
+      },
+      "expected": "RELIABLE_YELLOW"
+    },
+    {
+      "id": "mixed_yellow",
+      "kind": "CLASSIFY",
+      "input": {
+        "base": "BEARISH",
+        "SC": 101,
+        "SCMed60": 100,
+        "SPShare": 0.2,
+        "SPP75": 0.19,
+        "history": 60
+      },
+      "expected": "MIXED_YELLOW"
+    },
+    {
+      "id": "weak_yellow",
+      "kind": "CLASSIFY",
+      "input": {
+        "base": "BEARISH",
+        "SC": 101,
+        "SCMed60": 100,
+        "SPShare": 0.18,
+        "SPP75": 0.19,
+        "history": 60
+      },
+      "expected": "WEAK_YELLOW"
+    },
+    {
+      "id": "reversal_green_zero_boundary",
+      "kind": "CLASSIFY",
+      "input": {
+        "base": "BULLISH",
+        "Prior5D": 0.0,
+        "history": 60
+      },
+      "expected": "REVERSAL_GREEN"
+    },
+    {
+      "id": "normal_green",
+      "kind": "CLASSIFY",
+      "input": {
+        "base": "BULLISH",
+        "Prior5D": 0.001,
+        "history": 60
+      },
+      "expected": "NORMAL_GREEN"
+    },
+    {
+      "id": "no_signal",
+      "kind": "CLASSIFY",
+      "input": {
+        "base": "NONE",
+        "history": 60
+      },
+      "expected": "NO_SIGNAL"
+    },
+    {
+      "id": "insufficient_history",
+      "kind": "READINESS",
+      "input": {
+        "history": 59
+      },
+      "expected": "NOT_READY"
+    },
+    {
+      "id": "missing_capital_row",
+      "kind": "READINESS",
+      "input": {
+        "capital_types": [
+          "BC",
+          "BP",
+          "SC"
+        ]
+      },
+      "expected": "NOT_READY"
+    },
+    {
+      "id": "duplicate_capital_row",
+      "kind": "READINESS",
+      "input": {
+        "capital_types": [
+          "BC",
+          "BP",
+          "SC",
+          "SP",
+          "SP"
+        ]
+      },
+      "expected": "NOT_READY"
+    },
+    {
+      "id": "yellow_same_bar_tp_sl",
+      "kind": "EXIT",
+      "input": {
+        "side": "SHORT",
+        "entry": 100,
+        "tp": 99.2,
+        "sl": 101.0,
+        "bar": {
+          "Open": 100,
+          "High": 101.2,
+          "Low": 99.0
+        }
+      },
+      "expected": {
+        "exit_reason": "SL_SAME_BAR_CONSERVATIVE",
+        "exit_price": 101.0
+      }
+    },
+    {
+      "id": "yellow_gap_stop",
+      "kind": "EXIT",
+      "input": {
+        "side": "SHORT",
+        "entry": 100,
+        "tp": 99.2,
+        "sl": 101.0,
+        "bar": {
+          "Open": 101.5,
+          "High": 102,
+          "Low": 101.2
+        }
+      },
+      "expected": {
+        "exit_reason": "SL_GAP",
+        "exit_price": 101.5
+      }
+    },
+    {
+      "id": "reversal_dip_gap",
+      "kind": "REVERSAL_ENTRY",
+      "input": {
+        "reference": 100,
+        "limit": 99,
+        "bar": {
+          "Open": 98.7,
+          "Low": 98.5
+        }
+      },
+      "expected": {
+        "entry_type": "DIP_LIMIT_GAP",
+        "entry_price": 98.7
+      }
+    },
+    {
+      "id": "reversal_d3_fallback",
+      "kind": "REVERSAL_ENTRY",
+      "input": {
+        "reference": 100,
+        "minimum_before_d3": 99.2,
+        "d3_open": 100.5
+      },
+      "expected": {
+        "entry_type": "D3_FALLBACK",
+        "entry_price": 100.5
+      }
+    },
+    {
+      "id": "normal_tp",
+      "kind": "NORMAL_EXIT",
+      "input": {
+        "entry": 100,
+        "bar": {
+          "Open": 101,
+          "High": 102.6,
+          "Low": 100.8
+        }
+      },
+      "expected": {
+        "exit_reason": "TP",
+        "exit_price": 102.5
+      }
+    },
+    {
+      "id": "existing_position_priority",
+      "kind": "PORTFOLIO",
+      "input": {
+        "state": "LONG_GREEN",
+        "new_signal": "STRONG_YELLOW"
+      },
+      "expected": "SKIPPED_EXISTING_POSITION"
+    },
+    {
+      "id": "idempotency_repeat",
+      "kind": "IDEMPOTENCY",
+      "input": {
+        "key": "SPX_GEX_QQQ_V1|1.0.2-production|2026-08-13|NO_SIGNAL|sourceA",
+        "retries": 2
+      },
+      "expected": {
+        "signal_records": 1,
+        "notifications_max": 1
+      }
+    },
+    {
+      "id": "source_revision_change",
+      "kind": "IDEMPOTENCY",
+      "input": {
+        "old_revision": "A",
+        "new_revision": "B"
+      },
+      "expected": "REEVALUATE_WITH_REVISION_LINK"
+    }
+  ]
+}

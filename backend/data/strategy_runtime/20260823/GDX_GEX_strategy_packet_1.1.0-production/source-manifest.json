@@ -1,0 +1,120 @@
+{
+  "as_of": "2026-08-23T15:20:00+10:00",
+  "canonical_decision_revision": "SHA256 of canonical CSV serialization of current D0 plus previous 60 complete daily rows containing ObservationDate,Close,VWAP,BCAbs,BPAbs,SCAbs,SPAbs.",
+  "combined_source_hash": "bdf5b154372127a87f3306e13c95a463b13534c240b81a4ab6aa6ab15e094952",
+  "implementation_sha256": "82a8fe57301fd740584b5186395852374e26ce132856091a6523c323c3c55015",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "manifest_format": 1,
+  "sources": [
+    {
+      "date_range": [
+        "2023-08-15",
+        "2026-08-13"
+      ],
+      "extraction_identity": "Google Drive folder Option_GEX_Change_Capital_Type / GDX-20230815-20260813.csv",
+      "google_drive_file_id": "14ASyKW8VxHXNPOHMcTsnpRW9T9zdnY-8",
+      "google_drive_url": "https://drive.google.com/file/d/14ASyKW8VxHXNPOHMcTsnpRW9T9zdnY-8/view",
+      "instrument": "GDX",
+      "name": "GDX-20230815-20260813.csv",
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "VWAP"
+      ],
+      "role": "SOURCE",
+      "sha256": "20c50257214f8721326f5ab1ec918da4878a8ed98f51dc838284b5f355c5e797",
+      "size_bytes": 205412
+    },
+    {
+      "date_range": [
+        "2025-10-20",
+        "2026-08-14"
+      ],
+      "extraction_identity": "Google Drive folder price_history_30m / GDX-20251020-20260814.csv",
+      "google_drive_file_id": "1t3DOA8prS-DHTP1EcaX7vEthhzZLTRKh",
+      "google_drive_url": "https://drive.google.com/file/d/1t3DOA8prS-DHTP1EcaX7vEthhzZLTRKh/view",
+      "instrument": "GDX",
+      "name": "GDX-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ],
+      "role": "EXECUTION_OUTCOME",
+      "sha256": "d04175b6c21171f860739702dbd62a9612171496378a24afb2af713cbe17519f",
+      "size_bytes": 474463
+    },
+    {
+      "extraction_identity": "Google Drive folder price_history_30m / SPY-20251020-20260814.csv",
+      "google_drive_file_id": "1vtr5ggNSWQhLIgZmRvYBhlDZECW9QC8L",
+      "google_drive_url": "https://drive.google.com/file/d/1vtr5ggNSWQhLIgZmRvYBhlDZECW9QC8L/view",
+      "instrument": "SPY",
+      "name": "SPY-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close"
+      ],
+      "role": "BENCHMARK",
+      "sha256": "9694717c4345582e3e916a69f52a33dc954410db84718628fc7730a13e475fb3",
+      "size_bytes": 506216
+    },
+    {
+      "name": "GDX-20230104-20260820.csv",
+      "instrument": "GDX",
+      "role": "GEX_FEATURES_SUBJECT",
+      "google_drive_file_id": "1lxKa1utSVDW15F_22UxJRSItni3D1Ozs",
+      "google_drive_url": "https://drive.google.com/file/d/1lxKa1utSVDW15F_22UxJRSItni3D1Ozs/view",
+      "extraction_identity": "Google Drive folder GEX_Features / GDX-20230104-20260820.csv",
+      "date_range": [
+        "2023-01-04",
+        "2026-08-20"
+      ],
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode"
+      ],
+      "sha256": "ec7781769c6545869cc3fcd72a8ec174977e14aedaf2d229d90b6260413da1af",
+      "size_bytes": 454992,
+      "production_table": "StockDB_US.Analysis.GEX_Features",
+      "runtime_alias_note": "Descriptor/strategy logic may prefix fields with instrument name (for example QQQ_GEX_Trending_Up); source column names shown here are physical Analysis.GEX_Features columns."
+    },
+    {
+      "name": "SPY-20221213-20260820.csv",
+      "instrument": "SPY",
+      "role": "GEX_FEATURES_BENCHMARK",
+      "google_drive_file_id": "1wYCFpsBJPd80HbokLU8Qob3Zdb9tw1zj",
+      "google_drive_url": "https://drive.google.com/file/d/1wYCFpsBJPd80HbokLU8Qob3Zdb9tw1zj/view",
+      "extraction_identity": "Google Drive folder GEX_Features / SPY-20221213-20260820.csv",
+      "date_range": [
+        "2022-12-13",
+        "2026-08-20"
+      ],
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode",
+        "Price_Above_SMA20"
+      ],
+      "sha256": "ef74fb88de901ca504166c3f2f4a81822dc7fd8b32759399f9c9e3c9412cc342",
+      "size_bytes": 466958,
+      "production_table": "StockDB_US.Analysis.GEX_Features",
+      "runtime_alias_note": "Descriptor/strategy logic may prefix fields with instrument name (for example QQQ_GEX_Trending_Up); source column names shown here are physical Analysis.GEX_Features columns."
+    }
+  ],
+  "strategy_code": "GEX_GDX_CAPITALTYPE",
+  "version_code": "1.1.0-production"
+}

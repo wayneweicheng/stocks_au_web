@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import csv
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -60,12 +61,19 @@ def _descriptor_signals(configuration: Dict[str, Any]) -> List[Dict[str, Any]]:
         confidence = signal.get("confidence")
         if isinstance(confidence, dict):
             # Strategy packets keep both the research label and score; the
-            # admin response exposes the display label in its string field.
+            # admin response exposes the display label and score separately.
             signal["confidence"] = str(confidence.get("label") or "UNKNOWN")
+            score = confidence.get("score")
+            try:
+                signal["confidence_score"] = float(score) if score is not None else None
+            except (TypeError, ValueError):
+                signal["confidence_score"] = None
         elif confidence is None:
             signal["confidence"] = "UNKNOWN"
+            signal.setdefault("confidence_score", None)
         else:
             signal["confidence"] = str(confidence)
+            signal.setdefault("confidence_score", None)
 
         exits = signal.get("exit_conditions")
         normalized_exits: List[Dict[str, Any]] = []
@@ -99,6 +107,12 @@ def _terminal_horizon(configuration: Dict[str, Any], signal_code: str | None = N
         if isinstance(historical, dict) and historical.get("measurement_horizon"):
             return str(historical["measurement_horizon"]).upper()
     horizons = configuration.get("outcome_horizons")
+    for signal in _descriptor_signals(configuration):
+        if signal_code and str(signal.get("signal_code") or "").upper() != signal_code.upper():
+            continue
+        holding_period = str(signal.get("holding_period") or "").upper()
+        if holding_period.startswith("CUSTOM"):
+            return "CUSTOM"
     return str(horizons[-1]).upper() if isinstance(horizons, list) and horizons else "D5"
 
 
@@ -115,8 +129,8 @@ def _model_builder_historical_performance(descriptor: Dict[str, Any]) -> Dict[st
     # compact ``instances`` field.  Normalize packet metadata before Pydantic
     # validation so model-builder statistics are visible even when no runtime
     # outcome rows have been finalized yet.
-    if "instances" not in historical and "number_of_signal_instances" in historical:
-        historical["instances"] = historical.get("number_of_signal_instances")
+    if "instances" not in historical:
+        historical["instances"] = historical.get("number_of_signal_instances") or historical.get("instances_resolved") or historical.get("resolved_denominator") or 0
     source_range = historical.get("source_date_range")
     if isinstance(source_range, dict):
         historical.setdefault("sample_start", source_range.get("start"))
@@ -132,25 +146,86 @@ def _model_builder_historical_performance(descriptor: Dict[str, Any]) -> Dict[st
     return historical
 
 
-def _descriptor_stats(signals: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+def _descriptor_stats(
+    signals: Iterable[Dict[str, Any]],
+    portfolio_summary: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     """Aggregate packet research stats without mixing them into live outcomes."""
+    if isinstance(portfolio_summary, dict) and any(
+        portfolio_summary.get(key) is not None
+        for key in ("resolved_trade_count", "instances_resolved", "resolved_denominator")
+    ):
+        resolved = int(
+            portfolio_summary.get("resolved_trade_count")
+            or portfolio_summary.get("instances_resolved")
+            or portfolio_summary.get("resolved_denominator")
+            or 0
+        )
+        return {
+            "instances": resolved,
+            "resolved_instances": resolved,
+            "unresolved_instances": int(portfolio_summary.get("unresolved_trade_count") or portfolio_summary.get("unresolved_instances") or 0),
+            "wins": int(portfolio_summary.get("wins") or 0),
+            "losses": int(portfolio_summary.get("losses") or 0),
+            "win_rate_pct": float(portfolio_summary["win_rate_pct"]) if portfolio_summary.get("win_rate_pct") is not None else None,
+            "profit_factor": float(portfolio_summary["profit_factor"]) if portfolio_summary.get("profit_factor") is not None else None,
+            "average_return_pct": float(portfolio_summary["average_return_pct"]) if portfolio_summary.get("average_return_pct") is not None else None,
+            "median_return_pct": float(portfolio_summary["median_return_pct"]) if portfolio_summary.get("median_return_pct") is not None else None,
+            "gross_profit_pct": float(portfolio_summary["gross_profit_pct_points"]) if portfolio_summary.get("gross_profit_pct_points") is not None else None,
+            "gross_loss_pct": -float(portfolio_summary["gross_loss_pct_points"]) if portfolio_summary.get("gross_loss_pct_points") is not None else None,
+            "source": "MODEL_BUILDER_PACKET",
+            "source_reference": "historical-performance.json#performance + historical-instance-ledger.json",
+        }
     histories = [dict(signal.get("historical_performance") or {}) for signal in signals]
     histories = [item for item in histories if str(item.get("status") or "").upper() == "AVAILABLE"]
     instances = sum(int(item.get("instances") or item.get("number_of_signal_instances") or 0) for item in histories)
+    resolved_instances = sum(
+        int(item.get("resolved_instances"))
+        if item.get("resolved_instances") is not None
+        else int(item.get("wins") or 0) + int(item.get("losses") or 0)
+        for item in histories
+    )
+    unresolved_instances = sum(int(item.get("unresolved_instances") or 0) for item in histories)
     wins = sum(int(item.get("wins") or 0) for item in histories)
     losses = sum(int(item.get("losses") or 0) for item in histories)
-    gross_profit = sum(float(item.get("gross_profit_return_units") or item.get("gross_profit_pct") or 0) for item in histories)
-    gross_loss = sum(abs(float(item.get("gross_loss_return_units") or item.get("gross_loss_pct") or 0)) for item in histories)
+    gross_profit = sum(
+        float(
+            item.get("gross_profit_return_sum")
+            if item.get("gross_profit_return_sum") is not None
+            else item.get("gross_profit_return_units")
+            if item.get("gross_profit_return_units") is not None
+            else item.get("gross_profit_pct") or 0
+        )
+        for item in histories
+    )
+    gross_loss = sum(
+        abs(
+            float(
+                item.get("gross_loss_return_sum_abs")
+                if item.get("gross_loss_return_sum_abs") is not None
+                else item.get("gross_loss_return_units")
+                if item.get("gross_loss_return_units") is not None
+                else item.get("gross_loss_pct") or 0
+            )
+        )
+        for item in histories
+    )
+    average_returns = [float(item["average_return_pct"]) for item in histories if item.get("average_return_pct") is not None]
+    median_returns = [float(item["median_return_pct"]) for item in histories if item.get("median_return_pct") is not None]
     return {
         "instances": instances,
+        "resolved_instances": resolved_instances,
+        "unresolved_instances": unresolved_instances,
         "wins": wins,
         "losses": losses,
-        "win_rate_pct": round(wins * 100.0 / instances, 4) if instances else None,
+        "win_rate_pct": round(wins * 100.0 / resolved_instances, 4) if resolved_instances else None,
         "profit_factor": round(gross_profit / gross_loss, 4) if gross_loss else None,
+        "average_return_pct": round(sum(average_returns) / len(average_returns), 4) if average_returns else None,
+        "median_return_pct": round(sum(median_returns) / len(median_returns), 4) if median_returns else None,
         "gross_profit_pct": round(gross_profit, 4) if histories else None,
         "gross_loss_pct": round(-gross_loss, 4) if histories else None,
         "source": "MODEL_BUILDER_PACKET",
-        "source_reference": "historical-performance.json + per-instance-ledger.json",
+        "source_reference": "historical-performance.json + historical-instance-ledger.json",
     }
 
 
@@ -164,41 +239,94 @@ def _historical_trade_ledger(configuration: Dict[str, Any], strategy_code: str, 
     ledger = configuration.get("historical_trade_ledger") or configuration.get("per_instance_ledger")
     if not ledger:
         packet_root = Path(__file__).resolve().parents[2] / "data" / "strategy_runtime"
-        for path in sorted(packet_root.glob("*/per-instance-ledger.json")):
-            try:
-                candidate = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, TypeError, ValueError, json.JSONDecodeError):
-                continue
-            if (
-                str(candidate.get("strategy_code") or "") == str(strategy_code)
-                and str(candidate.get("version_code") or "") == str(version_code)
-            ):
-                ledger = candidate
+        for filename in ("historical-instance-ledger.json", "per-instance-ledger.json"):
+            for path in sorted(packet_root.glob(f"*/{filename}")):
+                try:
+                    candidate = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if (
+                    str(candidate.get("strategy_code") or "") == str(strategy_code)
+                    and str(candidate.get("version_code") or "") == str(version_code)
+                ):
+                    ledger = candidate
+                    break
+            if ledger:
                 break
+    if not ledger:
+        packet_root = Path(__file__).resolve().parents[2] / "data" / "strategy_runtime"
+        for path in sorted(packet_root.glob("*/historical-instance-ledger.csv")):
+            try:
+                descriptor_path = path.parent / "strategy.descriptor.json"
+                descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+                if (
+                    str(descriptor.get("strategy_code") or "") == str(strategy_code)
+                    and str(descriptor.get("version_code") or "") == str(version_code)
+                ):
+                    with path.open("r", encoding="utf-8", newline="") as stream:
+                        ledger = {"records": list(csv.DictReader(stream))}
+                    break
+            except (OSError, TypeError, ValueError, json.JSONDecodeError, csv.Error):
+                continue
     records = ledger.get("records") if isinstance(ledger, dict) else ledger
     if not isinstance(records, list):
         return []
+    # The repaired SPXW -> QQQ packet stores return/MFE/MAE as fractional
+    # returns (0.004 means +0.40%), while older packets store percentage
+    # points (0.40 means +0.40%).  Normalize at the API boundary so the
+    # frontend formatter has one stable unit.
+    fractional_returns = str(strategy_code).upper() == "SPX_GEX_QQQ_V1"
+
+    def optional_value(value: Any) -> Any:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        return value
+
+    def percentage_points(value: Any) -> Any:
+        value = optional_value(value)
+        if value is None or not fractional_returns:
+            return value
+        try:
+            return float(value) * 100.0
+        except (TypeError, ValueError):
+            return value
+
     normalized: List[Dict[str, Any]] = []
     for record in records:
         if not isinstance(record, dict):
             continue
+        feature_fields = {
+            key: record.get(key)
+            for key in (
+                "signal_raw", "close_change_pct", "put_call_ratio", "pcr_change_pct",
+                "sc_gex_current", "sc_gex_threshold_median60", "sc_gex_percentile60",
+                "sp_delta_share", "sp_delta_share_threshold_p75_60", "sp_delta_share_percentile60",
+                "prior_5d_nq_return", "price_source", "execution_instrument", "proxy_instrument",
+                "source_revision", "portfolio_decision",
+            )
+            if record.get(key) is not None
+        }
         normalized.append({
             "signal_code": str(record.get("signal_code") or ""),
             "market_date": str(record.get("market_date") or ""),
             "direction": str(record.get("direction") or ""),
-            "entry_timestamp": record.get("entry_timestamp"),
-            "entry_price": record.get("entry_price"),
-            "exit_timestamp": record.get("exit_timestamp"),
-            "exit_price": record.get("exit_price"),
+            "entry_timestamp": record.get("entry_timestamp") or record.get("entry_time"),
+            "entry_price": optional_value(record.get("entry_price")),
+            "exit_timestamp": record.get("exit_timestamp") or record.get("exit_time"),
+            "exit_price": optional_value(record.get("exit_price")),
             "exit_reason": str(record.get("exit_reason") or ""),
-            "gross_return_pct": record.get("gross_return_pct"),
-            "return_pct": record.get("return_pct"),
-            "mfe_pct": record.get("mfe_pct"),
-            "mae_pct": record.get("mae_pct"),
-            "bars_held": record.get("bars_held"),
-            "same_bar_ambiguity": bool(record.get("same_bar_ambiguity")),
-            "status": str(record.get("status") or ""),
-            "features": record.get("features") if isinstance(record.get("features"), dict) else {},
+            "gross_return_pct": percentage_points(
+                record.get("gross_return_pct")
+                if optional_value(record.get("gross_return_pct")) is not None
+                else record.get("return_pct")
+            ),
+            "return_pct": percentage_points(record.get("return_pct")),
+            "mfe_pct": percentage_points(record.get("mfe_pct")),
+            "mae_pct": percentage_points(record.get("mae_pct")),
+            "bars_held": optional_value(record.get("bars_held")),
+            "same_bar_ambiguity": bool(record.get("same_bar_ambiguity") if record.get("same_bar_ambiguity") is not None else record.get("ambiguous")),
+            "status": str(record.get("status") or record.get("candidate_outcome_status") or ""),
+            "features": record.get("features") if isinstance(record.get("features"), dict) else feature_fields,
         })
     return normalized
 
@@ -209,12 +337,16 @@ def _stats(rows: Iterable[Dict[str, Any]], value_key: str = "directional_return_
     losses = sum(1 for value in values if value < 0)
     gross_profit = sum(value for value in values if value > 0)
     gross_loss = sum(value for value in values if value < 0)
+    from statistics import mean, median
+
     return {
         "instances": len(values),
         "wins": wins,
         "losses": losses,
         "win_rate_pct": round(wins * 100.0 / len(values), 4) if values else None,
         "profit_factor": round(gross_profit / abs(gross_loss), 4) if gross_loss else None,
+        "average_return_pct": round(mean(values), 4) if values else None,
+        "median_return_pct": round(median(values), 4) if values else None,
         "gross_profit_pct": round(gross_profit, 4) if values else None,
         "gross_loss_pct": round(gross_loss, 4) if values else None,
     }
@@ -260,12 +392,23 @@ class TradingSignalAdminRepository:
                    d.StrategyDeploymentID AS strategy_deployment_id, d.DeploymentKey AS deployment_key,
                    d.EnvironmentType AS environment, d.IsEnabled AS is_enabled,
                    d.ExecutionEnabled AS execution_enabled, d.NotificationEnabled AS notification_enabled,
-                   d.ConfigurationJson AS deployment_configuration_json
+                   d.ConfigurationJson AS deployment_configuration_json,
+                   eval_schedule.TimeZoneName AS evaluation_timezone_name,
+                   eval_schedule.LocalTime AS evaluation_local_time,
+                   eval_schedule.CadenceSeconds AS evaluation_cadence_seconds,
+                   eval_schedule.ScheduleJson AS evaluation_schedule_json
             FROM [StockDB_US].[TradingSignal].[StrategyVersion] AS v
             JOIN [StockDB_US].[TradingSignal].[StrategyDefinition] AS defn
               ON defn.StrategyDefinitionID = v.StrategyDefinitionID
             LEFT JOIN [StockDB_US].[TradingSignal].[StrategyDeployment] AS d
               ON d.StrategyVersionID = v.StrategyVersionID
+            OUTER APPLY (
+                SELECT TOP (1) s.TimeZoneName, s.LocalTime, s.CadenceSeconds, s.ScheduleJson
+                FROM [StockDB_US].[TradingSignal].[StrategySchedule] AS s
+                WHERE s.StrategyDeploymentID = d.StrategyDeploymentID
+                  AND s.RunKind = 'EVALUATE' AND s.IsEnabled = 1
+                ORDER BY s.StrategyScheduleID
+            ) AS eval_schedule
             WHERE defn.IsEnabled = 1
               AND v.Status <> 'RETIRED'
             ORDER BY defn.StrategyCode, v.CreatedUtc DESC, d.StrategyDeploymentID
@@ -449,10 +592,13 @@ class TradingSignalAdminRepository:
             deployment_rows = deployments_by_version.get(version_id, [])
             role_rows = [role for deployment in deployment_rows for role in roles_by_deployment.get(int(deployment["strategy_deployment_id"]), [])]
             subject_roles = [role for role in role_rows if str(role.get("role_code") or "").upper() == "SUBJECT"]
-            stock_codes = sorted({str(role.get("instrument_code")).strip() for role in subject_roles if role.get("instrument_code")})
+            grouping_roles = subject_roles or [role for role in role_rows if str(role.get("role_code") or "").upper() == "SOURCE"]
+            grouping_roles = grouping_roles or [role for role in role_rows if str(role.get("role_code") or "").upper() == "EXECUTION"]
+            stock_codes = sorted({str(role.get("instrument_code")).strip() for role in grouping_roles if role.get("instrument_code")})
             if not stock_codes:
                 fallback = config.get("subject_instrument_code") or config.get("instrument_code") or "UNSPECIFIED"
                 stock_codes = [str(fallback)]
+            stock_codes = ["SPX" if code.upper() in {"SPXW", "SPXW.US"} else code for code in stock_codes]
             definition_value = config.get("strategy_definition") or config.get("definition")
             if isinstance(definition_value, dict):
                 definition_value = " ".join(
@@ -475,7 +621,10 @@ class TradingSignalAdminRepository:
             for stock_code in stock_codes:
                 version_payload = stocks[stock_code].get(version_id)
                 if version_payload is None:
-                    model_builder_stats = _descriptor_stats(descriptor_signals)
+                    model_builder_stats = _descriptor_stats(
+                        descriptor_signals,
+                        config.get("historical_performance_summary") if isinstance(config.get("historical_performance_summary"), dict) else None,
+                    )
                     historical_stats = model_builder_stats
                     # Legacy versions may not carry packet research metadata.
                     # Preserve their existing runtime-outcome fallback, while
@@ -517,6 +666,7 @@ class TradingSignalAdminRepository:
                     if deployment_id in existing_deployment_ids:
                         continue
                     production = self._is_production(deployment)
+                    schedule_json = _json_object(deployment.get("evaluation_schedule_json"))
                     deployment_payload = {
                         "strategy_deployment_id": deployment_id,
                         "deployment_key": str(deployment["deployment_key"]),
@@ -526,6 +676,13 @@ class TradingSignalAdminRepository:
                         "execution_enabled": bool(deployment.get("execution_enabled")),
                         "is_production": production,
                         "notification_only": not bool(deployment.get("execution_enabled")),
+                        "evaluation_schedule": {
+                            "timezone_name": str(deployment["evaluation_timezone_name"]) if deployment.get("evaluation_timezone_name") else None,
+                            "local_time": str(deployment["evaluation_local_time"]) if deployment.get("evaluation_local_time") else None,
+                            "cadence_seconds": int(deployment["evaluation_cadence_seconds"]) if deployment.get("evaluation_cadence_seconds") is not None else None,
+                            "interval_minutes": int(schedule_json["interval_minutes"]) if schedule_json.get("interval_minutes") is not None else None,
+                            "window_end": str(schedule_json["window_end"]) if schedule_json.get("window_end") else None,
+                        },
                         "production_stats": _stats(outcomes_by_deployment.get(deployment_id, [])) if production else _stats([]),
                         "executions": executions_by_deployment_key.get(str(deployment["deployment_key"]), []),
                     }

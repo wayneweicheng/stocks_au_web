@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_COHR_SC_INTRADAY_EXHAUSTION",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "664ba4d9c7ca5115aff398b108fd3ecd03b273872d9275298e922a7ce6b7dcd1",
+  "implementation_sha256": "633c66f16c41e7237935f43cbd4f66d654642ee6cb92b72b446887d005b0ece4",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "COHR-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/COHR-20230922-20260826.csv",
+      "sha256": "a0b79845318b29967eea17ad1c50144f6ef70d71bff76eca9f1c6c96a72904bc",
+      "size_bytes": 89985
+    },
+    {
+      "role": "FEATURE",
+      "name": "COHR-20241022-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/COHR-20241022-20260825.csv",
+      "sha256": "32c2475e941258aa7686b8b741b6be7fc66563cc0e8ca7ee0cd305cbf30d0c74",
+      "size_bytes": 135831
+    },
+    {
+      "role": "PRICE",
+      "name": "COHR-20260506-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/COHR-20260506-20260827.csv",
+      "sha256": "af636d2352a83931ef2685b27aaa9c0adfdd9f7977efe92c9b164b1d2ad6dd62",
+      "size_bytes": 189367
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

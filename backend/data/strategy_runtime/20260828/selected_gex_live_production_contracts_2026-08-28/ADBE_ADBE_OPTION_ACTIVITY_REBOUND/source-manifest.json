@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_ADBE_OPTION_ACTIVITY_REBOUND",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "d47322d28f3a584f7368a418dc31899834cb5b7b04a05a337d825b6224f19a1c",
+  "implementation_sha256": "7f44a36e49acada193dbc99b234e0c242da6291e4ef7c0bd233413d240f18875",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "ADBE-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/ADBE-20230922-20260826.csv",
+      "sha256": "30232a5873dd79536e8e38c43d2176e1decbaf177c49fd35843496804d24e6fc",
+      "size_bytes": 171775
+    },
+    {
+      "role": "FEATURE",
+      "name": "ADBE-20230925-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/ADBE-20230925-20260825.csv",
+      "sha256": "908a8cdf5eb6bade27975d3deb01ca7930dc279b59399fdd317d298f31ea6732",
+      "size_bytes": 342656
+    },
+    {
+      "role": "PRICE",
+      "name": "ADBE-20260506-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/ADBE-20260506-20260827.csv",
+      "sha256": "4e3418256ec4098eff8735a08e7a357602487ef54fad60935e58f33ef6f52db8",
+      "size_bytes": 188452
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

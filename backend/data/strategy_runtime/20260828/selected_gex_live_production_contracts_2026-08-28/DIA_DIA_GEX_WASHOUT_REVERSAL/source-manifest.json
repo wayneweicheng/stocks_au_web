@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_DIA_WASHOUT_REVERSAL",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "da99f11d8fb6304ea3c858167178aba14b098fceff14b981623b55704d9a13c4",
+  "implementation_sha256": "c5f78acc8719798d002a3f1639ec9fa5a5d2c58465754e433bbdc796595de72e",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "DIA-20230828-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/DIA-20230828-20260826.csv",
+      "sha256": "e18c1d15055451aa7aca4306dd7c9f70d4f098283d77b34b06ce80ded6dbbe0a",
+      "size_bytes": 172927
+    },
+    {
+      "role": "FEATURE",
+      "name": "DIA-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/DIA-20230922-20260826.csv",
+      "sha256": "6cbfefcdf3a8c6af58c83799b47e7080f06288ffc9571dcfe23b2930cbb1bcb7",
+      "size_bytes": 365162
+    },
+    {
+      "role": "PRICE",
+      "name": "DIA-20251020-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/DIA-20251020-20260827.csv",
+      "sha256": "417d401083d18e3cef4fea27538a0e80f453055f6d7d4f3d5e38c194e5ef7bb1",
+      "size_bytes": 515554
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

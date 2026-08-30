@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import Alert from "../components/ui/Alert";
 import Button from "../components/ui/Button";
@@ -21,15 +22,21 @@ function formatPrice(value: number | null) {
   return value === null ? "—" : value.toFixed(2);
 }
 
+function hasSufficientModelBuilderHistory(signal: AdminSignalDefinition) {
+  return signal.historical_performance.instances > 1;
+}
+
 function Stats({ stats, title }: { stats: AdminPerformanceStats; title: string }) {
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</p>
-      <div className="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+      <div className="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3 lg:grid-cols-6">
         <div><span className="block text-xs text-slate-500">Instances</span><span className="font-semibold text-slate-900">{stats.instances}</span></div>
         <div><span className="block text-xs text-slate-500">Win rate</span><span className="font-semibold text-slate-900">{formatPct(stats.win_rate_pct)}</span></div>
         <div><span className="block text-xs text-slate-500">Profit factor</span><span className="font-semibold text-slate-900">{stats.profit_factor === null ? "—" : stats.profit_factor.toFixed(2)}</span></div>
         <div><span className="block text-xs text-slate-500">Wins / losses</span><span className="font-semibold text-slate-900">{stats.wins} / {stats.losses}</span></div>
+        <div><span className="block text-xs text-slate-500">Avg profit</span><span className="font-semibold text-slate-900">{formatPct(stats.average_return_pct)}</span></div>
+        <div><span className="block text-xs text-slate-500">Median profit</span><span className="font-semibold text-slate-900">{formatPct(stats.median_return_pct)}</span></div>
       </div>
       {stats.source === "MODEL_BUILDER_PACKET" ? <p className="mt-2 text-xs text-slate-600">Source: model-builder packet ({stats.source_reference || "historical-performance.json"}).</p> : null}
       {stats.instances === 0 ? <p className="mt-2 text-xs text-amber-700">No finalized historical outcome instances are recorded yet.</p> : null}
@@ -37,22 +44,53 @@ function Stats({ stats, title }: { stats: AdminPerformanceStats; title: string }
   );
 }
 
-function SignalDefinitions({ signals }: { signals: AdminSignalDefinition[] }) {
-  if (!signals.length) return null;
+function filterSignalsByHistoricalSupport(signals: AdminSignalDefinition[], enabled: boolean) {
+  return enabled ? signals.filter(hasSufficientModelBuilderHistory) : signals;
+}
+
+function filterObservedSignalNames(signalNames: string[], signals: AdminSignalDefinition[], enabled: boolean) {
+  if (!enabled) return signalNames;
+  const supportedSignalCodes = new Set(filterSignalsByHistoricalSupport(signals, enabled).map((signal) => signal.signal_code.toUpperCase()));
+  return signalNames.filter((signalName) => supportedSignalCodes.has(signalName.toUpperCase()));
+}
+
+function signalDefinitionId(stockCode: string, signalCode: string) {
+  return `strategy-signal-${stockCode}-${signalCode}`.replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+function SignalDefinitions({
+  signals,
+  filtered,
+  stockCode,
+  highlightedSignalCode,
+}: {
+  signals: AdminSignalDefinition[];
+  filtered: boolean;
+  stockCode: string;
+  highlightedSignalCode: string;
+}) {
+  if (!signals.length) return filtered ? <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">No signals meet the current filter. Turn off the historical-support filter to show all signal definitions.</p> : null;
   return (
     <div className="space-y-2">
       <h3 className="text-sm font-semibold text-slate-900">Signal definitions</h3>
       <div className="grid gap-3 lg:grid-cols-2">
-        {signals.map((signal) => <div key={signal.signal_code} className="rounded-md border border-slate-200 p-3 text-sm">
+        {signals.map((signal) => {
+          const highlighted = signal.signal_code.toUpperCase() === highlightedSignalCode;
+          return <div
+            key={signal.signal_code}
+            id={signalDefinitionId(stockCode, signal.signal_code)}
+            className={`rounded-md border p-3 text-sm ${highlighted ? "border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200" : "border-slate-200"}`}
+          >
           <div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-slate-900">{signal.display_name}</span><span className="rounded bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">{signal.direction}</span><span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{signal.action}</span></div>
-          <p className="mt-2 text-xs text-slate-500">Code: {signal.signal_code} · Confidence: {signal.confidence} · Notification: {signal.notification_level}</p>
+          <p className="mt-2 text-xs text-slate-500">Code: {signal.signal_code} · Confidence: {signal.confidence}{signal.confidence_score === null ? "" : ` (score ${signal.confidence_score.toFixed(2)})`} · Notification: {signal.notification_level}</p>
           <p className="mt-2"><span className="font-medium">Definition:</span> {signal.strategy_definition}</p>
           <p className="mt-1"><span className="font-medium">Trigger:</span> {signal.trigger_condition}</p>
           <p className="mt-1"><span className="font-medium">Entry:</span> {signal.entry_policy}</p>
           <p className="mt-1"><span className="font-medium">Holding:</span> {signal.holding_period}</p>
           <p className="mt-1"><span className="font-medium">Exit:</span> {signal.exit_conditions.map((exit) => exit.horizon ? `${exit.description} (${exit.horizon})` : exit.description).join("; ")}</p>
-          <p className="mt-2 text-xs text-slate-600">Model-builder historical: {signal.historical_performance.instances} instances · win rate {formatPct(signal.historical_performance.win_rate_pct)} · profit factor {signal.historical_performance.profit_factor === null ? "—" : signal.historical_performance.profit_factor.toFixed(2)} · {signal.historical_performance.status}</p>
-        </div>)}
+          <p className="mt-2 text-xs text-slate-600">Model-builder historical: {signal.historical_performance.instances} instances · win rate {formatPct(signal.historical_performance.win_rate_pct)} · profit factor {signal.historical_performance.profit_factor === null ? "—" : signal.historical_performance.profit_factor.toFixed(2)} · avg profit {formatPct(signal.historical_performance.average_return_pct)} · median profit {formatPct(signal.historical_performance.median_return_pct)} · {signal.historical_performance.status}</p>
+          </div>;
+        })}
       </div>
     </div>
   );
@@ -120,6 +158,7 @@ function DeploymentControl({ deployment, onChanged }: { deployment: AdminDeploym
         <div>
           <p className="font-semibold text-slate-900">{deployment.deployment_key}</p>
           <p className="text-xs text-slate-500">{deployment.environment} · {deployment.notification_enabled ? "Notifications on" : "Notifications off"} · Execution hard-disabled</p>
+          {deployment.evaluation_schedule ? <p className="mt-1 text-xs font-medium text-indigo-700">Evaluation: {deployment.evaluation_schedule.local_time || "—"} {deployment.evaluation_schedule.timezone_name || ""} · every {deployment.evaluation_schedule.interval_minutes ?? (deployment.evaluation_schedule.cadence_seconds ? Math.round(deployment.evaluation_schedule.cadence_seconds / 60) : "—")} minutes{deployment.evaluation_schedule.window_end ? ` until ${deployment.evaluation_schedule.window_end}` : ""}</p> : null}
         </div>
         {deployment.is_production ? <Button type="button" variant={deployment.is_enabled ? "secondary" : "primary"} onClick={() => void toggle()} disabled={saving}>
           {saving ? "Saving..." : deployment.is_enabled ? "Turn off production" : "Turn on production"}
@@ -140,7 +179,15 @@ function DeploymentControl({ deployment, onChanged }: { deployment: AdminDeploym
 }
 
 export default function TradingSignalAdminTab({ baseUrl }: { baseUrl: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const requestedStock = (searchParams.get("stock_code") || searchParams.get("stock") || "").trim().toUpperCase();
+  const requestedSignalCode = (searchParams.get("signal_code") || searchParams.get("signal") || "").trim().toUpperCase();
   const [data, setData] = useState<AdminStrategyPage | null>(null);
+  const [selectedStock, setSelectedStock] = useState(() => requestedStock || "SPX");
+  const [productionOnlyFilterEnabled, setProductionOnlyFilterEnabled] = useState(true);
+  const [historicalSignalFilterEnabled, setHistoricalSignalFilterEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -161,9 +208,39 @@ export default function TradingSignalAdminTab({ baseUrl }: { baseUrl: string }) 
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    if (!data?.stocks.length) return;
+    setSelectedStock((current) => {
+      if (data.stocks.some((stock) => stock.stock_code === current)) return current;
+      const deepLinkedStock = requestedStock && data.stocks.some((stock) => stock.stock_code === requestedStock) ? requestedStock : "";
+      return deepLinkedStock || (data.stocks.some((stock) => stock.stock_code === "SPX") ? "SPX" : data.stocks[0].stock_code);
+    });
+  }, [data, requestedStock]);
+
+  const selectStock = (stockCode: string) => {
+    const normalized = stockCode.trim().toUpperCase();
+    setSelectedStock(normalized);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("tab", "admin");
+    nextParams.set("stock_code", normalized);
+    nextParams.delete("stock");
+    router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
+  };
+
   const updateDeployment = (updated: AdminDeployment) => {
     setData((current) => current ? { ...current, stocks: current.stocks.map((stock) => ({ ...stock, strategies: stock.strategies.map((strategy) => ({ ...strategy, deployments: strategy.deployments.map((deployment) => deployment.strategy_deployment_id === updated.strategy_deployment_id ? { ...deployment, is_enabled: updated.is_enabled, notification_enabled: updated.notification_enabled, execution_enabled: false, notification_only: true } : deployment) })) })) } : current);
   };
+
+  const visibleStock = data?.stocks.find((stock) => stock.stock_code === selectedStock) || data?.stocks[0];
+  const visibleStrategies = (visibleStock?.strategies || []).filter((strategy) => (
+    !productionOnlyFilterEnabled || strategy.deployments.some((deployment) => deployment.is_production && deployment.is_enabled)
+  ));
+  const visibleProductionDeployments = visibleStrategies.flatMap((strategy) => strategy.deployments).filter((deployment) => deployment.is_production);
+
+  useEffect(() => {
+    if (!requestedSignalCode || !visibleStock) return;
+    document.getElementById(signalDefinitionId(visibleStock.stock_code, requestedSignalCode))?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [requestedSignalCode, visibleStock]);
 
   if (loading && !data) return <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Loading strategy administration...</div>;
   if (error && !data) return <Alert variant="danger">{error}</Alert>;
@@ -179,14 +256,54 @@ export default function TradingSignalAdminTab({ baseUrl }: { baseUrl: string }) 
       </section>
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs uppercase tracking-wide text-slate-500">Stocks</p><p className="mt-1 text-2xl font-semibold text-slate-900">{data.stocks.length}</p></div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs uppercase tracking-wide text-slate-500">Strategy versions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{data.strategy_count}</p></div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs uppercase tracking-wide text-slate-500">Enabled production</p><p className="mt-1 text-2xl font-semibold text-slate-900">{data.enabled_production_deployment_count} / {data.production_deployment_count}</p></div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs uppercase tracking-wide text-slate-500">Visible strategy versions</p><p className="mt-1 text-2xl font-semibold text-slate-900">{visibleStrategies.length}</p></div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs uppercase tracking-wide text-slate-500">Enabled production</p><p className="mt-1 text-2xl font-semibold text-slate-900">{visibleProductionDeployments.filter((deployment) => deployment.is_enabled).length} / {visibleProductionDeployments.length}</p></div>
       </div>
-      {data.stocks.map((stock) => (
-        <section key={stock.stock_code} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between"><h2 className="text-xl font-semibold text-slate-900">{stock.stock_code}</h2><span className="text-xs text-slate-500">{stock.strategies.length} strategy version{stock.strategies.length === 1 ? "" : "s"}</span></div>
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap justify-end gap-x-6 gap-y-3">
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={productionOnlyFilterEnabled}
+              onClick={() => setProductionOnlyFilterEnabled((enabled) => !enabled)}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${productionOnlyFilterEnabled ? "bg-indigo-600" : "bg-slate-300"}`}
+            >
+              <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${productionOnlyFilterEnabled ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+            <span>Only show strategies turned on in production</span>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={historicalSignalFilterEnabled}
+              onClick={() => setHistoricalSignalFilterEnabled((enabled) => !enabled)}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${historicalSignalFilterEnabled ? "bg-indigo-600" : "bg-slate-300"}`}
+            >
+              <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${historicalSignalFilterEnabled ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+            <span>Only show signals with more than 1 model-builder historical instance</span>
+          </label>
+        </div>
+        <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-semibold text-slate-900">Filter by stock</h2><p className="mt-1 text-xs text-slate-500">Select one stock. Choosing another stock replaces the current selection.</p></div><span className="text-xs text-slate-500">Selected: {visibleStock?.stock_code || "—"}</span></div>
+        <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Filter strategies by stock">
+          {data.stocks.map((stock) => {
+            const selected = stock.stock_code === selectedStock;
+            const productionStrategyCount = stock.strategies.filter((strategy) => strategy.deployments.some((deployment) => deployment.is_production && deployment.is_enabled)).length;
+            const displayedStrategyCount = productionOnlyFilterEnabled ? productionStrategyCount : stock.strategies.length;
+            return <button key={stock.stock_code} type="button" role="radio" aria-checked={selected} onClick={() => selectStock(stock.stock_code)} className={`rounded-lg border p-4 text-left transition ${selected ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200" : "border-slate-200 bg-white hover:border-indigo-300 hover:bg-slate-50"}`}>
+              <div className="flex items-center justify-between"><span className="font-semibold text-slate-900">{stock.stock_code}</span><span className={`rounded px-2 py-1 text-xs ${selected ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"}`}>{selected ? "Selected" : "Select"}</span></div>
+              <p className="mt-2 text-xs text-slate-500">{displayedStrategyCount} {productionOnlyFilterEnabled ? "turned-on production " : ""}strategy version{displayedStrategyCount === 1 ? "" : "s"}</p>
+            </button>;
+          })}
+        </div>
+      </section>
+      {visibleStock ? (
+        <section key={visibleStock.stock_code} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between"><h2 className="text-xl font-semibold text-slate-900">{visibleStock.stock_code}</h2><span className="text-xs text-slate-500">{visibleStrategies.length} visible strategy version{visibleStrategies.length === 1 ? "" : "s"}</span></div>
           <div className="space-y-3">
-            {stock.strategies.map((strategy) => (
+            {visibleStrategies.length ? visibleStrategies.map((strategy) => (
               <details key={strategy.strategy_version_id} className="rounded-md border border-slate-200" open>
                 <summary className="cursor-pointer list-none p-4">
                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -200,18 +317,23 @@ export default function TradingSignalAdminTab({ baseUrl }: { baseUrl: string }) 
                     <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trigger condition</p>{strategy.trigger_conditions.length ? <ul className="mt-1 list-disc pl-5 text-sm text-slate-800">{strategy.trigger_conditions.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-1 text-sm text-slate-500">Not recorded in strategy metadata</p>}</div>
                     <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Exit condition</p>{strategy.exit_conditions.length ? <ul className="mt-1 list-disc pl-5 text-sm text-slate-800">{strategy.exit_conditions.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-1 text-sm text-slate-500">Not recorded in strategy metadata</p>}</div>
                   </div>
-                  <SignalDefinitions signals={strategy.signals} />
-                  <p className="text-xs text-slate-600">Observed signal names: {strategy.signal_names.length ? strategy.signal_names.join(", ") : "Not recorded"}</p>
+                  <SignalDefinitions
+                    signals={filterSignalsByHistoricalSupport(strategy.signals, historicalSignalFilterEnabled)}
+                    filtered={historicalSignalFilterEnabled && strategy.signals.length > 0}
+                    stockCode={visibleStock.stock_code}
+                    highlightedSignalCode={requestedSignalCode}
+                  />
+                  <p className="text-xs text-slate-600">Observed signal names: {filterObservedSignalNames(strategy.signal_names, strategy.signals, historicalSignalFilterEnabled).length ? filterObservedSignalNames(strategy.signal_names, strategy.signals, historicalSignalFilterEnabled).join(", ") : "Not recorded"}</p>
                   <Stats title="Model-builder historical signal performance" stats={strategy.historical_stats} />
                   <HistoricalTradeDetails trades={strategy.historical_trades} />
                   {strategy.deployments.length ? <div><h3 className="mb-2 text-sm font-semibold text-slate-900">Deployments and production executions</h3><div className="space-y-3">{strategy.deployments.map((deployment) => <DeploymentControl key={deployment.strategy_deployment_id} deployment={deployment} onChanged={updateDeployment} />)}</div></div> : <p className="text-sm text-slate-500">No deployment is registered for this strategy version.</p>}
                   <details><summary className="cursor-pointer text-xs font-semibold text-slate-600">Configuration metadata</summary><pre className="mt-2 max-h-64 overflow-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">{JSON.stringify(strategy.configuration, null, 2)}</pre></details>
                 </div>
               </details>
-            ))}
+            )) : <p className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">No strategies are currently turned on in production for this stock. Turn off the production filter to show all strategies.</p>}
           </div>
         </section>
-      ))}
+      ) : null}
       <p className="text-xs text-slate-500">Data refreshed {formatDateTime(data.generated_utc)}. Historical and production performance use finalized 30-minute market outcomes; manual TradePlan prices are intentionally ignored.</p>
     </div>
   );

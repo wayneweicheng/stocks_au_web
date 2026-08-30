@@ -1,0 +1,53 @@
+{
+  "strategy_code": "GEX_COHR_SC_INTRADAY_EXHAUSTION",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "SCShareRank60": 0.017241379310344827,
+        "PX_WholeDayRet": 0.5025510204081707,
+        "PX_RTHRet": -1.1040609137055846
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "SCShareRank60 <= 0.60 AND PX_WholeDayRet >= -4.0 AND PX_RTHRet >= -2.5",
+      "expected_signal": "COHR_CONTROLLED_SC_INTRADAY_EXHAUSTION"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "SCShareRank60": 0.5614035087719298,
+        "PX_WholeDayRet": -5.436047231230045,
+        "PX_RTHRet": -2.2914263744713614
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "SCShareRank60 <= 0.60 AND PX_WholeDayRet >= -4.0 AND PX_RTHRet >= -2.5"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}

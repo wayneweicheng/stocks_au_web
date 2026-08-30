@@ -1,0 +1,74 @@
+{
+  "as_of": "2026-08-16T21:15:00+10:00",
+  "canonical_decision_revision": "SHA256 of canonical CSV serialization of current D0 plus previous 60 complete daily rows containing ObservationDate,Close,VWAP,BCAbs,BPAbs,SCAbs,SPAbs.",
+  "combined_source_hash": "17926162fd0ba0e63ec3c42909f0db90bb2df06597e6300877145e063d8f6aff",
+  "implementation_sha256": "becd9d399f97d83e670096c729e40009f98ed9fe9b366f9169c41096846f7904",
+  "live_database_schema": "NOT_AVAILABLE \u2014 supplied artifacts identify CSV snapshots, not the live database/schema.",
+  "manifest_format": 1,
+  "sources": [
+    {
+      "date_range": [
+        "2023-09-26",
+        "2026-08-13"
+      ],
+      "extraction_identity": "Google Drive folder Option_GEX_Change_Capital_Type / DIS-20230922-20260813.csv",
+      "google_drive_file_id": "10_jjkHrWXJGlgN1SVsykSzgALYFT9h7P",
+      "google_drive_url": "https://drive.google.com/file/d/10_jjkHrWXJGlgN1SVsykSzgALYFT9h7P/view",
+      "instrument": "DIS",
+      "name": "DIS-20230922-20260813.csv",
+      "required_columns": [
+        "ObservationDate",
+        "ASXCode",
+        "GEXDelta",
+        "CapitalType",
+        "Close",
+        "VWAP"
+      ],
+      "role": "SOURCE",
+      "sha256": "64a58ba92b13f729c5961b6d3543fefe911a62d8d041a6d3cabddec3b4e628a6",
+      "size_bytes": 166311
+    },
+    {
+      "date_range": [
+        "2025-10-17",
+        "2026-08-14"
+      ],
+      "extraction_identity": "Google Drive folder price_history_30m / DIS-20251017-20260814.csv",
+      "google_drive_file_id": "19KClwsTWMONQcXmXtCb7CRNOYzQuoSzl",
+      "google_drive_url": "https://drive.google.com/file/d/19KClwsTWMONQcXmXtCb7CRNOYzQuoSzl/view",
+      "instrument": "DIS",
+      "name": "DIS-20251017-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Volume",
+        "VWAP"
+      ],
+      "role": "EXECUTION_OUTCOME",
+      "sha256": "8ed7a4fb75d72e8596ebdd3d7b8ed412bbe03f796ce24a83e743f9a46278b9cf",
+      "size_bytes": 479466
+    },
+    {
+      "extraction_identity": "Google Drive folder price_history_30m / SPY-20251020-20260814.csv",
+      "google_drive_file_id": "1vtr5ggNSWQhLIgZmRvYBhlDZECW9QC8L",
+      "google_drive_url": "https://drive.google.com/file/d/1vtr5ggNSWQhLIgZmRvYBhlDZECW9QC8L/view",
+      "instrument": "SPY",
+      "name": "SPY-20251020-20260814.csv",
+      "required_columns": [
+        "TimeIntervalStart",
+        "Open",
+        "High",
+        "Low",
+        "Close"
+      ],
+      "role": "BENCHMARK",
+      "sha256": "9694717c4345582e3e916a69f52a33dc954410db84718628fc7730a13e475fb3",
+      "size_bytes": 506216
+    }
+  ],
+  "strategy_code": "GEX_DIS_CAPITALTYPE",
+  "version_code": "1.0.0"
+}

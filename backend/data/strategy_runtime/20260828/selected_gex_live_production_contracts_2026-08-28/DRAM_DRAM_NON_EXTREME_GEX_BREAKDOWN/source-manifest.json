@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_DRAM_GEX_BREAKDOWN",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "3f72b0301e7aed71e03d44286d2c6386a7dad984d93211fe44cf7ae4a0444291",
+  "implementation_sha256": "ce44cb80a33cce6b0f3aac3fb052f02098b6e5ddde0b857dd1e93f95ddc4b408",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "DRAM-20260617-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/DRAM-20260617-20260826.csv",
+      "sha256": "7d5ae759198d31ce129550bd5823bed967c0f97c752c91fa261c783f320aa203",
+      "size_bytes": 13824
+    },
+    {
+      "role": "FEATURE",
+      "name": "DRAM-20260617-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/DRAM-20260617-20260825.csv",
+      "sha256": "7deb016a083cceeec17208638fbaf3cf84a0d0c4a8f2bd670c0c772ad89d8d76",
+      "size_bytes": 26705
+    },
+    {
+      "role": "PRICE",
+      "name": "DRAM-20260506-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/DRAM-20260506-20260827.csv",
+      "sha256": "423254cc5f64eba3243c325530711881623a2624a92dfa6b5d96295c47d9ced2",
+      "size_bytes": 180319
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

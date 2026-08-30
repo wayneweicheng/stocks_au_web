@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_HPE_SP_PARTICIPATION_WEAKNESS",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "a413d743c7f0f4bba6e6b3e38c1525f4184560a14399e1f3eb4f9f90ddedddad",
+  "implementation_sha256": "709fa01d6f36fbfe4afea44abc814e34ad683d1d68adb5e9f5a48cd40417de7c",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "HPE-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/HPE-20230922-20260826.csv",
+      "sha256": "b6050eb79db2794c9cc1b9be231083c8efa78f211ec59504cab7ef081a40905c",
+      "size_bytes": 121635
+    },
+    {
+      "role": "FEATURE",
+      "name": "HPE-20241022-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/HPE-20241022-20260825.csv",
+      "sha256": "2d361f13bbcf2c2b4e07b2c4363edc7b79d5165066aad48eeff075acffb16d31",
+      "size_bytes": 166404
+    },
+    {
+      "role": "PRICE",
+      "name": "HPE-20260506-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/HPE-20260506-20260827.csv",
+      "sha256": "3fd866d7af451b03cc116161a5244e8fddc87a40224f3f6afe63ab9475639f33",
+      "size_bytes": 177229
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

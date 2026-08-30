@@ -34,5 +34,5 @@ frontend/out/
 Thumbs.db
 backend/prediction/*
 
-backend\data
+backend\data\**
 .tmp

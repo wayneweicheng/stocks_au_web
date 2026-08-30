@@ -292,7 +292,7 @@ BEGIN
         CONSTRAINT [PK_TradingSignal_Signal] PRIMARY KEY CLUSTERED ([SignalID]),
         CONSTRAINT [FK_TradingSignal_Signal_Observation] FOREIGN KEY ([ObservationID]) REFERENCES [TradingSignal].[Observation] ([ObservationID]),
         CONSTRAINT [FK_TradingSignal_Signal_Version] FOREIGN KEY ([StrategyVersionID]) REFERENCES [TradingSignal].[StrategyVersion] ([StrategyVersionID]),
-        CONSTRAINT [UQ_TradingSignal_Signal_ObservationVersion] UNIQUE ([ObservationID], [StrategyVersionID]),
+        CONSTRAINT [UQ_TradingSignal_Signal_ObservationVersionClassification] UNIQUE ([ObservationID], [StrategyVersionID], [Classification]),
         CONSTRAINT [CK_TradingSignal_Signal_Direction] CHECK ([Direction] IN ('LONG', 'SHORT', 'NONE')),
         CONSTRAINT [CK_TradingSignal_Signal_Confidence] CHECK ([Confidence] IN ('NONE', 'LOW', 'LOW_MEDIUM', 'MEDIUM', 'MEDIUM_HIGH', 'HIGH')),
         CONSTRAINT [CK_TradingSignal_Signal_Action] CHECK ([ActionCode] IN ('NONE', 'WATCH', 'PLAN_ENTRY')),

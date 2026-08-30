@@ -63,224 +63,51 @@ BEGIN --Proc
 
 		--Normal varible declarations
 
-		--Code goes here
-		--DECLARE @CurrentCode varchar(10);
+		-- Refresh GEX features for every stock configured in LookupRef.v_StockToCheck.
+		DECLARE @CurrentCode varchar(50)
 
-		---- 1. Declare the cursor to select all stocks from your table
-		--DECLARE stock_cursor CURSOR FOR 
-		--SELECT ASXCode 
-		--FROM Analysis.MostTradedStock
-		--ORDER BY 
-		--case when ASXCode in ('SPXW.US', '_VIX.US', 'NVDA.US') then 1 else 0 end desc,
-		--ASXCode; -- Optional: orders them alphabetically
+		DECLARE stock_cursor CURSOR LOCAL FAST_FORWARD FOR
+		SELECT ASXCode
+		FROM
+		(
+			SELECT DISTINCT
+				CASE WHEN ASXCode = '_SPX.US' THEN 'SPXW.US' ELSE ASXCode END AS ASXCode
+			FROM LookupRef.v_StockToCheck
+		) AS Stocks
+		ORDER BY ASXCode;
 
-		---- 2. Open the cursor
-		--OPEN stock_cursor;
+		OPEN stock_cursor;
+		FETCH NEXT FROM stock_cursor INTO @CurrentCode;
 
-		---- 3. Fetch the first record
-		--FETCH NEXT FROM stock_cursor INTO @CurrentCode;
+		WHILE @@FETCH_STATUS = 0
+		BEGIN
+			IF @pbitDebug = 1
+			BEGIN
+				PRINT 'Processing: ' + @CurrentCode;
+			END
 
-		---- 4. Loop through the list
-		--WHILE @@FETCH_STATUS = 0
-		--BEGIN
-		--	BEGIN TRY
-		--		-- Print progress to the message window
-		--		PRINT 'Processing: ' + @CurrentCode;
+			EXEC Analysis.usp_RefreshGEXFeaturesForTraining
+				@ASXCode = @CurrentCode,
+				@NumberOfBackDays = @pNumberOfBackDays;
 
-		--		-- Execute your stored procedure for the current stock
-		--		EXEC Analysis.usp_RefreshGEXFeaturesForTraining
-		--			@ASXCode = @CurrentCode;
-            
-		--	END TRY
-		--	BEGIN CATCH
-		--		-- Optional error handling so the loop continues even if one stock fails
-		--		PRINT 'Error processing ' + @CurrentCode + ': ' + ERROR_MESSAGE();
-		--	END CATCH
+			FETCH NEXT FROM stock_cursor INTO @CurrentCode;
+		END;
 
-		--	-- Fetch the next record
-		--	FETCH NEXT FROM stock_cursor INTO @CurrentCode;
-		--END
-
-		---- 5. Cleanup
-		--CLOSE stock_cursor;
-		--DEALLOCATE stock_cursor;
-
-		--PRINT 'Batch processing complete.';
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SPXW.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'QQQ.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SPY.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SQQQ.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'TLT.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'TQQQ.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'GDX.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SLV.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'AVGO.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'NVDA.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'TSLA.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = '_VIX.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'AAPL.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'AMD.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'AMZN.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'IWM.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'XBI.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'META.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'XBI.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'ITB.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'BAC.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'C.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'CAT.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'DIS.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'FCX.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'GLD.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'IBIT.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'KWEB.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'MCD.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'MU.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'ORCL.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'OXY.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'SNOW.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'XLE.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'LLY.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'COST.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'XOM.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'NFLX.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'XLK.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'DIA.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'JPM.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'GOOG.US',
-		@NumberOfBackDays = @pNumberOfBackDays
-
-		exec Analysis.usp_RefreshGEXFeaturesForTraining
-		@ASXCode = 'MSFT.US',
-		@NumberOfBackDays = @pNumberOfBackDays
+		CLOSE stock_cursor;
+		DEALLOCATE stock_cursor;
 
 	END TRY
 
 	BEGIN CATCH
+		IF CURSOR_STATUS('local', 'stock_cursor') >= 0
+		BEGIN
+			CLOSE stock_cursor;
+		END
+		IF CURSOR_STATUS('local', 'stock_cursor') > -3
+		BEGIN
+			DEALLOCATE stock_cursor;
+		END
+
 		-- Store the details of the error
 		SELECT	@intErrorNumber = ERROR_NUMBER(), @intErrorSeverity = ERROR_SEVERITY(),
 				@intErrorState = ERROR_STATE(), @vchErrorProcedure = ERROR_PROCEDURE(),

@@ -1,0 +1,15 @@
+{
+  "sha256": {
+    "acceptance-status.json": "875271570ce3eb38aadc7c17a6ed714e459b91da9096109a23e4a09746672663",
+    "deterministic-fixtures.json": "6c768145f3c0ca9fa5f21a7ce332301164a156df71043dcc4859626a2d7af3e6",
+    "historical-instance-ledger.csv": "4655406860fe427c369188be7ef0c5cdcdb53d6f681bc9a000c7b8e91eb6f3d9",
+    "historical-instance-ledger.json": "f1d4514e2c079b87bedae6717ca12afb8d9377d02062e3a1468f195cf486e848",
+    "historical-performance.json": "b38721729eb8e24a5a45900e328b075ffd0da280207aab768746bd07a73d0895",
+    "signal-classification-ledger.csv": "f689fb999d7310ce19d8e6a71a7449415cea9c9ec6ae4506856030149c9e16ca",
+    "source-manifest.json": "7510b7569adcb158d9abbb1a0d031140b4342f600b1f6dbe9552f18a9faa6ae7",
+    "strategy.descriptor.json": "67a0dc5e66381310693c699964692a0c2e7bdbcfa0ba72904766ed4deff6ef34",
+    "strategy.md": "004a60b76addcb7f0c0c166ed749a0b7ef6b0611d28d698bea2d6dcbb5fd856e",
+    "strategy_logic.py": "ac90352adacd2a71487857a6f4bba6e563b1a6fcb075a32b7f3e5230681f3b61",
+    "verify_fixtures.py": "7eee9facbea019e8d695dd16b9b1f9256ad73b6a4e36fe5c9261f2c2ded59d04"
+  }
+}

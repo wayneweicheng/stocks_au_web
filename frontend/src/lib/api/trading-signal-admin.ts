@@ -4,6 +4,8 @@ export type AdminPerformanceStats = {
   losses: number;
   win_rate_pct: number | null;
   profit_factor: number | null;
+  average_return_pct: number | null;
+  median_return_pct: number | null;
   gross_profit_pct: number | null;
   gross_loss_pct: number | null;
   source?: string | null;
@@ -38,6 +40,14 @@ export type AdminExecution = {
   execution_mode: string;
 };
 
+export type AdminEvaluationSchedule = {
+  timezone_name: string | null;
+  local_time: string | null;
+  cadence_seconds: number | null;
+  interval_minutes: number | null;
+  window_end: string | null;
+};
+
 export type AdminDeployment = {
   strategy_deployment_id: number;
   deployment_key: string;
@@ -47,6 +57,7 @@ export type AdminDeployment = {
   execution_enabled: boolean;
   is_production: boolean;
   notification_only: boolean;
+  evaluation_schedule: AdminEvaluationSchedule | null;
   production_stats: AdminPerformanceStats;
   executions: AdminExecution[];
 };
@@ -58,6 +69,7 @@ export type AdminSignalDefinition = {
   trigger_condition: string;
   direction: string;
   confidence: string;
+  confidence_score: number | null;
   action: string;
   notification_level: string;
   entry_policy: string;
@@ -71,6 +83,8 @@ export type AdminSignalDefinition = {
     measurement_horizon: string;
     win_rate_pct: number | null;
     profit_factor: number | null;
+    average_return_pct: number | null;
+    median_return_pct: number | null;
     source_reference: string;
     as_of_utc: string;
     notes: string;

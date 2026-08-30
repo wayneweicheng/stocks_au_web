@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_INTC_PUT_VOL_BREAKDOWN",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "297b84f50c53a61dcafbd08104afbbb469a3f1a0ab5b0d9da8df83e40818480a",
+  "implementation_sha256": "4e047b3489761a4b17de68239acee6a77bace52b6fb63b4ff69850b05539ce04",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "INTC-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/INTC-20230922-20260826.csv",
+      "sha256": "0bcac869161a90f30277fa8b837bca206f16171d2009359524226fad0a5290f0",
+      "size_bytes": 173973
+    },
+    {
+      "role": "FEATURE",
+      "name": "INTC-20230926-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/INTC-20230926-20260825.csv",
+      "sha256": "90d6b2985a2f52e4e7b0f1b72b52520395a9f3758e9342239d74f45d0ebc2c68",
+      "size_bytes": 346986
+    },
+    {
+      "role": "PRICE",
+      "name": "INTC-20260506-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/INTC-20260506-20260827.csv",
+      "sha256": "fdbe26efae1f2624e7091388b3fd956fbcae23b42ff7600e2aab0f5206056ca4",
+      "size_bytes": 189793
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

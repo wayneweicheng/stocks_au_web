@@ -1,30 +1,17 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import LoginForm from './LoginForm';
+import { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import LoginForm from "./LoginForm";
 
 export default function AuthWrapper({ children }: { children: React.ReactNode }) {
-  // Mount guard to ensure identical SSR and initial client markup (prevents hydration mismatch)
   const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
+  useEffect(() => setMounted(true), []);
   const { isAuthenticated, loading } = useAuth();
 
-  // During SSR and initial client hydration, render the same static loading shell
   if (!mounted || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-emerald-500" />
-      </div>
-    );
+    return <div className="flex min-h-screen items-center justify-center bg-slate-50"><div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-indigo-600" /></div>;
   }
-
-  if (!isAuthenticated) {
-    return <LoginForm />;
-  }
-
+  if (!isAuthenticated) return <LoginForm />;
   return <>{children}</>;
 }

@@ -677,9 +677,9 @@ function RegimeCard({ regime }: { regime: Regime }) {
                   style={{ width: `${component.available ? component.score : 0}%` }}
                 />
               </div>
-              <div className="mt-1 flex justify-between gap-3 text-[11px] text-slate-500">
-                <span>{component.detail}</span>
-                {component.as_of ? <span className="whitespace-nowrap">{component.as_of}</span> : null}
+              <div className="mt-1 flex flex-col gap-1 text-[11px] text-slate-500 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                <span className="min-w-0 break-words">{component.detail}</span>
+                {component.as_of ? <span className="shrink-0 whitespace-nowrap">{component.as_of}</span> : null}
               </div>
               {component.name === "Breadth" && component.diagnostics ? (
                 <div className="mt-2 grid grid-cols-2 gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] sm:grid-cols-3">
@@ -754,6 +754,18 @@ function RegimeCard({ regime }: { regime: Regime }) {
         {available.length === 0 ? (
           <p className="mt-4 text-sm text-red-600">No regime data was available for the requested date.</p>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SummaryStat({ label, value, detail, tone = "text-slate-950" }: { label: string; value: string; detail: string; tone?: string }) {
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="p-4">
+        <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</div>
+        <div className={`mt-2 text-2xl font-bold tracking-tight ${tone}`}>{value}</div>
+        <div className="mt-1 text-xs text-slate-500">{detail}</div>
       </CardContent>
     </Card>
   );
@@ -894,16 +906,46 @@ export default function MarketCommandCenter({ market }: { market: Market }) {
       ) : null}
 
       {data?.regimes?.[market] ? (
-        <RegimeCard regime={data.regimes[market] as Regime} />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryStat
+            label="Market regime"
+            value={(data.regimes[market] as Regime).label}
+            detail={`${market} · ${(data.regimes[market] as Regime).as_of || "Date unavailable"}`}
+            tone={scoreTone((data.regimes[market] as Regime).score)}
+          />
+          <SummaryStat
+            label="Regime score"
+            value={`${(data.regimes[market] as Regime).score.toFixed(0)}/100`}
+            detail={`${(data.regimes[market] as Regime).confidence.toFixed(0)}% confidence`}
+            tone={scoreTone((data.regimes[market] as Regime).score)}
+          />
+          <SummaryStat
+            label="Evidence signals"
+            value={`${(data.regimes[market] as Regime).components.filter((component) => component.available).length}/${(data.regimes[market] as Regime).components.length}`}
+            detail="Available regime components"
+          />
+          <SummaryStat
+            label="Opportunities"
+            value={String(opportunities.length)}
+            detail={`Ranked ${market} candidates`}
+            tone={opportunities.length ? "text-indigo-700" : "text-slate-500"}
+          />
+        </div>
       ) : (
-        <Card className="h-80 animate-pulse bg-slate-50" />
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => <div key={index} className="skeleton h-28 rounded-xl border border-slate-200" />)}
+        </div>
       )}
 
-      {market === "US" && data?.market_intelligence ? (
-        <MarketIntelligenceCard insight={data.market_intelligence} />
+      {data?.regimes?.[market] ? <RegimeCard regime={data.regimes[market] as Regime} /> : <Card className="h-80 p-6"><div className="skeleton h-5 w-48 rounded" /><div className="mt-6 space-y-4"><div className="skeleton h-3 w-full rounded" /><div className="skeleton h-3 w-5/6 rounded" /><div className="skeleton h-3 w-4/6 rounded" /><div className="skeleton h-3 w-full rounded" /></div></Card>}
+
+      {market === "US" && data?.market_intelligence ? <MarketIntelligenceCard insight={data.market_intelligence} /> : null}
+      {market === "US" && (data?.sentiment || data?.fear_greed) ? (
+        <div className="grid gap-6 xl:grid-cols-2">
+          {data.sentiment ? <SentimentCard sentiment={data.sentiment} /> : null}
+          {data.fear_greed ? <FearGreedCard fearGreed={data.fear_greed} /> : null}
+        </div>
       ) : null}
-      {market === "US" && data?.sentiment ? <SentimentCard sentiment={data.sentiment} /> : null}
-      {market === "US" && data?.fear_greed ? <FearGreedCard fearGreed={data.fear_greed} /> : null}
 
       <Card>
         <CardHeader className="pb-3">
@@ -911,7 +953,7 @@ export default function MarketCommandCenter({ market }: { market: Market }) {
             <div>
               <CardTitle className="text-lg">Top Opportunities</CardTitle>
               <p className="mt-1 text-sm text-slate-500">
-                Ranked from independent scanner, signal and research evidence. Click a row for details.
+                Ranked from independent scanner, signal and research evidence. Select a row to inspect the supporting detail.
               </p>
             </div>
             <Badge>{market}</Badge>
@@ -928,14 +970,14 @@ export default function MarketCommandCenter({ market }: { market: Market }) {
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="border-y border-slate-200 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <thead className="sticky top-16 z-10 border-y border-slate-200 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-5 py-3">Rank</th>
                     <th className="px-3 py-3">Symbol</th>
-                    <th className="px-3 py-3">Score</th>
+                    <th className="px-3 py-3 text-right">Score</th>
                     <th className="px-3 py-3">Direction</th>
                     <th className="px-3 py-3">Horizon</th>
-                    <th className="px-3 py-3">Sources</th>
+                    <th className="px-3 py-3">Evidence</th>
                     <th className="px-3 py-3">Regime Fit</th>
                     <th className="px-3 py-3">Options</th>
                     <th className="px-5 py-3" />
@@ -949,8 +991,17 @@ export default function MarketCommandCenter({ market }: { market: Market }) {
                     return (
                       <Fragment key={key}>
                         <tr
-                          className="cursor-pointer border-b border-slate-100 hover:bg-indigo-50/40"
+                          className="cursor-pointer border-b border-slate-100 transition-colors hover:bg-indigo-50/40 focus-within:bg-indigo-50/40"
                           onClick={() => setExpanded(isExpanded ? null : key)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setExpanded(isExpanded ? null : key);
+                            }
+                          }}
+                          tabIndex={0}
+                          aria-expanded={isExpanded}
+                          aria-label={`${isExpanded ? "Hide" : "Show"} details for ${item.symbol}`}
                         >
                           <td className="px-5 py-3 text-slate-500">{index + 1}</td>
                           <td className="px-3 py-3 font-semibold text-slate-900">
@@ -962,7 +1013,7 @@ export default function MarketCommandCenter({ market }: { market: Market }) {
                               {item.symbol}
                             </Link>
                           </td>
-                          <td className={`px-3 py-3 text-lg font-semibold ${scoreTone(item.score)}`}>
+                          <td className={`px-3 py-3 text-right font-mono text-lg font-semibold tabular-nums ${scoreTone(item.score)}`}>
                             {item.score.toFixed(0)}
                           </td>
                           <td className="px-3 py-3"><Badge variant={badgeVariant(item.direction)}>{item.direction}</Badge></td>
@@ -976,7 +1027,17 @@ export default function MarketCommandCenter({ market }: { market: Market }) {
                           <td className="px-3 py-3 text-xs text-slate-700">
                             {primaryStrategy ? formatStrategy(primaryStrategy.strategy) : item.market === "US" ? "No fit" : "US only"}
                           </td>
-                          <td className="px-5 py-3 text-right text-slate-400">{isExpanded ? "Hide" : "Details"}</td>
+                          <td className="px-5 py-3 text-right">
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                              onClick={(event) => { event.stopPropagation(); setExpanded(isExpanded ? null : key); }}
+                              aria-expanded={isExpanded}
+                            >
+                              {isExpanded ? "Hide" : "Details"}
+                              <span aria-hidden="true" className={`text-base transition-transform ${isExpanded ? "rotate-180" : ""}`}>⌄</span>
+                            </button>
+                          </td>
                         </tr>
                         {isExpanded ? (
                           <tr>

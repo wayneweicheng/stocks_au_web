@@ -1,0 +1,51 @@
+{
+  "strategy_code": "GEX_CRWD_CONTROLLED_SC_LONG",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "SCOptionCountChg_Rank60": 0.14285714285714285,
+        "Prev2DaysChange": 12.75
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "SCOptionCountChg_Rank60 <= 0.80 AND Prev2DaysChange >= -1.0",
+      "expected_signal": "CRWD_CONTROLLED_SC_ACTIVITY_LONG"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "SCOptionCountChg_Rank60": 0.8571428571428571,
+        "Prev2DaysChange": 3.49
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "SCOptionCountChg_Rank60 <= 0.80 AND Prev2DaysChange >= -1.0"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}

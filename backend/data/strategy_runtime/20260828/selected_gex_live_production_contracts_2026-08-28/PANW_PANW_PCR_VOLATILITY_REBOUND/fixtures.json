@@ -1,0 +1,51 @@
+{
+  "strategy_code": "GEX_PANW_PCR_VOL_REBOUND",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "PCRChangePct": -28.95183751871464,
+        "QQQ_BB_Bandwidth": 0.1608312866299483
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "ABS(PCRChangePct) >= 10.0 AND QQQ_BB_Bandwidth >= 0.07",
+      "expected_signal": "PANW_PCR_VOLATILITY_REBOUND"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "PCRChangePct": -2.6316985438161966,
+        "QQQ_BB_Bandwidth": 0.1697473436512439
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "ABS(PCRChangePct) >= 10.0 AND QQQ_BB_Bandwidth >= 0.07"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}

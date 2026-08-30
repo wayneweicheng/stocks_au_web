@@ -1,0 +1,38 @@
+{
+  "manifest_format": 1,
+  "strategy_code": "GEX_BABA_WEAK_CALL_EXHAUSTION",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-08-28T18:49:00+10:00",
+  "combined_source_hash": "5093e7cce91082a8c5dc23fb3e0801953669b9860437ad33042e9b435ea8d66e",
+  "implementation_sha256": "5efed5a0f0b0d55e0d3e882c7a07a3d6d3302206de27f12f9912511a5b7fc486",
+  "live_database_schema": {
+    "capital_type": "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "features": "StockDB_US.Analysis.GEX_Features",
+    "feature_refresh_procedure": "StockDB_US.Analysis.usp_RefreshGEXFeaturesForTraining",
+    "execution_quotes": "Configured production market-data source outside packet"
+  },
+  "sources": [
+    {
+      "role": "CAPITAL",
+      "name": "BABA-20230922-20260826.csv",
+      "path_identity": "Google Drive staged snapshot/BABA-20230922-20260826.csv",
+      "sha256": "1f6a653344be4f13d8be415ab62e13a3648ee5edced41977553b56c727a9f3f9",
+      "size_bytes": 173491
+    },
+    {
+      "role": "FEATURE",
+      "name": "BABA-20241022-20260825.csv",
+      "path_identity": "Google Drive staged snapshot/BABA-20241022-20260825.csv",
+      "sha256": "5d208199c56fd22fcc7478697d5688991b1a303de672ec386d90e38ecd6d600d",
+      "size_bytes": 237814
+    },
+    {
+      "role": "PRICE",
+      "name": "BABA-20251020-20260827.csv",
+      "path_identity": "Google Drive staged snapshot/BABA-20251020-20260827.csv",
+      "sha256": "0d89d77e3cf5372a21dce3a44de7426a3991cf6470c7a93c3279784296e62c8a",
+      "size_bytes": 519500
+    }
+  ],
+  "historical_source_note": "Files are read-only Google Drive snapshots staged locally for contract construction; production reads database/live market data, not these CSV paths."
+}

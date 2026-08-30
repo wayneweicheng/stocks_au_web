@@ -1,0 +1,355 @@
+{
+  "definition": {
+    "calendar": "NASDAQ US equity trading calendar; exchange holidays skipped; DST by America/New_York; early close uses official last regular-session bar.",
+    "market_timezone": "America/New_York",
+    "multiple_signal_policy": "CO_EMIT_ALL_MATCHES_IN_PRECEDENCE_ORDER; precedence is ordering, not suppression.",
+    "purpose": "Classify MSFT directional setups from prior-session option GEX capital-type structure and issue notification-only paper plans; v1.1 adds production feature-tier confirmation using MSFT and QQQ GEX_Features.",
+    "rationale": "Ticker-specific GEX rules selected from full-period research; see strategy.md for rule-level rationale.",
+    "source_refresh_gate": "At/after 07:30 America/New_York on current US trading session D1: latest complete GEX ObservationDate must equal previous US trading session D0; exactly one BC/BP/SC/SP row; non-null GEXDelta/Close/VWAP; 60 prior complete observations; canonical source revision stable for this heartbeat. Otherwise NOT_READY and create nothing. Additionally require D0 rows from StockDB_US.Analysis.GEX_Features for MSFT and QQQ with all tier variables non-null; otherwise NOT_READY.",
+    "timezone": "Australia/Sydney",
+    "trigger_precedence": [
+      "MSFT_STRONG_BEARISH_CONTINUATION",
+      "MSFT_BULL_SHARE_COLLAPSE",
+      "MSFT_HIGH_GEX_BULLISH_CONFIRMATION",
+      "MSFT_BEARISH_CROWDING_SQUEEZE_CONFIRMED",
+      "MSFT_BEARISH_CROWDING_SQUEEZE_WEAK",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ]
+  },
+  "descriptor_format": 2,
+  "display_name": "MSFT GEX Capital-Type Feature-Aware Strategy",
+  "implementation_key": "gex.msft.capital_type.v1_1_0",
+  "instruments": [
+    {
+      "code": "MSFT",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "SUBJECT",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "MSFT_OPTION_GEX_CAPITAL_TYPE",
+      "currency": "USD",
+      "market": "INTERNAL",
+      "role": "SOURCE",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "MSFT",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "EXECUTION",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "QQQ",
+      "currency": "USD",
+      "market": "NASDAQ",
+      "role": "BENCHMARK",
+      "timezone": "America/New_York"
+    },
+    {
+      "code": "NOT_AVAILABLE",
+      "market": "NOT_AVAILABLE",
+      "role": "PROXY"
+    }
+  ],
+  "production_policy": {
+    "broker_execution": "HARD_DISABLED",
+    "deployment_state": "PRODUCTION",
+    "manual_trade_required_for_outcome": false,
+    "mode": "NOTIFICATION_ONLY",
+    "pushover": {
+      "body_template": "{signal_code} | {feature_tier} | {direction} | {holding_period} | {key_values} | {report_url}",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "enabled": true,
+      "priority": 0,
+      "recipient": "Configured production Pushover user key from secrets; never embedded in packet",
+      "retry_schedule_minutes": [
+        0,
+        2,
+        5,
+        15
+      ],
+      "title_template": "[GEX MSFT] {signal_code} \u2014 {market_date}"
+    },
+    "report_authentication_required": true,
+    "report_link_format": "/reports/strategy/{strategy_code}/{version_code}/{public_report_id}",
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "manual_trade_optional": true,
+    "change_control": "Any base trigger, feature-tier predicate, direction, entry/exit rule, or notification policy change requires a new version."
+  },
+  "provenance": {
+    "backtest_engine_version": "gex-feature-tier-contract-engine/1.1.0",
+    "executable_price_window": {
+      "end": "2026-08-14",
+      "start": "2026-01-07"
+    },
+    "implementation_hash": "aac1fb71b66e80e24c31c54a98a582b489bc35112529e4857f3f9d34de6d573b",
+    "out_of_sample_window": {
+      "status": "NOT_AVAILABLE",
+      "start": null,
+      "end": null,
+      "reason": "Feature-tier predicates were selected after screening the available historical sample; exact v1.1 predicates are now frozen for forward production validation."
+    },
+    "research_window": {
+      "end": "2026-08-20",
+      "start": "2023-08-15"
+    },
+    "source_hash": "16629349455c4be9702b8cc03b9cee7d96558281d885727bdff352fa0c6e6454",
+    "source_manifest": "source-manifest.json"
+  },
+  "signal_definitions": [
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "HIGH_RESEARCH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "MSFT declines despite elevated bullish GEX share while PCR also falls; price weakness tends to continue one more session.",
+      "direction": "SHORT",
+      "display_name": "Strong Bearish Continuation",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D1 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "as_of": "2026-08-16T21:15:00+10:00",
+        "instances": 19,
+        "losses": 4,
+        "profit_factor": 3.95550705,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "status": "AVAILABLE",
+        "win_rate_pct": 78.94736842,
+        "wins": 15
+      },
+      "holding_period": "D1",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "MSFT_STRONG_BEARISH_CONTINUATION",
+      "trigger_condition": "PriceChangePct < -0.10 AND PCRChangePct < -5.0 AND BullSharePct60 >= 0.65",
+      "variables": [
+        "PriceChangePct",
+        "PCRChangePct",
+        "BullSharePct60"
+      ]
+    },
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "MEDIUM_HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "A large causal collapse in BullShare is treated as flow deterioration and historically leads to additional downside.",
+      "direction": "SHORT",
+      "display_name": "Bull-Share Collapse",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D2 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "as_of": "2026-08-16T21:15:00+10:00",
+        "instances": 19,
+        "losses": 4,
+        "profit_factor": 1.45907183,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "status": "AVAILABLE",
+        "win_rate_pct": 78.94736842,
+        "wins": 15
+      },
+      "holding_period": "D2",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "MSFT_BULL_SHARE_COLLAPSE",
+      "trigger_condition": "BullShareChange < 0 AND BullShareAbsShockPct60 >= 0.75",
+      "variables": [
+        "BullShareChange",
+        "BullShareAbsShockPct60"
+      ]
+    },
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "MEDIUM",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "A rising MSFT price plus falling PCR is accepted as bullish only when total GEX participation is unusually high.",
+      "direction": "LONG",
+      "display_name": "High-GEX Bullish Confirmation",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D2 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "as_of": "2026-08-16T21:15:00+10:00",
+        "instances": 13,
+        "losses": 4,
+        "profit_factor": 2.12250208,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "status": "AVAILABLE",
+        "win_rate_pct": 69.23076923,
+        "wins": 9
+      },
+      "holding_period": "D2",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "MSFT_HIGH_GEX_BULLISH_CONFIRMATION",
+      "trigger_condition": "PriceChangePct > 0.10 AND PCRChangePct < -5.0 AND TotalGEXPct60 >= 0.75",
+      "variables": [
+        "PriceChangePct",
+        "PCRChangePct",
+        "TotalGEXPct60"
+      ]
+    },
+    {
+      "action": "PLAN_ENTRY",
+      "confidence": "HIGH",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": true,
+      "creates_report": true,
+      "definition": "Price rises despite very bearish GEX composition; retained as watch-only because prior analysis indicated weak stock-specific excess versus QQQ. Feature-confirmed HIGH tier.",
+      "direction": "LONG",
+      "display_name": "Bearish Crowding Squeeze Watch \u2014 High",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 10,
+        "wins": 10,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "profit_factor": null,
+        "as_of": "2026-08-23T15:20:00+10:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      },
+      "holding_period": "D5",
+      "notification_level": "HIGH",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "MSFT_BEARISH_CROWDING_SQUEEZE_CONFIRMED",
+      "trigger_condition": "(PriceChangePct > 0 AND NetBullSharePct60 <= 0.20) AND (QQQ.TodayChange > 1.0 OR MSFT.GEXChange < -10.0)",
+      "variables": [
+        "PriceChangePct",
+        "NetBullSharePct60",
+        "QQQ_TodayChange",
+        "MSFT_GEXChange"
+      ]
+    },
+    {
+      "action": "WATCH",
+      "confidence": "LOW",
+      "confidence_method": "Fixed research confidence label based on historical sample size, directional consistency and rule stability; not recalculated live.",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Price rises despite very bearish GEX composition; retained as watch-only because prior analysis indicated weak stock-specific excess versus QQQ. Feature-rejected WEAK tier; notify but do not create a paper plan.",
+      "direction": "LONG",
+      "display_name": "Bearish Crowding Squeeze Watch \u2014 Weak",
+      "entry_policy": "Open of D1 07:30 America/New_York 30-minute bar; D1 is first US trading session after ObservationDate.",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session 30-minute bar Close",
+        "Take-profit: NONE",
+        "Stop-loss: NONE",
+        "Opposing signal: does not alter this signal outcome",
+        "Missing required entry/exit bar: PENDING/cancel pre-entry as defined in strategy.md"
+      ],
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 9,
+        "wins": 2,
+        "losses": 7,
+        "win_rate_pct": 22.22222222,
+        "profit_factor": 0.04061551,
+        "as_of": "2026-08-23T15:20:00+10:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      },
+      "holding_period": "D5",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "sends_notification": true,
+      "signal_code": "MSFT_BEARISH_CROWDING_SQUEEZE_WEAK",
+      "trigger_condition": "(PriceChangePct > 0 AND NetBullSharePct60 <= 0.20) AND (NOT(QQQ.TodayChange > 1.0 OR MSFT.GEXChange < -10.0))",
+      "variables": [
+        "PriceChangePct",
+        "NetBullSharePct60",
+        "QQQ_TodayChange",
+        "MSFT_GEXChange"
+      ]
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed but deterministic evaluation encounters invalid/non-finite state.",
+      "direction": "NONE",
+      "display_name": "Data Error",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Operational data-quality state, not a trading signal.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "DATA_ERROR",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": []
+    },
+    {
+      "action": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "confidence_method": "NOT_APPLICABLE",
+      "creates_paper_plan": false,
+      "creates_report": true,
+      "definition": "Readiness passed and no PLAN_ENTRY/WATCH predicate matched.",
+      "direction": "NONE",
+      "display_name": "No Signal",
+      "entry_policy": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "historical_performance": {
+        "reason": "Non-actionable classification.",
+        "status": "NOT_AVAILABLE"
+      },
+      "holding_period": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "sends_notification": false,
+      "signal_code": "NO_SIGNAL",
+      "trigger_condition": "count(matching_signal_predicates) == 0",
+      "variables": []
+    }
+  ],
+  "status": "IMPLEMENTABLE",
+  "strategy_code": "GEX_MSFT_CAPITALTYPE",
+  "version_code": "1.1.0-production"
+}

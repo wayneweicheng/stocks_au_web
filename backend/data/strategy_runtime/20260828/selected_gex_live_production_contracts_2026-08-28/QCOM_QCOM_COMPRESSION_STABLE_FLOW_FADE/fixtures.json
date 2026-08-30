@@ -1,0 +1,51 @@
+{
+  "strategy_code": "GEX_QCOM_COMPRESSION_FLOW_FADE",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "BB_Bandwidth": 0.3412182155744293,
+        "BullShareChgAbsRank60": 0.48214285714285715
+      },
+      "purpose": "Exact actionable predicate evaluates TRUE; values are illustrative and must satisfy trigger as written.",
+      "trigger_condition": "BB_Bandwidth <= 0.346 AND BullShareChgAbsRank60 <= 0.65",
+      "expected_signal": "QCOM_COMPRESSION_STABLE_FLOW_FADE"
+    },
+    {
+      "id": "no-signal",
+      "inputs": {
+        "BB_Bandwidth": 0.7700363414886204,
+        "BullShareChgAbsRank60": 0.7857142857142857
+      },
+      "purpose": "At least one required predicate component fails while readiness passes.",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "purpose": "One required variable is null/missing.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "stale-d0",
+      "purpose": "Latest complete source market date is not previous valid US session.",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "boundary",
+      "purpose": "Inclusive boundaries use <=/>= exactly as written; strict boundaries use </> exactly as written.",
+      "trigger_condition": "BB_Bandwidth <= 0.346 AND BullShareChgAbsRank60 <= 0.65"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "deployment_target": "PRODUCTION",
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED",
+        "manual_execution_by_user": true
+      }
+    }
+  ]
+}
