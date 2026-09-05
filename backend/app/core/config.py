@@ -65,6 +65,15 @@ class Settings(BaseSettings):
     chart_base_url: str = Field(default="", validation_alias=AliasChoices("chart_base_url", "CHART_BASE_URL", "CHART_BASE_DIR"))
 
     # Generic immutable Trading Signal report catalog
+    trading_signal_admin_query_timeout: int = Field(
+        default=60,
+        ge=1,
+        le=120,
+        validation_alias=AliasChoices(
+            "trading_signal_admin_query_timeout",
+            "TRADING_SIGNAL_ADMIN_QUERY_TIMEOUT",
+        ),
+    )
     trading_signal_report_base_url: str = Field(default="", validation_alias=AliasChoices("trading_signal_report_base_url", "TRADING_SIGNAL_REPORT_BASE_URL"))
     trading_signal_report_token: str = Field(default="", validation_alias=AliasChoices("trading_signal_report_token", "TRADING_SIGNAL_REPORT_TOKEN"))
 

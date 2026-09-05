@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import Alert from "../components/ui/Alert";
@@ -97,10 +97,38 @@ function SignalDefinitions({
 }
 
 function HistoricalTradeDetails({ trades }: { trades: AdminHistoricalTrade[] }) {
+  const groups = useMemo(() => {
+    const sorted = [...trades].sort((left, right) =>
+      left.signal_code.localeCompare(right.signal_code)
+      || (left.entry_date || left.market_date).localeCompare(right.entry_date || right.market_date)
+      || (left.exit_date || "").localeCompare(right.exit_date || "")
+      || left.market_date.localeCompare(right.market_date),
+    );
+    const grouped = new Map<string, { key: string; signalCode: string; entryDate: string; exitDate: string; trades: AdminHistoricalTrade[] }>();
+    sorted.forEach((trade) => {
+      const key = trade.deduplication_group_id || `${trade.signal_code}|${trade.entry_date || trade.market_date}|${trade.exit_date || trade.entry_date || trade.market_date}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.trades.push(trade);
+      } else {
+        grouped.set(key, {
+          key,
+          signalCode: trade.signal_code,
+          entryDate: trade.entry_date || trade.market_date,
+          exitDate: trade.exit_date || trade.entry_date || trade.market_date,
+          trades: [trade],
+        });
+      }
+    });
+    return Array.from(grouped.values()).sort((left, right) =>
+      left.signalCode.localeCompare(right.signalCode) || left.entryDate.localeCompare(right.entryDate) || left.exitDate.localeCompare(right.exitDate),
+    );
+  }, [trades]);
+
   return (
     <details className="rounded-md border border-slate-200">
       <summary className="cursor-pointer list-none p-3 text-sm font-semibold text-slate-900">
-        Model-builder historical trade detail ({trades.length})
+        Model-builder historical trade detail ({trades.length} trades · {groups.length} overlap groups)
       </summary>
       <div className="border-t border-slate-200 p-3">
         {trades.length ? <div className="overflow-x-auto">
@@ -108,18 +136,25 @@ function HistoricalTradeDetails({ trades }: { trades: AdminHistoricalTrade[] }) 
             <thead className="border-b border-slate-200 text-slate-500">
               <tr><th className="px-2 py-2">Date</th><th className="px-2 py-2">Signal</th><th className="px-2 py-2">Direction</th><th className="px-2 py-2">Entry</th><th className="px-2 py-2">Exit</th><th className="px-2 py-2">Return</th><th className="px-2 py-2">MFE / MAE</th><th className="px-2 py-2">Bars</th><th className="px-2 py-2">Exit reason</th><th className="px-2 py-2">Features</th></tr>
             </thead>
-            <tbody>{trades.map((trade, index) => <tr key={`${trade.signal_code}-${trade.market_date}-${index}`} className="border-b border-slate-100 last:border-0">
-              <td className="whitespace-nowrap px-2 py-2">{trade.market_date}</td>
-              <td className="whitespace-nowrap px-2 py-2">{trade.signal_code}</td>
-              <td className="px-2 py-2">{trade.direction}</td>
-              <td className="whitespace-nowrap px-2 py-2">{trade.entry_timestamp || "—"}<br />{formatPrice(trade.entry_price)}</td>
-              <td className="whitespace-nowrap px-2 py-2">{trade.exit_timestamp || "—"}<br />{formatPrice(trade.exit_price)}</td>
-              <td className={`whitespace-nowrap px-2 py-2 font-semibold ${(trade.return_pct || 0) >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatPct(trade.return_pct)}</td>
-              <td className="whitespace-nowrap px-2 py-2">{formatPct(trade.mfe_pct)} / {formatPct(trade.mae_pct)}</td>
-              <td className="px-2 py-2">{trade.bars_held ?? "—"}</td>
-              <td className="px-2 py-2">{trade.exit_reason || "—"}</td>
-              <td className="px-2 py-2"><details><summary className="cursor-pointer text-indigo-700">View</summary><pre className="mt-1 max-w-xs overflow-auto rounded bg-slate-900 p-2 text-[10px] text-slate-100">{JSON.stringify(trade.features, null, 2)}</pre></details></td>
-            </tr>)}</tbody>
+            <tbody>{groups.map((group, groupIndex) => <Fragment key={group.key}>
+              <tr className={groupIndex % 2 === 0 ? "bg-indigo-50" : "bg-amber-50"}>
+                <td colSpan={10} className="border-y border-slate-200 px-2 py-2 font-semibold text-slate-700">
+                  Group {groupIndex + 1} · {group.signalCode} · {group.entryDate} → {group.exitDate} · {group.trades.length} trade{group.trades.length === 1 ? "" : "s"}
+                </td>
+              </tr>
+              {group.trades.map((trade, index) => <tr key={`${group.key}-${trade.market_date}-${index}`} className={`${groupIndex % 2 === 0 ? "bg-indigo-50/40" : "bg-amber-50/40"} border-b border-slate-100 last:border-0`}>
+                <td className="whitespace-nowrap px-2 py-2">{trade.market_date}</td>
+                <td className="whitespace-nowrap px-2 py-2">{trade.signal_code}</td>
+                <td className="px-2 py-2">{trade.direction}</td>
+                <td className="whitespace-nowrap px-2 py-2">{trade.entry_timestamp || "—"}<br />{formatPrice(trade.entry_price)}</td>
+                <td className="whitespace-nowrap px-2 py-2">{trade.exit_timestamp || "—"}<br />{formatPrice(trade.exit_price)}</td>
+                <td className={`whitespace-nowrap px-2 py-2 font-semibold ${(trade.return_pct || 0) >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatPct(trade.return_pct)}</td>
+                <td className="whitespace-nowrap px-2 py-2">{formatPct(trade.mfe_pct)} / {formatPct(trade.mae_pct)}</td>
+                <td className="px-2 py-2">{trade.bars_held ?? "—"}</td>
+                <td className="px-2 py-2">{trade.exit_reason || "—"}</td>
+                <td className="px-2 py-2"><details><summary className="cursor-pointer text-indigo-700">View</summary><pre className="mt-1 max-w-xs overflow-auto rounded bg-slate-900 p-2 text-[10px] text-slate-100">{JSON.stringify(trade.features, null, 2)}</pre></details></td>
+              </tr>)}
+            </Fragment>)}</tbody>
           </table>
         </div> : <p className="text-xs text-slate-500">No model-builder ledger records are available for this strategy version.</p>}
       </div>
@@ -195,7 +230,11 @@ export default function TradingSignalAdminTab({ baseUrl }: { baseUrl: string }) 
     setLoading(true);
     setError("");
     try {
-      const response = await authenticatedFetch(`${baseUrl}/api/trading-signal-reports/admin/strategies`);
+      const query = new URLSearchParams();
+      if (requestedStock) query.set("stock_code", requestedStock);
+      if (requestedSignalCode) query.set("signal_code", requestedSignalCode);
+      const queryString = query.toString();
+      const response = await authenticatedFetch(`${baseUrl}/api/trading-signal-reports/admin/strategies${queryString ? `?${queryString}` : ""}`);
       const payload = (await response.json().catch(() => ({}))) as AdminStrategyPage & { detail?: string };
       if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
       setData(payload);
@@ -204,7 +243,7 @@ export default function TradingSignalAdminTab({ baseUrl }: { baseUrl: string }) 
     } finally {
       setLoading(false);
     }
-  }, [baseUrl]);
+  }, [baseUrl, requestedSignalCode, requestedStock]);
 
   useEffect(() => { void load(); }, [load]);
 

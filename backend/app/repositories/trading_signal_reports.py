@@ -96,6 +96,14 @@ def _historical_evidence(configuration: Any, classification: Any) -> Optional[Di
     if not isinstance(definitions, list):
         return None
 
+    actionable = [
+        definition for definition in definitions
+        if isinstance(definition, dict)
+        and str(definition.get("action") or "").upper() in {"PLAN_ENTRY", "WATCH"}
+        and str(definition.get("signal_code") or "").upper() not in {"DATA_ERROR", "NO_SIGNAL"}
+    ]
+    summary = config.get("historical_performance_summary")
+
     for definition in definitions:
         if not isinstance(definition, dict):
             continue
@@ -105,8 +113,11 @@ def _historical_evidence(configuration: Any, classification: Any) -> Optional[Di
         }
         if wanted not in candidates:
             continue
-        history = definition.get("historical_performance")
-        if not isinstance(history, dict) or str(history.get("status") or "").upper() != "AVAILABLE":
+        history = dict(definition.get("historical_performance") or {})
+        if len(actionable) == 1 and actionable[0] is definition and isinstance(summary, dict):
+            if history.get("median_return_pct") is None and summary.get("median_return_pct") is not None:
+                history["median_return_pct"] = summary["median_return_pct"]
+        if str(history.get("status") or "").upper() != "AVAILABLE":
             return None
         instances = history.get("instances", history.get("number_of_signal_instances"))
         resolved = history.get("resolved_instances")
@@ -123,6 +134,10 @@ def _historical_evidence(configuration: Any, classification: Any) -> Optional[Di
             "historical_resolved_instances": int(resolved or 0),
             "historical_profit_factor": _number(history.get("profit_factor")),
             "historical_average_return_pct": _number(history.get("average_return_pct")),
+            # Keep this aligned with the Strategy Admin packet metric. The
+            # overview is read-only for non-admin users, so it carries the
+            # same per-signal value without requiring an admin request.
+            "historical_median_return_pct": _number(history.get("median_return_pct")),
         }
     return None
 
@@ -362,6 +377,16 @@ class TradingSignalReportRepository:
                 close_price_source = str(quote.get("source") or "ib_live")
 
         open_price = _number(row.get("tradable_date_open_price"))
+        cash_open = datetime.combine(tradable_date, time(9, 30), tzinfo=self._cash_calendar.timezone)
+        entry_is_future = local_now < cash_open
+        if open_price is not None and open_price > 0 and not entry_is_future:
+            entry_price = open_price
+            entry_price_source = "tradable_date_open"
+        else:
+            entry_price = close_price
+            entry_price_source = (
+                "close_fallback_future_entry" if entry_is_future else "close_fallback_missing_open"
+            ) if entry_price is not None else None
         change_pct = (
             round((close_price - open_price) * 100.0 / open_price, 2)
             if close_price is not None and open_price not in (None, 0)
@@ -371,6 +396,8 @@ class TradingSignalReportRepository:
             "instrument_code": code,
             "tradable_date": tradable_date,
             "tradable_date_open_price": open_price,
+            "entry_price": entry_price,
+            "entry_price_source": entry_price_source,
             "close_price": close_price,
             "close_price_date": close_price_date,
             "close_price_source": close_price_source,
@@ -428,10 +455,11 @@ class TradingSignalReportRepository:
         finally:
             model.close()
 
-        # Keep the latest qualifying report for each strategy/horizon. This
-        # retains, for example, a D2 and D5 view for the same instrument while
-        # preventing older reports from obscuring the as-of snapshot.
-        selected: Dict[tuple[str, str, str], Dict[str, Any]] = {}
+        # Keep every qualifying report whose tradable window is active on the
+        # selected as-of date. A signal from an earlier report date remains
+        # relevant until its horizon ends, so selecting only the latest
+        # strategy/horizon would incorrectly hide overlapping active signals.
+        selected: Dict[tuple[str, str, str, str], Dict[str, Any]] = {}
         data_errors_by_key: Dict[tuple[str, str, str, str], Dict[str, Any]] = {}
         latest_result_keys: set[tuple[str, str, str, str]] = set()
         for raw_row in rows:
@@ -470,7 +498,12 @@ class TradingSignalReportRepository:
             tradable_date, end_date, end_at = self._trade_window(row["report_date"], holding_period)
             if as_of < tradable_date or (end_date is not None and as_of > end_date):
                 continue
-            key = (instrument, str(row.get("strategy_code") or ""), holding_period)
+            key = (
+                instrument,
+                str(row.get("strategy_code") or ""),
+                holding_period,
+                str(row.get("report_date")),
+            )
             if key in selected:
                 continue
             selected[key] = {

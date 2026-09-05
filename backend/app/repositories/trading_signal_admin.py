@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import csv
+import hashlib
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -28,6 +29,18 @@ def _json_object(value: Any) -> Dict[str, Any]:
         return parsed if isinstance(parsed, dict) else {}
     except (TypeError, ValueError, json.JSONDecodeError):
         return {}
+
+
+def _trade_fingerprint(record: Dict[str, Any]) -> str:
+    payload = json.dumps(record, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _date_part(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text[:10] if text else None
 
 
 def _metadata_values(metadata: Iterable[Dict[str, Any]], keys: Iterable[str]) -> List[str]:
@@ -96,6 +109,21 @@ def _descriptor_signals(configuration: Dict[str, Any]) -> List[Dict[str, Any]]:
         signal["exit_conditions"] = normalized_exits
         signal["historical_performance"] = dict(signal.get("historical_performance") or {})
         normalized.append(signal)
+
+    # Some one-signal packets publish their frozen statistics in the sibling
+    # historical-performance summary rather than repeating them inside the
+    # signal definition. Surface that same median in the admin signal row.
+    summary = configuration.get("historical_performance_summary")
+    actionable = [
+        signal for signal in normalized
+        if str(signal.get("action") or "").upper() in {"PLAN_ENTRY", "WATCH"}
+        and str(signal.get("signal_code") or "").upper() not in {"DATA_ERROR", "NO_SIGNAL"}
+    ]
+    if isinstance(summary, dict) and len(actionable) == 1:
+        history = actionable[0]["historical_performance"]
+        if history.get("median_return_pct") is None and summary.get("median_return_pct") is not None:
+            history["median_return_pct"] = summary["median_return_pct"]
+
     return normalized
 
 
@@ -229,7 +257,12 @@ def _descriptor_stats(
     }
 
 
-def _historical_trade_ledger(configuration: Dict[str, Any], strategy_code: str, version_code: str) -> List[Dict[str, Any]]:
+def _historical_trade_ledger(
+    configuration: Dict[str, Any],
+    strategy_code: str,
+    version_code: str,
+    deduplication_by_fingerprint: Optional[Dict[str, str]] = None,
+) -> List[Dict[str, Any]]:
     """Return immutable model-builder trade records for the admin detail view.
 
     Newer SQL catalogues may carry the ledger in ConfigurationJson. The local
@@ -306,13 +339,18 @@ def _historical_trade_ledger(configuration: Dict[str, Any], strategy_code: str, 
             )
             if record.get(key) is not None
         }
+        entry_timestamp = record.get("entry_timestamp") or record.get("entry_time")
+        exit_timestamp = record.get("exit_timestamp") or record.get("exit_time")
         normalized.append({
             "signal_code": str(record.get("signal_code") or ""),
             "market_date": str(record.get("market_date") or ""),
             "direction": str(record.get("direction") or ""),
-            "entry_timestamp": record.get("entry_timestamp") or record.get("entry_time"),
+            "entry_date": _date_part(entry_timestamp) or _date_part(record.get("market_date")),
+            "exit_date": _date_part(exit_timestamp) or _date_part(entry_timestamp) or _date_part(record.get("market_date")),
+            "deduplication_group_id": (deduplication_by_fingerprint or {}).get(_trade_fingerprint(record)),
+            "entry_timestamp": entry_timestamp,
             "entry_price": optional_value(record.get("entry_price")),
-            "exit_timestamp": record.get("exit_timestamp") or record.get("exit_time"),
+            "exit_timestamp": exit_timestamp,
             "exit_price": optional_value(record.get("exit_price")),
             "exit_reason": str(record.get("exit_reason") or ""),
             "gross_return_pct": percentage_points(
@@ -362,17 +400,37 @@ def _actual_return(direction: Optional[str], entry: Any, exit: Any) -> Optional[
 class TradingSignalAdminRepository:
     """Deep module for the strategy catalogue, performance, and safe toggles."""
 
+    @staticmethod
+    def _instrument_values(stock_code: Optional[str]) -> List[str]:
+        normalized = str(stock_code or "").strip().upper()
+        if not normalized:
+            return []
+        values = {normalized}
+        if normalized.endswith(".US"):
+            values.add(normalized[:-3])
+        else:
+            values.add(f"{normalized}.US")
+        if normalized == "SPX":
+            values.update({"SPXW", "SPXW.US"})
+        return sorted(values)
+
     def __init__(self, model_factory: Optional[Callable[[], Any]] = None, connection_factory: Optional[Callable[..., Any]] = None) -> None:
         self._model_factory = model_factory or (
             lambda: get_timed_sql_model(
                 database="StockDB_US",
                 connection_timeout=settings.sqlserver_connection_timeout,
-                query_timeout=10,
+                query_timeout=settings.trading_signal_admin_query_timeout,
             )
         )
         self._connection_factory = connection_factory or get_db_connection
 
-    def _read_catalog_rows(self, model: Any) -> Dict[str, List[Dict[str, Any]]]:
+    def _read_catalog_rows(
+        self,
+        model: Any,
+        *,
+        stock_code: Optional[str] = None,
+        signal_code: Optional[str] = None,
+    ) -> Dict[str, List[Dict[str, Any]]]:
         definitions = model.execute_read_query(
             """
             SELECT StrategyDefinitionID AS strategy_definition_id, StrategyCode AS strategy_code,
@@ -383,8 +441,35 @@ class TradingSignalAdminRepository:
             """,
             [],
         ) or []
+        version_filters = ["defn.IsEnabled = 1", "v.Status <> 'RETIRED'"]
+        version_values: List[Any] = []
+        instrument_values = self._instrument_values(stock_code)
+        if instrument_values:
+            placeholders = ", ".join("?" for _ in instrument_values)
+            version_filters.append(f"""
+                EXISTS (
+                    SELECT 1
+                    FROM [StockDB_US].[TradingSignal].[StrategyDeployment] AS filter_deployment
+                    JOIN [StockDB_US].[TradingSignal].[StrategyInstrumentRole] AS filter_role
+                      ON filter_role.StrategyDeploymentID = filter_deployment.StrategyDeploymentID
+                    WHERE filter_deployment.StrategyVersionID = v.StrategyVersionID
+                      AND UPPER(filter_role.InstrumentCode) IN ({placeholders})
+                )
+            """)
+            version_values.extend(instrument_values)
+        if signal_code and signal_code.strip():
+            version_filters.append("""
+                EXISTS (
+                    SELECT 1
+                    FROM [StockDB_US].[TradingSignal].[Signal] AS filter_signal
+                    WHERE filter_signal.StrategyVersionID = v.StrategyVersionID
+                      AND UPPER(filter_signal.Classification) = ?
+                )
+            """)
+            version_values.append(signal_code.strip().upper())
+
         versions = model.execute_read_query(
-            """
+            f"""
             SELECT v.StrategyVersionID AS strategy_version_id, v.StrategyDefinitionID AS strategy_definition_id,
                    v.VersionCode AS version_code, v.ImplementationKey AS implementation_key,
                    v.ConfigurationJson AS configuration_json, v.ResearchMetadataJson AS research_metadata_json,
@@ -393,6 +478,13 @@ class TradingSignalAdminRepository:
                    d.EnvironmentType AS environment, d.IsEnabled AS is_enabled,
                    d.ExecutionEnabled AS execution_enabled, d.NotificationEnabled AS notification_enabled,
                    d.ConfigurationJson AS deployment_configuration_json,
+                   COALESCE((
+                       SELECT hd.TradeFingerprint AS trade_fingerprint,
+                              CONVERT(nvarchar(36), hd.DeduplicationGroupID) AS deduplication_group_id
+                       FROM [StockDB_US].[TradingSignal].[HistoricalTradeDeduplication] AS hd
+                       WHERE hd.StrategyVersionID = v.StrategyVersionID
+                       FOR JSON PATH
+                   ), '[]') AS historical_trade_deduplication_json,
                    eval_schedule.TimeZoneName AS evaluation_timezone_name,
                    eval_schedule.LocalTime AS evaluation_local_time,
                    eval_schedule.CadenceSeconds AS evaluation_cadence_seconds,
@@ -402,18 +494,21 @@ class TradingSignalAdminRepository:
               ON defn.StrategyDefinitionID = v.StrategyDefinitionID
             LEFT JOIN [StockDB_US].[TradingSignal].[StrategyDeployment] AS d
               ON d.StrategyVersionID = v.StrategyVersionID
-            OUTER APPLY (
-                SELECT TOP (1) s.TimeZoneName, s.LocalTime, s.CadenceSeconds, s.ScheduleJson
+            LEFT JOIN (
+                SELECT s.StrategyDeploymentID, s.TimeZoneName, s.LocalTime, s.CadenceSeconds, s.ScheduleJson,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY s.StrategyDeploymentID
+                           ORDER BY s.StrategyScheduleID
+                       ) AS schedule_row_number
                 FROM [StockDB_US].[TradingSignal].[StrategySchedule] AS s
-                WHERE s.StrategyDeploymentID = d.StrategyDeploymentID
-                  AND s.RunKind = 'EVALUATE' AND s.IsEnabled = 1
-                ORDER BY s.StrategyScheduleID
+                WHERE s.RunKind = 'EVALUATE' AND s.IsEnabled = 1
             ) AS eval_schedule
-            WHERE defn.IsEnabled = 1
-              AND v.Status <> 'RETIRED'
+              ON eval_schedule.StrategyDeploymentID = d.StrategyDeploymentID
+             AND eval_schedule.schedule_row_number = 1
+            WHERE {' AND '.join(version_filters)}
             ORDER BY defn.StrategyCode, v.CreatedUtc DESC, d.StrategyDeploymentID
             """,
-            [],
+            version_values,
         ) or []
         roles = model.execute_read_query(
             """
@@ -491,23 +586,41 @@ class TradingSignalAdminRepository:
               ON b.StrategyDeploymentID = d.StrategyDeploymentID AND b.EnvironmentType = d.EnvironmentType
             LEFT JOIN [StockDB_US].[TradingSignal].[TradePlan] AS p
               ON p.SignalID = s.SignalID AND p.ExecutionBookID = b.ExecutionBookID
-            OUTER APPLY (
-                SELECT TOP (1) so.HorizonCode, so.FinalizedUtc,
-                       so.DirectionalReturnPct, so.ReferencePrice,
-                       so.HorizonClose, so.SourceManifestJson
-                FROM [StockDB_US].[TradingSignal].[SignalOutcome] AS so
-                WHERE so.SignalID = s.SignalID
-                  AND so.FinalizedUtc IS NOT NULL AND so.NullReason IS NULL
-                ORDER BY CASE WHEN so.HorizonCode = COALESCE(s.HoldingPeriodCode, 'D5') THEN 0 ELSE 1 END,
-                         so.RevisionNo DESC, so.SignalOutcomeID DESC
-            ) AS outcome
+            LEFT JOIN (
+                SELECT ranked.SignalID, ranked.HorizonCode, ranked.FinalizedUtc,
+                       ranked.DirectionalReturnPct, ranked.ReferencePrice,
+                       ranked.HorizonClose, ranked.SourceManifestJson
+                FROM (
+                    SELECT so.SignalID, so.HorizonCode, so.FinalizedUtc,
+                           so.DirectionalReturnPct, so.ReferencePrice,
+                           so.HorizonClose, so.SourceManifestJson,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY so.SignalID
+                               ORDER BY CASE WHEN so.HorizonCode = COALESCE(signal_for_outcome.HoldingPeriodCode, 'D5') THEN 0 ELSE 1 END,
+                                        so.RevisionNo DESC, so.SignalOutcomeID DESC
+                           ) AS outcome_row_number
+                    FROM [StockDB_US].[TradingSignal].[SignalOutcome] AS so
+                    JOIN [StockDB_US].[TradingSignal].[Signal] AS signal_for_outcome
+                      ON signal_for_outcome.SignalID = so.SignalID
+                    WHERE so.FinalizedUtc IS NOT NULL AND so.NullReason IS NULL
+                ) AS ranked
+                WHERE ranked.outcome_row_number = 1
+            ) AS outcome ON outcome.SignalID = s.SignalID
             WHERE LOWER(d.DeploymentKey) LIKE '%production%'
               AND d.EnvironmentType <> 'MIGRATION_SHADOW'
               AND v.Status <> 'RETIRED'
               AND s.ActionCode = 'PLAN_ENTRY'
+            """ + (f"""
+              AND EXISTS (
+                  SELECT 1
+                  FROM [StockDB_US].[TradingSignal].[StrategyInstrumentRole] AS filter_role
+                  WHERE filter_role.StrategyDeploymentID = d.StrategyDeploymentID
+                    AND UPPER(filter_role.InstrumentCode) IN ({', '.join('?' for _ in instrument_values)})
+              )
+            """ if instrument_values else "") + (" AND UPPER(s.Classification) = ?\n" if signal_code and signal_code.strip() else "") + """
             ORDER BY s.SignalID DESC
             """,
-            [],
+            instrument_values + ([signal_code.strip().upper()] if signal_code and signal_code.strip() else []),
         ) or []
         return {
             "definitions": [dict(row) for row in definitions],
@@ -522,10 +635,15 @@ class TradingSignalAdminRepository:
     def _is_production(row: Dict[str, Any]) -> bool:
         return "production" in str(row.get("deployment_key") or "").lower() and str(row.get("environment") or "").upper() != "MIGRATION_SHADOW"
 
-    def list_strategies(self) -> Dict[str, Any]:
+    def list_strategies(
+        self,
+        *,
+        stock_code: Optional[str] = None,
+        signal_code: Optional[str] = None,
+    ) -> Dict[str, Any]:
         model = self._model_factory()
         try:
-            data = self._read_catalog_rows(model)
+            data = self._read_catalog_rows(model, stock_code=stock_code, signal_code=signal_code)
         finally:
             model.close()
 
@@ -631,6 +749,15 @@ class TradingSignalAdminRepository:
                     # never allowing it to replace published packet statistics.
                     if not model_builder_stats["instances"] and outcomes_by_version.get(version_id):
                         historical_stats = _stats(outcomes_by_version[version_id])
+                    try:
+                        deduplication_rows = json.loads(row.get("historical_trade_deduplication_json") or "[]")
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        deduplication_rows = []
+                    deduplication_by_fingerprint = {
+                        str(item.get("trade_fingerprint")): str(item.get("deduplication_group_id"))
+                        for item in deduplication_rows
+                        if isinstance(item, dict) and item.get("trade_fingerprint") and item.get("deduplication_group_id")
+                    }
                     version_payload = {
                         "strategy_version_id": version_id,
                         "strategy_code": str(definition.get("strategy_code") or ""),
@@ -650,6 +777,7 @@ class TradingSignalAdminRepository:
                             config,
                             str(definition.get("strategy_code") or ""),
                             str(row.get("version_code") or ""),
+                            deduplication_by_fingerprint,
                         ),
                         # Prefer the model-builder's frozen packet result. The
                         # runtime fallback is only for legacy versions with no

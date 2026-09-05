@@ -55,12 +55,15 @@ class TradingSignalOverviewSignal(BaseModel):
     historical_resolved_instances: int
     historical_profit_factor: Optional[float] = None
     historical_average_return_pct: Optional[float] = None
+    historical_median_return_pct: Optional[float] = None
 
 
 class TradingSignalPricePerformance(BaseModel):
     instrument_code: str
     tradable_date: date
     tradable_date_open_price: Optional[float] = None
+    entry_price: Optional[float] = None
+    entry_price_source: Optional[str] = None
     close_price: Optional[float] = None
     close_price_date: Optional[date] = None
     close_price_source: Optional[str] = None

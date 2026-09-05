@@ -95,6 +95,9 @@ export type AdminHistoricalTrade = {
   signal_code: string;
   market_date: string;
   direction: string;
+  entry_date: string | null;
+  exit_date: string | null;
+  deduplication_group_id: string | null;
   entry_timestamp: string | null;
   entry_price: number | null;
   exit_timestamp: string | null;

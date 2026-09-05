@@ -6,7 +6,7 @@ import Alert from "../components/ui/Alert";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
-import type { TradingSignalOverview, TradingSignalOverviewItem, TradingSignalPricePerformance } from "../../lib/api/trading-signal-reports";
+import type { TradingSignalOverview, TradingSignalOverviewItem, TradingSignalOverviewSignal, TradingSignalPricePerformance } from "../../lib/api/trading-signal-reports";
 
 type Props = {
   baseUrl: string;
@@ -57,17 +57,54 @@ function percentClasses(value: number | null | undefined) {
   return value >= 0 ? "text-emerald-700" : "text-red-700";
 }
 
+function priceChangeFromOpen(price: TradingSignalPricePerformance | undefined) {
+  if (!price) return null;
+  if (price.change_pct != null) return price.change_pct;
+  if (price.tradable_date_open_price == null || price.close_price == null || price.tradable_date_open_price <= 0) return null;
+  return ((price.close_price - price.tradable_date_open_price) / price.tradable_date_open_price) * 100;
+}
+
 function priceSourceLabel(source: string | null) {
   if (source === "end_date_close") return "End-date cash-session close";
   if (source === "latest_close") return "Latest cash-session close";
+  if (source === "tradable_date_open") return "Tradable-date open";
+  if (source === "close_fallback_future_entry") return "Latest close (entry is in the future)";
+  if (source === "close_fallback_missing_open") return "Latest close (open unavailable)";
   if (source) return "Live/delayed cash-session quote";
   return "Price unavailable";
 }
 
-function earliestTradableSignal(item: TradingSignalOverviewItem) {
-  return item.signals.reduce((earliest, signal) => (
-    signal.tradable_date < earliest.tradable_date ? signal : earliest
-  ));
+function signalKey(signal: TradingSignalOverviewSignal) {
+  return signal.public_report_id;
+}
+
+function targetPrice(signal: TradingSignalOverviewSignal, price: TradingSignalPricePerformance | undefined) {
+  const entry = price?.entry_price;
+  const median = signal.historical_median_return_pct;
+  if (entry == null || median == null || !Number.isFinite(entry) || !Number.isFinite(median) || entry <= 0) return null;
+  const target = signal.direction === "LONG"
+    ? entry * (1 + median / 100)
+    : entry * (1 - median / 100);
+  return target > 0 && Number.isFinite(target) ? target : null;
+}
+
+function rangeOrderHref(signal: TradingSignalOverviewSignal, price: TradingSignalPricePerformance | undefined) {
+  const close = price?.close_price;
+  const median = signal.historical_median_return_pct;
+  if (close == null || median == null || close <= 0 || !Number.isFinite(median) || median <= 0) return null;
+  const query = new URLSearchParams({
+    stock: signal.instrument_code.replace(/\.US$/i, ""),
+    side: signal.direction === "LONG" ? "Buy" : "Sell",
+    start: (close * 0.99).toFixed(2),
+    end: close.toFixed(2),
+    total_amount: "10000",
+    num_orders: "6",
+    distribution: "Even",
+    allocation: "value",
+    bracket: "1",
+    target_pct: median.toFixed(6),
+  });
+  return `/range-orders?${query.toString()}`;
 }
 
 function formatEndAt(value?: string | null) {
@@ -112,15 +149,13 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
     void loadOverview();
   }, [loadOverview]);
 
-  const loadPricePerformance = useCallback(async (item: TradingSignalOverviewItem) => {
-    if (item.signals.length === 0) return;
-    const comparisonSignal = earliestTradableSignal(item);
-    const key = item.instrument_code;
+  const loadSignalPricePerformance = useCallback(async (signal: TradingSignalOverviewSignal) => {
+    const key = signalKey(signal);
     setPriceLoading((current) => ({ ...current, [key]: true }));
     setPriceErrors((current) => ({ ...current, [key]: "" }));
     try {
-      const query = new URLSearchParams({ instrument_code: item.instrument_code, tradable_date: comparisonSignal.tradable_date });
-      if (comparisonSignal.end_at) query.set("end_at", comparisonSignal.end_at);
+      const query = new URLSearchParams({ instrument_code: signal.instrument_code, tradable_date: signal.tradable_date });
+      if (signal.end_at) query.set("end_at", signal.end_at);
       const response = await authenticatedFetch(`${baseUrl}/api/trading-signal-reports/price-performance?${query}`);
       const payload = (await response.json().catch(() => ({}))) as TradingSignalPricePerformance & { detail?: string };
       if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
@@ -142,7 +177,7 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
       <section className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-indigo-950">
         <p className="font-semibold">As-of signal overview</p>
         <p className="mt-1 text-indigo-900/80">
-          Shows only signals whose tradable window is active on the selected date. The report date is the source date; trading starts on the next US cash session, and D1/D2/D5 horizons end after that many US cash sessions. NO SIGNAL reports and signals without available historical evidence are excluded. Data-quality errors are shown separately below and are never treated as NO SIGNAL.
+          Shows only signals whose tradable window is active on the selected date. The report date is the source date; trading starts on the next US cash session, and D1/D2/D5 horizons end after that many US cash sessions. Each signal target uses its Strategy Admin median direction-adjusted return applied to the selected entry price. If the entry session is still in the future, the latest close is used temporarily and the planned tradable-date open is shown separately. NO SIGNAL reports and signals without available historical evidence are excluded. Data-quality errors are shown separately below and are never treated as NO SIGNAL.
         </p>
       </section>
 
@@ -191,22 +226,12 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
               <div>
                 <h2 className="text-lg font-bold text-slate-950">{item.instrument_code.replace(/\.US$/i, "")}</h2>
-                <p className="mt-1 text-xs text-slate-500">Latest active report: {item.latest_report_date}</p>
+                <p className="mt-1 text-xs text-slate-500">Active reports through {asOf} · latest {item.latest_report_date}</p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-2">
                 <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${verdictClasses(item.verdict)}`}>
                   {item.verdict}
                 </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void loadPricePerformance(item)}
-                  disabled={priceLoading[item.instrument_code]}
-                  aria-label={`Check latest price for ${item.instrument_code.replace(/\.US$/i, "")}`}
-                >
-                  {priceLoading[item.instrument_code] ? "Checking..." : "Check price"}
-                </Button>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2 border-b border-slate-100 p-4 text-center text-xs">
@@ -214,26 +239,6 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
               <div><strong className="block text-base text-emerald-700">{item.long_count}</strong><span className="text-slate-500">Long</span></div>
               <div><strong className="block text-base text-red-700">{item.short_count}</strong><span className="text-slate-500">Short</span></div>
             </div>
-            {priceResults[item.instrument_code] || priceErrors[item.instrument_code] ? (
-              <div className="border-b border-slate-100 bg-slate-50 p-4">
-                {priceErrors[item.instrument_code] ? <p className="text-xs font-medium text-red-700">{priceErrors[item.instrument_code]}</p> : null}
-                {priceResults[item.instrument_code] ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div><span className="block text-xs text-slate-500">Close price</span><strong className="text-slate-900">{formatPrice(priceResults[item.instrument_code].close_price)}</strong></div>
-                      <div><span className="block text-xs text-slate-500">{priceResults[item.instrument_code].tradable_date} open</span><strong className="text-slate-900">{formatPrice(priceResults[item.instrument_code].tradable_date_open_price)}</strong></div>
-                    </div>
-                    <div className="mt-3 flex items-baseline justify-between gap-2">
-                      <span className="text-xs text-slate-500">Change from tradable-date open</span>
-                      <strong className={`text-base ${percentClasses(priceResults[item.instrument_code].change_pct)}`}>
-                        {formatPercent(priceResults[item.instrument_code].change_pct)}
-                      </strong>
-                    </div>
-                    <p className="mt-2 text-[11px] text-slate-500">{priceSourceLabel(priceResults[item.instrument_code].close_price_source)}</p>
-                  </>
-                ) : null}
-              </div>
-            ) : null}
             <div className="divide-y divide-slate-100">
               {item.signals.map((signal) => (
                 <div key={`${signal.strategy_code}-${signal.holding_period}-${signal.public_report_id}`} className={`p-4 text-sm ${signalActionClasses(signal.action_code)}`}>
@@ -255,9 +260,21 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
                         </a>
                       </p>
                     </div>
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
-                      {signal.historical_win_rate_pct.toFixed(1)}% historical
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                        {signal.historical_win_rate_pct.toFixed(1)}% historical
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => void loadSignalPricePerformance(signal)}
+                        disabled={priceLoading[signalKey(signal)]}
+                        aria-label={`Refresh price for ${signal.instrument_code.replace(/\.US$/i, "")} ${signal.report_date}`}
+                      >
+                        {priceLoading[signalKey(signal)] ? "Loading..." : "Refresh price"}
+                      </Button>
+                    </div>
                   </div>
                   <p className="mt-2 text-xs text-slate-500">
                     {signal.historical_instances} instances · <a
@@ -270,9 +287,44 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
                     </a>
                     {signal.historical_profit_factor != null ? ` · PF ${signal.historical_profit_factor.toFixed(2)}` : ""}
                   </p>
-                  <a href={reportHref(signal.public_report_id)} className="mt-2 inline-block text-xs font-semibold text-indigo-700 hover:text-indigo-900">
-                    Open source report →
-                  </a>
+                  {(() => {
+                    const price = priceResults[signalKey(signal)];
+                    const target = targetPrice(signal, price);
+                    const orderHref = rangeOrderHref(signal, price);
+                    const loadingPrice = priceLoading[signalKey(signal)];
+                    const priceError = priceErrors[signalKey(signal)];
+                    const moveFromOpen = priceChangeFromOpen(price);
+                    return (
+                      <div className="mt-3 rounded-md border border-indigo-100 bg-indigo-50/50 p-3">
+                        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                          <div><span className="block text-slate-500">Entry / reference</span><strong className="text-slate-900">{formatPrice(price?.entry_price)}</strong></div>
+                          <div><span className="block text-slate-500">{signal.tradable_date} open</span><strong className="text-slate-900">{formatPrice(price?.tradable_date_open_price)}</strong></div>
+                          <div><span className="block text-slate-500">Median profit</span><strong className={percentClasses(signal.historical_median_return_pct)}>{formatPercent(signal.historical_median_return_pct)}</strong></div>
+                          <div><span className="block text-slate-500">Target price</span><strong className="text-indigo-800">{formatPrice(target)}</strong></div>
+                        </div>
+                        {price ? <p className="mt-2 text-[11px] text-slate-500">{priceSourceLabel(price.entry_price_source)} · close {formatPrice(price.close_price)} · move from open <span className={percentClasses(moveFromOpen)}>{formatPercent(moveFromOpen)}</span></p> : null}
+                        {loadingPrice ? <p className="mt-2 text-xs text-slate-600">Loading entry and target prices...</p> : null}
+                        {priceError ? <p className="mt-2 text-xs font-medium text-red-700">{priceError}</p> : null}
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {orderHref ? (
+                            <a
+                              href={orderHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                            >
+                              Open {signal.direction === "LONG" ? "buy" : "sell"} range order
+                            </a>
+                          ) : (
+                            <span className="text-[11px] text-slate-500">Order setup unavailable until a valid positive median profit and price are available.</span>
+                          )}
+                          <a href={reportHref(signal.public_report_id)} className="text-xs font-semibold text-indigo-700 hover:text-indigo-900">
+                            Open source report →
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

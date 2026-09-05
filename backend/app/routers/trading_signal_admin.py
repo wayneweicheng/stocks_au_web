@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.repositories.trading_signal_admin import ProductionDeploymentNotFound, TradingSignalAdminRepository
 from app.routers.auth import verify_admin
@@ -15,8 +15,11 @@ router = APIRouter(
 
 
 @router.get("/strategies", response_model=AdminStrategyPage)
-def list_admin_strategies() -> AdminStrategyPage:
-    return AdminStrategyPage(**TradingSignalAdminRepository().list_strategies())
+def list_admin_strategies(
+    stock_code: str | None = Query(default=None),
+    signal_code: str | None = Query(default=None),
+) -> AdminStrategyPage:
+    return AdminStrategyPage(**TradingSignalAdminRepository().list_strategies(stock_code=stock_code, signal_code=signal_code))
 
 
 @router.patch("/deployments/{deployment_id}/production-toggle", response_model=AdminDeployment)

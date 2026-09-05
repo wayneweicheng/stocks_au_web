@@ -33,6 +33,7 @@ def _filters(
     limit: int,
     cursor: Optional[str],
     public_report_id: Optional[str],
+    current_only: bool,
 ) -> ReportFilters:
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from must be on or before date_to")
@@ -47,6 +48,7 @@ def _filters(
         limit=limit,
         cursor=cursor,
         public_report_id=public_report_id,
+        current_only=current_only,
         exclude_no_signal=exclude_no_signal,
     )
 
@@ -64,9 +66,10 @@ def list_trading_signal_reports(
     limit: int = Query(default=50, ge=1, le=200),
     cursor: Optional[str] = Query(default=None),
     public_report_id: Optional[str] = Query(default=None),
+    current_only: bool = Query(default=False),
     _username: str = Depends(verify_credentials),
 ) -> TradingSignalReportPage:
-    filters = _filters(date_from, date_to, strategy_code, instrument_code, environment, report_kind, exclude_no_signal, search, limit, cursor, public_report_id)
+    filters = _filters(date_from, date_to, strategy_code, instrument_code, environment, report_kind, exclude_no_signal, search, limit, cursor, public_report_id, current_only)
     try:
         rows, next_cursor = TradingSignalReportRepository().list(filters)
     except ReportCursorError as exc:

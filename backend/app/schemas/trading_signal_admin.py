@@ -89,6 +89,9 @@ class AdminHistoricalTrade(BaseModel):
     signal_code: str
     market_date: str
     direction: str
+    entry_date: Optional[str] = None
+    exit_date: Optional[str] = None
+    deduplication_group_id: Optional[str] = None
     entry_timestamp: Optional[str] = None
     entry_price: Optional[float] = None
     exit_timestamp: Optional[str] = None

@@ -104,7 +104,27 @@ class TradingSignalReportRepositoryTests(unittest.TestCase):
         self.assertEqual(result["close_price"], 110.0)
         self.assertEqual(result["close_price_source"], "latest_close")
         self.assertEqual(result["change_pct"], 10.0)
+        self.assertEqual(result["entry_price"], 100.0)
+        self.assertEqual(result["entry_price_source"], "tradable_date_open")
         live_prices.assert_not_called()
+
+    def test_price_performance_uses_latest_close_until_future_entry_opens(self):
+        model = _Model([{
+            "latest_close": 110,
+            "latest_close_date": date(2026, 8, 18),
+            "tradable_date_open_price": 100,
+        }])
+        repo = TradingSignalReportRepository(lambda: model)
+        with patch("app.repositories.trading_signal_reports.get_live_stock_prices", return_value={}):
+            result = repo.price_performance(
+                "QQQ.US",
+                date(2026, 8, 19),
+                now=datetime(2026, 8, 18, 12, 0),
+            )
+
+        self.assertEqual(result["entry_price"], 110.0)
+        self.assertEqual(result["entry_price_source"], "close_fallback_future_entry")
+        self.assertEqual(result["tradable_date_open_price"], 100.0)
 
     def test_price_performance_uses_end_date_close_after_signal_ends(self):
         model = _Model([{
@@ -148,11 +168,11 @@ class TradingSignalReportRepositoryTests(unittest.TestCase):
         self.assertEqual(result["close_price"], 105.0)
         self.assertIsNone(result["change_pct"])
 
-    def test_overview_keeps_latest_signal_per_strategy_and_horizon_and_requires_history(self):
+    def test_overview_keeps_all_overlapping_active_reports_and_requires_history(self):
         configuration = json.dumps({
             "signal_definitions": [
-                {"signal_code": "LONG_D2", "historical_performance": {"status": "AVAILABLE", "instances": 10, "resolved_instances": 10, "win_rate_pct": 70}},
-                {"signal_code": "LONG_D5", "historical_performance": {"status": "AVAILABLE", "instances": 20, "resolved_instances": 20, "win_rate_pct": 75}},
+                {"signal_code": "LONG_D2", "historical_performance": {"status": "AVAILABLE", "instances": 10, "resolved_instances": 10, "win_rate_pct": 70, "median_return_pct": 2.5}},
+                {"signal_code": "LONG_D5", "historical_performance": {"status": "AVAILABLE", "instances": 20, "resolved_instances": 20, "win_rate_pct": 75, "median_return_pct": 3.0}},
                 {"signal_code": "SHORT_D2", "historical_performance": {"status": "NOT_AVAILABLE"}},
             ]
         })
@@ -187,11 +207,12 @@ class TradingSignalReportRepositoryTests(unittest.TestCase):
         item = result["items"][0]
         self.assertEqual(item["instrument_code"], "QQQ.US")
         self.assertEqual(item["verdict"], "LONG")
-        self.assertEqual([signal["public_report_id"] for signal in item["signals"]], ["new-d2", "long-d5"])
-        self.assertEqual(item["signals"][1]["action_code"], "WATCH")
+        self.assertEqual([signal["public_report_id"] for signal in item["signals"]], ["new-d2", "old-d2", "long-d5"])
+        self.assertEqual(item["signals"][2]["action_code"], "WATCH")
         self.assertEqual(item["signals"][0]["tradable_date"], date(2026, 8, 19))
         self.assertEqual(item["signals"][0]["end_date"], date(2026, 8, 20))
         self.assertEqual(item["signals"][0]["end_at"].hour, 16)
+        self.assertEqual(item["signals"][0]["historical_median_return_pct"], 2.5)
         self.assertIn("s.HoldingPeriodCode AS holding_period", model.calls[0][0])
         self.assertIn("s.ActionCode IN ('PLAN_ENTRY', 'WATCH') OR UPPER(s.Classification) IN ('DATA_ERROR', 'NO_SIGNAL')", model.calls[0][0])
         self.assertEqual(result["data_errors"], [])

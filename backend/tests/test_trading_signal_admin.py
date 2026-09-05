@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from app.repositories.trading_signal_admin import TradingSignalAdminRepository, _actual_return, _descriptor_stats, _historical_trade_ledger, _metadata_values, _stats
+from app.repositories.trading_signal_admin import TradingSignalAdminRepository, _actual_return, _descriptor_signals, _descriptor_stats, _historical_trade_ledger, _metadata_values, _stats
 from app.schemas.trading_signal_admin import AdminStrategyPage
 
 
@@ -59,6 +59,24 @@ class _ToggleConnection:
 
 
 class TradingSignalAdminHelpersTests(unittest.TestCase):
+    def test_descriptor_signals_use_single_signal_summary_median(self):
+        configuration = {
+            "historical_performance_summary": {"median_return_pct": 3.1},
+            "signal_definitions": [{
+                "signal_code": "ORCL_SIGNAL",
+                "action": "PLAN_ENTRY",
+                "historical_performance": {"status": "AVAILABLE", "instances": 39},
+            }, {
+                "signal_code": "NO_SIGNAL",
+                "action": "NONE",
+                "historical_performance": {"status": "NOT_AVAILABLE"},
+            }],
+        }
+
+        signals = _descriptor_signals(configuration)
+
+        self.assertEqual(signals[0]["historical_performance"]["median_return_pct"], 3.1)
+
     def test_stats_are_null_when_no_finalized_instances_exist(self):
         result = _stats([])
         self.assertEqual(result["instances"], 0)

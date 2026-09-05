@@ -67,6 +67,7 @@ export default function RangeOrdersPage() {
   const [startPrice, setStartPrice] = useState<string>("");
   const [endPrice, setEndPrice] = useState<string>("");
   const [side, setSide] = useState<Side>("Buy");
+  const [valueAllocationForSell, setValueAllocationForSell] = useState<boolean>(false);
   const [distribution, setDistribution] = useState<Distribution>("Pyramid");
   const [numOrders, setNumOrders] = useState<string>("8");
   const [ratio, setRatio] = useState<string>("1.15"); // Pyramid ratio: Order 1 to Order 2
@@ -100,11 +101,22 @@ export default function RangeOrdersPage() {
     const requestedSide = params.get("side");
     const start = Number(params.get("start"));
     const end = Number(params.get("end"));
+    const amount = Number(params.get("total_amount"));
+    const requestedOrders = Number(params.get("num_orders"));
+    const requestedTargetPct = Number(params.get("target_pct"));
 
     if (stock) setStockCode(stock);
     if (requestedSide === "Buy" || requestedSide === "Sell") setSide(requestedSide);
     if (Number.isFinite(start) && start > 0) setStartPrice(start.toFixed(2));
     if (Number.isFinite(end) && end > 0) setEndPrice(end.toFixed(2));
+    if (Number.isFinite(amount) && amount > 0) setTotalAmount(amount.toFixed(2));
+    if (Number.isFinite(requestedOrders) && requestedOrders > 0) setNumOrders(String(Math.floor(requestedOrders)));
+    if (params.get("distribution") === "Even" || params.get("distribution") === "Pyramid") setDistribution(params.get("distribution") as Distribution);
+    if (Number.isFinite(requestedTargetPct) && requestedTargetPct > 0) setTargetProfitPct(requestedTargetPct.toString());
+    if (params.get("bracket") === "1") setEnableBracket(true);
+    if (params.get("stop_loss") === "0") setEnableStopLoss(false);
+    if (params.get("allocation") === "value") setValueAllocationForSell(true);
+    if (params.get("bracket") === "1") setSubmitted(true);
     if (stock || requestedSide || (Number.isFinite(start) && start > 0) || (Number.isFinite(end) && end > 0)) {
       setPositionMode("open");
     }
@@ -116,6 +128,7 @@ export default function RangeOrdersPage() {
   const [enableStopLoss, setEnableStopLoss] = useState<boolean>(true);
   const [stopLossOffset, setStopLossOffset] = useState<string>("3.00");
   const [bracketOffsetType, setBracketOffsetType] = useState<"dollar" | "percent">("dollar");
+  const [targetProfitPct, setTargetProfitPct] = useState<string>("");
   const [orderTargets, setOrderTargets] = useState<Record<number, { takeProfit: string; stopLoss: string }>>({});
 
   // Position mode: open (new position) or close (existing position)
@@ -146,9 +159,9 @@ export default function RangeOrdersPage() {
     // In close position mode, we always use volume-based allocation
     const need = positionMode === "close"
       ? (parsed.tv && parsed.tv > 0)
-      : (side === "Buy" ? (parsed.total && parsed.total > 0) : (parsed.tv && parsed.tv > 0));
+      : (side === "Buy" || valueAllocationForSell ? (parsed.total && parsed.total > 0) : (parsed.tv && parsed.tv > 0));
     return hasPrices && !!need && parsed.n > 0;
-  }, [parsed, side, positionMode]);
+  }, [parsed, side, positionMode, valueAllocationForSell]);
 
   const generated = useMemo<GeneratedOrder[] | null>(() => {
     if (!canGenerate) return null;
@@ -176,7 +189,7 @@ export default function RangeOrdersPage() {
 
     const out: GeneratedOrder[] = [];
     // Use volume-based allocation in Close Position mode (regardless of side) or when side is Sell in Open mode
-    const useVolumeAllocation = positionMode === "close" || (side === "Sell" && parsed.tv);
+    const useVolumeAllocation = positionMode === "close" || (side === "Sell" && parsed.tv && !valueAllocationForSell);
 
     if (!useVolumeAllocation) {
       // Value-based allocation (Open Position Buy)
@@ -244,7 +257,7 @@ export default function RangeOrdersPage() {
       }
     }
     return out;
-  }, [canGenerate, parsed, distribution, side, positionMode]);
+  }, [canGenerate, parsed, distribution, side, positionMode, valueAllocationForSell]);
 
   const totals = useMemo(() => {
     if (!generated) return null;
@@ -420,7 +433,8 @@ export default function RangeOrdersPage() {
   // Bracket order preview calculation with dollar/percent conversion
   // Stop-loss is optional - controlled by enableStopLoss checkbox
   const bracketPreview = useMemo(() => {
-    const tpInput = toNumber(takeProfitOffset) ?? 0;
+    const configuredTargetPct = toNumber(targetProfitPct) ?? 0;
+    const tpInput = configuredTargetPct > 0 ? configuredTargetPct : (toNumber(takeProfitOffset) ?? 0);
     const slInput = enableStopLoss ? (toNumber(stopLossOffset) ?? 0) : 0;
     if (!generated || generated.length === 0 || tpInput <= 0) return null;
 
@@ -434,7 +448,12 @@ export default function RangeOrdersPage() {
     let tpPercent: number;
     let slPercent: number;
 
-    if (bracketOffsetType === "dollar") {
+    if (configuredTargetPct > 0) {
+      tpDollar = (configuredTargetPct / 100) * examplePrice;
+      tpPercent = configuredTargetPct;
+      slDollar = bracketOffsetType === "percent" ? (slInput / 100) * examplePrice : slInput;
+      slPercent = slInput > 0 ? (slDollar / examplePrice) * 100 : 0;
+    } else if (bracketOffsetType === "dollar") {
       tpDollar = tpInput;
       slDollar = slInput;
       tpPercent = (tpInput / examplePrice) * 100;
@@ -477,16 +496,17 @@ export default function RangeOrdersPage() {
         hasSl,
       };
     }
-  }, [generated, side, takeProfitOffset, stopLossOffset, bracketOffsetType, enableStopLoss]);
+  }, [generated, side, takeProfitOffset, targetProfitPct, stopLossOffset, bracketOffsetType, enableStopLoss]);
 
   useEffect(() => {
     if (!enableBracket || !generated || generated.length === 0) {
       setOrderTargets({});
       return;
     }
+    const targetPct = toNumber(targetProfitPct) ?? 0;
     const tpInput = toNumber(takeProfitOffset) ?? 0;
     const slInput = enableStopLoss ? (toNumber(stopLossOffset) ?? 0) : 0;
-    if (tpInput <= 0 || slInput <= 0) {
+    if (targetPct <= 0 && tpInput <= 0) {
       setOrderTargets({});
       return;
     }
@@ -496,50 +516,43 @@ export default function RangeOrdersPage() {
       if (!targets) continue;
       next[o.index] = {
         takeProfit: targets.profitTarget.toFixed(2),
-        stopLoss: targets.stopLoss.toFixed(2),
+        stopLoss: targets.stopLoss == null ? "" : targets.stopLoss.toFixed(2),
       };
     }
     setOrderTargets(next);
-  }, [enableBracket, generated, takeProfitOffset, stopLossOffset, bracketOffsetType, side, enableStopLoss]);
+  }, [enableBracket, generated, takeProfitOffset, targetProfitPct, stopLossOffset, bracketOffsetType, side, enableStopLoss]);
 
   const computePegasusTargets = (entryPrice: number, orderSide: Side) => {
+    const targetPct = toNumber(targetProfitPct) ?? 0;
     const tpInput = toNumber(takeProfitOffset) ?? 0;
     const slInput = enableStopLoss ? (toNumber(stopLossOffset) ?? 0) : 0;
-    if (tpInput <= 0 || slInput <= 0 || entryPrice <= 0) return null;
+    if ((targetPct <= 0 && tpInput <= 0) || entryPrice <= 0) return null;
 
-    let tpDollar: number;
-    let slDollar: number;
-    if (bracketOffsetType === "dollar") {
-      tpDollar = tpInput;
-      slDollar = slInput;
-    } else {
-      tpDollar = (tpInput / 100) * entryPrice;
-      slDollar = (slInput / 100) * entryPrice;
-    }
+    const tpDollar = targetPct > 0
+      ? (targetPct / 100) * entryPrice
+      : bracketOffsetType === "percent" ? (tpInput / 100) * entryPrice : tpInput;
+    const slDollar = bracketOffsetType === "percent" ? (slInput / 100) * entryPrice : slInput;
+    const stopLoss = enableStopLoss && slInput > 0
+      ? orderSide === "Buy" ? round2(entryPrice - slDollar) : round2(entryPrice + slDollar)
+      : null;
 
-    if (orderSide === "Buy") {
-      return {
-        profitTarget: round2(entryPrice + tpDollar),
-        stopLoss: round2(entryPrice - slDollar),
-      };
-    }
     return {
-      profitTarget: round2(entryPrice - tpDollar),
-      stopLoss: round2(entryPrice + slDollar),
+      profitTarget: orderSide === "Buy" ? round2(entryPrice + tpDollar) : round2(entryPrice - tpDollar),
+      stopLoss,
     };
   };
 
-  const computeTargetOffsets = (entryPrice: number, orderSide: Side, targetTp: number, targetSl: number) => {
-    if (entryPrice <= 0 || targetTp <= 0 || targetSl <= 0) return null;
+  const computeTargetOffsets = (entryPrice: number, orderSide: Side, targetTp: number, targetSl?: number) => {
+    if (entryPrice <= 0 || targetTp <= 0) return null;
     if (orderSide === "Buy") {
       return {
         tpOffset: round2(targetTp - entryPrice),
-        slOffset: round2(entryPrice - targetSl),
+        slOffset: targetSl != null ? round2(entryPrice - targetSl) : 0,
       };
     }
     return {
       tpOffset: round2(entryPrice - targetTp),
-      slOffset: round2(targetSl - entryPrice),
+      slOffset: targetSl != null ? round2(targetSl - entryPrice) : 0,
     };
   };
 
@@ -657,24 +670,25 @@ export default function RangeOrdersPage() {
 
     // Validate bracket offsets if enabled (only in open position mode)
     // At least Take-Profit must be set; Stop-Loss is optional
+    const targetPctInput = toNumber(targetProfitPct) ?? 0;
     const tpOffsetInput = toNumber(takeProfitOffset) ?? 0;
     const slOffsetInput = enableStopLoss ? (toNumber(stopLossOffset) ?? 0) : 0;
     if (enableBracket && placeDayOrders && positionMode === "open") {
-      if (tpOffsetInput <= 0 || slOffsetInput <= 0) {
-        setPlaceError("Take-Profit and Stop-Loss offsets must be greater than 0 for bracket orders");
+      if (targetPctInput <= 0 && tpOffsetInput <= 0) {
+        setPlaceError("A positive take-profit target or offset is required for bracket orders");
         return;
       }
       for (const o of generated) {
         const t = orderTargets[o.index];
         const tp = toNumber(t?.takeProfit ?? "");
-        const sl = toNumber(t?.stopLoss ?? "");
-        if (!tp || tp <= 0 || !sl || sl <= 0) {
-          setPlaceError("Each order must have take-profit and stop-loss values when bracket orders are enabled.");
+        const sl = enableStopLoss ? (toNumber(t?.stopLoss ?? "") ?? undefined) : undefined;
+        if (!tp || tp <= 0 || (enableStopLoss && (!sl || sl <= 0))) {
+          setPlaceError(enableStopLoss ? "Each order must have take-profit and stop-loss values when bracket orders are enabled." : "Each order must have a take-profit value when bracket orders are enabled.");
           return;
         }
         const offsets = computeTargetOffsets(o.price, side, tp, sl);
-        if (!offsets || offsets.tpOffset <= 0 || offsets.slOffset <= 0) {
-          setPlaceError("Take-profit and stop-loss must be on the correct side of entry for each order.");
+        if (!offsets || offsets.tpOffset <= 0 || (enableStopLoss && offsets.slOffset <= 0)) {
+          setPlaceError(enableStopLoss ? "Take-profit and stop-loss must be on the correct side of entry for each order." : "Take-profit must be on the correct side of entry for each order.");
           return;
         }
       }
@@ -697,14 +711,14 @@ export default function RangeOrdersPage() {
         if (enableBracket && placeDayOrders && positionMode === "open") {
           const t = orderTargets[o.index];
           const tp = toNumber(t?.takeProfit ?? "");
-          const sl = toNumber(t?.stopLoss ?? "");
-          if (tp && sl) {
+          const sl = enableStopLoss ? (toNumber(t?.stopLoss ?? "") ?? undefined) : undefined;
+          if (tp) {
             const offsets = computeTargetOffsets(o.price, side, tp, sl);
-            if (offsets && offsets.tpOffset > 0 && offsets.slOffset > 0) {
+            if (offsets && offsets.tpOffset > 0 && (!enableStopLoss || offsets.slOffset > 0)) {
               return {
                 ...base,
                 take_profit_offset: offsets.tpOffset,
-                stop_loss_offset: offsets.slOffset,
+                ...(enableStopLoss ? { stop_loss_offset: offsets.slOffset } : {}),
               };
             }
           }
@@ -716,15 +730,16 @@ export default function RangeOrdersPage() {
       // Convert percent to dollar if needed (API always expects dollar amounts)
       // Stop-loss is optional - controlled by enableStopLoss checkbox
       let bracketConfig = null;
-      if (enableBracket && placeDayOrders && positionMode === "open" && tpOffsetInput > 0 && slOffsetInput > 0) {
-        // Use the first order's price as reference for percent conversion
+      if (enableBracket && placeDayOrders && positionMode === "open" && (targetPctInput > 0 || tpOffsetInput > 0)) {
+        // Per-order offsets carry the exact target. This batch fallback is
+        // retained for orders that do not have an editable per-order target.
         const refPrice = generated[0].price;
-        const tpDollar = bracketOffsetType === "percent"
-          ? round2((tpOffsetInput / 100) * refPrice)
-          : tpOffsetInput;
-        const slDollar = bracketOffsetType === "percent"
-          ? round2((slOffsetInput / 100) * refPrice)
-          : slOffsetInput;
+        const tpDollar = targetPctInput > 0
+          ? round2((targetPctInput / 100) * refPrice)
+          : bracketOffsetType === "percent" ? round2((tpOffsetInput / 100) * refPrice) : tpOffsetInput;
+        const slDollar = enableStopLoss
+          ? bracketOffsetType === "percent" ? round2((slOffsetInput / 100) * refPrice) : slOffsetInput
+          : 0;
 
         bracketConfig = {
           enabled: true,
@@ -1237,6 +1252,12 @@ export default function RangeOrdersPage() {
 
                 {enableBracket && placeDayOrders && positionMode === "open" && (
                   <div className="space-y-3 pt-2">
+                    {toNumber(targetProfitPct) != null && (toNumber(targetProfitPct) ?? 0) > 0 ? (
+                      <p className="rounded bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+                        Strategy target: <strong>{Number(targetProfitPct).toFixed(2)}%</strong> applied to each generated entry price. Take-profit values below are calculated per order.
+                      </p>
+                    ) : null}
+
                     {/* Offset Type Radio Buttons */}
                     <div className="flex items-center gap-4">
                       <span className="text-sm text-slate-600">Offset Type:</span>
