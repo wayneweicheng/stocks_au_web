@@ -98,11 +98,12 @@ def latest_trading_signal_report(
 def trading_signal_price_performance(
     instrument_code: str = Query(..., min_length=1, max_length=20),
     tradable_date: date = Query(...),
+    as_of: Optional[date] = Query(default=None),
     end_at: Optional[datetime] = Query(default=None),
     _username: str = Depends(verify_credentials),
 ) -> TradingSignalPricePerformance:
     try:
-        result = TradingSignalReportRepository().price_performance(instrument_code, tradable_date, end_at=end_at)
+        result = TradingSignalReportRepository().price_performance(instrument_code, tradable_date, end_at=end_at, as_of=as_of)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Unable to fetch price performance: {exc}") from exc
     return TradingSignalPricePerformance(**result)

@@ -19,6 +19,7 @@ from app.services.option_orders_service import (
     _market_calibrated_price,
     _market_status_from_context,
     _merge_option_quote,
+    _model_delta,
     _option_quote_from_payload,
     _quote_observation_date,
     _quote_anchor_for_action,
@@ -29,6 +30,16 @@ from app.services.option_orders_service import (
 
 
 class OptionOrdersServiceTests(unittest.TestCase):
+    def test_model_delta_returns_signed_put_and_positive_call_delta(self):
+        put_delta = _model_delta("P", 100.0, 100.0, 0.20, 30)
+        call_delta = _model_delta("C", 100.0, 100.0, 0.20, 30)
+
+        self.assertIsNotNone(put_delta)
+        self.assertIsNotNone(call_delta)
+        self.assertAlmostEqual(put_delta, call_delta - 1.0, places=6)
+        self.assertLess(put_delta, 0)
+        self.assertGreater(call_delta, 0)
+
     def test_quote_anchor_for_action_uses_bid_for_sell_and_ask_for_buy(self):
         quote = OptionQuote(
             bid=6.24,

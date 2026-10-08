@@ -4,7 +4,7 @@
 
 
 
-CREATE PROCEDURE [DataMaintenance].[usp_MaintainPriceHistory]
+CREATE OR ALTER PROCEDURE [DataMaintenance].[usp_MaintainPriceHistory]
 @pbitDebug AS BIT = 0,
 @pintErrorNumber AS INT = 0 OUTPUT
 AS
@@ -62,8 +62,25 @@ BEGIN --Proc
 
 		--Normal varible declarations
 
-		--Code goes here 
-		declare @dtYesterdayDate as date = Common.DateAddBusinessDay_Plus(-1, getdate())
+		-- Serialize this loader with other price-history writers and make the
+		-- delete/insert operation atomic. PriceHistory has no Exchange column,
+		-- so concurrent ASX and SMART writers can otherwise insert the same
+		-- ASXCode/ObservationDate key.
+		set xact_abort on;
+		begin transaction;
+
+		declare @lockResult int;
+		exec @lockResult = sys.sp_getapplock
+			@Resource = 'StockDB.PriceHistory.ASXLoader',
+			@LockMode = 'Exclusive',
+			@LockOwner = 'Transaction',
+			@LockTimeout = 60000;
+		if @lockResult < 0
+		begin
+			raiserror ('Unable to acquire the StockDB price-history loader lock.', 16, 1);
+		end
+
+		declare @dtYesterdayDate as date = Common.DateAddBusinessDay_Plus(-1, getdate());
 
 		delete a
 		from StockData.PriceHistory as a
@@ -76,8 +93,34 @@ BEGIN --Proc
 			and b.Exchange = 'ASX'
 			and b.Volume > 0
 			and b.ObservationDate >= @dtYesterdayDate
-		)
+		);
 
+		-- PriceHistory is keyed only by ASXCode/ObservationDate. Select one
+		-- source row per target key; SELECT DISTINCT does not protect against
+		-- differing values for the same key.
+		;with SourceRows as
+		(
+			select
+				a.[ASXCode],
+				a.[ObservationDate],
+				a.[Close],
+				a.[Open],
+				a.[Low],
+				a.[High],
+				a.[Volume],
+				a.[Trades],
+				a.[CreateDate],
+				a.[ModifyDate],
+				a.[VWAP],
+				row_number() over
+				(
+					partition by a.[ASXCode], a.[ObservationDate]
+					order by a.[ModifyDate] desc, a.[CreateDate] desc, a.[Volume] desc
+				) as SourceRank
+			from StockData.PriceHistorySecondary as a with (updlock, holdlock)
+			where a.Exchange = 'ASX'
+			and a.Volume > 0
+		)
 		insert into StockData.PriceHistory
 		(
 		   [ASXCode]
@@ -92,42 +135,46 @@ BEGIN --Proc
 		  ,[CreateDate]
 		  ,[ModifyDate]
 		)
-		select distinct
-		   [ASXCode]
-		  ,[ObservationDate]
-		  ,[Close]
-		  ,[Open]
-		  ,[Low]
-		  ,[High]
-		  ,[Volume]
-		  ,VWAP*Volume as [Value]
-		  ,[Trades]
-		  ,[CreateDate]
-		  ,[ModifyDate]
-		from StockData.PriceHistorySecondary as a
-		where Exchange = 'ASX'
-		and Volume > 0
-		--and datediff(day, a.ObservationDate, getdate()) <= 365
+		select
+		   a.[ASXCode]
+		  ,a.[ObservationDate]
+		  ,a.[Close]
+		  ,a.[Open]
+		  ,a.[Low]
+		  ,a.[High]
+		  ,a.[Volume]
+		  ,a.[VWAP] * a.[Volume] as [Value]
+		  ,a.[Trades]
+		  ,a.[CreateDate]
+		  ,a.[ModifyDate]
+		from SourceRows as a
+		where a.SourceRank = 1
 		and not exists
 		(
 			select 1
-			from StockData.PriceHistory
-			where ASXCode = a.ASXCode
-			and ObservationDate = a.ObservationDate
-		)
+			from StockData.PriceHistory as p with (updlock, holdlock)
+			where p.ASXCode = a.ASXCode
+			and p.ObservationDate = a.ObservationDate
+		);
+
+		commit transaction;
 
 		exec [Transform].[usp_RefreshTransformPriceHistory]
 		
 	END TRY
 
 	BEGIN CATCH
-		-- Store the details of the error
+		-- Preserve failures for SQL Agent/API callers. The old procedure sent
+		-- email but could leave downstream jobs falsely green.
 		SELECT	@intErrorNumber = ERROR_NUMBER(), @intErrorSeverity = ERROR_SEVERITY(),
 				@intErrorState = ERROR_STATE(), @vchErrorProcedure = ERROR_PROCEDURE(),
 				@intErrorLine = ERROR_LINE(), @vchErrorMessage = ERROR_MESSAGE()
 
+		if @@TRANCOUNT > 0
+			rollback transaction;
+
 		declare @vchEmailRecipient as varchar(100) = 'wayneweicheng@gmail.com'
-		declare @vchEmailSubject as varchar(200) = 'DataMaintenance.usp_MaintainStockData failed'
+		declare @vchEmailSubject as varchar(200) = 'DataMaintenance.usp_MaintainPriceHistory failed'
 		declare @vchEmailBody as varchar(2000) = @vchEmailSubject + ':
 ' + @vchErrorMessage
 
@@ -136,33 +183,12 @@ BEGIN --Proc
 		@subject = @vchEmailSubject,
 		@body = @vchEmailBody
 
+		raiserror (@vchErrorMessage, 16, 1);
 	END CATCH
 
-	IF @intErrorNumber = 0 OR @vchErrorProcedure = ''
+	IF @pbitDebug = 1
 	BEGIN
-		-- No Error occured in this procedure
-
-		--COMMIT TRANSACTION 
-
-		IF @pbitDebug = 1
-		BEGIN
-			PRINT 'Procedure ' + @vchSchema + '.' + @vchProcedureName + ' finished executing (successfully) at ' + CAST(getdate() as varchar(20))
-		END
-	END
-
-	ELSE
-	BEGIN
-
-		--IF @@TRANCOUNT > 0
-		--BEGIN
-		--	ROLLBACK TRANSACTION
-		--END
-			
-		--EXECUTE da_utility.dbo.[usp_DAU_ErrorLog] 'StoredProcedure', @vchErrorProcedure, @vchSchema, @intErrorNumber,
-		--@intErrorSeverity, @intErrorState, @intErrorLine, @vchErrorMessage
-
-		--Raise the error back to the calling stored proc if needed		
-		RAISERROR (@vchErrorMessage, @intErrorSeverity, @intErrorState)
+		PRINT 'Procedure ' + @vchSchema + '.' + @vchProcedureName + ' finished executing (successfully) at ' + CAST(getdate() as varchar(20))
 	END
 
 

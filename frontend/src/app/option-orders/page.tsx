@@ -34,6 +34,8 @@ interface QuoteSnapshot {
   spread_pct: number | null;
   volume: number | null;
   iv: number | null;
+  delta: number | null;
+  delta_source?: string | null;
   observation_date: string;
   source?: string;
   market_data_type?: number | null;
@@ -212,10 +214,23 @@ function quotePayloadFromEstimate(estimate: EstimateResponse): QuoteSnapshot | n
     spread_pct: estimate.quote.spread_pct ?? null,
     volume: estimate.quote.volume ?? null,
     iv: estimate.quote.iv,
+    delta: estimate.quote.delta ?? null,
     observation_date: "",
     source: "live",
     market_data_type: estimate.quote.market_data_type,
   };
+}
+
+const TARGET_ABS_DELTA = 0.2;
+
+function rowDelta(row: ChainRow) {
+  const delta = Number((row.quote || row.delayed_quote)?.delta);
+  return Number.isFinite(delta) ? delta : null;
+}
+
+function deltaDistance(row: ChainRow) {
+  const delta = rowDelta(row);
+  return delta === null ? Number.POSITIVE_INFINITY : Math.abs(Math.abs(delta) - TARGET_ABS_DELTA);
 }
 
 function chooseAutoExpiry(expirations: ExpirationRow[], preferredMinDte = 13, preferredMaxDte = 23) {
@@ -376,6 +391,8 @@ export default function OptionOrdersPage() {
         setExpiryFilter(chosenExpiry.expiry);
 
         const chosenContract = [...(chainData.rows || [])].sort((left, right) => {
+          const deltaDifference = deltaDistance(left) - deltaDistance(right);
+          if (deltaDifference !== 0) return deltaDifference;
           const leftVolume = Number((left.quote || left.delayed_quote)?.volume);
           const rightVolume = Number((right.quote || right.delayed_quote)?.volume);
           const safeLeftVolume = Number.isFinite(leftVolume) ? leftVolume : -1;
@@ -710,6 +727,7 @@ export default function OptionOrdersPage() {
                 <p className="mt-1 text-sm text-slate-600">
                   {chain ? `${chain.rows.length.toLocaleString()} contracts loaded for ${selectedExpiry}. Showing up to 600 rows.` : "Load expiries, choose one expiry, then load contracts."}
                 </p>
+                <p className="mt-1 text-xs text-indigo-600">Automatic selection targets absolute delta {TARGET_ABS_DELTA.toFixed(2)}; ties prefer higher volume.</p>
               </div>
               <div className="grid gap-2 md:grid-cols-2">
                 <Select value={expiryFilter} onChange={(event) => setExpiryFilter(event.target.value)}>
@@ -730,7 +748,8 @@ export default function OptionOrdersPage() {
                     <th className="px-3 py-2">Expiry</th>
                     <th className="px-3 py-2">DTE</th>
                     <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2 text-right">Strike</th>
+                    <th className="px-3 py-2 text-right">Delta</th>
+                    <th className="px-3 py-2 text-right">Strike</th>
                   <th className="px-3 py-2 text-right">Bid</th>
                   <th className="px-3 py-2 text-right">Ask</th>
                   <th className="px-3 py-2 text-right">
@@ -780,6 +799,9 @@ export default function OptionOrdersPage() {
                         <td className="px-3 py-2">{row.expiry_date}</td>
                         <td className="px-3 py-2">{row.dte}</td>
                         <td className="px-3 py-2">{row.right === "P" ? "Put" : "Call"}</td>
+                        <td className="px-3 py-2 text-right" title={(row.quote || row.delayed_quote)?.delta_source || undefined}>
+                          {num(rowDelta(row), 3)}
+                        </td>
                         <td className="px-3 py-2 text-right">{num(row.strike, 2)}</td>
                         <td className={liveQuoteClass(rowQuote, "px-3 py-2 text-right")}>{money(rowQuote?.bid)}</td>
                         <td className={liveQuoteClass(rowQuote, "px-3 py-2 text-right")}>{money(rowQuote?.ask)}</td>
@@ -793,7 +815,7 @@ export default function OptionOrdersPage() {
                   })}
                   {!filteredRows.length ? (
                     <tr>
-                      <td className="px-3 py-6 text-center text-slate-500" colSpan={10}>
+                      <td className="px-3 py-6 text-center text-slate-500" colSpan={11}>
                         {loadingChain ? "Loading..." : "No contracts loaded."}
                       </td>
                     </tr>
@@ -827,6 +849,7 @@ export default function OptionOrdersPage() {
                             Spread: {spreadPct(selectedSpreadPct)}
                           </div>
                           <div className={liveQuoteClass(selectedQuote)}>Volume: {num(selectedQuote?.volume, 0)}</div>
+                          <div>Delta: {num(selectedQuote?.delta, 3)}</div>
                           <div className={liveQuoteClass(selectedQuote)}>{quoteSourceLabel(selectedQuote)}</div>
                           <div className="col-span-2">Quote date: {selectedQuote?.observation_date || "n/a"}</div>
                         </>
@@ -881,6 +904,7 @@ export default function OptionOrdersPage() {
                         spread_pct: estimate.quote.spread_pct ?? null,
                         volume: estimate.quote.volume ?? null,
                         iv: estimate.quote.iv,
+                        delta: estimate.quote.delta ?? null,
                         observation_date: "",
                         source: estimate.quote.source || (estimate.quote.market_data_type === 1 ? "live" : "ib"),
                         market_data_type: estimate.quote.market_data_type ?? null,

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
-type TabKey = "buySuggestion" | "buySellPerc";
+type TabKey = "buySuggestion" | "buySellPerc" | "brokerReport";
 type BrokerCode = { BrokerCode?: string; BrokerName?: string };
 type BrokerAnalysisDefaults = {
   BrokerCode?: string;
@@ -18,6 +18,7 @@ type Row = Record<string, unknown> & {
   NetValue?: number | string;
   NetValuevsMC?: number | string;
   SalePerc?: number | string;
+  ObservationDate?: string;
 };
 
 const suggestionSortOptions = [
@@ -65,6 +66,29 @@ const percColumns = [
   "MedianPriceChangePerc",
 ];
 
+const reportColumns = [
+  "ASXCode",
+  "ObservationDate",
+  "BrokerCode",
+  "BuyValue",
+  "SellValue",
+  "NetValue",
+  "TotalValue",
+  "BuyVolume",
+  "SellVolume",
+  "NetVolume",
+  "TotalVolume",
+  "NetVolumeRatio",
+  "NoBuys",
+  "NoSells",
+  "Trades",
+  "BuyPrice",
+  "SellPrice",
+  "PriceChangeVsPrevClose",
+  "VWAP",
+  "ChiXVolOutOfTotal",
+];
+
 const labels: Record<string, string> = {
   ASXCode: "Code",
   NetValuevsMC: "Net value / MC",
@@ -76,7 +100,23 @@ const labels: Record<string, string> = {
   TrendMovingAverage200d: "200d trend",
   DateStart: "Start",
   DateEnd: "End",
+  ObservationDate: "Observation date",
   SalePerc: "Sale %",
+  BuyValue: "Buy value",
+  SellValue: "Sell value",
+  TotalValue: "Total value",
+  BuyVolume: "Buy volume",
+  SellVolume: "Sell volume",
+  TotalVolume: "Total volume",
+  NetVolumeRatio: "Net volume ratio",
+  NoBuys: "Buys",
+  NoSells: "Sells",
+  Trades: "Trades",
+  BuyPrice: "Buy price",
+  SellPrice: "Sell price",
+  PriceChangeVsPrevClose: "Price change",
+  VWAP: "VWAP",
+  ChiXVolOutOfTotal: "ChiX volume %",
   CleansedMarketCap: "Market cap",
   MedianPriceChangePerc: "Median price %",
 };
@@ -122,14 +162,18 @@ function formatDate(value: unknown) {
 
 function formatCell(column: string, value: unknown) {
   if (value == null) return "";
-  if (column === "DateStart" || column === "DateEnd") return formatDate(value);
+  if (column === "DateStart" || column === "DateEnd" || column === "ObservationDate") return formatDate(value);
   const parsed = numeric(value);
   if (parsed === null) return String(value);
   const lower = column.toLowerCase();
   const maximumFractionDigits =
     lower.includes("perc") ||
     column === "NetValuevsMC" ||
-    column === "NetVolumevsTradeVolume"
+    column === "NetVolumevsTradeVolume" ||
+    column === "BuyPrice" ||
+    column === "SellPrice" ||
+    column === "VWAP" ||
+    column === "PriceChangeVsPrevClose"
       ? 4
       : 0;
   return parsed.toLocaleString("en-AU", { maximumFractionDigits });
@@ -262,6 +306,11 @@ export default function BrokerAnalysisPage() {
   const [percRows, setPercRows] = useState<Row[]>([]);
   const [percLoading, setPercLoading] = useState(false);
 
+  const [reportStockCode, setReportStockCode] = useState("SKK.AX");
+  const [reportObservationDate, setReportObservationDate] = useState("2026-10-02");
+  const [reportRows, setReportRows] = useState<Row[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
+
   useEffect(() => {
     authenticatedFetch(`${baseUrl}/api/broker-analysis/defaults`)
       .then(async (response) => {
@@ -355,17 +404,64 @@ export default function BrokerAnalysisPage() {
     return () => controller.abort();
   }, [baseUrl, brokerCode, percSort, percStartDate, percEndDate]);
 
-  const currentRows = activeTab === "buySuggestion" ? suggestionRows : percRows;
-  const currentLoading = activeTab === "buySuggestion" ? suggestionLoading : percLoading;
+  useEffect(() => {
+    if (activeTab !== "brokerReport" || !reportStockCode.trim() || !reportObservationDate) return;
+
+    const controller = new AbortController();
+    setReportLoading(true);
+    setError("");
+    const params = new URLSearchParams({
+      stock_code: reportStockCode.trim().toUpperCase(),
+      observation_date: reportObservationDate,
+    });
+
+    authenticatedFetch(`${baseUrl}/api/broker-analysis/report?${params}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await response.text());
+        return response.json();
+      })
+      .then((data: Row[]) => {
+        setReportRows(data || []);
+        setError("");
+      })
+      .catch((e) => {
+        if (e.name !== "AbortError") {
+          setError(e.message || "Failed to load broker report");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setReportLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [activeTab, baseUrl, reportStockCode, reportObservationDate]);
+
+  const currentRows =
+    activeTab === "buySuggestion"
+      ? suggestionRows
+      : activeTab === "buySellPerc"
+        ? percRows
+        : reportRows;
+  const currentLoading =
+    activeTab === "buySuggestion"
+      ? suggestionLoading
+      : activeTab === "buySellPerc"
+        ? percLoading
+        : reportLoading;
   const suggestionTableColumns = useMemo(
     () => columnsFor(suggestionRows, suggestionColumns),
     [suggestionRows],
   );
   const percTableColumns = useMemo(() => columnsFor(percRows, percColumns), [percRows]);
+  const reportTableColumns = useMemo(() => columnsFor(reportRows, reportColumns), [reportRows]);
 
   const summary = useMemo(() => {
     const totalNetValue = currentRows.reduce((sum, row) => sum + (numeric(row.NetValue) || 0), 0);
-    const firstWindow = currentRows.find((row) => row.DateStart || row.DateEnd);
+    const firstWindow = currentRows.find(
+      (row) => row.DateStart || row.DateEnd || row.ObservationDate,
+    );
     return {
       rows: currentRows.length,
       topCode: currentRows[0]?.ASXCode || "-",
@@ -373,7 +469,9 @@ export default function BrokerAnalysisPage() {
       window:
         firstWindow?.DateStart && firstWindow?.DateEnd
           ? `${formatDate(firstWindow.DateStart)} to ${formatDate(firstWindow.DateEnd)}`
-          : "-",
+          : firstWindow?.ObservationDate
+            ? formatDate(firstWindow.ObservationDate)
+            : "-",
     };
   }, [currentRows]);
 
@@ -408,6 +506,7 @@ export default function BrokerAnalysisPage() {
           {[
             ["buySuggestion", "Broker Buy Suggestion", "BrokerAnalysis.aspx"],
             ["buySellPerc", "Buy/Sell Percentage", "BrokerBuySellPerc.aspx"],
+            ["brokerReport", "Stock Broker Report", "usp_Get_BrokerReport"],
           ].map(([key, title, source]) => (
             <button
               key={key}
@@ -428,102 +527,126 @@ export default function BrokerAnalysisPage() {
         </div>
 
         <section className="mb-5 rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-6">
-            <label className="text-sm font-medium text-slate-700 md:col-span-2">
-              Broker
-              <select
-                value={brokerCode}
-                onChange={(e) => setBrokerCode(e.target.value)}
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-              >
-                {brokerCodes.length === 0 ? (
-                  <option value={brokerCode}>{brokerCode}</option>
-                ) : (
-                  brokerCodes.map((broker) => (
-                    <option key={broker.BrokerCode || broker.BrokerName} value={broker.BrokerCode || ""}>
-                      {broker.BrokerName || broker.BrokerCode || ""}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
+          {activeTab === "brokerReport" ? (
+            <div className="grid gap-3 md:grid-cols-4">
+              <label className="text-sm font-medium text-slate-700 md:col-span-2">
+                ASX stock code
+                <input
+                  type="text"
+                  value={reportStockCode}
+                  onChange={(e) => setReportStockCode(e.target.value)}
+                  placeholder="SKK.AX"
+                  className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm uppercase outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+              <label className="text-sm font-medium text-slate-700">
+                Observation date
+                <input
+                  type="date"
+                  value={reportObservationDate}
+                  onChange={(e) => setReportObservationDate(e.target.value)}
+                  className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-6">
+              <label className="text-sm font-medium text-slate-700 md:col-span-2">
+                Broker
+                <select
+                  value={brokerCode}
+                  onChange={(e) => setBrokerCode(e.target.value)}
+                  className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                >
+                  {brokerCodes.length === 0 ? (
+                    <option value={brokerCode}>{brokerCode}</option>
+                  ) : (
+                    brokerCodes.map((broker) => (
+                      <option key={broker.BrokerCode || broker.BrokerName} value={broker.BrokerCode || ""}>
+                        {broker.BrokerName || broker.BrokerCode || ""}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
 
-            {activeTab === "buySuggestion" ? (
-              <>
-                <label className="text-sm font-medium text-slate-700">
-                  Order by
-                  <select
-                    value={suggestionSort}
-                    onChange={(e) => setSuggestionSort(e.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  >
-                    {suggestionSortOptions.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  Start date
-                  <input
-                    type="date"
-                    value={suggestionStartDate}
-                    max={suggestionEndDate}
-                    onChange={(e) => setSuggestionStartDate(e.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  End date
-                  <input
-                    type="date"
-                    value={suggestionEndDate}
-                    min={suggestionStartDate}
-                    onChange={(e) => setSuggestionEndDate(e.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-              </>
-            ) : (
-              <>
-                <label className="text-sm font-medium text-slate-700">
-                  Order by
-                  <select
-                    value={percSort}
-                    onChange={(e) => setPercSort(e.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  >
-                    {percSortOptions.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  Observation start
-                  <input
-                    type="date"
-                    value={percStartDate}
-                    max={percEndDate || undefined}
-                    onChange={(e) => setPercStartDate(e.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  Observation end
-                  <input
-                    type="date"
-                    value={percEndDate}
-                    min={percStartDate || undefined}
-                    onChange={(e) => setPercEndDate(e.target.value)}
-                    className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-              </>
-            )}
-          </div>
+              {activeTab === "buySuggestion" ? (
+                <>
+                  <label className="text-sm font-medium text-slate-700">
+                    Order by
+                    <select
+                      value={suggestionSort}
+                      onChange={(e) => setSuggestionSort(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    >
+                      {suggestionSortOptions.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium text-slate-700">
+                    Start date
+                    <input
+                      type="date"
+                      value={suggestionStartDate}
+                      max={suggestionEndDate}
+                      onChange={(e) => setSuggestionStartDate(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-slate-700">
+                    End date
+                    <input
+                      type="date"
+                      value={suggestionEndDate}
+                      min={suggestionStartDate}
+                      onChange={(e) => setSuggestionEndDate(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="text-sm font-medium text-slate-700">
+                    Order by
+                    <select
+                      value={percSort}
+                      onChange={(e) => setPercSort(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    >
+                      {percSortOptions.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium text-slate-700">
+                    Observation start
+                    <input
+                      type="date"
+                      value={percStartDate}
+                      max={percEndDate || undefined}
+                      onChange={(e) => setPercStartDate(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </label>
+                  <label className="text-sm font-medium text-slate-700">
+                    Observation end
+                    <input
+                      type="date"
+                      value={percEndDate}
+                      min={percStartDate || undefined}
+                      onChange={(e) => setPercEndDate(e.target.value)}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+          )}
         </section>
 
         {error ? (
@@ -536,12 +659,18 @@ export default function BrokerAnalysisPage() {
           <div className="flex min-h-12 items-center justify-between border-b border-slate-200 px-4 py-3">
             <div>
               <h2 className="text-base font-semibold text-slate-950">
-                {activeTab === "buySuggestion" ? "Broker buy suggestion" : "Broker buy/sell percentage"}
+                {activeTab === "buySuggestion"
+                  ? "Broker buy suggestion"
+                  : activeTab === "buySellPerc"
+                    ? "Broker buy/sell percentage"
+                    : "Stock broker report"}
               </h2>
               <p className="text-xs text-slate-500">
                 {activeTab === "buySuggestion"
                   ? "Uses Report.usp_Get_BrokerBuySuggestion"
-                  : "Uses Report.usp_GetBrokerBuySellPerc"}
+                  : activeTab === "buySellPerc"
+                    ? "Uses Report.usp_GetBrokerBuySellPerc"
+                    : "Uses Report.usp_Get_BrokerReport"}
               </p>
             </div>
             {currentLoading ? <div className="text-sm font-medium text-emerald-700">Loading...</div> : null}
@@ -554,12 +683,19 @@ export default function BrokerAnalysisPage() {
               loading={suggestionLoading}
               emptyText="No broker buy suggestion rows found for this window."
             />
-          ) : (
+          ) : activeTab === "buySellPerc" ? (
             <DataTable
               rows={percRows}
               columns={percTableColumns}
               loading={percLoading}
               emptyText="No broker buy/sell percentage rows found for this window."
+            />
+          ) : (
+            <DataTable
+              rows={reportRows}
+              columns={reportTableColumns}
+              loading={reportLoading}
+              emptyText="No broker report rows found for this stock and date."
             />
           )}
         </section>

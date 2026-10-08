@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional
+from http.client import IncompleteRead
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -45,12 +46,29 @@ def call_skill_runner(method: str, path: str, payload: Optional[Dict[str, Any]] 
             )
     except HTTPError as exc:
         elapsed_ms = (time.perf_counter() - started) * 1000.0
-        raw = exc.read().decode("utf-8", errors="replace")
-        detail: Any = raw
+        try:
+            raw = exc.read().decode("utf-8", errors="replace")
+        except IncompleteRead as read_error:
+            # Some upstream ASGI/proxy responses advertise a body length but
+            # close the connection before sending it. Preserve the upstream
+            # status instead of leaking http.client.IncompleteRead as a 500.
+            raw = read_error.partial.decode("utf-8", errors="replace")
+            logger.warning(
+                "Skill runner %s %s -> %s %.1fms returned an incomplete error body "
+                "(expected %s bytes, received %s)",
+                method,
+                path,
+                exc.code,
+                elapsed_ms,
+                read_error.expected,
+                len(read_error.partial),
+            )
+
+        detail: Any = raw or f"Skill runner returned HTTP {exc.code}"
         try:
             detail_data = json.loads(raw)
             detail = detail_data.get("detail") or detail_data
-        except Exception:
+        except (json.JSONDecodeError, AttributeError):
             pass
         logger.error(
             "Skill runner %s %s -> %s %.1fms detail=%r",
@@ -87,6 +105,10 @@ def list_reports(job_type: str) -> Any:
 
 def get_job_report(job_id: str) -> Any:
     return call_skill_runner("GET", f"/api/jobs/{job_id}/report")
+
+
+def get_job_json(job_id: str) -> Any:
+    return call_skill_runner("GET", f"/api/jobs/{job_id}/json")
 
 
 def get_first_value(item: Dict[str, Any], keys: List[str]) -> Optional[Any]:

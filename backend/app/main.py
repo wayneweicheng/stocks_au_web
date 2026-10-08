@@ -38,6 +38,7 @@ from app.routers.discord_summary import router as discord_summary_router
 from app.routers.trading_orders import router as trading_orders_router
 from app.routers.option_recommendations import router as option_recommendations_router
 from app.routers.option_orders import router as option_orders_router
+from app.routers.volatility_options import router as volatility_options_router
 from app.routers.price_levels_30m import router as price_levels_30m_router
 from app.routers.support_resistance import router as support_resistance_router
 from app.routers.calculated_gex import router as calculated_gex_router
@@ -259,6 +260,7 @@ app.include_router(discord_summary_router)
 app.include_router(trading_orders_router)
 app.include_router(option_recommendations_router)
 app.include_router(option_orders_router)
+app.include_router(volatility_options_router)
 app.include_router(price_levels_30m_router)
 app.include_router(support_resistance_router)
 app.include_router(calculated_gex_router)

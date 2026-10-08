@@ -45,12 +45,14 @@ def get_breakout_watchlist(
             logger.info(f"Refreshing breakout watchlist for {observation_date} (user: {username})")
             try:
                 refresh_query = "EXEC StockDB.Transform.usp_CalculateBreakoutWatchlist @ObservationDate = ?"
-                model.execute_write_query(refresh_query, (observation_date,))
+                model.execute_update_usp(refresh_query, (observation_date,))
                 logger.info(f"Successfully refreshed breakout watchlist data")
             except Exception as e:
-                logger.error(f"Error refreshing data: {str(e)}")
-                # Continue to try reading existing data even if refresh fails
-                pass
+                logger.exception("Error refreshing breakout watchlist for %s", observation_date)
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Unable to refresh breakout watchlist for {observation_date}: {e}",
+                ) from e
 
         # Query pre-computed results
         query = """
@@ -84,6 +86,8 @@ def get_breakout_watchlist(
         logger.info(f"Found {len(results)} breakout candidates")
         return results
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in breakout watchlist: {str(e)}")
         logger.error(traceback.format_exc())

@@ -120,6 +120,33 @@ interface SupportResistanceResponse {
   bars: PriceBar[];
 }
 
+interface SavedSupportResistanceResponse {
+  stock_code: string;
+  requested_stock_code: string;
+  found: boolean;
+  as_at: string | null;
+  matched_hour_utc: string | null;
+  map_generated_at_utc: string | null;
+  map_as_of_at_utc: string | null;
+  observation_date: string | null;
+  bars: PriceBar[];
+  method_version?: string | null;
+  source_system?: string | null;
+  stock: {
+    stock_code: string;
+    database_code: string | null;
+    latest_close: number | null;
+    reference_price: number | null;
+    supports: PriceRange[];
+    resistances: PriceRange[];
+  };
+}
+
+interface RecordedHoursResponse {
+  stock_code: string;
+  hours: string[];
+}
+
 function LevelActions({
   zone,
   tone,
@@ -198,6 +225,79 @@ function LevelActions({
   );
 }
 
+function LevelPanels({
+  stock,
+  stockCode,
+}: {
+  stock: {
+    supports: PriceRange[];
+    resistances: PriceRange[];
+  };
+  stockCode: string;
+}) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-emerald-700">Support Levels</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {stock.supports.length > 0 ? (
+              stock.supports.map((zone, idx) => (
+                <div key={idx} className="p-3 bg-emerald-50 rounded border border-emerald-200">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="font-semibold text-emerald-900">
+                      ${zone.price.toFixed(4)} - ${zone.range_low.toFixed(4)} to ${zone.range_high.toFixed(4)}
+                    </div>
+                    <LevelActions zone={zone} tone="support" stockCode={stockCode} />
+                  </div>
+                  <div className="text-xs text-emerald-700 mt-1">
+                    Rank {zone.strength_rank || idx + 1} &bull; {zone.distance_pct > 0 ? "+" : ""}{zone.distance_pct.toFixed(2)}% &bull; {zone.distance_atr.toFixed(2)} ATR
+                    {zone.touches > 0 ? ` | ${zone.touches} touch${zone.touches === 1 ? "" : "es"}` : ""}
+                  </div>
+                  <div className="text-xs text-slate-600 mt-1">{zone.sources.join(" + ")}</div>
+                </div>
+              ))
+            ) : (
+              <div className="text-slate-500">No support levels found</div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-red-700">Resistance Levels</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {stock.resistances.length > 0 ? (
+              stock.resistances.map((zone, idx) => (
+                <div key={idx} className="p-3 bg-red-50 rounded border border-red-200">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="font-semibold text-red-900">
+                      ${zone.price.toFixed(4)} - ${zone.range_low.toFixed(4)} to ${zone.range_high.toFixed(4)}
+                    </div>
+                    <LevelActions zone={zone} tone="resistance" stockCode={stockCode} />
+                  </div>
+                  <div className="text-xs text-red-700 mt-1">
+                    Rank {zone.strength_rank || idx + 1} &bull; {zone.distance_pct > 0 ? "+" : ""}{zone.distance_pct.toFixed(2)}% &bull; {zone.distance_atr.toFixed(2)} ATR
+                    {zone.touches > 0 ? ` | ${zone.touches} touch${zone.touches === 1 ? "" : "es"}` : ""}
+                  </div>
+                  <div className="text-xs text-slate-600 mt-1">{zone.sources.join(" + ")}</div>
+                </div>
+              ))
+            ) : (
+              <div className="text-slate-500">No resistance levels found</div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function SupportResistancePage() {
   const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const initialLoadStarted = useRef(false);
@@ -212,6 +312,17 @@ export default function SupportResistancePage() {
   const [minimumAtr, setMinimumAtr] = useState("0.1");
   const [maximumAtr, setMaximumAtr] = useState("3");
   const [observationDateTime, setObservationDateTime] = useState("");
+  const [activeTab, setActiveTab] = useState<"calculated" | "database">(() => {
+    if (typeof window === "undefined") return "calculated";
+    return new URLSearchParams(window.location.search).get("tab") === "database"
+      ? "database"
+      : "calculated";
+  });
+  const [databaseData, setDatabaseData] = useState<SavedSupportResistanceResponse | null>(null);
+  const [recordedHours, setRecordedHours] = useState<string[]>([]);
+  const [selectedRecordedHour, setSelectedRecordedHour] = useState("");
+  const [databaseLoading, setDatabaseLoading] = useState(false);
+  const [databaseError, setDatabaseError] = useState("");
 
   const loadData = useCallback(
     async (code: string, asAtDateTime = observationDateTime) => {
@@ -283,6 +394,69 @@ export default function SupportResistancePage() {
     [baseUrl, lookbackDays, minimumAtr, maximumAtr, observationDateTime]
   );
 
+  const loadDatabaseData = useCallback(
+    async (code: string, recordedHour = selectedRecordedHour) => {
+      if (!code.trim()) {
+        setDatabaseError("Stock code is required");
+        return;
+      }
+      setDatabaseLoading(true);
+      setDatabaseError("");
+      try {
+        const params = new URLSearchParams({ stock_code: code.trim().toUpperCase() });
+        if (recordedHour) params.set("recorded_hour", recordedHour);
+        const response = await authenticatedFetch(`${baseUrl}/api/support-resistance/database?${params}`, {
+          cache: "no-store",
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body?.detail || `HTTP ${response.status}`);
+        setDatabaseData(body);
+        setStockCode(body.stock_code || code.trim().toUpperCase());
+      } catch (exc: any) {
+        setDatabaseError(exc?.message || String(exc));
+        setDatabaseData(null);
+      } finally {
+        setDatabaseLoading(false);
+      }
+    },
+    [baseUrl, selectedRecordedHour]
+  );
+
+  const loadRecordedHours = useCallback(
+    async (code: string) => {
+      if (!code.trim()) {
+        setDatabaseError("Stock code is required");
+        return;
+      }
+      setDatabaseLoading(true);
+      setDatabaseError("");
+      try {
+        const params = new URLSearchParams({ stock_code: code.trim().toUpperCase() });
+        const response = await authenticatedFetch(`${baseUrl}/api/support-resistance/database-hours?${params}`, {
+          cache: "no-store",
+        });
+        const body: RecordedHoursResponse = await response.json();
+        if (!response.ok) throw new Error((body as any)?.detail || `HTTP ${response.status}`);
+        setRecordedHours(body.hours || []);
+        const firstHour = body.hours?.[0] || "";
+        setSelectedRecordedHour(firstHour);
+        if (firstHour) {
+          await loadDatabaseData(code, firstHour);
+        } else {
+          setDatabaseData(null);
+        }
+      } catch (exc: any) {
+        setDatabaseError(exc?.message || String(exc));
+        setRecordedHours([]);
+        setSelectedRecordedHour("");
+        setDatabaseData(null);
+      } finally {
+        setDatabaseLoading(false);
+      }
+    },
+    [baseUrl, loadDatabaseData]
+  );
+
   useEffect(() => {
     if (!initialLoadStarted.current) {
       initialLoadStarted.current = true;
@@ -291,24 +465,34 @@ export default function SupportResistancePage() {
       const initialDateTime = params.get("observation_datetime") || params.get("as_at") || "";
       setObservationDateTime(initialDateTime);
       setStockCode(initialCode);
-      loadData(initialCode, initialDateTime);
+      if (activeTab === "database") {
+        void loadRecordedHours(initialCode);
+      } else {
+        loadData(initialCode, initialDateTime);
+      }
     }
-  }, [loadData]);
+  }, [activeTab, loadData, loadRecordedHours]);
 
   useEffect(() => {
     return () => activeRequest.current?.abort();
   }, []);
 
   useEffect(() => {
-    if (!data?.bars || data.bars.length === 0 || !plotRef.current) return;
+    const chartData = activeTab === "calculated"
+      ? data
+      : databaseData?.found
+        ? databaseData
+        : null;
+    const plotElement = plotRef.current;
+    if (!chartData?.bars || chartData.bars.length === 0 || !plotElement) return;
 
     let cancelled = false;
 
     void import("plotly.js/dist/plotly-finance.min.js").then((plotlyModule) => {
-      if (cancelled || !plotRef.current) return;
+      if (cancelled || !plotElement) return;
       const Plotly = (plotlyModule as any).default || plotlyModule;
-      const bars = data.bars;
-      const stock = data.stock;
+      const bars = chartData.bars;
+      const stock = chartData.stock;
       const supports = stock.supports || [];
       const resistances = stock.resistances || [];
       const supportColors = ["#065f46", "#047857", "#10b981", "#34d399", "#6ee7b7"];
@@ -410,7 +594,7 @@ export default function SupportResistancePage() {
       }
 
       const layout = {
-        title: `${data.stock_code || "Loading..."} - Support/Resistance (30m)`,
+        title: `${chartData.stock_code || "Loading..."} - Support/Resistance (30m)`,
         xaxis: {
           title: "Time",
           type: "category",
@@ -446,25 +630,54 @@ export default function SupportResistancePage() {
         margin: { l: 64, r: 190, t: 64, b: 64 },
       };
 
-      Plotly.newPlot(plotRef.current, traces, layout, { responsive: true });
+      Plotly.newPlot(plotElement, traces, layout, { responsive: true });
     }).catch((exc) => {
       setError(exc?.message || "Failed to load Plotly charting library");
     });
 
     return () => {
       cancelled = true;
-      if (plotRef.current) {
+      if (plotElement) {
         void import("plotly.js/dist/plotly-finance.min.js").then((plotlyModule) => {
           const Plotly = (plotlyModule as any).default || plotlyModule;
-          Plotly.purge(plotRef.current);
+          Plotly.purge(plotElement);
         }).catch(() => undefined);
       }
     };
-  }, [data]);
+  }, [data, databaseData, activeTab]);
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Support / Resistance" subtitle="Interactive 30-minute candlestick chart with support/resistance zones" />
+      <PageHeader title="Support / Resistance" subtitle="Interactive 30-minute candlestick chart and saved database support/resistance levels" />
+
+      <div role="tablist" aria-label="Support and resistance sources" className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "calculated"}
+          onClick={() => {
+            setActiveTab("calculated");
+            window.history.replaceState(null, "", "?stock=" + encodeURIComponent(stockCode) + (observationDateTime ? "&observation_datetime=" + encodeURIComponent(observationDateTime) : ""));
+            if (stockCode.trim()) void loadData(stockCode);
+          }}
+          className={`rounded-md px-4 py-2 text-sm font-medium ${activeTab === "calculated" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+        >
+          Calculated 30M
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "database"}
+          onClick={() => {
+            setActiveTab("database");
+            window.history.replaceState(null, "", `?stock=${encodeURIComponent(stockCode)}&tab=database`);
+            void loadRecordedHours(stockCode);
+          }}
+          className={`rounded-md px-4 py-2 text-sm font-medium ${activeTab === "database" ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+        >
+          Saved Database Levels
+        </button>
+      </div>
 
       <Card>
         <CardHeader>
@@ -478,31 +691,61 @@ export default function SupportResistancePage() {
                 value={stockCode}
                 onChange={(e) => setStockCode(e.target.value)}
                 onKeyPress={(e) => {
-                  if (e.key === "Enter") loadData(stockCode);
+                  if (e.key === "Enter") {
+                    if (activeTab === "database") void loadRecordedHours(stockCode);
+                    else void loadData(stockCode);
+                  }
                 }}
                 className="flex-1"
               />
-              <Button onClick={() => loadData(stockCode)} disabled={loading || !stockCode.trim()}>
-                {loading ? "Loading..." : "Load"}
+              <Button
+                onClick={() => {
+                  if (activeTab === "database") void loadRecordedHours(stockCode);
+                  else void loadData(stockCode);
+                }}
+                disabled={loading || databaseLoading || !stockCode.trim()}
+              >
+                {loading || databaseLoading ? "Loading..." : "Load"}
               </Button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label className="text-sm font-medium text-slate-700">As At</label>
-                <div className="mt-1 flex gap-2">
-                  <Input
-                    type="datetime-local"
-                    value={observationDateTime}
-                    onChange={(e) => setObservationDateTime(e.target.value)}
-                  />
-                  {observationDateTime ? (
-                    <Button type="button" variant="secondary" onClick={() => setObservationDateTime("")}>
-                      Clear
-                    </Button>
-                  ) : null}
+              {activeTab === "database" ? (
+                <div className="md:col-span-2">
+                  <label className="text-sm font-medium text-slate-700">Recorded Hour (UTC)</label>
+                  <select
+                    value={selectedRecordedHour}
+                    onChange={(e) => {
+                      setSelectedRecordedHour(e.target.value);
+                      void loadDatabaseData(stockCode, e.target.value);
+                    }}
+                    disabled={databaseLoading || recordedHours.length === 0}
+                    className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
+                  >
+                    {!recordedHours.length ? <option value="">No recorded hours</option> : null}
+                    {recordedHours.map((hour) => (
+                      <option key={hour} value={hour}>{new Date(`${hour}Z`).toLocaleString()}</option>
+                    ))}
+                  </select>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <label className="text-sm font-medium text-slate-700">As At</label>
+                  <div className="mt-1 flex gap-2">
+                    <Input
+                      type="datetime-local"
+                      value={observationDateTime}
+                      onChange={(e) => setObservationDateTime(e.target.value)}
+                    />
+                    {observationDateTime ? (
+                      <Button type="button" variant="secondary" onClick={() => setObservationDateTime("")}>
+                        Clear
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+              {activeTab === "calculated" ? <>
               <div>
                 <label className="text-sm font-medium text-slate-700">Lookback Days</label>
                 <select
@@ -539,9 +782,11 @@ export default function SupportResistancePage() {
                   className="mt-1"
                 />
               </div>
+              </> : null}
             </div>
 
-            {error ? <Alert variant="danger">Error: {error}</Alert> : null}
+            {activeTab === "database" && databaseError ? <Alert variant="danger">Error: {databaseError}</Alert> : null}
+            {activeTab === "calculated" && error ? <Alert variant="danger">Error: {error}</Alert> : null}
             {data?.live_price_check && data.live_price_missing?.length ? (
               <Alert variant="warning">
                 IB did not return a current price; using the latest 30-minute close as the reference price.
@@ -551,7 +796,7 @@ export default function SupportResistancePage() {
         </CardContent>
       </Card>
 
-      {data && (
+      {activeTab === "calculated" && data && (
         <>
           <Card>
             <CardHeader>
@@ -596,67 +841,69 @@ export default function SupportResistancePage() {
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-emerald-700">Support Levels</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {data.stock.supports.length > 0 ? (
-                    data.stock.supports.map((zone, idx) => (
-                      <div key={idx} className="p-3 bg-emerald-50 rounded border border-emerald-200">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="font-semibold text-emerald-900">
-                            ${zone.price.toFixed(4)} - ${zone.range_low.toFixed(4)} to ${zone.range_high.toFixed(4)}
-                          </div>
-                          <LevelActions zone={zone} tone="support" stockCode={data.stock_code} />
-                        </div>
-                        <div className="text-xs text-emerald-700 mt-1">
-                          Rank {zone.strength_rank || idx + 1} &bull; {zone.distance_pct > 0 ? "+" : ""}{zone.distance_pct.toFixed(2)}% &bull; {zone.distance_atr.toFixed(2)} ATR
-                          {zone.touches > 0 ? ` | ${zone.touches} touch${zone.touches === 1 ? "" : "es"}` : ""}
-                        </div>
-                        <div className="text-xs text-slate-600 mt-1">{zone.sources.join(" + ")}</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-slate-500">No support levels found</div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-red-700">Resistance Levels</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {data.stock.resistances.length > 0 ? (
-                    data.stock.resistances.map((zone, idx) => (
-                      <div key={idx} className="p-3 bg-red-50 rounded border border-red-200">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="font-semibold text-red-900">
-                            ${zone.price.toFixed(4)} - ${zone.range_low.toFixed(4)} to ${zone.range_high.toFixed(4)}
-                          </div>
-                          <LevelActions zone={zone} tone="resistance" stockCode={data.stock_code} />
-                        </div>
-                        <div className="text-xs text-red-700 mt-1">
-                          Rank {zone.strength_rank || idx + 1} &bull; {zone.distance_pct > 0 ? "+" : ""}{zone.distance_pct.toFixed(2)}% &bull; {zone.distance_atr.toFixed(2)} ATR
-                          {zone.touches > 0 ? ` | ${zone.touches} touch${zone.touches === 1 ? "" : "es"}` : ""}
-                        </div>
-                        <div className="text-xs text-slate-600 mt-1">{zone.sources.join(" + ")}</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-slate-500">No resistance levels found</div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <LevelPanels stock={data.stock} stockCode={data.stock_code} />
         </>
       )}
+
+      {activeTab === "database" && databaseData && databaseData.found ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Saved Database Map</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                <div>
+                  <div className="text-slate-500">Recorded Hour (UTC)</div>
+                  <div className="font-semibold text-xs">
+                    {databaseData.matched_hour_utc ? new Date(`${databaseData.matched_hour_utc}Z`).toLocaleString() : "n/a"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Map Generated</div>
+                  <div className="font-semibold text-xs">
+                    {databaseData.map_generated_at_utc ? new Date(`${databaseData.map_generated_at_utc}Z`).toLocaleString() : "n/a"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Map As Of</div>
+                  <div className="font-semibold text-xs">
+                    {databaseData.map_as_of_at_utc ? new Date(`${databaseData.map_as_of_at_utc}Z`).toLocaleString() : "n/a"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Reference Price</div>
+                  <div className="font-semibold">{formatPrice(databaseData.stock.reference_price)}</div>
+                </div>
+                <div>
+                  <div className="text-slate-500">Latest Close</div>
+                  <div className="font-semibold">{formatPrice(databaseData.stock.latest_close)}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Interactive Chart</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {databaseData.bars.length > 0 ? (
+                <div ref={plotRef} style={{ width: "100%", height: "860px" }} />
+              ) : (
+                <div className="py-8 text-center text-slate-500">No chart data</div>
+              )}
+            </CardContent>
+          </Card>
+          <LevelPanels stock={databaseData.stock} stockCode={databaseData.stock_code} />
+        </>
+      ) : null}
+      {activeTab === "database" && !databaseLoading && (!databaseData || !databaseData.found) ? (
+        <Card>
+          <CardContent>
+            <div className="py-8 text-center text-slate-500">No data</div>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

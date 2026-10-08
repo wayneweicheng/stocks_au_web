@@ -10,6 +10,8 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 from datetime import date, datetime
 import logging
+import os
+import time
 
 logger = logging.getLogger("app.scheduler")
 
@@ -182,6 +184,109 @@ def discord_market_intelligence_job():
         logger.error("[Discord Summary] Scheduled generation failed: %s", exc, exc_info=True)
 
 
+def _persist_volatility_runner_job(job_response: dict) -> dict:
+    from app.services.skill_runner_client import call_skill_runner, get_job_json
+    from app.services.volatility_options_alerts import VolatilityOptionsAlertService, candidate_alert_message
+    from app.services.volatility_options_persistence import VolatilityOptionsStore
+
+    job_id = str(job_response.get("job_id") or "")
+    if not job_id:
+        raise RuntimeError("skill runner did not return a job_id")
+    job = {}
+    for _ in range(36):
+        job = call_skill_runner("GET", f"/api/jobs/{job_id}") or {}
+        if str(job.get("status") or "").lower() in {"succeeded", "failed"}:
+            break
+        time.sleep(10)
+    if str(job.get("status") or "").lower() != "succeeded":
+        raise RuntimeError(str(job.get("error") or f"volatility scan job {job_id} did not succeed"))
+    audit = get_job_json(job_id)
+    report = audit.get("content") if isinstance(audit, dict) else None
+    if not isinstance(report, dict):
+        raise RuntimeError("volatility scan JSON audit was unavailable")
+    store = VolatilityOptionsStore()
+    run_id = store.record_completed_scan(report, run_id=job_id, report_path=job.get("report_path"))
+    alerts = VolatilityOptionsAlertService(model=store.model)
+    threshold = float(os.getenv("VSO_ALERT_MIN_SCORE", "75"))
+    for candidate in report.get("candidates") or []:
+        if float(candidate.get("trade_score") or 0) < threshold:
+            continue
+        symbol = str(candidate.get("symbol") or "UNKNOWN")
+        alerts.send_once(
+            idempotency_key=f"scan:{run_id}:candidate:{candidate.get('rank')}:{symbol}",
+            alert_type="VSO_CANDIDATE",
+            title=f"VSO candidate review: {symbol}",
+            message=candidate_alert_message(candidate),
+            severity="normal",
+            run_id=run_id,
+        )
+    return {"job_id": job_id, "run_id": run_id, "candidate_count": len(report.get("candidates") or [])}
+
+
+def volatility_selective_scan_job():
+    """Run the configured research scan and persist/alert its result; never trade."""
+    from app.services.skill_runner_client import call_skill_runner
+    from app.services.volatility_options_persistence import VolatilityOptionsStore
+    from app.services.volatility_options_service import build_scan_snapshot
+    from app.services.volatility_options_alerts import VolatilityOptionsAlertService
+
+    state_id = "volatility_selective_scan"
+    started = datetime.now()
+    _update_job_state(state_id, running=True, last_started_at=started, last_error=None)
+    try:
+        store = VolatilityOptionsStore()
+        safety = store.get_safety_state()
+        if bool(safety.get("KillSwitchActive")):
+            _update_job_state(state_id, running=False, last_finished_at=datetime.now(), skipped=True, skip_reason=f"kill switch: {safety.get('Reason')}")
+            return
+        schedule = store.get_schedule()
+        if not schedule or not bool(schedule.get("Enabled")):
+            _update_job_state(state_id, running=False, last_finished_at=datetime.now(), skipped=True, skip_reason="schedule disabled or not configured")
+            return
+        snapshot = build_scan_snapshot(
+            symbols=str(schedule["Symbols"]),
+            account_equity=float(schedule["AccountEquity"]),
+            assignment_exposure=float(schedule.get("AssignmentExposure") or 0),
+            event_clear_symbols=str(schedule.get("EventClearSymbols") or ""),
+            top_n=int(schedule.get("TopN") or 10),
+            dte_min=int(schedule.get("DteMin") or 30),
+            dte_max=int(schedule.get("DteMax") or 55),
+            min_vol_edge=float(schedule.get("MinimumVolatilityEdge") or 0.02),
+            risk_budget_pct=float(schedule.get("RiskBudgetPct") or 0.02),
+            max_assignment_exposure_pct=float(schedule.get("MaxAssignmentExposurePct") or 0.75),
+        )
+        response = call_skill_runner("POST", "/api/jobs/volatility-selective-options", {"snapshot": snapshot})
+        result = _persist_volatility_runner_job(response)
+        _update_job_state(state_id, **result, running=False, last_finished_at=datetime.now())
+        logger.info("[VSO] Scheduled scan complete: %s", result)
+    except Exception as exc:
+        _update_job_state(state_id, running=False, last_finished_at=datetime.now(), last_error=str(exc))
+        logger.error("[VSO] Scheduled scan failed: %s", exc, exc_info=True)
+        try:
+            VolatilityOptionsAlertService().send_once(
+                idempotency_key=f"scheduler:vso:failure:{datetime.now():%Y-%m-%d-%H%M}",
+                alert_type="VSO_SCAN_FAILURE",
+                title="VSO scheduled scan failed",
+                message=f"Volatility-selective scan failed: {exc}. No broker action was taken.",
+                severity="high",
+            )
+        except Exception:
+            logger.error("[VSO] Could not send scan-failure alert", exc_info=True)
+
+
+def volatility_selective_manual_monitor_job():
+    """Revalue manually entered positions and send review alerts; never trade."""
+    from app.services.volatility_options_monitor import monitor_open_positions
+
+    try:
+        result = monitor_open_positions()
+        _update_job_state("volatility_selective_manual_monitor", last_finished_at=datetime.now(), **result)
+        logger.info("[VSO] Manual monitor: %s", result)
+    except Exception as exc:
+        _update_job_state("volatility_selective_manual_monitor", last_finished_at=datetime.now(), last_error=str(exc))
+        logger.error("[VSO] Manual monitor failed: %s", exc, exc_info=True)
+
+
 def bet_odds_monitor_job():
     """Scan active TAB odds monitors that are due."""
     from app.services.bet_odds_monitor_service import BetOddsMonitorService
@@ -235,6 +340,26 @@ def start_scheduler():
     # heartbeat owns claims, lifecycle, reports, and notifications. Keeping
     # this scheduler focused on unrelated website jobs prevents two owners
     # from sharing the same SPX work identity.
+
+    # Volatility-selective operation is deliberately non-executing. It creates
+    # candidate reports, persists audit records, revalues manually entered
+    # positions, and sends idempotent review alerts only.
+    scheduler.add_job(
+        volatility_selective_scan_job,
+        trigger=CronTrigger(minute="*/5", hour="10-15", day_of_week="mon-fri", timezone="America/New_York"),
+        id="volatility_selective_scan",
+        name="Volatility-Selective Research Scan",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+    scheduler.add_job(
+        volatility_selective_manual_monitor_job,
+        trigger=CronTrigger(minute="*/5", hour="9-16", day_of_week="mon-fri", timezone="America/New_York"),
+        id="volatility_selective_manual_monitor",
+        name="Volatility-Selective Manual Position Monitor",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
 
     # Bet odds monitor scans are manual-only. Keep bet_odds_monitor_job available
     # for explicit calls, but do not run automatic background checks.

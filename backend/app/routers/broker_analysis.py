@@ -222,6 +222,49 @@ async def get_broker_analysis(
         ) from e
 
 
+@router.get("/report")
+async def get_broker_report(
+    stock_code: str = Query(
+        ...,
+        min_length=1,
+        max_length=10,
+        description="ASX stock code, for example SKK.AX",
+    ),
+    observation_date: date = Query(
+        ..., description="Broker observation date"
+    ),
+) -> List[Dict[str, Any]]:
+    """Get the broker-by-stock report for one ASX code and observation date."""
+    normalized_stock_code = stock_code.strip().upper()
+    if not normalized_stock_code:
+        raise HTTPException(status_code=400, detail="stock_code is required")
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            EXEC Report.usp_Get_BrokerReport
+                @pvchASXCode = ?,
+                @pvchObservationDate = ?;
+            """,
+            normalized_stock_code,
+            observation_date,
+        )
+        results = _rows_to_dicts(cursor)
+        cursor.close()
+        conn.close()
+        return results
+    except pyodbc.Error as e:
+        raise HTTPException(
+            status_code=500, detail=f"Database error: {str(e)}"
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching broker report: {str(e)}"
+        ) from e
+
+
 @router.get("/buy-sell-percentage")
 async def get_broker_buy_sell_percentage(
     sort_by: str = Query(

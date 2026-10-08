@@ -131,7 +131,7 @@ def _option_quote_to_payload(quote: Optional[OptionQuote]) -> Optional[Dict[str,
     bid = _round(quote.bid)
     ask = _round(quote.ask)
     mid = _round(quote.mid if quote.mid is not None else ((quote.bid + quote.ask) / 2.0 if quote.bid is not None and quote.ask is not None else None))
-    if bid is None and ask is None and mid is None and quote.iv is None and quote.volume is None:
+    if bid is None and ask is None and mid is None and quote.iv is None and quote.delta is None and quote.volume is None:
         return None
     return {
         "bid": bid,
@@ -140,6 +140,8 @@ def _option_quote_to_payload(quote: Optional[OptionQuote]) -> Optional[Dict[str,
         "spread_pct": _spread_pct(quote.bid, quote.ask),
         "volume": quote.volume,
         "iv": _round(quote.iv, 6),
+        "delta": _round(quote.delta, 6),
+        "delta_source": "ib_model_greeks" if quote.delta is not None else None,
         "observation_date": "",
         "source": "live" if quote.market_data_type == 1 else "ib",
         "market_data_type": quote.market_data_type,
@@ -181,7 +183,7 @@ def _merge_option_quote(
         return database_payload or live_payload
 
     merged = dict(database_payload)
-    for key in ("bid", "ask", "mid", "spread_pct", "iv"):
+    for key in ("bid", "ask", "mid", "spread_pct", "iv", "delta", "delta_source"):
         value = live_payload.get(key)
         if value is not None:
             merged[key] = value
@@ -212,6 +214,7 @@ def _latest_delayed_quotes(symbol: str, expiry: str) -> Dict[str, Dict[str, Any]
                 Bid,
                 Ask,
                 Volume,
+                OpenInterest,
                 IV,
                 ROW_NUMBER() OVER (
                     PARTITION BY OptionSymbol
@@ -221,7 +224,7 @@ def _latest_delayed_quotes(symbol: str, expiry: str) -> Dict[str, Dict[str, Any]
             WHERE ASXCode = convert(varchar(10), ?)
               AND ExpiryDate = convert(date, ?)
         )
-        SELECT OptionSymbol, ObservationDate, Bid, Ask, Volume, IV
+        SELECT OptionSymbol, ObservationDate, Bid, Ask, Volume, OpenInterest, IV
         FROM LatestQuotes
         WHERE RowNumber = 1
         """,
@@ -236,6 +239,7 @@ def _latest_delayed_quotes(symbol: str, expiry: str) -> Dict[str, Dict[str, Any]
         bid = _clean(row.get("Bid"))
         ask = _clean(row.get("Ask"))
         volume = _clean(row.get("Volume"))
+        open_interest = _clean(row.get("OpenInterest"))
         iv = _normalize_iv(row.get("IV"))
         observation_date = row.get("ObservationDate")
         quotes[option_symbol] = {
@@ -244,6 +248,7 @@ def _latest_delayed_quotes(symbol: str, expiry: str) -> Dict[str, Dict[str, Any]
             "mid": _round((bid + ask) / 2.0) if bid is not None and ask is not None else None,
             "spread_pct": _spread_pct(bid, ask),
             "volume": int(volume) if volume is not None else None,
+            "open_interest": int(open_interest) if open_interest is not None else None,
             "iv": _round(iv, 6),
             "observation_date": (
                 observation_date.isoformat()
@@ -300,6 +305,7 @@ def _latest_delayed_chain_rows(
     right: str,
     low_strike: Optional[float] = None,
     high_strike: Optional[float] = None,
+    spot: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     model = get_sql_model()
     db_symbol = f"{_base_symbol(symbol)}.US"
@@ -324,6 +330,7 @@ def _latest_delayed_chain_rows(
                 Bid,
                 Ask,
                 Volume,
+                OpenInterest,
                 IV,
                 ROW_NUMBER() OVER (
                     PARTITION BY OptionSymbol
@@ -335,7 +342,7 @@ def _latest_delayed_chain_rows(
               AND PorC IN ({placeholders})
               {strike_filter}
         )
-        SELECT OptionSymbol, ObservationDate, ExpiryDate, PorC, Strike, Bid, Ask, Volume, IV
+        SELECT OptionSymbol, ObservationDate, ExpiryDate, PorC, Strike, Bid, Ask, Volume, OpenInterest, IV
         FROM LatestQuotes
         WHERE RowNumber = 1
         ORDER BY Strike, PorC
@@ -353,7 +360,9 @@ def _latest_delayed_chain_rows(
         bid = _clean(row.get("Bid"))
         ask = _clean(row.get("Ask"))
         volume = _clean(row.get("Volume"))
+        open_interest = _clean(row.get("OpenInterest"))
         iv = _normalize_iv(row.get("IV"))
+        model_delta = _model_delta(row_right, float(strike), spot, iv, _dte(expiry))
         observation_date = row.get("ObservationDate")
         quote = {
             "bid": _round(bid),
@@ -361,7 +370,10 @@ def _latest_delayed_chain_rows(
             "mid": _round((bid + ask) / 2.0) if bid is not None and ask is not None else None,
             "spread_pct": _spread_pct(bid, ask),
             "volume": int(volume) if volume is not None else None,
+            "open_interest": int(open_interest) if open_interest is not None else None,
             "iv": _round(iv, 6),
+            "delta": _round(model_delta, 6),
+            "delta_source": "black_scholes_model" if model_delta is not None else None,
             "observation_date": (
                 observation_date.isoformat()
                 if hasattr(observation_date, "isoformat")
@@ -489,6 +501,24 @@ def _positive_price(value: Any) -> Optional[float]:
 
 def _normal_cdf(value: float) -> float:
     return 0.5 * (1 + erf(value / sqrt(2)))
+
+
+def _model_delta(
+    right: str,
+    strike: float,
+    spot: Optional[float],
+    iv: Optional[float],
+    dte: int,
+) -> Optional[float]:
+    if spot is None or spot <= 0 or strike <= 0 or iv is None or iv <= 0 or dte <= 0:
+        return None
+    time_to_expiry_years = dte / 365.0
+    sqrt_time = sqrt(time_to_expiry_years)
+    denominator = iv * sqrt_time
+    if denominator <= 0:
+        return None
+    d1 = (log(spot / strike) + (RISK_FREE_RATE + 0.5 * iv**2) * time_to_expiry_years) / denominator
+    return _normal_cdf(d1) if right.upper() == "C" else _normal_cdf(d1) - 1.0
 
 
 def _price_option(right: str, strike: float, spot: float, iv: float, dte: int) -> float:
@@ -773,7 +803,7 @@ def get_option_chain(
 
         if requested_expiry:
             try:
-                rows = _latest_delayed_chain_rows(symbol, requested_expiry, right, low_strike, high_strike)
+                rows = _latest_delayed_chain_rows(symbol, requested_expiry, right, low_strike, high_strike, reference_price)
             except Exception as exc:
                 logger.warning("Option orders: failed to load delayed chain rows for %s %s: %s", symbol, requested_expiry, exc)
                 rows = []
@@ -860,11 +890,23 @@ def get_option_chain(
             next_row["con_id"] = getattr(contract, "conId", None)
             next_row["local_symbol"] = getattr(contract, "localSymbol", None)
             next_row["delayed_quote"] = delayed_quote
-            next_row["quote"] = _merge_option_quote(
+            merged_quote = _merge_option_quote(
                 delayed_quote,
                 live_quote,
                 prefer_live=bool(live_quote),
             )
+            if merged_quote and merged_quote.get("delta") is None:
+                model_delta = _model_delta(
+                    row["right"],
+                    float(row["strike"]),
+                    reference_price,
+                    _normalize_iv(merged_quote.get("iv")),
+                    _dte(str(row["expiry"])),
+                )
+                if model_delta is not None:
+                    merged_quote["delta"] = _round(model_delta, 6)
+                    merged_quote["delta_source"] = "black_scholes_model"
+            next_row["quote"] = merged_quote
             rows.append(next_row)
 
         return {

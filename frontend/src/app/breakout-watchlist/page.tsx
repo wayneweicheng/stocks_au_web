@@ -3,8 +3,21 @@
 import { useEffect, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
+function getDefaultObservationDate() {
+  const d = new Date();
+  const day = d.getDay();
+
+  // The current session may still be partial. Start with the latest normal
+  // business day and let the user select today explicitly when required.
+  if (day === 0) d.setDate(d.getDate() - 2);
+  else if (day === 6) d.setDate(d.getDate() - 1);
+  else d.setDate(d.getDate() - 1);
+
+  return d.toISOString().slice(0, 10);
+}
+
 export default function BreakoutWatchlistPage() {
-  const [dateFrom, setDateFrom] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [dateFrom, setDateFrom] = useState<string>(getDefaultObservationDate);
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");

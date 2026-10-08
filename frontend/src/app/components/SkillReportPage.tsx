@@ -63,6 +63,7 @@ export type TextField = {
   placeholder?: string;
   multiline?: boolean;
   defaultValue?: string;
+  clientDefaultValue?: () => string;
   required?: boolean;
   omitWhenBlank?: boolean;
 };
@@ -130,6 +131,10 @@ type Props = {
     label?: string;
     getReportFileType: (report: ReportSummary) => ReportFileType | null;
     getReportDateRange?: (report: ReportSummary) => ReportDateRange | null;
+  };
+  reportAction?: {
+    label: string;
+    getHref: (report: ReportSummary) => string;
   };
   alternateJobMode?: ReportJobMode;
 };
@@ -243,6 +248,7 @@ export default function SkillReportPage({
   canDeleteReports = false,
   initialTab = "viewer",
   htmlReports,
+  reportAction,
   alternateJobMode,
 }: Props) {
   const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
@@ -656,7 +662,7 @@ export default function SkillReportPage({
       const nextValues: Record<string, string | number> = {};
       activeFields.forEach((field) => {
         nextValues[field.name] = resolveDefaultValue(field);
-        if (isDateTimeTimezoneField(field) && field.clientDefaultValue) {
+        if ("clientDefaultValue" in field && field.clientDefaultValue) {
           nextValues[field.name] = field.clientDefaultValue();
         }
       });
@@ -890,6 +896,16 @@ export default function SkillReportPage({
                           className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
                         >
                           Open full HTML in new tab
+                        </a>
+                      ) : null}
+                      {activeTab === "html" && reportAction ? (
+                        <a
+                          href={reportAction.getHref(detail)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center justify-center rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 shadow-sm transition-colors hover:bg-indigo-100"
+                        >
+                          {reportAction.label}
                         </a>
                       ) : null}
                       <Button type="button" variant="secondary" size="sm" onClick={() => void loadDetail(detail.job_id)} disabled={loadingDetail}>

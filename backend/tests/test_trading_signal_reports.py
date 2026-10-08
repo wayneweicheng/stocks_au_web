@@ -86,6 +86,116 @@ class TradingSignalReportRepositoryTests(unittest.TestCase):
         self.assertIn("sig.Classification AS signal_classification", model.calls[0][0])
         self.assertIn("ISNULL(sig.Classification, '') <> 'NO_SIGNAL'", model.calls[0][0])
 
+    def test_price_performance_uses_selected_as_of_close_not_a_later_close(self):
+        model = _Model([{
+            "latest_close": 498.25,
+            "latest_close_date": date(2026, 9, 3),
+            "tradable_date_open_price": 510.38,
+        }])
+        repo = TradingSignalReportRepository(lambda: model)
+        result = repo.price_performance(
+            "MSFT.US",
+            date(2026, 8, 31),
+            end_at=datetime(2026, 9, 4, 16, 0),
+            as_of=date(2026, 9, 3),
+        )
+
+        self.assertEqual(result["close_price"], 498.25)
+        self.assertEqual(result["close_price_date"], date(2026, 9, 3))
+        self.assertIn("ObservationDate <= CONVERT(date, ?)", model.calls[0][0])
+        self.assertNotIn("PriceHistoryTimeFrame", model.calls[0][0])
+        self.assertIn(date(2026, 9, 3), model.calls[0][1])
+
+    def test_price_performance_uses_ib_price_when_today_close_is_missing(self):
+        model = _Model([{
+            "latest_close": 498,
+            "latest_close_date": date(2026, 9, 2),
+            "tradable_date_open_price": 510.38,
+            "latest_30m_close": 497.5,
+            "latest_30m_date": date(2026, 9, 3),
+        }])
+        repo = TradingSignalReportRepository(lambda: model)
+        with patch(
+            "app.repositories.trading_signal_reports.get_live_stock_prices",
+            return_value={"MSFT.US": {"price": 499.1, "source": "ib_live"}},
+        ):
+            result = repo.price_performance(
+                "MSFT.US",
+                date(2026, 8, 31),
+                end_at=datetime(2026, 9, 4, 16, 0),
+                as_of=date(2026, 9, 3),
+                now=datetime(2026, 9, 3, 12, 0),
+            )
+
+        self.assertEqual(result["close_price"], 499.1)
+        self.assertEqual(result["close_price_source"], "ib_live")
+        self.assertEqual(result["close_price_date"], date(2026, 9, 3))
+
+    def test_price_performance_falls_back_to_30m_then_5m_for_today(self):
+        model = _Model([{
+            "latest_close": 498,
+            "latest_close_date": date(2026, 9, 2),
+            "tradable_date_open_price": 510.38,
+            "latest_30m_close": 497.5,
+            "latest_30m_date": date(2026, 9, 3),
+            "latest_5m_close": 497.75,
+            "latest_5m_date": date(2026, 9, 3),
+        }])
+        repo = TradingSignalReportRepository(lambda: model)
+        with patch("app.repositories.trading_signal_reports.get_live_stock_prices", return_value={}):
+            result = repo.price_performance(
+                "MSFT.US",
+                date(2026, 8, 31),
+                as_of=date(2026, 9, 3),
+                now=datetime(2026, 9, 3, 12, 0),
+            )
+
+        self.assertEqual(result["close_price"], 497.5)
+        self.assertEqual(result["close_price_source"], "price_history_30m")
+        self.assertEqual(result["close_price_date"], date(2026, 9, 3))
+        self.assertEqual(len(model.calls), 2)
+        self.assertIn("PriceHistoryTimeFrame", model.calls[1][0])
+
+    def test_price_performance_leaves_today_price_blank_when_all_fallbacks_are_missing(self):
+        model = _Model([{
+            "latest_close": 498,
+            "latest_close_date": date(2026, 9, 2),
+            "tradable_date_open_price": 510.38,
+        }])
+        repo = TradingSignalReportRepository(lambda: model)
+        with patch("app.repositories.trading_signal_reports.get_live_stock_prices", return_value={}):
+            result = repo.price_performance(
+                "MSFT.US",
+                date(2026, 8, 31),
+                as_of=date(2026, 9, 3),
+                now=datetime(2026, 9, 3, 12, 0),
+            )
+
+        self.assertIsNone(result["close_price"])
+        self.assertIsNone(result["close_price_date"])
+        self.assertIsNone(result["change_pct"])
+
+    def test_price_performance_keeps_cached_close_when_live_quote_fails(self):
+        model = _Model([{
+            "latest_close": 110,
+            "latest_close_date": date(2026, 8, 19),
+            "tradable_date_open_price": 100,
+        }])
+        repo = TradingSignalReportRepository(lambda: model)
+        with patch(
+            "app.repositories.trading_signal_reports.get_live_stock_prices",
+            side_effect=RuntimeError("IB Gateway unavailable"),
+        ):
+            result = repo.price_performance(
+                "QQQ.US",
+                date(2026, 8, 19),
+                now=datetime(2026, 8, 20, 10, 0),
+            )
+
+        self.assertEqual(result["close_price"], 110.0)
+        self.assertEqual(result["close_price_source"], "latest_close")
+        self.assertEqual(result["close_price_date"], date(2026, 8, 19))
+
     def test_price_performance_uses_latest_close_when_cash_market_is_closed(self):
         model = _Model([{
             "latest_close": 110,
@@ -254,6 +364,106 @@ class TradingSignalReportRepositoryTests(unittest.TestCase):
         self.assertEqual(result["data_errors"][0]["signal_classification"], "DATA_ERROR")
         self.assertIn("MU.GEX_ZScore", result["data_errors"][0]["reason"])
         self.assertIn("QQQ.GEX_Trending_Up", result["data_errors"][0]["reason"])
+
+    def test_overview_hides_historical_data_error_after_newer_deterministic_result(self):
+        configuration = json.dumps({
+            "signal_definitions": [{
+                "signal_code": "LONG_SIGNAL",
+                "action": "PLAN_ENTRY",
+                "direction": "LONG",
+                "holding_period": "D5",
+                "historical_performance": {
+                    "status": "AVAILABLE",
+                    "instances": 10,
+                    "resolved_instances": 10,
+                    "win_rate_pct": 70,
+                    "median_return_pct": 1.0,
+                },
+            }]
+        })
+        error_row = {
+            "report_date": date(2026, 8, 27),
+            "observation_date": date(2026, 8, 27),
+            "public_report_id": "old-data-error",
+            "strategy_code": "GEX_INTC",
+            "strategy_version_code": "1.0.0-production",
+            "deployment_key": "gex-intc-production",
+            "environment": "LIVE_MANUAL",
+            "subject_instrument_code": "INTC.US",
+            "execution_instrument_code": "INTC.US",
+            "title": "INTC DATA_ERROR",
+            "generated_utc": datetime(2026, 8, 28, 9, 0),
+            "direction": "NONE",
+            "action_code": "NONE",
+            "holding_period": "CUSTOM",
+            "signal_classification": "DATA_ERROR",
+            "signal_metrics_json": json.dumps({"trigger_evaluations": {"LONG_SIGNAL": None}}),
+            "strategy_configuration_json": configuration,
+        }
+        valid_row = dict(error_row)
+        valid_row.update({
+            "report_date": date(2026, 8, 28),
+            "observation_date": date(2026, 8, 28),
+            "public_report_id": "new-valid-result",
+            "title": "INTC LONG_SIGNAL",
+            "generated_utc": datetime(2026, 8, 29, 9, 0),
+            "direction": "LONG",
+            "action_code": "PLAN_ENTRY",
+            "holding_period": "D5",
+            "signal_classification": "LONG_SIGNAL",
+            "signal_metrics_json": json.dumps({}),
+        })
+
+        result = TradingSignalReportRepository(lambda: _Model([valid_row, error_row])).overview(
+            date(2026, 9, 1), ReportFilters(limit=2000)
+        )
+
+        self.assertEqual(result["data_errors"], [])
+        self.assertEqual(result["items"][0]["instrument_code"], "INTC.US")
+
+    def test_qqq_custom_short_signal_defaults_to_d5_and_is_capped(self):
+        self.assertEqual(
+            TradingSignalReportRepository._effective_holding_period("QQQ.US", "SHORT", "CUSTOM"),
+            "D5",
+        )
+        self.assertEqual(
+            TradingSignalReportRepository._effective_holding_period("QQQ.US", "SHORT", "D10"),
+            "D5",
+        )
+        self.assertEqual(
+            TradingSignalReportRepository._effective_holding_period("MSFT.US", "SHORT", "CUSTOM"),
+            "CUSTOM",
+        )
+
+    def test_overview_defaults_qqq_custom_short_signal_to_five_sessions(self):
+        configuration = json.dumps({
+            "signal_definitions": [{
+                "signal_code": "STRONG_YELLOW",
+                "historical_performance": {"status": "AVAILABLE", "instances": 10, "resolved_instances": 10, "win_rate_pct": 80, "median_return_pct": 0.8},
+            }]
+        })
+        row = {
+            "report_date": date(2026, 8, 25),
+            "public_report_id": "qqq-custom-short",
+            "strategy_code": "SPX_GEX_QQQ_V1",
+            "strategy_version_code": "1.1.0-production",
+            "subject_instrument_code": None,
+            "execution_instrument_code": "QQQ.US",
+            "title": "Strong yellow",
+            "generated_utc": datetime(2026, 8, 25, 20, 0),
+            "direction": "SHORT",
+            "action_code": "PLAN_ENTRY",
+            "holding_period": "CUSTOM",
+            "signal_classification": "STRONG_YELLOW",
+            "strategy_configuration_json": configuration,
+        }
+
+        result = TradingSignalReportRepository(lambda: _Model([row])).overview(date(2026, 8, 26), ReportFilters(limit=2000))
+        signal = result["items"][0]["signals"][0]
+
+        self.assertEqual(signal["holding_period"], "D5")
+        self.assertEqual(signal["end_date"], date(2026, 9, 1))
+        self.assertEqual(signal["end_at"].hour, 16)
 
     def test_overview_expires_d1_after_its_tradable_session(self):
         configuration = json.dumps({

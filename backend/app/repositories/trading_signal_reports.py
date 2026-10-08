@@ -147,6 +147,25 @@ class TradingSignalReportRepository:
 
     _cash_calendar = USCashCalendar()
 
+    @staticmethod
+    def _effective_holding_period(instrument_code: str, direction: str, holding_period: str) -> str:
+        """Return the bounded horizon used by Signal Overview.
+
+        The legacy QQQ strategy stored some actionable short signals as
+        CUSTOM even though their research metadata used D5. QQQ signals are
+        short-horizon signals, so missing/invalid horizons default to D5 and
+        any larger daily horizon is capped at D5.
+        """
+        normalized = str(holding_period or "").strip().upper()
+        if (
+            str(instrument_code or "").strip().upper().split(".", 1)[0] != "QQQ"
+            or str(direction or "").strip().upper() not in {"LONG", "SHORT"}
+        ):
+            return normalized or "UNKNOWN"
+        match = re.fullmatch(r"D(\d+)", normalized)
+        sessions = min(5, max(1, int(match.group(1)))) if match else 5
+        return f"D{sessions}"
+
     @classmethod
     def _trade_window(cls, report_date: date, holding_period: str) -> tuple[date, Optional[date], datetime | None]:
         tradable_date = cls._cash_calendar.next_session(report_date)
@@ -165,6 +184,18 @@ class TradingSignalReportRepository:
                 query_timeout=8,
             )
         )
+
+    @staticmethod
+    def _best_effort_live_price(code: str) -> tuple[Optional[float], Optional[str]]:
+        """Return an IB price without making a quote-provider outage fatal."""
+        try:
+            quote = get_live_stock_prices([code], wait_seconds=1.5, connect_timeout=1.0).get(code) or {}
+        except Exception:
+            return None, None
+        price = _number(quote.get("price"))
+        if price is None:
+            return None, None
+        return price, str(quote.get("source") or "ib_live")
 
     @staticmethod
     def _filter_hash(filters: ReportFilters) -> str:
@@ -301,13 +332,15 @@ class TradingSignalReportRepository:
         instrument_code: str,
         tradable_date: date,
         end_at: Optional[datetime] = None,
+        as_of: Optional[date] = None,
         now: Optional[datetime] = None,
     ) -> Dict[str, Any]:
-        """Return the price move from a signal's entry date.
+        """Return a signal's price using the selected as-of date.
 
-        Before a signal's fixed end time, live IB quotes are used during the
-        US cash session and the persisted daily close is used outside it. Once
-        the signal has ended, the close from its end date is used instead.
+        Explicit as-of requests are date-bounded: a historical request uses
+        the latest daily close on or before that date, while today's request
+        uses today's close or falls back to IB, then 30-minute, then 5-minute
+        history. This prevents a later close from leaking into an older view.
         """
         code = instrument_code.strip().upper()
         if not code:
@@ -328,6 +361,10 @@ class TradingSignalReportRepository:
             )
         has_ended = local_end_at is not None and local_end_at <= local_now
         end_date = local_end_at.date() if local_end_at is not None else None
+        # Keep the old direct-call behaviour for callers that do not provide
+        # as_of; the UI/API always supplies it.
+        effective_as_of = as_of if as_of is not None else (end_date if has_ended else local_now.date())
+        use_as_of_rules = as_of is not None
 
         model = self._model_factory()
         try:
@@ -349,7 +386,7 @@ class TradingSignalReportRepository:
                      FROM [StockDB_US].[StockData].[PriceHistory] WITH (NOLOCK)
                      WHERE ASXCode = ? AND ObservationDate = CONVERT(date, ?)) AS end_date_close
                 """,
-                [code, local_now.date(), code, local_now.date(), code, tradable_date, code, end_date],
+                [code, effective_as_of, code, effective_as_of, code, tradable_date, code, end_date],
             ) or []
         finally:
             model.close()
@@ -363,22 +400,91 @@ class TradingSignalReportRepository:
             and local_now < self._cash_calendar.cash_close(local_now.date())
         )
 
-        close_price = _number(row.get("end_date_close")) if has_ended else latest_close
-        close_price_date = end_date if has_ended else latest_close_date
-        close_price_source = "end_date_close" if has_ended and close_price is not None else (
-            "latest_close" if close_price is not None else None
-        )
-        if not has_ended and is_cash_session_open:
-            quote = get_live_stock_prices([code]).get(code) or {}
-            live_price = _number(quote.get("price"))
-            if live_price is not None:
-                close_price = live_price
-                close_price_date = local_now.date()
-                close_price_source = str(quote.get("source") or "ib_live")
+        if use_as_of_rules:
+            close_price = latest_close
+            close_price_date = latest_close_date
+            close_price_source = "latest_close" if close_price is not None else None
+            is_today = effective_as_of == local_now.date()
+            has_today_close = latest_close is not None and latest_close_date == effective_as_of
+            if is_today and not has_today_close:
+                close_price = None
+                close_price_date = None
+                close_price_source = None
+                live_price, live_source = self._best_effort_live_price(code)
+                if live_price is not None:
+                    close_price = live_price
+                    close_price_date = effective_as_of
+                    close_price_source = live_source
+                else:
+                    # Intraday history is a fallback only. Keep this out of
+                    # the main query so historical refreshes do not pay for
+                    # four extra scans, and so a missing intraday table/index
+                    # cannot turn an otherwise usable daily price into 502.
+                    intraday_row: Dict[str, Any] = {}
+                    try:
+                        intraday_model = self._model_factory()
+                        try:
+                            intraday_rows = intraday_model.execute_read_query(
+                                """
+                                SELECT h30.[Close] AS latest_30m_close,
+                                       CAST(h30.TimeIntervalStart AS date) AS latest_30m_date,
+                                       h5.[Close] AS latest_5m_close,
+                                       CAST(h5.TimeIntervalStart AS date) AS latest_5m_date
+                                FROM (SELECT 1 AS marker) AS d
+                                OUTER APPLY (
+                                    SELECT TOP (1) [Close], TimeIntervalStart
+                                    FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame] WITH (NOLOCK)
+                                    WHERE ASXCode = ? AND TimeFrame = '30M'
+                                      AND TimeIntervalStart >= CONVERT(datetime, ?)
+                                      AND TimeIntervalStart < DATEADD(day, 1, CONVERT(datetime, ?))
+                                      AND TimeIntervalStart <= CONVERT(datetime, ?)
+                                    ORDER BY TimeIntervalStart DESC
+                                ) AS h30
+                                OUTER APPLY (
+                                    SELECT TOP (1) [Close], TimeIntervalStart
+                                    FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame] WITH (NOLOCK)
+                                    WHERE ASXCode = ? AND TimeFrame = '5M'
+                                      AND TimeIntervalStart >= CONVERT(datetime, ?)
+                                      AND TimeIntervalStart < DATEADD(day, 1, CONVERT(datetime, ?))
+                                      AND TimeIntervalStart <= CONVERT(datetime, ?)
+                                    ORDER BY TimeIntervalStart DESC
+                                ) AS h5
+                                """,
+                                [
+                                    code, effective_as_of, effective_as_of, local_now.replace(tzinfo=None),
+                                    code, effective_as_of, effective_as_of, local_now.replace(tzinfo=None),
+                                ],
+                            ) or []
+                        finally:
+                            intraday_model.close()
+                        intraday_row = dict(intraday_rows[0]) if intraday_rows else {}
+                    except Exception:
+                        intraday_row = {}
+
+                    for timeframe, source in (("30m", "price_history_30m"), ("5m", "price_history_5m")):
+                        fallback_price = _number(intraday_row.get(f"latest_{timeframe}_close"))
+                        fallback_date = intraday_row.get(f"latest_{timeframe}_date")
+                        if fallback_price is not None and fallback_date == effective_as_of:
+                            close_price = fallback_price
+                            close_price_date = fallback_date
+                            close_price_source = source
+                            break
+        else:
+            close_price = _number(row.get("end_date_close")) if has_ended else latest_close
+            close_price_date = end_date if has_ended else latest_close_date
+            close_price_source = "end_date_close" if has_ended and close_price is not None else (
+                "latest_close" if close_price is not None else None
+            )
+            if not has_ended and is_cash_session_open:
+                live_price, live_source = self._best_effort_live_price(code)
+                if live_price is not None:
+                    close_price = live_price
+                    close_price_date = local_now.date()
+                    close_price_source = live_source
 
         open_price = _number(row.get("tradable_date_open_price"))
         cash_open = datetime.combine(tradable_date, time(9, 30), tzinfo=self._cash_calendar.timezone)
-        entry_is_future = local_now < cash_open
+        entry_is_future = tradable_date > effective_as_of if use_as_of_rules else local_now < cash_open
         if open_price is not None and open_price > 0 and not entry_is_future:
             entry_price = open_price
             entry_price_source = "tradable_date_open"
@@ -466,7 +572,16 @@ class TradingSignalReportRepository:
             row = dict(raw_row)
             classification = str(row.get("signal_classification") or "").upper()
             instrument = str(row.get("execution_instrument_code") or row.get("subject_instrument_code") or "").strip()
-            error_key = (instrument, str(row.get("strategy_code") or ""), str(row.get("strategy_version_code") or ""), str(row.get("report_date")))
+            # Signal Overview is current-state oriented. Keep an error only
+            # when it is still the newest evaluation for this instrument,
+            # strategy version, and environment; a later deterministic run
+            # supersedes transient historical DATA_ERROR rows.
+            error_key = (
+                instrument,
+                str(row.get("strategy_code") or ""),
+                str(row.get("strategy_version_code") or ""),
+                str(row.get("environment") or ""),
+            )
             is_latest_result = bool(instrument) and error_key not in latest_result_keys
             if instrument:
                 latest_result_keys.add(error_key)
@@ -494,7 +609,11 @@ class TradingSignalReportRepository:
             instrument = str(row.get("execution_instrument_code") or row.get("subject_instrument_code") or "").strip()
             if not instrument:
                 continue
-            holding_period = str(row.get("holding_period") or "UNKNOWN").upper()
+            holding_period = self._effective_holding_period(
+                instrument,
+                str(row.get("direction") or ""),
+                str(row.get("holding_period") or "UNKNOWN"),
+            )
             tradable_date, end_date, end_at = self._trade_window(row["report_date"], holding_period)
             if as_of < tradable_date or (end_date is not None and as_of > end_date):
                 continue
@@ -530,7 +649,12 @@ class TradingSignalReportRepository:
 
         items = []
         for instrument, signals in grouped.items():
-            signals.sort(key=lambda item: (item["report_date"], item["strategy_code"], item["holding_period"]), reverse=True)
+            def signal_sort_key(item: Dict[str, Any]) -> tuple[Any, str, int]:
+                match = re.fullmatch(r"D(\d+)", str(item["holding_period"]).upper())
+                horizon = int(match.group(1)) if match else 0
+                return item["report_date"], str(item["strategy_code"]), -horizon
+
+            signals.sort(key=signal_sort_key, reverse=True)
             directions = {item["direction"] for item in signals}
             verdict = next(iter(directions)) if len(directions) == 1 else "CONFLICTING"
             items.append({

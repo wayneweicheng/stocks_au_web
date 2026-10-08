@@ -2,15 +2,27 @@
 
 
 
-CREATE PROCEDURE Transform.usp_ExecuteDailyBreakoutWatchlist
+CREATE OR ALTER PROCEDURE Transform.usp_ExecuteDailyBreakoutWatchlist
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Get today's date (removes the time component)
-    DECLARE @CurrentDate DATE = CAST(GETDATE() AS DATE);
+    -- Do not blindly use GETDATE(): the current date may still be partial,
+    -- may be a weekend/holiday, or may not have completed ASX data yet.
+    -- Select the most recent sufficiently populated transformed date instead.
+    DECLARE @ObservationDate DATE;
 
-    -- Execute the main procedure with today's date
+    SELECT TOP (1)
+        @ObservationDate = ObservationDate
+    FROM StockDB.Transform.PriceHistory
+    WHERE ObservationDate <= CAST(GETDATE() AS DATE)
+    GROUP BY ObservationDate
+    HAVING COUNT(*) >= 100
+    ORDER BY ObservationDate DESC;
+
+    IF @ObservationDate IS NULL
+        THROW 51001, 'No completed ASX price-history date is available for breakout watchlist calculation.', 1;
+
     EXEC Transform.usp_CalculateBreakoutWatchlist
-        @ObservationDate = @CurrentDate;
+        @ObservationDate = @ObservationDate;
 END;

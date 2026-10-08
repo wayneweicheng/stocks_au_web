@@ -66,11 +66,13 @@ function priceChangeFromOpen(price: TradingSignalPricePerformance | undefined) {
 
 function priceSourceLabel(source: string | null) {
   if (source === "end_date_close") return "End-date cash-session close";
-  if (source === "latest_close") return "Latest cash-session close";
+  if (source === "latest_close") return "As-of cash-session close";
+  if (source === "price_history_30m") return "Latest 30-minute price history";
+  if (source === "price_history_5m") return "Latest 5-minute price history";
   if (source === "tradable_date_open") return "Tradable-date open";
   if (source === "close_fallback_future_entry") return "Latest close (entry is in the future)";
   if (source === "close_fallback_missing_open") return "Latest close (open unavailable)";
-  if (source) return "Live/delayed cash-session quote";
+  if (source) return "IB live/delayed quote";
   return "Price unavailable";
 }
 
@@ -133,6 +135,10 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
     setPriceErrors({});
     try {
       const query = new URLSearchParams({ as_of: asOf });
+      const normalizedInstrument = instrumentFilter.trim().toUpperCase();
+      if (normalizedInstrument) {
+        query.set("instrument_code", normalizedInstrument.includes(".") ? normalizedInstrument : `${normalizedInstrument}.US`);
+      }
       const response = await authenticatedFetch(`${baseUrl}/api/trading-signal-reports/overview?${query}`);
       const payload = (await response.json().catch(() => ({}))) as TradingSignalOverview & { detail?: string };
       if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
@@ -143,7 +149,7 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
     } finally {
       setLoading(false);
     }
-  }, [asOf, baseUrl]);
+  }, [asOf, baseUrl, instrumentFilter]);
 
   useEffect(() => {
     void loadOverview();
@@ -154,7 +160,7 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
     setPriceLoading((current) => ({ ...current, [key]: true }));
     setPriceErrors((current) => ({ ...current, [key]: "" }));
     try {
-      const query = new URLSearchParams({ instrument_code: signal.instrument_code, tradable_date: signal.tradable_date });
+      const query = new URLSearchParams({ instrument_code: signal.instrument_code, tradable_date: signal.tradable_date, as_of: asOf });
       if (signal.end_at) query.set("end_at", signal.end_at);
       const response = await authenticatedFetch(`${baseUrl}/api/trading-signal-reports/price-performance?${query}`);
       const payload = (await response.json().catch(() => ({}))) as TradingSignalPricePerformance & { detail?: string };
@@ -165,7 +171,7 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
     } finally {
       setPriceLoading((current) => ({ ...current, [key]: false }));
     }
-  }, [baseUrl]);
+  }, [asOf, baseUrl]);
 
   const items = useMemo(() => {
     const filter = instrumentFilter.trim().toUpperCase();
@@ -177,7 +183,7 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
       <section className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-indigo-950">
         <p className="font-semibold">As-of signal overview</p>
         <p className="mt-1 text-indigo-900/80">
-          Shows only signals whose tradable window is active on the selected date. The report date is the source date; trading starts on the next US cash session, and D1/D2/D5 horizons end after that many US cash sessions. Each signal target uses its Strategy Admin median direction-adjusted return applied to the selected entry price. If the entry session is still in the future, the latest close is used temporarily and the planned tradable-date open is shown separately. NO SIGNAL reports and signals without available historical evidence are excluded. Data-quality errors are shown separately below and are never treated as NO SIGNAL.
+          Shows only signals whose tradable window is active on the selected date. The report date is the source date; trading starts on the next US cash session, and D1/D2/D5 horizons end after that many US cash sessions. Each signal target uses its Strategy Admin median direction-adjusted return applied to the selected entry price. Price performance is bounded to the selected as-of date; for today it falls back from the daily close to IB, then 30-minute and 5-minute history. If the entry session is still in the future, the latest as-of close is used temporarily and the planned tradable-date open is shown separately. NO SIGNAL reports and signals without available historical evidence are excluded. Data-quality errors are shown separately below and are never treated as NO SIGNAL.
         </p>
       </section>
 
@@ -302,7 +308,7 @@ export default function TradingSignalOverviewTab({ baseUrl, initialAsOf }: Props
                           <div><span className="block text-slate-500">Median profit</span><strong className={percentClasses(signal.historical_median_return_pct)}>{formatPercent(signal.historical_median_return_pct)}</strong></div>
                           <div><span className="block text-slate-500">Target price</span><strong className="text-indigo-800">{formatPrice(target)}</strong></div>
                         </div>
-                        {price ? <p className="mt-2 text-[11px] text-slate-500">{priceSourceLabel(price.entry_price_source)} · close {formatPrice(price.close_price)} · move from open <span className={percentClasses(moveFromOpen)}>{formatPercent(moveFromOpen)}</span></p> : null}
+                        {price ? <p className="mt-2 text-[11px] text-slate-500">{priceSourceLabel(price.close_price_source)} · close {formatPrice(price.close_price)}{price.close_price_date ? ` (${price.close_price_date})` : ""} · move from open <span className={percentClasses(moveFromOpen)}>{formatPercent(moveFromOpen)}</span></p> : null}
                         {loadingPrice ? <p className="mt-2 text-xs text-slate-600">Loading entry and target prices...</p> : null}
                         {priceError ? <p className="mt-2 text-xs font-medium text-red-700">{priceError}</p> : null}
                         <div className="mt-3 flex flex-wrap items-center gap-2">

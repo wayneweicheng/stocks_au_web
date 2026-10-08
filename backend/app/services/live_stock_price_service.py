@@ -5,13 +5,15 @@ import logging
 import math
 import random
 import time
+from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.core.config import settings
 
 try:
-    from ib_insync import IB, Index, Stock  # type: ignore
+    from ib_insync import Future, IB, Index, Stock  # type: ignore
 except Exception:  # pragma: no cover
+    Future = None  # type: ignore
     IB = None  # type: ignore
     Index = None  # type: ignore
     Stock = None  # type: ignore
@@ -44,7 +46,7 @@ def _base_symbol(symbol: str) -> str:
     return (symbol or "").strip().upper().split(".", 1)[0]
 
 
-def _connect_ib() -> "IB":
+def _connect_ib(connect_timeout: float = 3.0) -> "IB":
     if IB is None:
         raise RuntimeError("ib_insync is not installed on the backend")
 
@@ -67,7 +69,7 @@ def _connect_ib() -> "IB":
     client_id = random.randint(76001, 79000)
     for port in ports:
         try:
-            ib.connect(host, port, clientId=client_id, timeout=3)
+            ib.connect(host, port, clientId=client_id, timeout=connect_timeout)
             return ib
         except Exception as exc:
             last_error = exc
@@ -155,12 +157,86 @@ def get_live_index_price(
             pass
 
 
-def get_live_stock_prices(stock_codes: Iterable[str], wait_seconds: float = 3.0) -> Dict[str, Dict[str, Any]]:
+def get_live_futures_closes(
+    symbols: Iterable[str],
+    exchange: str = "CME",
+    wait_seconds: float = 2.0,
+    connect_timeout: float = 3.0,
+) -> Dict[str, Dict[str, Any]]:
+    """Return daily close values for the nearest available CME futures contracts."""
+    codes = list(dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()))
+    if not codes:
+        return {}
+    if Future is None:
+        raise RuntimeError("ib_insync futures contracts are unavailable on the backend")
+
+    ib = _connect_ib(connect_timeout=connect_timeout)
+    subscriptions: List[Any] = []
+    try:
+        today = datetime.now().strftime("%Y%m%d")
+        selected: Dict[str, Any] = {}
+        for code in codes:
+            details = ib.reqContractDetails(
+                Future(symbol=code, exchange=exchange, currency="USD")
+            )
+            candidates = [
+                detail.contract
+                for detail in details
+                if str(getattr(detail.contract, "lastTradeDateOrContractMonth", ""))[:8] >= today
+            ]
+            if candidates:
+                selected[code] = sorted(
+                    candidates,
+                    key=lambda contract: str(getattr(contract, "lastTradeDateOrContractMonth", "")),
+                )[0]
+
+        try:
+            ib.reqMarketDataType(3)
+        except Exception:
+            pass
+        tickers: Dict[str, Any] = {}
+        for code, contract in selected.items():
+            ticker = ib.reqMktData(contract, "", False, False)
+            subscriptions.append(contract)
+            tickers[code] = ticker
+
+        deadline = time.time() + wait_seconds
+        while time.time() < deadline and tickers:
+            ib.sleep(0.2)
+            if all(_positive_price(getattr(ticker, "close", None)) is not None for ticker in tickers.values()):
+                break
+
+        return {
+            code: {
+                "price": round(_positive_price(getattr(ticker, "close", None)), 4),
+                "source": "ib_futures_close",
+                "local_symbol": getattr(selected[code], "localSymbol", None),
+            }
+            for code, ticker in tickers.items()
+            if _positive_price(getattr(ticker, "close", None)) is not None
+        }
+    finally:
+        for contract in subscriptions:
+            try:
+                ib.cancelMktData(contract)
+            except Exception:
+                pass
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+
+
+def get_live_stock_prices(
+    stock_codes: Iterable[str],
+    wait_seconds: float = 3.0,
+    connect_timeout: float = 3.0,
+) -> Dict[str, Dict[str, Any]]:
     codes = list(dict.fromkeys(str(code).strip().upper() for code in stock_codes if str(code).strip()))
     if not codes:
         return {}
 
-    ib = _connect_ib()
+    ib = _connect_ib(connect_timeout=connect_timeout)
     subscriptions: List[Any] = []
     try:
         contracts = [Stock(_base_symbol(code), "SMART", "USD") for code in codes]

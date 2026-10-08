@@ -12,6 +12,11 @@ from app.services.price_levels_30m_service import (
     SupportResistanceDatabaseError,
     get_30m_support_resistance_for_stock,
 )
+from app.services.saved_price_levels_service import (
+    SavedPriceLevelsDatabaseError,
+    get_recorded_support_resistance_hours,
+    get_saved_support_resistance,
+)
 
 
 router = APIRouter(
@@ -22,6 +27,40 @@ router = APIRouter(
 _support_resistance_slots = BoundedSemaphore(
     settings.support_resistance_max_concurrent_requests
 )
+
+
+@router.get("/database-hours")
+def saved_support_resistance_hours(
+    stock_code: str = Query(..., description="US stock/ETF symbol"),
+) -> dict:
+    try:
+        return {
+            "stock_code": stock_code.strip().upper(),
+            "hours": get_recorded_support_resistance_hours(stock_code),
+        }
+    except SavedPriceLevelsDatabaseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/database")
+def saved_support_resistance(
+    stock_code: str = Query(..., description="US stock/ETF symbol"),
+    recorded_hour: Optional[datetime] = Query(
+        default=None,
+        description="Recorded database hour to load; omitted loads the latest recorded hour",
+    ),
+) -> dict:
+    try:
+        return get_saved_support_resistance(
+            stock_code=stock_code,
+            observation_datetime=recorded_hour,
+        )
+    except SavedPriceLevelsDatabaseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("")
