@@ -21,6 +21,9 @@ logger = logging.getLogger("app.index_stock_price_mapping")
 
 DATABASE = "StockDB_US"
 CACHE_TTL_SECONDS = 90
+# Live prices are optional for this report. Keep an unavailable IB Gateway from
+# holding the historical mapping request open long enough for the proxy to fail.
+LIVE_CONNECT_TIMEOUT_SECONDS = 0.5
 
 _cache_lock = Lock()
 _cache_rows: List[Dict[str, Any]] = []
@@ -200,24 +203,37 @@ def _load_latest_snapshot_date() -> date | None:
 def _load_mapped_live_prices() -> Dict[str, float]:
     live_prices: Dict[str, float] = {}
     try:
-        spx_quote = get_live_index_price("SPX")
+        spx_quote = get_live_index_price(
+            "SPX",
+            connect_timeout=LIVE_CONNECT_TIMEOUT_SECONDS,
+        )
         if spx_quote:
             live_prices["SPX"] = float(spx_quote["price"])
     except Exception:
         logger.warning("Unable to load live SPX price", exc_info=True)
 
     stock_symbols = ["SPY", "QQQ", "SPXL", "TQQQ"]
+    batch_lookup_succeeded = True
     try:
-        live_stock_prices = get_live_stock_prices(stock_symbols)
+        live_stock_prices = get_live_stock_prices(
+            stock_symbols,
+            connect_timeout=LIVE_CONNECT_TIMEOUT_SECONDS,
+        )
     except Exception:
-        logger.warning("Batch live stock price lookup failed; retrying individually", exc_info=True)
+        logger.warning("Batch live stock price lookup failed; skipping individual retries", exc_info=True)
         live_stock_prices = {}
+        batch_lookup_succeeded = False
     for symbol in stock_symbols:
+        if not batch_lookup_succeeded:
+            continue
         quote = live_stock_prices.get(symbol) or {}
         price = quote.get("price")
         if not (isinstance(price, (int, float)) and math.isfinite(price) and price > 0):
             try:
-                quote = get_live_stock_prices([symbol]).get(symbol) or {}
+                quote = get_live_stock_prices(
+                    [symbol],
+                    connect_timeout=LIVE_CONNECT_TIMEOUT_SECONDS,
+                ).get(symbol) or {}
                 price = quote.get("price")
             except Exception:
                 price = None
@@ -225,7 +241,10 @@ def _load_mapped_live_prices() -> Dict[str, float]:
             live_prices[symbol] = float(price)
 
     try:
-        live_futures = get_live_futures_closes(["ES"])
+        live_futures = get_live_futures_closes(
+            ["ES"],
+            connect_timeout=LIVE_CONNECT_TIMEOUT_SECONDS,
+        )
         if live_futures.get("ES", {}).get("price"):
             live_prices["ESMain"] = float(live_futures["ES"]["price"])
     except Exception:
@@ -438,7 +457,10 @@ def get_index_stock_price_mapping(
         rows, loaded_at, cached = _get_price_mapping(force_refresh=refresh)
         columns = list(rows[0].keys()) if rows else []
         try:
-            spx_quote = get_live_index_price("SPX")
+            spx_quote = get_live_index_price(
+                "SPX",
+                connect_timeout=LIVE_CONNECT_TIMEOUT_SECONDS,
+            )
         except Exception:
             logger.warning("Unable to load the current SPX index price", exc_info=True)
             spx_quote = None

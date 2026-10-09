@@ -5,6 +5,11 @@ import { use, useEffect, useMemo, useState } from "react";
 import Alert from "../../../components/ui/Alert";
 import Button from "../../../components/ui/Button";
 import PageHeader from "../../../components/PageHeader";
+import MappedLevelReportDetails, {
+  levelReportKey,
+  parseHtmlLevelDetails,
+  type HtmlLevelDetail,
+} from "../../../components/MappedLevelReportDetails";
 import { authenticatedFetch } from "../../../utils/authenticatedFetch";
 
 type JsonObject = Record<string, unknown>;
@@ -276,16 +281,31 @@ function structureLabel(zone: SpxZone) {
   return parts.join(" · ");
 }
 
-function orderHref(mapped: MappedInstrument, zone: SpxZone, side: "Buy" | "Sell" = zone.side === "support" ? "Buy" : "Sell") {
-  if (mapped.low === null || mapped.high === null) return "";
+function orderHref(
+  mapped: MappedInstrument,
+  zone: SpxZone,
+  side: "Buy" | "Sell" = zone.side === "support" ? "Buy" : "Sell",
+  spyRange?: { low: number; high: number } | null,
+) {
+  const usesSpyProxy = mapped.label === "QQQ" || mapped.label === "TQQQ";
+  const range = usesSpyProxy ? spyRange : mapped.low !== null && mapped.high !== null
+    ? { low: mapped.low, high: mapped.high }
+    : null;
+  if (!range || range.low <= 0 || range.high < range.low) return "";
+  const triggerLow = range.low;
+  const triggerHigh = range.high;
   const params = new URLSearchParams({
     stock: mapped.orderSymbol,
     side,
-    start: mapped.low.toFixed(2),
-    end: mapped.high.toFixed(2),
+    start: triggerLow.toFixed(2),
+    end: triggerHigh.toFixed(2),
     num_orders: "5",
     total_amount: "30000",
   });
+  if (usesSpyProxy) {
+    params.set("proxy", "SPY");
+    params.set("bracket", "1");
+  }
   return `/range-orders?${params.toString()}`;
 }
 
@@ -306,6 +326,7 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
   const [mapData, setMapData] = useState<JsonObject | null>(null);
   const [mapping, setMapping] = useState<MappingResponse | null>(null);
+  const [htmlLevelDetails, setHtmlLevelDetails] = useState<Record<string, HtmlLevelDetail>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -348,6 +369,7 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
           window.history.replaceState(null, "", url.toString());
         }
         setMapData(parsedMap);
+        setHtmlLevelDetails(parseHtmlLevelDetails(String(reportPayload.content || "")));
         setMapping(pricesPayload as MappingResponse);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load mapped SPX levels.");
@@ -367,7 +389,7 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
     <div className="space-y-6">
       <PageHeader
         title="SPX Mapped Levels and Orders"
-        subtitle={`Job ${jobId}. Mapped prices use the selected Daily SPX close and direct percentage/difference calculations.`}
+        subtitle={`Job ${jobId}. Mapped prices use the selected Daily SPX close. QQQ and TQQQ Buy/Sell range actions use their row's target stock with the SPY mapped range as the Pegasus proxy trigger; other instruments keep their mapped ranges.`}
       />
       {error ? <Alert variant="danger">{error}</Alert> : null}
       {loading ? <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading SPX JSON and mapped prices...</div> : null}
@@ -382,6 +404,10 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
             priceDifferences,
             livePrices,
           ));
+          const spyMapping = mapped.find((item) => item.label === "SPY");
+          const spyRange = spyMapping?.low != null && spyMapping.high != null
+            ? { low: spyMapping.low, high: spyMapping.high }
+            : null;
           return (
             <section key={zone.id} className="rounded-lg border border-slate-200 bg-white shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
@@ -391,6 +417,10 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
                   </div>
                   <h2 className="mt-1 text-lg font-semibold text-slate-900">{structureLabel(zone)}</h2>
                   <div className="text-xs text-slate-500">Range {price(zone.low)} – {price(zone.high)}</div>
+                  <MappedLevelReportDetails
+                    side={zone.side}
+                    detail={htmlLevelDetails[levelReportKey(zone.side, zone.rank)]}
+                  />
                 </div>
                 <div className="text-right text-sm text-slate-600">
                   <div>Score: <strong>{zone.score === null ? "n/a" : zone.score.toFixed(1)}</strong></div>
@@ -431,8 +461,8 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
                         <td className="px-3 py-3 text-xs text-slate-500">{item.sourceColumn || "Unavailable"}{item.clamped ? " (clamped)" : ""}</td>
                         <td className="px-3 py-3">
                           <div className="flex flex-wrap gap-2">
-                            {orderHref(item, zone, "Buy") ? <a href={orderHref(item, zone, "Buy")} target="_blank" rel="noopener noreferrer" className="rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">Buy range</a> : null}
-                            {orderHref(item, zone, "Sell") ? <a href={orderHref(item, zone, "Sell")} target="_blank" rel="noopener noreferrer" className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">Sell range</a> : null}
+                            {orderHref(item, zone, "Buy", spyRange) ? <a href={orderHref(item, zone, "Buy", spyRange)} target="_blank" rel="noopener noreferrer" title={item.label === "QQQ" || item.label === "TQQQ" ? `Open ${item.orderSymbol} Pegasus order with SPY ${price(spyRange?.low)}–${price(spyRange?.high)} as the trigger range` : undefined} className="rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">Buy range</a> : null}
+                            {orderHref(item, zone, "Sell", spyRange) ? <a href={orderHref(item, zone, "Sell", spyRange)} target="_blank" rel="noopener noreferrer" title={item.label === "QQQ" || item.label === "TQQQ" ? `Open ${item.orderSymbol} Pegasus order with SPY ${price(spyRange?.low)}–${price(spyRange?.high)} as the trigger range` : undefined} className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">Sell range</a> : null}
                             {optionHref(item, zone) ? <a href={optionHref(item, zone)} target="_blank" rel="noopener noreferrer" className="rounded border border-violet-200 bg-violet-50 px-2 py-1 text-xs font-medium text-violet-700 hover:bg-violet-100">{zone.side === "support" ? "Sell put" : "Buy put"}</a> : null}
                           </div>
                         </td>

@@ -43,6 +43,21 @@ interface OrderSignalAudit {
   response_payload_json?: string | Record<string, unknown> | null;
 }
 
+interface OrderActivation {
+  proxy_stock_code: string;
+  lower_price: number;
+  upper_price: number;
+  expires_at?: string;
+  state: string;
+  observed_price?: number | null;
+  observed_at?: string | null;
+  activated_at?: string | null;
+  target_entry_price?: number | null;
+  broker_order_id?: number | null;
+  error_code?: string | null;
+  error_message?: string | null;
+}
+
 interface TradingOrder {
   order_id?: number;
   strategy_id: number;
@@ -75,6 +90,7 @@ interface TradingOrder {
   created_at?: string;
   updated_at?: string;
   signal_audits?: OrderSignalAudit[];
+  activation?: OrderActivation | null;
 }
 
 interface TradingOrderForm {
@@ -1245,7 +1261,8 @@ export default function TradingOrdersPage() {
               </thead>
               <tbody>
                 {orders.map((o, i) => {
-                  const canEdit = canCancelTradingOrder(o);
+                  const canCancel = canCancelTradingOrder(o);
+                  const canEdit = canCancel && !o.activation;
                   const validationCounts = getApiValidationCounts(o.signal_audits);
                   return (
                     <tr
@@ -1284,6 +1301,11 @@ export default function TradingOrdersPage() {
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
                         {formatEntryType(o.entry_type)} {o.entry_price != null ? `@ ${o.entry_price}` : ""}
+                        {o.activation && (
+                          <div className="mt-1 text-xs text-indigo-700">
+                            {o.activation.proxy_stock_code} {formatPrice(o.activation.lower_price)}–{formatPrice(o.activation.upper_price)} · {o.activation.state}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
                         {o.entry_fill_price != null ? formatPrice(o.entry_fill_price) : "-"}
@@ -1309,7 +1331,7 @@ export default function TradingOrdersPage() {
                                 event.stopPropagation();
                                 if (canEdit) handleEdit(o);
                               }}
-                              title={canEdit ? "Edit order" : "Only PENDING/PLACED orders can be edited"}
+                              title={canEdit ? "Edit order" : o.activation ? "Cancel and recreate a conditional Trade Intent to change terms" : "Only PENDING/PLACED orders can be edited"}
                               className={`p-1.5 rounded transition-colors ${
                                 canEdit ? "hover:bg-blue-50 text-blue-600 hover:text-blue-700" : "text-slate-400 cursor-not-allowed"
                               }`}
@@ -1321,11 +1343,11 @@ export default function TradingOrdersPage() {
                             <button
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (canEdit) handleCancelOrder(o.order_id!);
+                                if (canCancel) handleCancelOrder(o.order_id!);
                               }}
-                              title={canEdit ? "Cancel order" : "Only PENDING/PLACED orders can be cancelled"}
+                              title={canCancel ? "Cancel order" : "Only PENDING/PLACED orders can be cancelled"}
                               className={`p-1.5 rounded transition-colors ${
-                                canEdit ? "hover:bg-red-50 text-red-600 hover:text-red-700" : "text-slate-400 cursor-not-allowed"
+                                canCancel ? "hover:bg-red-50 text-red-600 hover:text-red-700" : "text-slate-400 cursor-not-allowed"
                               }`}
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
@@ -1404,6 +1426,22 @@ export default function TradingOrdersPage() {
                     <div className="text-xs uppercase tracking-wide text-slate-500">Quantity</div>
                     <div className="font-medium text-slate-900">{selectedOrder.quantity}</div>
                   </div>
+                  {selectedOrder.activation && (
+                    <div className="sm:col-span-2 lg:col-span-4 rounded-md border border-indigo-200 bg-indigo-50 p-3">
+                      <div className="text-xs uppercase tracking-wide text-indigo-700">SPY proxy activation</div>
+                      <div className="font-medium text-slate-900">
+                        {selectedOrder.activation.state}: SPY.US {formatPrice(selectedOrder.activation.lower_price)}–{formatPrice(selectedOrder.activation.upper_price)}
+                      </div>
+                      <div className="text-sm text-slate-600">
+                        Observed {selectedOrder.activation.observed_price != null ? formatPrice(selectedOrder.activation.observed_price) : "-"}
+                        {selectedOrder.activation.observed_at ? ` at ${formatSydneyDate(selectedOrder.activation.observed_at)}` : ""}
+                        {selectedOrder.activation.target_entry_price != null ? ` · target limit ${formatPrice(selectedOrder.activation.target_entry_price)}` : ""}
+                        {selectedOrder.activation.broker_order_id != null ? ` · IB order ${selectedOrder.activation.broker_order_id}` : ""}
+                      </div>
+                      <div className="text-xs text-slate-500">Session 04:00–20:00 US/Eastern · expires {formatSydneyDate(selectedOrder.activation.expires_at, US_EASTERN_TIME_ZONE)}</div>
+                      {selectedOrder.activation.error_message && <div className="text-sm text-red-700">{selectedOrder.activation.error_code}: {selectedOrder.activation.error_message}</div>}
+                    </div>
+                  )}
                   <div>
                     <div className="text-xs uppercase tracking-wide text-slate-500">Source</div>
                     <div className="font-medium text-slate-900">{selectedOrder.order_source_type}</div>

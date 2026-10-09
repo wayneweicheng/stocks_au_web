@@ -11,6 +11,8 @@ interface GeneratedOrder {
   index: number;
   side: Side;
   price: number;
+  triggerPrice?: number;
+  targetPriceOffsetPct?: number;
   allocatedWeight: number;
   allocatedValue: number;
   volume: number;
@@ -59,8 +61,27 @@ function normalize(weights: number[]): number[] {
   return weights.map(w => w / sum);
 }
 
+function allocateIntegerVolumes(totalVolume: number, weights: number[]): number[] {
+  if (!Number.isInteger(totalVolume) || totalVolume < weights.length || weights.length === 0) return [];
+  const volumes = weights.map(() => 1);
+  const remaining = totalVolume - weights.length;
+  if (remaining === 0) return volumes;
+
+  const rawExtras = normalize(weights).map((weight) => weight * remaining);
+  const extraShares = rawExtras.map(Math.floor);
+  let unallocated = remaining - extraShares.reduce((sum, shares) => sum + shares, 0);
+  const remainderOrder = rawExtras
+    .map((shares, index) => ({ index, remainder: shares - Math.floor(shares) }))
+    .sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+  for (let i = 0; i < remainderOrder.length && unallocated > 0; i++, unallocated--) {
+    extraShares[remainderOrder[i].index]++;
+  }
+  return volumes.map((volume, index) => volume + extraShares[index]);
+}
+
 export default function RangeOrdersPage() {
   const [stockCode, setStockCode] = useState<string>("QQQ");
+  const [useSpyProxy, setUseSpyProxy] = useState<boolean>(false);
   const [currency, setCurrency] = useState<string>("USD");
   const [totalAmount, setTotalAmount] = useState<string>("30000");
   const [totalVolume, setTotalVolume] = useState<string>("");
@@ -84,6 +105,8 @@ export default function RangeOrdersPage() {
   const [quoteClose, setQuoteClose] = useState<number | null>(null);
   const [quoteLast, setQuoteLast] = useState<number | null>(null);
   const [quoteMid, setQuoteMid] = useState<number | null>(null);
+  const [ibIndicativePrice, setIbIndicativePrice] = useState<number | null>(null);
+  const [ibIndicativePriceError, setIbIndicativePriceError] = useState<string>("");
   const [quoteError, setQuoteError] = useState<string>("");
   const [quoteSource, setQuoteSource] = useState<string | null>(null);
   const [whatIfPrice, setWhatIfPrice] = useState<number | null>(null);
@@ -104,8 +127,10 @@ export default function RangeOrdersPage() {
     const amount = Number(params.get("total_amount"));
     const requestedOrders = Number(params.get("num_orders"));
     const requestedTargetPct = Number(params.get("target_pct"));
+    const useSpyProxyFromLink = params.get("proxy")?.trim().toUpperCase() === "SPY";
 
     if (stock) setStockCode(stock);
+    if (useSpyProxyFromLink) setUseSpyProxy(true);
     if (requestedSide === "Buy" || requestedSide === "Sell") setSide(requestedSide);
     if (Number.isFinite(start) && start > 0) setStartPrice(start.toFixed(2));
     if (Number.isFinite(end) && end > 0) setEndPrice(end.toFixed(2));
@@ -138,6 +163,46 @@ export default function RangeOrdersPage() {
   const [positionLoading, setPositionLoading] = useState<boolean>(false);
   const [positionError, setPositionError] = useState<string>("");
 
+  useEffect(() => {
+    if (useSpyProxy && positionMode !== "open") setPositionMode("open");
+  }, [useSpyProxy, positionMode]);
+
+  useEffect(() => {
+    if (!useSpyProxy || !stockCode.trim()) {
+      setIbIndicativePrice(null);
+      setIbIndicativePriceError("");
+      return;
+    }
+
+    let cancelled = false;
+    const loadIbIndicativePrice = async () => {
+      setIbIndicativePriceError("");
+      try {
+        const symbol = normalizeUsSymbol(stockCode);
+        const response = await authenticatedFetch(
+          `${baseUrl}/api/ib/quote?stock_code=${encodeURIComponent(symbol)}&ib_only=true&live_only=true`,
+          { cache: "no-store" },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (cancelled) return;
+        const livePrice = [data?.last, data?.mid]
+          .map((value) => typeof value === "number" ? value : Number(value))
+          .find((value) => Number.isFinite(value) && value > 0);
+        setIbIndicativePrice(livePrice ?? null);
+        if (livePrice == null) setIbIndicativePriceError(data?.error || "IB live price unavailable");
+      } catch (error) {
+        if (!cancelled) {
+          setIbIndicativePrice(null);
+          setIbIndicativePriceError(error instanceof Error ? error.message : "IB live price unavailable");
+        }
+      }
+    };
+    void loadIbIndicativePrice();
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, stockCode, useSpyProxy]);
+
   const parsed = useMemo(() => {
     const total = toNumber(totalAmount);
     const tv = toNumber(totalVolume);
@@ -156,21 +221,35 @@ export default function RangeOrdersPage() {
 
   const canGenerate = useMemo(() => {
     const hasPrices = !!parsed.sp && parsed.sp! > 0 && !!parsed.ep && parsed.ep! > 0;
-    // In close position mode, we always use volume-based allocation
-    const need = positionMode === "close"
-      ? (parsed.tv && parsed.tv > 0)
-      : (side === "Buy" || valueAllocationForSell ? (parsed.total && parsed.total > 0) : (parsed.tv && parsed.tv > 0));
+    // Proxy-triggered intents use entered whole-share volume; each tranche gets
+    // at least one share and the sum exactly matches Total Volume.
+    const need = useSpyProxy
+      ? (parsed.tv != null && Number.isInteger(parsed.tv) && parsed.tv > 0 && parsed.n <= parsed.tv)
+      : positionMode === "close"
+        ? (parsed.tv && parsed.tv > 0)
+        : (side === "Buy" || valueAllocationForSell ? (parsed.total && parsed.total > 0) : (parsed.tv && parsed.tv > 0));
     return hasPrices && !!need && parsed.n > 0;
-  }, [parsed, side, positionMode, valueAllocationForSell]);
+  }, [parsed, side, positionMode, valueAllocationForSell, useSpyProxy]);
 
   const generated = useMemo<GeneratedOrder[] | null>(() => {
     if (!canGenerate) return null;
-    const pricesAsc = generateLinearPricesInclusive(parsed.sp!, parsed.ep!, parsed.n);
+    const proxyLevelsAsc = useSpyProxy
+      ? generateLinearPricesInclusive(parsed.sp!, parsed.ep!, parsed.n)
+      : [];
+    const targetQuote = useSpyProxy
+      ? (ibIndicativePrice ?? 0)
+      : ([quoteLast, quoteMid, quoteClose].find((price) => typeof price === "number" && price > 0) ?? 0);
+    const pricesAsc = useSpyProxy
+      ? Array.from({ length: parsed.n }, () => targetQuote)
+      : generateLinearPricesInclusive(parsed.sp!, parsed.ep!, parsed.n);
 
     // For display order:
     // - Buy: list from low to high (bottom first)
     // - Sell: list from high to low (top first)
     const displayPrices = side === "Buy" ? pricesAsc : [...pricesAsc].reverse();
+    const displayTriggerPrices = useSpyProxy
+      ? (side === "Buy" ? proxyLevelsAsc : [...proxyLevelsAsc].reverse())
+      : [];
 
     // Build display weights:
     // - Even: equal weights
@@ -188,10 +267,37 @@ export default function RangeOrdersPage() {
     }
 
     const out: GeneratedOrder[] = [];
-    // Use volume-based allocation in Close Position mode (regardless of side) or when side is Sell in Open mode
-    const useVolumeAllocation = positionMode === "close" || (side === "Sell" && parsed.tv && !valueAllocationForSell);
+    const allocatedAmounts = displayWeights.map((weight) => round2((parsed.total ?? 0) * weight));
+    const proxyVolumes = useSpyProxy
+      ? allocateIntegerVolumes(parsed.tv ?? 0, displayWeights)
+      : [];
+    const useVolumeAllocation = !useSpyProxy && (positionMode === "close" || (side === "Sell" && parsed.tv && !valueAllocationForSell));
 
-    if (!useVolumeAllocation) {
+    if (useSpyProxy) {
+      const proxyLow = Math.min(parsed.sp!, parsed.ep!);
+      for (let i = 0; i < displayPrices.length; i++) {
+        const triggerPrice = displayTriggerPrices[i];
+        const targetPriceOffsetPct = triggerPrice > 0
+          ? round2(((triggerPrice / (side === "Buy" ? Math.max(parsed.sp!, parsed.ep!) : proxyLow)) - 1) * 100)
+          : 0;
+        const targetLimitEstimate = targetQuote > 0
+          ? round2(targetQuote * (1 + targetPriceOffsetPct / 100))
+          : 0;
+        const volume = proxyVolumes[i] ?? 0;
+        const indicativeOrderAmount = round2(targetLimitEstimate * volume);
+        out.push({
+          index: i + 1,
+          side,
+          price: targetLimitEstimate,
+          triggerPrice,
+          targetPriceOffsetPct,
+          allocatedWeight: displayWeights[i] ?? 0,
+          allocatedValue: indicativeOrderAmount,
+          volume,
+          computedValue: indicativeOrderAmount,
+        });
+      }
+    } else if (!useVolumeAllocation) {
       // Value-based allocation (Open Position Buy)
       for (let i = 0; i < displayPrices.length; i++) {
         const price = displayPrices[i];
@@ -203,6 +309,7 @@ export default function RangeOrdersPage() {
           index: i + 1,
           side,
           price,
+          triggerPrice: useSpyProxy ? displayTriggerPrices[i] : undefined,
           allocatedWeight: weight,
           allocatedValue,
           volume,
@@ -249,6 +356,7 @@ export default function RangeOrdersPage() {
           index: i + 1,
           side,
           price,
+          triggerPrice: useSpyProxy ? displayTriggerPrices[i] : undefined,
           allocatedWeight: weight,
           allocatedValue: computedValue,
           volume,
@@ -257,7 +365,7 @@ export default function RangeOrdersPage() {
       }
     }
     return out;
-  }, [canGenerate, parsed, distribution, side, positionMode, valueAllocationForSell]);
+  }, [canGenerate, parsed, distribution, side, positionMode, valueAllocationForSell, useSpyProxy, quoteLast, quoteMid, quoteClose, ibIndicativePrice]);
 
   const totals = useMemo(() => {
     if (!generated) return null;
@@ -436,7 +544,7 @@ export default function RangeOrdersPage() {
     const configuredTargetPct = toNumber(targetProfitPct) ?? 0;
     const tpInput = configuredTargetPct > 0 ? configuredTargetPct : (toNumber(takeProfitOffset) ?? 0);
     const slInput = enableStopLoss ? (toNumber(stopLossOffset) ?? 0) : 0;
-    if (!generated || generated.length === 0 || tpInput <= 0) return null;
+    if (useSpyProxy || !generated || generated.length === 0 || tpInput <= 0) return null;
 
     // Use the first order's price as representative example
     const examplePrice = generated[0].price;
@@ -496,10 +604,10 @@ export default function RangeOrdersPage() {
         hasSl,
       };
     }
-  }, [generated, side, takeProfitOffset, targetProfitPct, stopLossOffset, bracketOffsetType, enableStopLoss]);
+  }, [generated, side, takeProfitOffset, targetProfitPct, stopLossOffset, bracketOffsetType, enableStopLoss, useSpyProxy]);
 
   useEffect(() => {
-    if (!enableBracket || !generated || generated.length === 0) {
+    if (useSpyProxy || !enableBracket || !generated || generated.length === 0) {
       setOrderTargets({});
       return;
     }
@@ -520,7 +628,7 @@ export default function RangeOrdersPage() {
       };
     }
     setOrderTargets(next);
-  }, [enableBracket, generated, takeProfitOffset, targetProfitPct, stopLossOffset, bracketOffsetType, side, enableStopLoss]);
+  }, [enableBracket, generated, takeProfitOffset, targetProfitPct, stopLossOffset, bracketOffsetType, side, enableStopLoss, useSpyProxy]);
 
   const computePegasusTargets = (entryPrice: number, orderSide: Side) => {
     const targetPct = toNumber(targetProfitPct) ?? 0;
@@ -560,15 +668,17 @@ export default function RangeOrdersPage() {
     if (!generated || generated.length === 0) return false;
     if (!supportBounceStrategyId || !Number.isFinite(supportBounceStrategyId)) return false;
     if (positionMode !== "open") return false;
-    if (!enableBracket || !enableStopLoss) return false;
-    const tpInput = toNumber(takeProfitOffset) ?? 0;
+    const tpInput = Number(targetProfitPct) > 0 ? Number(targetProfitPct) : (toNumber(takeProfitOffset) ?? 0);
     const slInput = toNumber(stopLossOffset) ?? 0;
-    if (tpInput <= 0 || slInput <= 0) return false;
-    for (const o of generated) {
-      const t = orderTargets[o.index];
-      const tp = toNumber(t?.takeProfit ?? "");
-      const sl = toNumber(t?.stopLoss ?? "");
-      if (!tp || tp <= 0 || !sl || sl <= 0) return false;
+    if (!useSpyProxy && (!enableBracket || !enableStopLoss || tpInput <= 0 || slInput <= 0)) return false;
+    if (useSpyProxy && ((enableBracket && tpInput <= 0) || (enableStopLoss && slInput <= 0))) return false;
+    if (!useSpyProxy) {
+      for (const o of generated) {
+        const t = orderTargets[o.index];
+        const tp = toNumber(t?.takeProfit ?? "");
+        const sl = toNumber(t?.stopLoss ?? "");
+        if (!tp || tp <= 0 || !sl || sl <= 0) return false;
+      }
     }
     if (pegasusPlacing) return false;
     return true;
@@ -579,10 +689,12 @@ export default function RangeOrdersPage() {
     enableBracket,
     enableStopLoss,
     takeProfitOffset,
+    targetProfitPct,
     stopLossOffset,
     orderTargets,
     pegasusPlacing,
     positionMode,
+    useSpyProxy,
   ]);
 
   // Price slider bounds: 15% below start to 15% above end (using min/max of range)
@@ -640,9 +752,9 @@ export default function RangeOrdersPage() {
 
   // Estimated total value at latest price (based on generated total volume)
   const estTotalAtLast = useMemo(() => {
-    if (!totals || quoteLast == null || quoteLast <= 0) return null;
+    if (useSpyProxy || !totals || quoteLast == null || quoteLast <= 0) return null;
     return round2(totals.sumVolume * quoteLast);
-  }, [totals, quoteLast]);
+  }, [totals, quoteLast, useSpyProxy]);
 
   const onPlaceOrders = async () => {
     if (!generated) return;
@@ -784,15 +896,21 @@ export default function RangeOrdersPage() {
       setPegasusPlaceError("Pegasus orders can only be placed in Open Position mode.");
       return;
     }
-    if (!enableBracket || !enableStopLoss) {
-      setPegasusPlaceError("Enable bracket orders with both take-profit and stop-loss to place Pegasus orders.");
+    if (!useSpyProxy && (!enableBracket || !enableStopLoss)) {
+      setPegasusPlaceError("Enable bracket orders with both take-profit and stop-loss to place standard Pegasus orders.");
       return;
     }
 
-    const tpInput = toNumber(takeProfitOffset) ?? 0;
+    const proxyHasProfitTarget = useSpyProxy && enableBracket;
+    const proxyHasStopLoss = useSpyProxy && enableStopLoss;
+    const tpInput = Number(targetProfitPct) > 0 ? Number(targetProfitPct) : (toNumber(takeProfitOffset) ?? 0);
     const slInput = toNumber(stopLossOffset) ?? 0;
-    if (tpInput <= 0 || slInput <= 0) {
-      setPegasusPlaceError("Take-profit and stop-loss offsets must be greater than 0.");
+    if ((!useSpyProxy || proxyHasProfitTarget) && tpInput <= 0) {
+      setPegasusPlaceError("Take-profit offset must be greater than 0 when enabled.");
+      return;
+    }
+    if ((!useSpyProxy || proxyHasStopLoss) && slInput <= 0) {
+      setPegasusPlaceError("Stop-loss offset must be greater than 0 when enabled.");
       return;
     }
 
@@ -803,14 +921,24 @@ export default function RangeOrdersPage() {
     }
 
     const sideCode = side === "Buy" ? "B" : "S";
+    const proxyTpValue = Number(targetProfitPct) > 0 ? Number(targetProfitPct) : (toNumber(takeProfitOffset) ?? 0);
+    const proxyTpUnit = Number(targetProfitPct) > 0 || bracketOffsetType === "percent" ? "PERCENT" : "DOLLAR";
+    const proxySlValue = toNumber(stopLossOffset) ?? 0;
+    const proxySlUnit = bracketOffsetType === "percent" ? "PERCENT" : "DOLLAR";
+    const proxyLow = Math.min(parsed.sp ?? 0, parsed.ep ?? 0);
+    const proxyHigh = Math.max(parsed.sp ?? 0, parsed.ep ?? 0);
     const payloads = generated.map((o) => {
       const t = orderTargets[o.index];
       const tp = toNumber(t?.takeProfit ?? "");
       const sl = toNumber(t?.stopLoss ?? "");
-      const offsets = tp && sl ? computeTargetOffsets(o.price, side, tp, sl) : null;
-      if (!tp || tp <= 0 || !sl || sl <= 0 || !offsets || offsets.tpOffset <= 0 || offsets.slOffset <= 0) {
+      const offsets = !useSpyProxy && tp && sl ? computeTargetOffsets(o.price, side, tp, sl) : null;
+      if (useSpyProxy
+        ? ((proxyHasProfitTarget && proxyTpValue <= 0) || (proxyHasStopLoss && proxySlValue <= 0))
+        : (!tp || tp <= 0 || !sl || sl <= 0 || !offsets || offsets.tpOffset <= 0 || offsets.slOffset <= 0)) {
         return null;
       }
+      const tpRisk = useSpyProxy && proxyHasProfitTarget ? { unit: proxyTpUnit, value: proxyTpValue } : null;
+      const slRisk = useSpyProxy && proxyHasStopLoss ? { unit: proxySlUnit, value: proxySlValue } : null;
       return {
         strategy_id: supportBounceStrategyId,
         stock_code: stock,
@@ -819,13 +947,27 @@ export default function RangeOrdersPage() {
         signal_type: null,
         time_frame: "5M",
         entry_type: "LIMIT",
-        entry_price: o.price,
+        entry_price: useSpyProxy ? null : o.price,
         quantity: o.volume,
-        profit_target_price: tp,
-        stop_loss_price: sl,
+        profit_target_price: useSpyProxy ? null : tp,
+        stop_loss_price: useSpyProxy ? null : sl,
         stop_loss_mode: "BAR_CLOSE",
         status: "PENDING",
         backtest_run_id: null,
+        ...(useSpyProxy ? {
+          activation: {
+            instrument_code: "SPY.US",
+            lower_price: proxyLow,
+            upper_price: proxyHigh,
+            target_price_offset_pct: o.targetPriceOffsetPct,
+          },
+          ...((tpRisk || slRisk) ? {
+            entry_risk: {
+              ...(tpRisk ? { profit_target: tpRisk } : {}),
+              ...(slRisk ? { stop_loss: slRisk } : {}),
+            },
+          } : {}),
+        } : {}),
       };
     });
 
@@ -836,6 +978,20 @@ export default function RangeOrdersPage() {
 
     setPegasusPlacing(true);
     try {
+      if (useSpyProxy) {
+        const res = await authenticatedFetch(`${baseUrl}/api/trading-orders/conditional-batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orders: payloads }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const errDetail = typeof data?.detail === "string" ? data.detail : "Failed to create conditional Trade Intents";
+          throw new Error(errDetail);
+        }
+        setPegasusPlaceResult({ results: [{ ok: true, message: data?.message || "Conditional Trade Intents created" }] });
+        return;
+      }
       const results = await Promise.all(
         payloads.map(async (payload) => {
           const res = await authenticatedFetch(`${baseUrl}/api/trading-orders`, {
@@ -933,10 +1089,11 @@ export default function RangeOrdersPage() {
                     name="positionMode"
                     value="close"
                     checked={positionMode === "close"}
+                    disabled={useSpyProxy}
                     onChange={() => setPositionMode("close")}
                     className="w-4 h-4 text-orange-500 focus:ring-2 focus:ring-orange-400/40"
                   />
-                  <span className={positionMode === "close" ? "text-orange-600 font-medium" : "text-slate-600"}>
+                  <span className={`${positionMode === "close" ? "text-orange-600 font-medium" : "text-slate-600"} ${useSpyProxy ? "opacity-50" : ""}`}>
                     Close Position
                   </span>
                 </label>
@@ -999,6 +1156,18 @@ export default function RangeOrdersPage() {
               />
             </div>
 
+            <div className="sm:col-span-2 lg:col-span-3 rounded-md border border-indigo-200 bg-indigo-50 p-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <input type="checkbox" checked={useSpyProxy} onChange={(event) => setUseSpyProxy(event.target.checked)} />
+                Trigger Pegasus orders from SPY price levels
+              </label>
+              {useSpyProxy && (
+                <p className="mt-1 text-xs text-indigo-800">
+                  Fixed proxy: SPY.US. Buy triggers at or below the band's upper bound; Sell triggers at or above its upper bound. Each order keeps its SPY tier as a target-price percentage offset. The entered Total Volume is split into positive whole-share quantities across the intents; Pegasus resolves target limit prices from the latest completed target bar close at activation. Indicative Total Amount uses an IB live price only and is not sent to Pegasus. Orders activate during 04:00–20:00 US/Eastern. {side === "Sell" ? "Sell opens a short position and requires ENABLE_SHORTING plus IB short-sale permissions." : "Buy opens a long position."}
+                </p>
+              )}
+            </div>
+
             <div>
               <label className="block text-sm mb-1 text-slate-600">Currency</label>
               <select
@@ -1015,22 +1184,31 @@ export default function RangeOrdersPage() {
             </div>
 
             <div>
-              <label className="block text-sm mb-1 text-slate-600">Total Amount ({currency})</label>
+              <label className="block text-sm mb-1 text-slate-600">{useSpyProxy ? "Indicative Total Amount (USD)" : `Total Amount (${currency})`}</label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
-                value={positionMode === "close" ? (totals?.sumValue ?? 0) : (side === "Buy" ? totalAmount : (totals?.sumValue ?? 0))}
+                value={useSpyProxy
+                  ? ibIndicativePrice != null && parsed.tv != null && parsed.tv > 0 ? round2(ibIndicativePrice * parsed.tv).toFixed(2) : ""
+                  : positionMode === "close" ? (totals?.sumValue ?? 0) : (side === "Buy" ? totalAmount : (totals?.sumValue ?? 0))}
                 onChange={(e) => setTotalAmount(e.target.value)}
-                disabled={positionMode === "close" || side === "Sell"}
-                required={side === "Buy" && positionMode === "open"}
+                disabled={useSpyProxy || positionMode === "close" || side === "Sell"}
+                required={!useSpyProxy && side === "Buy" && positionMode === "open"}
+                placeholder={useSpyProxy && ibIndicativePrice == null ? "IB live price unavailable" : ""}
                 className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
-                  positionMode === "close" || side === "Sell" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
+                  useSpyProxy || positionMode === "close" || side === "Sell" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
                 }`}
               />
               {positionMode === "close" && (
                 <p className="text-xs text-slate-500 mt-1">Computed from volume Ã— average price</p>
               )}
+              {useSpyProxy && positionMode === "open" && (
+                <p className="text-xs text-indigo-700 mt-1">Indicative only: IB live target price × Total Volume. This amount is not sent to Pegasus or used for sizing.</p>
+              )}
+              {useSpyProxy && ibIndicativePriceError ? (
+                <p className="text-xs text-amber-700 mt-1">IB live price unavailable; indicative amount will show N/A. Share-volume orders can still be generated.</p>
+              ) : null}
               {estTotalAtLast != null && totals && (
                 <div className="text-xs text-slate-500 mt-1">
                   <div>Est. at Last (${formatNA(quoteLast, 2)}): {currency} {estTotalAtLast.toLocaleString()}</div>
@@ -1049,14 +1227,24 @@ export default function RangeOrdersPage() {
               <input
                 type="number"
                 min="0"
-                value={positionMode === "close" ? totalVolume : (side === "Buy" ? (totals?.sumVolume ?? 0) : (totalVolume || ""))}
+                value={useSpyProxy ? totalVolume : positionMode === "close" ? totalVolume : (side === "Buy" ? (totals?.sumVolume ?? 0) : (totalVolume || ""))}
                 onChange={(e) => setTotalVolume(e.target.value)}
-                disabled={positionMode === "open" && side === "Buy"}
-                required={positionMode === "close" || side === "Sell"}
+                placeholder={useSpyProxy ? "Whole shares" : ""}
+                disabled={!useSpyProxy && (positionMode === "open" && side === "Buy")}
+                required={useSpyProxy || positionMode === "close" || side === "Sell"}
+                step={useSpyProxy ? "1" : undefined}
                 className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40 ${
-                  positionMode === "open" && side === "Buy" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
+                  !useSpyProxy && positionMode === "open" && side === "Buy" ? "border-slate-300 bg-slate-100 text-slate-500 cursor-not-allowed" : "border-slate-300 bg-white"
                 }`}
               />
+              {useSpyProxy && positionMode === "open" ? (
+                <>
+                  <p className="text-xs text-indigo-700 mt-1">Enter whole shares. Number of orders must not exceed Total Volume; each intent receives at least one share.</p>
+                  {parsed.tv != null && (!Number.isInteger(parsed.tv) || parsed.tv < parsed.n) ? (
+                    <p className="text-xs text-amber-700 mt-1">Total Volume must be a whole number greater than or equal to Number of Orders ({parsed.n}).</p>
+                  ) : null}
+                </>
+              ) : null}
               {positionMode === "close" && currentPosition !== null && currentPosition !== 0 && (
                 <p className="text-xs text-slate-500 mt-1">
                   Max closable: {Math.abs(currentPosition)} shares
@@ -1070,7 +1258,7 @@ export default function RangeOrdersPage() {
             </div>
 
             <div>
-              <label className="block text-sm mb-1 text-slate-600">Start Price</label>
+              <label className="block text-sm mb-1 text-slate-600">{useSpyProxy ? "SPY Trigger Start" : "Start Price"}</label>
               <input
                 type="number"
                 step="0.01"
@@ -1081,7 +1269,7 @@ export default function RangeOrdersPage() {
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
-              {quoteLast != null && startVsLast && (
+              {!useSpyProxy && quoteLast != null && startVsLast && (
                 <p className="text-xs mt-1">
                   <span className="text-slate-500">Î” vs Last (${formatNA(quoteLast, 2)}): </span>
                   <span className={startVsLast.abs >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
@@ -1092,7 +1280,7 @@ export default function RangeOrdersPage() {
             </div>
 
             <div>
-              <label className="block text-sm mb-1 text-slate-600">End Price</label>
+              <label className="block text-sm mb-1 text-slate-600">{useSpyProxy ? "SPY Trigger End" : "End Price"}</label>
               <input
                 type="number"
                 step="0.01"
@@ -1103,7 +1291,7 @@ export default function RangeOrdersPage() {
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
-              {quoteLast != null && endVsLast && (
+              {!useSpyProxy && quoteLast != null && endVsLast && (
                 <p className="text-xs mt-1">
                   <span className="text-slate-500">Î” vs Last (${formatNA(quoteLast, 2)}): </span>
                   <span className={endVsLast.abs >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
@@ -1235,7 +1423,7 @@ export default function RangeOrdersPage() {
               <div className={`rounded-md border p-4 space-y-3 ${positionMode === "close" ? "border-slate-200 bg-slate-100" : "border-slate-200 bg-slate-50/50"}`}>
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium text-slate-700">
-                    Bracket Order Settings (SMART only)
+                    {useSpyProxy ? "Conditional Exit Rules (applied after SPY activation)" : "Bracket Order Settings (SMART only)"}
                     {positionMode === "close" && <span className="text-slate-400 font-normal ml-2">— disabled in Close Position mode</span>}
                   </div>
                   <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
@@ -1243,18 +1431,18 @@ export default function RangeOrdersPage() {
                       type="checkbox"
                       checked={enableBracket && positionMode === "open"}
                       onChange={(e) => setEnableBracket(e.target.checked)}
-                      disabled={!placeDayOrders || positionMode === "close"}
+                      disabled={(!placeDayOrders && !useSpyProxy) || positionMode === "close"}
                       className="w-4 h-4 rounded border-slate-300 text-emerald-500 focus:ring-2 focus:ring-emerald-400/40 disabled:opacity-50"
                     />
-                    <span className={!placeDayOrders || positionMode === "close" ? "text-slate-400" : ""}>Enable bracket orders</span>
+                    <span className={(!placeDayOrders && !useSpyProxy) || positionMode === "close" ? "text-slate-400" : ""}>{useSpyProxy ? "Enable take-profit exit" : "Enable bracket orders"}</span>
                   </label>
                 </div>
 
-                {enableBracket && placeDayOrders && positionMode === "open" && (
+                {((enableBracket && placeDayOrders) || useSpyProxy) && positionMode === "open" && (
                   <div className="space-y-3 pt-2">
                     {toNumber(targetProfitPct) != null && (toNumber(targetProfitPct) ?? 0) > 0 ? (
                       <p className="rounded bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
-                        Strategy target: <strong>{Number(targetProfitPct).toFixed(2)}%</strong> applied to each generated entry price. Take-profit values below are calculated per order.
+                        Strategy target: <strong>{Number(targetProfitPct).toFixed(2)}%</strong> {useSpyProxy ? enableBracket ? "applied to each target limit price when SPY activates the intent." : "available but ignored until Enable take-profit exit is selected." : "applied to each generated entry price. Take-profit values below are calculated per order."}
                       </p>
                     ) : null}
 
@@ -1298,7 +1486,8 @@ export default function RangeOrdersPage() {
                             min="0"
                             value={takeProfitOffset}
                             onChange={(e) => setTakeProfitOffset(e.target.value)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40"
+                            disabled={useSpyProxy && !enableBracket}
+                            className={`w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40 ${useSpyProxy && !enableBracket ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-white"}`}
                           />
                           <span className="text-slate-500 ml-1">{bracketOffsetType === "percent" ? "%" : ""}</span>
                         </div>
@@ -1369,7 +1558,9 @@ export default function RangeOrdersPage() {
                     )}
 
                     <p className="text-xs text-slate-500">
-                      Bracket orders attach take-profit and stop-loss orders to each entry. When one fills, the other is cancelled (OCO).
+                      {useSpyProxy
+                        ? "For SPY-triggered intents, take-profit and stop-loss exits are independently optional and are applied only after the entry activates."
+                        : "Bracket orders attach take-profit and stop-loss orders to each entry. When one fills, the other is cancelled (OCO)."}
                       <br />
                       <span className="text-amber-600 font-medium">Note: Bracket orders only work for SMART exchange. OVERNIGHT orders will be simple limit orders.</span>
                     </p>
@@ -1400,15 +1591,17 @@ export default function RangeOrdersPage() {
           <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
             <div className="p-6 pb-0">
               <h2 className="text-xl font-semibold">
-                Generated {side} Orders for {stockCode} ({currency})
+                {useSpyProxy ? "Generated SPY-Triggered" : "Generated"} {side} Orders for {stockCode} ({currency})
               </h2>
               <p className="text-sm text-slate-600 mt-1">
-                Range {Math.min(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} - {Math.max(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} | Total Amount: {currency} {round2((side === "Buy" ? (parsed.total ?? 0) : (totals?.sumValue ?? 0))).toLocaleString()} | Prev Close: {formatNA(quoteClose)} | Last: {formatNA(quoteLast)}
-                {startVsLast && ` | Î”Start vs Last: ${startVsLast.abs >= 0 ? "+" : ""}${startVsLast.abs.toFixed(2)} (${startVsLast.pct >= 0 ? "+" : ""}${startVsLast.pct.toFixed(2)}%)`}
-                {endVsLast && ` | Î”End vs Last: ${endVsLast.abs >= 0 ? "+" : ""}${endVsLast.abs.toFixed(2)} (${endVsLast.pct >= 0 ? "+" : ""}${endVsLast.pct.toFixed(2)}%)`}
+                {useSpyProxy ? "SPY trigger range" : "Target price range"} {Math.min(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} - {Math.max(parsed.sp ?? 0, parsed.ep ?? 0).toFixed(2)} | {useSpyProxy ? `Indicative Total Amount (USD, not used): ${ibIndicativePrice != null && parsed.tv != null ? round2(ibIndicativePrice * parsed.tv).toLocaleString() : "N/A"} | Total Volume: ${totals?.sumVolume ?? parsed.tv ?? 0} shares` : `Total Amount: ${currency} ${round2((side === "Buy" ? (parsed.total ?? 0) : (totals?.sumValue ?? 0))).toLocaleString()} | Target quote: ${formatNA(quoteLast ?? quoteMid ?? quoteClose)}`}
+                {!useSpyProxy && startVsLast && ` | ΔStart vs Last: ${startVsLast.abs >= 0 ? "+" : ""}${startVsLast.abs.toFixed(2)} (${startVsLast.pct >= 0 ? "+" : ""}${startVsLast.pct.toFixed(2)}%)`}
+                {!useSpyProxy && endVsLast && ` | ΔEnd vs Last: ${endVsLast.abs >= 0 ? "+" : ""}${endVsLast.abs.toFixed(2)} (${endVsLast.pct >= 0 ? "+" : ""}${endVsLast.pct.toFixed(2)}%)`}
               </p>
               <p className="text-xs text-slate-500 mt-2">
-                Note: Volume is rounded up to the next integer. Actual total may exceed the requested amount due to rounding.
+                {useSpyProxy
+                  ? "The entered total share volume is allocated across all intents at creation; when total volume equals order count, each intent is 1 share regardless of Pyramid ratio. Target limit-price tiers preserve the SPY range percentage. The indicative IB-dollar amount is not used for sizing."
+                  : "Note: Volume is rounded up to the next integer. Actual total may exceed the requested amount due to rounding."}
               </p>
             </div>
             {!generated || generated.length === 0 ? (
@@ -1419,13 +1612,14 @@ export default function RangeOrdersPage() {
                   <tr>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">#</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Side</th>
-                    <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Price</th>
-                    <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Î” vs Close</th>
+                    <th className="px-3 py-3 text-left font-medium whitespace-nowrap">{useSpyProxy ? "Target Price Offset" : "Entry Price"}</th>
+                    {useSpyProxy && <th className="px-3 py-3 text-left font-medium whitespace-nowrap">SPY Tier</th>}
+                    {!useSpyProxy && <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Î” vs Close</th>}
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Weight</th>
-                    <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Allocated {currency}</th>
+                    <th className="px-3 py-3 text-left font-medium whitespace-nowrap">{useSpyProxy ? "Indicative Allocation (USD)" : `Allocated ${currency}`}</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Volume</th>
-                    <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Order {currency}</th>
-                    {enableBracket && (
+                    <th className="px-3 py-3 text-left font-medium whitespace-nowrap">{useSpyProxy ? "Indicative Order (USD)" : `Order ${currency}`}</th>
+                    {enableBracket && !useSpyProxy && (
                       <>
                         <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Take Profit</th>
                         <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Stop Loss</th>
@@ -1438,18 +1632,19 @@ export default function RangeOrdersPage() {
                     <tr key={o.index} className={`transition-colors ${o.index % 2 ? "bg-slate-50" : ""} hover:bg-indigo-50/60`}>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.index}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.side}</td>
-                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.price.toFixed(2)}</td>
-                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{useSpyProxy ? `${(o.targetPriceOffsetPct ?? 0).toFixed(3)}%` : o.price.toFixed(2)}</td>
+                      {useSpyProxy && <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.triggerPrice?.toFixed(2) ?? "-"}</td>}
+                      {!useSpyProxy && <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
                         {quoteClose != null ? (() => {
                           const pct = ((o.price - quoteClose) / quoteClose) * 100;
                           return formatPctNA(pct, 2);
                         })() : "N/A"}
-                      </td>
+                      </td>}
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{(o.allocatedWeight * 100).toFixed(1)}%</td>
-                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{round2(o.allocatedValue).toLocaleString()}</td>
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{useSpyProxy && ibIndicativePrice == null ? "N/A" : round2(o.allocatedValue).toLocaleString()}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.volume}</td>
-                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{round2(o.computedValue).toLocaleString()}</td>
-                      {enableBracket && (
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{useSpyProxy && ibIndicativePrice == null ? "N/A" : round2(o.computedValue).toLocaleString()}</td>
+                      {enableBracket && !useSpyProxy && (
                         <>
                           <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
                             <input
@@ -1496,7 +1691,7 @@ export default function RangeOrdersPage() {
                       <td className="px-3 py-2 border-t border-slate-200">
                         <span className="flex items-center gap-1.5">
                           {totals.sumVolume}
-                          {positionMode === "close" && parsed.tv && (
+                          {!useSpyProxy && positionMode === "close" && parsed.tv && (
                             totals.sumVolume === parsed.tv ? (
                               <span className="inline-flex items-center text-emerald-600" title="Volume matches exactly">
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -1513,7 +1708,7 @@ export default function RangeOrdersPage() {
                           )}
                         </span>
                       </td>
-                      <td className="px-3 py-2 border-t border-slate-200">{totals.sumValue.toLocaleString()}</td>
+                      <td className="px-3 py-2 border-t border-slate-200">{useSpyProxy && ibIndicativePrice == null ? "N/A" : totals.sumValue.toLocaleString()}</td>
                     </tr>
                   </tfoot>
                 )}
@@ -1521,7 +1716,7 @@ export default function RangeOrdersPage() {
             )}
             {submitted && generated && generated.length > 0 && (
               <div className="p-6 flex flex-col gap-3">
-                {sliderBounds && (
+                {sliderBounds && !useSpyProxy && (
                   <div className="rounded-md border border-slate-200 p-4 bg-slate-50">
                     <div className="flex flex-col gap-3">
                       <div className="text-sm font-medium text-slate-700">What-if P/L (assuming all orders filled)</div>
@@ -1579,7 +1774,8 @@ export default function RangeOrdersPage() {
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
-                    disabled={placing}
+                    disabled={placing || useSpyProxy}
+                    title={useSpyProxy ? "Proxy-triggered orders must be armed through Pegasus." : undefined}
                     onClick={onPlaceOrders}
                     className="self-start rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >
@@ -1598,7 +1794,7 @@ export default function RangeOrdersPage() {
                     {pegasusPlacing && (
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                     )}
-                    {pegasusPlacing ? "Creating..." : "Place Pegasus Orders"}
+                    {pegasusPlacing ? "Creating..." : useSpyProxy ? "Arm SPY-Triggered Pegasus Orders" : "Place Pegasus Orders"}
                   </button>
                 </div>
                 {placing && (

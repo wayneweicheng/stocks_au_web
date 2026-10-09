@@ -99,11 +99,12 @@ def get_live_index_price(
     exchange: str = "CBOE",
     currency: str = "USD",
     wait_seconds: float = 3.0,
+    connect_timeout: float = 1.0,
 ) -> Optional[Dict[str, Any]]:
     if Index is None:
         raise RuntimeError("ib_insync index contracts are unavailable on the backend")
 
-    ib = _connect_ib()
+    ib = _connect_ib(connect_timeout=connect_timeout)
     contract = None
     try:
         contract = Index(symbol.strip().upper(), exchange, currency)

@@ -6,6 +6,10 @@ from app.routers.auth import verify_credentials
 import logging
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
+import math
+import re
+import uuid
 
 
 router = APIRouter(prefix="/api", tags=["trading-orders"], dependencies=[Depends(verify_credentials)])
@@ -20,6 +24,24 @@ ALLOWED_STATUSES = {"PENDING", "PLACED", "OPEN", "CLOSED", "CANCELLED"}
 ALLOWED_MODES = {"live", "backtest", "all"}
 
 
+class ProxyActivationCreate(BaseModel):
+    instrument_code: str = "SPY.US"
+    lower_price: float
+    upper_price: float
+    target_price_offset_pct: float = 0.0
+    expires_at: Optional[datetime] = None
+
+
+class ConditionalRiskSpec(BaseModel):
+    unit: str
+    value: float
+
+
+class ConditionalEntryRisk(BaseModel):
+    profit_target: Optional[ConditionalRiskSpec] = None
+    stop_loss: Optional[ConditionalRiskSpec] = None
+
+
 class TradingOrderCreate(BaseModel):
     strategy_id: int
     stock_code: str
@@ -30,11 +52,18 @@ class TradingOrderCreate(BaseModel):
     entry_type: str
     entry_price: Optional[float] = None
     quantity: int
+    notional_amount: Optional[float] = None
     profit_target_price: Optional[float] = None
     stop_loss_price: Optional[float] = None
     stop_loss_mode: Optional[str] = "BAR_CLOSE"
     status: Optional[str] = "PENDING"
     backtest_run_id: Optional[str] = None
+    activation: Optional[ProxyActivationCreate] = None
+    entry_risk: Optional[ConditionalEntryRisk] = None
+
+
+class TradingOrderBatchCreate(BaseModel):
+    orders: List[TradingOrderCreate]
 
 
 class TradingOrderUpdate(TradingOrderCreate):
@@ -79,6 +108,8 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
     stock_code = _normalize_stock_code(order.stock_code)
     if not stock_code:
         raise HTTPException(status_code=400, detail="StockCode is required.")
+    if order.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be a positive integer.")
 
     time_frame = (order.time_frame or "").strip().upper()
     if not time_frame:
@@ -86,7 +117,74 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
 
     stop_loss_mode = (order.stop_loss_mode or "BAR_CLOSE").strip().upper()
     entry_price = None if entry_type in {"MARKET", "LIMIT_MID"} else order.entry_price
+    activation = order.activation
+    entry_risk = order.entry_risk
+    activation_values = None
+    if activation is None and entry_risk is not None:
+        raise HTTPException(status_code=400, detail="Conditional entry-risk rules require a SPY activation.")
+    if activation is not None:
+        proxy_code = _normalize_stock_code(activation.instrument_code)
+        if proxy_code != "SPY.US":
+            raise HTTPException(status_code=400, detail="Conditional orders must use SPY.US as the proxy.")
+        if not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,13}\.US", stock_code):
+            raise HTTPException(status_code=400, detail="Conditional target must be a supported US stock symbol.")
+        if not math.isfinite(activation.lower_price) or not math.isfinite(activation.upper_price):
+            raise HTTPException(status_code=400, detail="Proxy trigger prices must be finite.")
+        if activation.lower_price <= 0 or activation.upper_price < activation.lower_price:
+            raise HTTPException(status_code=400, detail="Proxy trigger range must be positive and ordered.")
+        if order_source_type != "MANUAL" or order.backtest_run_id is not None or status != "PENDING":
+            raise HTTPException(status_code=400, detail="Proxy activation requires a live, pending MANUAL Trade Intent.")
+        if entry_type not in {"LIMIT", "LIMIT_MID"} or order.entry_price is not None:
+            raise HTTPException(status_code=400, detail="Proxy activation requires a target limit order with an activation-time price.")
+        if entry_risk is not None and entry_risk.profit_target is None and entry_risk.stop_loss is None:
+            raise HTTPException(status_code=400, detail="Conditional entry-risk must include a take-profit or stop-loss rule.")
+        if order.notional_amount is not None and (not math.isfinite(order.notional_amount) or order.notional_amount <= 0):
+            raise HTTPException(status_code=400, detail="Optional proxy indicative notional must be positive when supplied.")
+        if not math.isfinite(activation.target_price_offset_pct) or activation.target_price_offset_pct <= -100:
+            raise HTTPException(status_code=400, detail="Target price offset percentage must be finite and greater than -100%.")
+        if entry_risk is not None:
+            for spec in (entry_risk.profit_target, entry_risk.stop_loss):
+                if spec is not None and (spec.unit.strip().upper() not in {"PERCENT", "DOLLAR"} or not math.isfinite(spec.value) or spec.value <= 0):
+                    raise HTTPException(status_code=400, detail="Conditional risk values must be positive PERCENT or DOLLAR amounts.")
+        expires_at = activation.expires_at
+        if expires_at is None:
+            now_et = datetime.now(ZoneInfo("America/New_York"))
+            expiry_date = now_et.date()
+            if now_et.hour >= 20 or now_et.weekday() >= 5:
+                from datetime import timedelta
+                expiry_date += timedelta(days=1)
+                while expiry_date.weekday() >= 5:
+                    expiry_date += timedelta(days=1)
+            expires_at = datetime.combine(expiry_date, datetime.min.time()).replace(hour=20)
+        elif expires_at.tzinfo is not None:
+            expires_at = expires_at.astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None)
+        if expires_at.hour != 20 or expires_at.minute != 0 or expires_at.second != 0 or expires_at.microsecond != 0:
+            raise HTTPException(status_code=400, detail="Proxy Trade Intent expiry must be 20:00 America/New_York.")
+        if expires_at <= datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None):
+            raise HTTPException(status_code=400, detail="Proxy Trade Intent expiry must be in the future.")
+        activation_values = {
+            "proxy_stock_code": "SPY.US",
+            "lower_price": activation.lower_price,
+            "upper_price": activation.upper_price,
+            "expires_at": expires_at,
+        }
+
     meta: Dict[str, Any] = {}
+    if activation is not None or entry_risk is not None:
+        conditional_entry: Dict[str, Any] = {
+            "schema_version": 3 if activation is not None else 1,
+            "batch_id": uuid.uuid4().hex,
+            "quantity_mode": "FIXED" if activation is not None and order.notional_amount is None else "NOTIONAL",
+            "target_price_offset_pct": activation.target_price_offset_pct if activation is not None else 0.0,
+        }
+        if entry_risk is not None:
+            if entry_risk.profit_target is not None:
+                conditional_entry["profit_target"] = {"unit": entry_risk.profit_target.unit.strip().upper(), "value": entry_risk.profit_target.value}
+            if entry_risk.stop_loss is not None:
+                conditional_entry["stop_loss"] = {"unit": entry_risk.stop_loss.unit.strip().upper(), "value": entry_risk.stop_loss.value}
+        if order.notional_amount is not None:
+            conditional_entry["notional_amount"] = order.notional_amount
+        meta["conditional_entry"] = conditional_entry
     if entry_type == "LIMIT_MID":
         meta["EntryPriceMode"] = "MID"
     if signal_type == "SMA_CROSS":
@@ -114,6 +212,43 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
         "status": status,
         "backtest_run_id": order.backtest_run_id,
         "meta_json": json.dumps(meta) if meta else None,
+        "activation": activation_values,
+    }
+
+
+def _load_order_proxy_activations(model: SQLServerModel, order_ids: List[Any]) -> Dict[Any, Dict[str, Any]]:
+    clean_order_ids = [order_id for order_id in order_ids if order_id is not None]
+    if not clean_order_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(clean_order_ids))
+    rows = model.execute_read_query(
+        f"""
+        SELECT OrderId, ProxyStockCode, LowerPrice, UpperPrice, SessionStart, SessionEnd,
+               ExpiresAt, State, ObservedPrice, ObservedAt, ActivatedAt, TargetEntryPrice, BrokerOrderId,
+               ErrorCode, ErrorMessage
+        FROM Trading.OrderActivation
+        WHERE OrderId IN ({placeholders})
+        """,
+        tuple(clean_order_ids),
+    ) or []
+    return {
+        row.get("OrderId"): {
+            "proxy_stock_code": row.get("ProxyStockCode"),
+            "lower_price": row.get("LowerPrice"),
+            "upper_price": row.get("UpperPrice"),
+            "session_start": str(row.get("SessionStart") or "04:00"),
+            "session_end": str(row.get("SessionEnd") or "20:00"),
+            "expires_at": row.get("ExpiresAt"),
+            "state": row.get("State"),
+            "observed_price": row.get("ObservedPrice"),
+            "observed_at": row.get("ObservedAt"),
+            "activated_at": row.get("ActivatedAt"),
+            "target_entry_price": row.get("TargetEntryPrice"),
+            "broker_order_id": row.get("BrokerOrderId"),
+            "error_code": row.get("ErrorCode"),
+            "error_message": row.get("ErrorMessage"),
+        }
+        for row in rows
     }
 
 
@@ -401,6 +536,7 @@ def get_trading_orders(
     rows = model.execute_read_query(query, tuple(params)) or []
     order_ids = [r.get("OrderId") for r in rows]
     audits_by_order = _load_order_signal_audits(model, order_ids)
+    activations_by_order = _load_order_proxy_activations(model, order_ids)
     fills_by_order = _load_order_fill_summaries(model, order_ids)
     return [
         {
@@ -435,6 +571,7 @@ def get_trading_orders(
             "created_at": r.get("CreatedAt"),
             "updated_at": r.get("UpdatedAt"),
             "signal_audits": audits_by_order.get(r.get("OrderId"), []),
+            "activation": activations_by_order.get(r.get("OrderId")),
         }
         for r in rows
     ]
@@ -476,16 +613,41 @@ def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
         normalized["meta_json"],
     )
     try:
-        model.execute_update_usp(
-            """
-            INSERT INTO Trading.Orders
-                (StrategyId, StockCode, Side, OrderSourceType, SignalType, TimeFrame, EntryType, EntryPrice, Quantity,
-                 ProfitTargetPrice, StopLossPrice, StopLossMode, Status, BacktestRunId, MetaJson, CreatedAt, UpdatedAt)
-            VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
-            """,
-            params,
-        )
+        if normalized["activation"] is None:
+            model.execute_update_usp(
+                """
+                INSERT INTO Trading.Orders
+                    (StrategyId, StockCode, Side, OrderSourceType, SignalType, TimeFrame, EntryType, EntryPrice, Quantity,
+                     ProfitTargetPrice, StopLossPrice, StopLossMode, Status, BacktestRunId, MetaJson, CreatedAt, UpdatedAt)
+                VALUES
+                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
+                """,
+                params,
+            )
+        else:
+            activation_values = normalized["activation"]
+            model.execute_update_usp(
+                """
+                SET XACT_ABORT ON;
+                BEGIN TRY
+                    BEGIN TRANSACTION;
+                    INSERT INTO Trading.Orders
+                        (StrategyId, StockCode, Side, OrderSourceType, SignalType, TimeFrame, EntryType, EntryPrice, Quantity,
+                         ProfitTargetPrice, StopLossPrice, StopLossMode, Status, BacktestRunId, MetaJson, CreatedAt, UpdatedAt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
+                    DECLARE @OrderId BIGINT = SCOPE_IDENTITY();
+                    INSERT INTO Trading.OrderActivation
+                        (OrderId, ProxyStockCode, LowerPrice, UpperPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
+                    VALUES (@OrderId, 'SPY.US', ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());
+                    COMMIT TRANSACTION;
+                END TRY
+                BEGIN CATCH
+                    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+                    THROW;
+                END CATCH;
+                """,
+                (*params, activation_values["lower_price"], activation_values["upper_price"], activation_values["expires_at"]),
+            )
     except Exception:
         logger.exception(
             "Pegasus order create failed: strategy_id=%s stock_code=%s side=%s",
@@ -497,10 +659,54 @@ def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
     return {"message": f"Order for {normalized['stock_code']} created successfully."}
 
 
+@router.post("/trading-orders/conditional-batch")
+def create_conditional_order_batch(batch: TradingOrderBatchCreate) -> Dict[str, Any]:
+    if not batch.orders or len(batch.orders) > 100:
+        raise HTTPException(status_code=400, detail="Conditional batch must contain between 1 and 100 orders.")
+    normalized_orders = [_normalize_order_inputs(order) for order in batch.orders]
+    if any(item["activation"] is None for item in normalized_orders):
+        raise HTTPException(status_code=400, detail="Every order in a conditional batch must use a SPY activation.")
+    batch_id = uuid.uuid4().hex
+    for item in normalized_orders:
+        meta = json.loads(item["meta_json"] or "{}")
+        meta["conditional_entry"]["batch_id"] = batch_id
+        item["meta_json"] = json.dumps(meta)
+
+    statements = ["SET XACT_ABORT ON;", "BEGIN TRY", "BEGIN TRANSACTION;", "DECLARE @OrderId BIGINT;"]
+    params: list[Any] = []
+    for item in normalized_orders:
+        statements.append(
+            """INSERT INTO Trading.Orders
+                (StrategyId, StockCode, Side, OrderSourceType, SignalType, TimeFrame, EntryType, EntryPrice, Quantity,
+                 ProfitTargetPrice, StopLossPrice, StopLossMode, Status, BacktestRunId, MetaJson, CreatedAt, UpdatedAt)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
+               SET @OrderId = SCOPE_IDENTITY();
+               INSERT INTO Trading.OrderActivation
+                   (OrderId, ProxyStockCode, LowerPrice, UpperPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
+               VALUES (@OrderId, 'SPY.US', ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());"""
+        )
+        params.extend((
+            item["strategy_id"], item["stock_code"], item["side"], item["order_source_type"],
+            item["signal_type"], item["time_frame"], item["entry_type"], item["entry_price"],
+            item["quantity"], item["profit_target_price"], item["stop_loss_price"], item["stop_loss_mode"],
+            item["status"], item["backtest_run_id"], item["meta_json"],
+            item["activation"]["lower_price"], item["activation"]["upper_price"], item["activation"]["expires_at"],
+        ))
+    statements.extend(["COMMIT TRANSACTION;", "END TRY", "BEGIN CATCH", "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;", "THROW;", "END CATCH;"])
+    model = SQLServerModel(database=DB_NAME)
+    model.execute_update_usp("\n".join(statements), tuple(params))
+    return {"message": f"Created {len(normalized_orders)} SPY-triggered Trade Intents.", "count": len(normalized_orders)}
+
+
 @router.put("/trading-orders/{order_id}")
 def update_trading_order(order_id: int, order: TradingOrderUpdate) -> Dict[str, Any]:
     normalized = _normalize_order_inputs(order)
     model = SQLServerModel(database=DB_NAME)
+    if model.execute_read_query(
+        "SELECT TOP 1 ActivationId FROM Trading.OrderActivation WHERE OrderId = ?",
+        (order_id,),
+    ):
+        raise HTTPException(status_code=409, detail="Cancel and recreate a conditional Trade Intent to change its terms.")
     params = (
         normalized["strategy_id"],
         normalized["stock_code"],
@@ -549,16 +755,36 @@ def update_trading_order(order_id: int, order: TradingOrderUpdate) -> Dict[str, 
 @router.delete("/trading-orders/{order_id}")
 def cancel_trading_order(order_id: int) -> Dict[str, Any]:
     model = SQLServerModel(database=DB_NAME)
-    model.execute_update_usp(
+    try:
+        model.execute_update_usp(
         """
-        UPDATE Trading.Orders
-        SET Status = 'CANCELLED',
-            UpdatedAt = GETDATE()
-        WHERE OrderId = ?
-          AND Status IN ('PENDING', 'PLACED');
+        SET XACT_ABORT ON;
+        BEGIN TRY
+            BEGIN TRANSACTION;
+            IF EXISTS (
+                SELECT 1 FROM Trading.OrderActivation WITH (UPDLOCK, HOLDLOCK)
+                WHERE OrderId = ? AND State = 'CLAIMED'
+            )
+                THROW 51001, 'Conditional activation is being submitted; retry cancellation after reconciliation.', 1;
+            UPDATE Trading.Orders
+            SET Status = 'CANCELLED', UpdatedAt = GETDATE()
+            WHERE OrderId = ? AND Status IN ('PENDING', 'PLACED');
+            UPDATE Trading.OrderActivation
+            SET State = 'CANCELLED', UpdatedAt = GETDATE()
+            WHERE OrderId = ? AND State = 'ARMED';
+            COMMIT TRANSACTION;
+        END TRY
+        BEGIN CATCH
+            IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+            THROW;
+        END CATCH;
         """,
-        (order_id,),
-    )
+            (order_id, order_id, order_id),
+        )
+    except Exception as exc:
+        if "51001" in str(exc):
+            raise HTTPException(status_code=409, detail="Activation is being submitted; retry cancellation after it is reconciled.") from exc
+        raise
     return {"message": "Order cancelled successfully."}
 
 

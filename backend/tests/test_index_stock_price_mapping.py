@@ -21,6 +21,24 @@ class IndexStockPriceMappingTests(unittest.TestCase):
 
         self.assertEqual(closes, {"SPY": 600.25, "MES": 6001.5})
 
+    def test_mapped_live_prices_skips_individual_retries_after_batch_failure(self):
+        with patch.object(index_stock_price_mapping, "get_live_index_price", return_value=None), patch.object(
+            index_stock_price_mapping,
+            "get_live_stock_prices",
+            side_effect=RuntimeError("IB unavailable"),
+        ) as stock_prices, patch.object(
+            index_stock_price_mapping,
+            "get_live_futures_closes",
+            return_value={},
+        ):
+            live_prices = index_stock_price_mapping._load_mapped_live_prices()
+
+        self.assertEqual(live_prices, {})
+        stock_prices.assert_called_once_with(
+            ["SPY", "QQQ", "SPXL", "TQQQ"],
+            connect_timeout=index_stock_price_mapping.LIVE_CONNECT_TIMEOUT_SECONDS,
+        )
+
     def test_spx_map_prices_without_date_uses_latest_snapshot_date(self):
         class FakeModel:
             def execute_read_query(self, query, values):

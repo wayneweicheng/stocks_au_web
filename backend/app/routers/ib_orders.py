@@ -1285,7 +1285,7 @@ def place_sell_put_spread(order: SellPutSpreadOrderRequest) -> Dict[str, Any]:
 
 
 @router.get("/quote")
-def get_quote(stock_code: str, ib_only: bool = Query(False)) -> Dict[str, Any]:
+def get_quote(stock_code: str, ib_only: bool = Query(False), live_only: bool = Query(False)) -> Dict[str, Any]:
     """
     Return lightweight quote fields for a symbol. Does not raise on data gaps.
     Response: { ok, stock_code, last, close, bid, ask, mid }
@@ -1319,8 +1319,10 @@ def get_quote(stock_code: str, ib_only: bool = Query(False)) -> Dict[str, Any]:
                 bid = getattr(ticker, "bid", float("nan"))
                 ask = getattr(ticker, "ask", float("nan"))
 
-            # If still no data, switch to delayed market data and try again
-            if math.isnan(last) and math.isnan(close) and math.isnan(bid) and math.isnan(ask):
+            # Delayed data is useful for ordinary displays, but callers that
+            # explicitly need a live-only indication must not accept it.
+            if (not live_only
+                    and math.isnan(last) and math.isnan(close) and math.isnan(bid) and math.isnan(ask)):
                 try:
                     ib.reqMarketDataType(3)  # 3 = delayed
                 except Exception:

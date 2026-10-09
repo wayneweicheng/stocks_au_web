@@ -14,7 +14,8 @@ CREATE PROCEDURE [StockData].[usp_AddPriceHistoryTimeFrameByElement]
 @pintVolume as bigint,
 @pdecAverage as decimal(20, 4),
 @pintBarCount as int,
-@pdtObservationDate as smalldatetime
+@pdtObservationDate as smalldatetime,
+@pintVolumeMultiplier as int = 100
 AS
 /******************************************************************************
 File: usp_AddIntradayPriceHistoryByElement.sql
@@ -74,70 +75,73 @@ BEGIN --Proc
 		--begin transaction
 		set dateformat dmy
 
-		insert into [StockData].[PriceHistoryTimeFrame]
-		(
-		   [ASXCode]
-		  ,[TimeFrame]
-		  ,[TimeIntervalStart]
-		  ,[Open]
-		  ,[High]
-		  ,[Low]
-		  ,[Close]
-		  ,[Volume]
-		  ,[FirstSale]
-		  ,[LastSale]
-		  ,[SaleValue]
-		  ,[NumOfSale]
-		  ,[AverageValuePerTransaction]
-		  ,[VWAP]
-		  ,[ObservationDate]
-		)
-		select
-		   [ASXCode]
-		  ,[TimeFrame]
-		  ,[TimeIntervalStart]
-		  ,[Open]
-		  ,[High]
-		  ,[Low]
-		  ,[Close]
-		  ,[Volume]
-		  ,null as [FirstSale]
-		  ,null as [LastSale]
-		  ,null as [SaleValue]
-		  ,Trades as [NumOfSale]
-		  ,null as [AverageValuePerTransaction]
-		  ,[VWAP]
-		  ,ObservationDate as [ObservationDate]
-		from
-		(
-			select
-				@pvchStockCode as [ASXCode],
-				@pvchTimeFrame as TimeFrame,
-				@pdtObservationDate as [TimeIntervalStart],
-				@pdecClose as [Close],
-				@pdecOpen as [Open],
-				@pdecLow as [Low],
-				@pdecHigh as [High],
-				@pintVolume*100 as [Volume],
-				@pdecAverage as [VWAP],
-				@pintBarCount [Trades],
-				cast(@pdtObservationDate as date) as ObservationDate,
-				getdate() as CreateDate,	
-				getdate() as ModifyDate	
-		) as a
-		where not exists
-		(
-			select 1
-			from StockData.[PriceHistoryTimeFrame]
-			where TimeIntervalStart = a.[TimeIntervalStart]
-			and TimeFrame = a.TimeFrame
-			and ASXCode = @pvchStockCode
-		)
+		-- A collector can first receive a partial session and later receive the
+		-- completed bar.  This must be an upsert: insert-only leaves the partial
+		-- OHLC row permanently in place and causes strict-as-of consumers to fail.
+		begin transaction
+
+		update [StockData].[PriceHistoryTimeFrame] with (updlock, serializable)
+		set [Open] = @pdecOpen,
+			[High] = @pdecHigh,
+			[Low] = @pdecLow,
+			[Close] = @pdecClose,
+			[Volume] = @pintVolume * @pintVolumeMultiplier,
+			[NumOfSale] = @pintBarCount,
+			[VWAP] = @pdecAverage,
+			[ObservationDate] = cast(@pdtObservationDate as date)
+		where [ASXCode] = @pvchStockCode
+		  and [TimeFrame] = @pvchTimeFrame
+		  and [TimeIntervalStart] = @pdtObservationDate
+
+		if @@rowcount = 0
+		begin
+			insert into [StockData].[PriceHistoryTimeFrame]
+			(
+			   [ASXCode]
+			  ,[TimeFrame]
+			  ,[TimeIntervalStart]
+			  ,[Open]
+			  ,[High]
+			  ,[Low]
+			  ,[Close]
+			  ,[Volume]
+			  ,[FirstSale]
+			  ,[LastSale]
+			  ,[SaleValue]
+			  ,[NumOfSale]
+			  ,[AverageValuePerTransaction]
+			  ,[VWAP]
+			  ,[ObservationDate]
+			)
+			values
+			(
+			   @pvchStockCode
+			  ,@pvchTimeFrame
+			  ,@pdtObservationDate
+			  ,@pdecOpen
+			  ,@pdecHigh
+			  ,@pdecLow
+			  ,@pdecClose
+			  ,@pintVolume * @pintVolumeMultiplier
+			  ,null
+			  ,null
+			  ,null
+			  ,@pintBarCount
+			  ,null
+			  ,@pdecAverage
+			  ,cast(@pdtObservationDate as date)
+			)
+		end
+
+		commit transaction
 
 		
 	END TRY
 
 	BEGIN CATCH
+		IF @@TRANCOUNT > 0
+			ROLLBACK TRANSACTION
+
 		-- Store the details of the error
 		SELECT	@intErrorNumber = ERROR_NUMBER(), @intErrorSeverity = ERROR_SEVERITY(),
 				@intErrorState = ERROR_STATE(), @vchErrorProcedure = ERROR_PROCEDURE(),

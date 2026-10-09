@@ -5,6 +5,11 @@ import { use, useEffect, useMemo, useState } from "react";
 import Alert from "../../../components/ui/Alert";
 import Button from "../../../components/ui/Button";
 import PageHeader from "../../../components/PageHeader";
+import MappedLevelReportDetails, {
+  levelReportKey,
+  parseHtmlLevelDetails,
+  type HtmlLevelDetail,
+} from "../../../components/MappedLevelReportDetails";
 import { authenticatedFetch } from "../../../utils/authenticatedFetch";
 
 type JsonObject = Record<string, unknown>;
@@ -341,6 +346,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
   const [mapData, setMapData] = useState<JsonObject | null>(null);
   const [stockPrices, setStockPrices] = useState<StockPrices | null>(null);
+  const [htmlLevelDetails, setHtmlLevelDetails] = useState<Record<string, HtmlLevelDetail>>({});
   const [routeStockCode, setRouteStockCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -354,11 +360,18 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
         const queryStockCode = queryParams.get("stock_code") || "";
         const queryObservationDate = queryParams.get("observation_date") || "";
         setRouteStockCode(queryStockCode);
-        const mapResponse = await authenticatedFetch(
-          `${baseUrl}/api/stock-map-reports/${encodeURIComponent(jobId)}/json`,
-          { cache: "no-store" },
-        );
+        const [mapResponse, reportResponse] = await Promise.all([
+          authenticatedFetch(
+            `${baseUrl}/api/stock-map-reports/${encodeURIComponent(jobId)}/json`,
+            { cache: "no-store" },
+          ),
+          authenticatedFetch(
+            `${baseUrl}/api/stock-map-reports/${encodeURIComponent(jobId)}`,
+            { cache: "no-store" },
+          ),
+        ]);
         const mapPayload = await mapResponse.json().catch(() => ({}));
+        const reportPayload = await reportResponse.json().catch(() => ({}));
         if (!mapResponse.ok) throw new Error(mapPayload.detail || `Stock Map JSON request failed: HTTP ${mapResponse.status}`);
         const parsedMap = parseMapData(mapPayload.data ?? mapPayload);
         if (!parsedMap) throw new Error("The Stock Map JSON artifact was not returned in a readable format.");
@@ -374,6 +387,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
         if (!pricesResponse.ok) throw new Error(pricesPayload.detail || `Stock mapped prices request failed: HTTP ${pricesResponse.status}`);
 
         setMapData(parsedMap);
+        setHtmlLevelDetails(parseHtmlLevelDetails(String(reportPayload.content || "")));
         setStockPrices(pricesPayload as StockPrices);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load mapped stock levels.");
@@ -506,6 +520,10 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
                     {zone.side === "support" ? "Support" : "Resistance"} #{zone.rank}
                   </div>
                   <h2 className="mt-1 text-lg font-semibold text-slate-900">{stockCode} {price(mapped.low)} – {price(mapped.high)}</h2>
+                  <MappedLevelReportDetails
+                    side={zone.side}
+                    detail={htmlLevelDetails[levelReportKey(zone.side, zone.rank)]}
+                  />
                 </div>
                 <div className="text-right text-sm text-slate-600">
                   <div>Score: <strong>{zone.score === null ? "n/a" : zone.score.toFixed(1)}</strong></div>
