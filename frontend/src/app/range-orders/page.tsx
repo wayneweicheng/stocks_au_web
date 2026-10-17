@@ -7,6 +7,8 @@ import PageHeader from "../components/PageHeader";
 type Side = "Buy" | "Sell";
 type Distribution = "Pyramid" | "Even";
 
+const PROXY_TARGET_RANGE_MULTIPLIER = 1.5;
+
 interface GeneratedOrder {
   index: number;
   side: Side;
@@ -130,7 +132,13 @@ export default function RangeOrdersPage() {
     const useSpyProxyFromLink = params.get("proxy")?.trim().toUpperCase() === "SPY";
 
     if (stock) setStockCode(stock);
-    if (useSpyProxyFromLink) setUseSpyProxy(true);
+    if (useSpyProxyFromLink) {
+      setUseSpyProxy(true);
+      // Ignore the legacy general bracket flag for proxy intents; users can
+      // explicitly enable conditional exits with the page controls.
+      setEnableBracket(false);
+      setEnableStopLoss(params.get("stop_loss") === "1");
+    }
     if (requestedSide === "Buy" || requestedSide === "Sell") setSide(requestedSide);
     if (Number.isFinite(start) && start > 0) setStartPrice(start.toFixed(2));
     if (Number.isFinite(end) && end > 0) setEndPrice(end.toFixed(2));
@@ -138,8 +146,8 @@ export default function RangeOrdersPage() {
     if (Number.isFinite(requestedOrders) && requestedOrders > 0) setNumOrders(String(Math.floor(requestedOrders)));
     if (params.get("distribution") === "Even" || params.get("distribution") === "Pyramid") setDistribution(params.get("distribution") as Distribution);
     if (Number.isFinite(requestedTargetPct) && requestedTargetPct > 0) setTargetProfitPct(requestedTargetPct.toString());
-    if (params.get("bracket") === "1") setEnableBracket(true);
-    if (params.get("stop_loss") === "0") setEnableStopLoss(false);
+    if (!useSpyProxyFromLink && params.get("bracket") === "1") setEnableBracket(true);
+    if (!useSpyProxyFromLink && params.get("stop_loss") === "0") setEnableStopLoss(false);
     if (params.get("allocation") === "value") setValueAllocationForSell(true);
     if (params.get("bracket") === "1") setSubmitted(true);
     if (stock || requestedSide || (Number.isFinite(start) && start > 0) || (Number.isFinite(end) && end > 0)) {
@@ -243,13 +251,10 @@ export default function RangeOrdersPage() {
       ? Array.from({ length: parsed.n }, () => targetQuote)
       : generateLinearPricesInclusive(parsed.sp!, parsed.ep!, parsed.n);
 
-    // For display order:
-    // - Buy: list from low to high (bottom first)
-    // - Sell: list from high to low (top first)
+    // Non-proxy ladders retain their existing display order. Proxy tiers are
+    // high-to-low for both sides so submissions descend from the top tier.
     const displayPrices = side === "Buy" ? pricesAsc : [...pricesAsc].reverse();
-    const displayTriggerPrices = useSpyProxy
-      ? (side === "Buy" ? proxyLevelsAsc : [...proxyLevelsAsc].reverse())
-      : [];
+    const displayTriggerPrices = useSpyProxy ? [...proxyLevelsAsc].reverse() : [];
 
     // Build display weights:
     // - Even: equal weights
@@ -278,7 +283,7 @@ export default function RangeOrdersPage() {
       for (let i = 0; i < displayPrices.length; i++) {
         const triggerPrice = displayTriggerPrices[i];
         const targetPriceOffsetPct = triggerPrice > 0
-          ? round2(((triggerPrice / (side === "Buy" ? Math.max(parsed.sp!, parsed.ep!) : proxyLow)) - 1) * 100)
+          ? round2((((triggerPrice / (side === "Buy" ? Math.max(parsed.sp!, parsed.ep!) : proxyLow)) - 1) * 100) * PROXY_TARGET_RANGE_MULTIPLIER)
           : 0;
         const targetLimitEstimate = targetQuote > 0
           ? round2(targetQuote * (1 + targetPriceOffsetPct / 100))
@@ -1158,7 +1163,18 @@ export default function RangeOrdersPage() {
 
             <div className="sm:col-span-2 lg:col-span-3 rounded-md border border-indigo-200 bg-indigo-50 p-3">
               <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                <input type="checkbox" checked={useSpyProxy} onChange={(event) => setUseSpyProxy(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={useSpyProxy}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setUseSpyProxy(enabled);
+                    if (enabled) {
+                      setEnableBracket(false);
+                      setEnableStopLoss(false);
+                    }
+                  }}
+                />
                 Trigger Pegasus orders from SPY price levels
               </label>
               {useSpyProxy && (

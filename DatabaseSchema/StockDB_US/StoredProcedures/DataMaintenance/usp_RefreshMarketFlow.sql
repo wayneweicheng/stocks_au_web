@@ -1,159 +1,198 @@
 -- Stored procedure: [DataMaintenance].[usp_RefreshMarketFlow]
 
-
-
-
-
-CREATE PROCEDURE [DataMaintenance].[usp_RefreshMarketFlow]
-@pbitDebug AS BIT = 0,
-@pNumberOfBackDays as int = 1,
-@pintErrorNumber AS INT = 0 OUTPUT
+ALTER PROCEDURE [DataMaintenance].[usp_RefreshMarketFlow]
+    @pbitDebug AS BIT = 0,
+    @pNumberOfBackDays AS INT = 1,
+    @pintErrorNumber AS INT = 0 OUTPUT
 AS
-/******************************************************************************
+/****************************************************************************
 File: usp_RefreshMarketFlow.sql
 Stored Procedure Name: usp_RefreshMarketFlow
 Overview
 -----------------
-usp_RefreshMarketFlow
+Refreshes GEX features for every stock configured in LookupRef.v_StockToCheck.
+A failure for one stock is recorded and does not prevent later stocks from being
+processed. Cursor/setup-level failures are raised to the caller.
 
 Input Parameters
 -----------------
-@pbitDebug		-- Set to 1 to force the display of debugging information
+@pbitDebug             -- Set to 1 to display processing information
+@pNumberOfBackDays     -- Number of business days back to refresh
 
 Output Parameters
 -----------------
-@pintErrorNumber		-- Contains 0 if no error, or ERROR_NUMBER() on error
+@pintErrorNumber       -- 0 if all stocks succeeded; otherwise the first
+                           per-stock error number, or the procedure-level error
+****************************************************************************/
+SET NOCOUNT ON;
 
-Example of use
------------------
-*******************************************************************************
-Change History - (copy and repeat section below)
-*******************************************************************************
--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-Date:		2017-02-07
-Author:		WAYNE CHENG
-Description: Initial Version
--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-*******************************************************************************/
+BEGIN
+    IF @pintErrorNumber <> 0
+    BEGIN
+        -- Preserve the existing chained-error behavior.
+        RETURN @pintErrorNumber;
+    END;
 
-SET NOCOUNT ON
+    DECLARE @StockErrors TABLE
+    (
+        ErrorId         INT IDENTITY(1,1) NOT NULL,
+        ASXCode         VARCHAR(50) NOT NULL,
+        ErrorNumber     INT NOT NULL,
+        ErrorSeverity   INT NOT NULL,
+        ErrorState      INT NOT NULL,
+        ErrorProcedure  NVARCHAR(128) NULL,
+        ErrorLine       INT NOT NULL,
+        ErrorMessage    NVARCHAR(4000) NOT NULL
+    );
 
-BEGIN --Proc
+    DECLARE @vchProcedureName VARCHAR(100) = 'usp_RefreshMarketFlow';
+    DECLARE @vchSchema NVARCHAR(50) = 'DataMaintenance';
+    DECLARE @intErrorNumber INT = 0;
+    DECLARE @intErrorSeverity INT = 0;
+    DECLARE @intErrorState INT = 0;
+    DECLARE @vchErrorProcedure NVARCHAR(126) = N'';
+    DECLARE @intErrorLine INT = 0;
+    DECLARE @vchErrorMessage NVARCHAR(4000) = N'';
+    DECLARE @CurrentCode VARCHAR(50);
 
-	IF @pintErrorNumber <> 0
-	BEGIN
-		-- Assume the application is in an error state, so get out quickly
-		-- Remove this check if this stored procedure should run regardless of a previous error
-		RETURN @pintErrorNumber
-	END
+    BEGIN TRY
+        DECLARE stock_cursor CURSOR LOCAL FAST_FORWARD FOR
+            SELECT ASXCode
+            FROM
+            (
+                SELECT DISTINCT
+                    CASE
+                        WHEN ASXCode = '_SPX.US' THEN 'SPXW.US'
+                        ELSE ASXCode
+                    END AS ASXCode
+                FROM LookupRef.v_StockToCheck
+            ) AS Stocks
+            ORDER BY ASXCode;
 
-	BEGIN TRY
+        OPEN stock_cursor;
+        FETCH NEXT FROM stock_cursor INTO @CurrentCode;
 
-		-- Error variable declarations
-		DECLARE @vchProcedureName AS VARCHAR(100);		SET @vchProcedureName = 'usp_RefreshMarketFlow'
-		DECLARE @vchSchema AS NVARCHAR(50);				SET @vchSchema = 'DataMaintenance'
-		DECLARE @intErrorNumber AS INT;					SET @intErrorNumber = 0
-		DECLARE @intErrorSeverity AS INT;				SET @intErrorSeverity = 0
-		DECLARE @intErrorState AS INT;					SET @intErrorState = 0	
-		DECLARE @vchErrorProcedure AS NVARCHAR(126);	SET @vchErrorProcedure = ''
-		DECLARE @intErrorLine AS INT;					SET @intErrorLine  = 0
-		DECLARE @vchErrorMessage AS NVARCHAR(4000);		SET @vchErrorMessage = ''
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            IF @pbitDebug = 1
+                PRINT 'Processing: ' + @CurrentCode;
 
-		set nocount on;
+            -- Isolate each stock's failure so the cursor continues.
+            BEGIN TRY
+                EXEC Analysis.usp_RefreshGEXFeaturesForTraining
+                    @ASXCode = @CurrentCode,
+                    @NumberOfBackDays = @pNumberOfBackDays;
+            END TRY
+            BEGIN CATCH
+                INSERT INTO @StockErrors
+                (
+                    ASXCode,
+                    ErrorNumber,
+                    ErrorSeverity,
+                    ErrorState,
+                    ErrorProcedure,
+                    ErrorLine,
+                    ErrorMessage
+                )
+                VALUES
+                (
+                    @CurrentCode,
+                    ERROR_NUMBER(),
+                    ERROR_SEVERITY(),
+                    ERROR_STATE(),
+                    ERROR_PROCEDURE(),
+                    ERROR_LINE(),
+                    ERROR_MESSAGE()
+                );
 
-		--Normal varible declarations
+                IF @pbitDebug = 1
+                    PRINT 'Failed: ' + @CurrentCode + ' - ' + ERROR_MESSAGE();
+            END CATCH;
 
-		-- Refresh GEX features for every stock configured in LookupRef.v_StockToCheck.
-		DECLARE @CurrentCode varchar(50)
+            -- Always advance, including after a per-stock failure.
+            FETCH NEXT FROM stock_cursor INTO @CurrentCode;
+        END;
 
-		DECLARE stock_cursor CURSOR LOCAL FAST_FORWARD FOR
-		SELECT ASXCode
-		FROM
-		(
-			SELECT DISTINCT
-				CASE WHEN ASXCode = '_SPX.US' THEN 'SPXW.US' ELSE ASXCode END AS ASXCode
-			FROM LookupRef.v_StockToCheck
-		) AS Stocks
-		ORDER BY ASXCode;
+        CLOSE stock_cursor;
+        DEALLOCATE stock_cursor;
+    END TRY
+    BEGIN CATCH
+        -- Capture cursor/setup-level errors. Per-stock errors are handled above.
+        IF CURSOR_STATUS('local', 'stock_cursor') >= 0
+            CLOSE stock_cursor;
 
-		OPEN stock_cursor;
-		FETCH NEXT FROM stock_cursor INTO @CurrentCode;
+        IF CURSOR_STATUS('local', 'stock_cursor') > -3
+            DEALLOCATE stock_cursor;
 
-		WHILE @@FETCH_STATUS = 0
-		BEGIN
-			IF @pbitDebug = 1
-			BEGIN
-				PRINT 'Processing: ' + @CurrentCode;
-			END
+        SELECT
+            @intErrorNumber = ERROR_NUMBER(),
+            @intErrorSeverity = ERROR_SEVERITY(),
+            @intErrorState = ERROR_STATE(),
+            @vchErrorProcedure = ERROR_PROCEDURE(),
+            @intErrorLine = ERROR_LINE(),
+            @vchErrorMessage = ERROR_MESSAGE();
 
-			EXEC Analysis.usp_RefreshGEXFeaturesForTraining
-				@ASXCode = @CurrentCode,
-				@NumberOfBackDays = @pNumberOfBackDays;
+        -- Do not let a stopped Database Mail service mask the original error.
+        BEGIN TRY
+            DECLARE @vchEmailRecipient VARCHAR(100) = 'wayneweicheng@gmail.com';
+            DECLARE @vchEmailSubject VARCHAR(200) =
+                'DataMaintenance.usp_RefreshMarketFlow failed';
+            DECLARE @vchEmailBody VARCHAR(2000) =
+                @vchEmailSubject + ':' + CHAR(13) + CHAR(10) + @vchErrorMessage;
 
-			FETCH NEXT FROM stock_cursor INTO @CurrentCode;
-		END;
+            EXEC msdb.dbo.sp_send_dbmail
+                @profile_name = 'Wayne StockTrading',
+                @recipients = @vchEmailRecipient,
+                @subject = @vchEmailSubject,
+                @body = @vchEmailBody;
+        END TRY
+        BEGIN CATCH
+            PRINT 'Could not send Database Mail notification: ' + ERROR_MESSAGE();
+        END CATCH;
+    END CATCH;
 
-		CLOSE stock_cursor;
-		DEALLOCATE stock_cursor;
+    -- Return per-stock failures to the caller without stopping the refresh run.
+    IF EXISTS (SELECT 1 FROM @StockErrors)
+    BEGIN
+        SELECT TOP (1) @pintErrorNumber = ErrorNumber
+        FROM @StockErrors
+        ORDER BY ErrorId;
 
-	END TRY
+        SELECT
+            ASXCode,
+            ErrorNumber,
+            ErrorSeverity,
+            ErrorState,
+            ErrorProcedure,
+            ErrorLine,
+            ErrorMessage
+        FROM @StockErrors
+        ORDER BY ErrorId;
 
-	BEGIN CATCH
-		IF CURSOR_STATUS('local', 'stock_cursor') >= 0
-		BEGIN
-			CLOSE stock_cursor;
-		END
-		IF CURSOR_STATUS('local', 'stock_cursor') > -3
-		BEGIN
-			DEALLOCATE stock_cursor;
-		END
+        IF @pbitDebug = 1
+        BEGIN
+            DECLARE @StockErrorCount INT;
+            SELECT @StockErrorCount = COUNT(*) FROM @StockErrors;
+            PRINT 'Refresh finished with ' + CONVERT(VARCHAR(12), @StockErrorCount) +
+                  ' stock-level failure(s).';
+        END;
+    END
+    ELSE IF @intErrorNumber = 0
+    BEGIN
+        SET @pintErrorNumber = 0;
 
-		-- Store the details of the error
-		SELECT	@intErrorNumber = ERROR_NUMBER(), @intErrorSeverity = ERROR_SEVERITY(),
-				@intErrorState = ERROR_STATE(), @vchErrorProcedure = ERROR_PROCEDURE(),
-				@intErrorLine = ERROR_LINE(), @vchErrorMessage = ERROR_MESSAGE()
+        IF @pbitDebug = 1
+            PRINT 'Procedure ' + @vchSchema + '.' + @vchProcedureName +
+                  ' finished executing successfully at ' +
+                  CONVERT(VARCHAR(20), GETDATE(), 120);
+    END;
 
-		declare @vchEmailRecipient as varchar(100) = 'wayneweicheng@gmail.com'
-		declare @vchEmailSubject as varchar(200) = 'DataMaintenance.usp_MaintainStockData failed'
-		declare @vchEmailBody as varchar(2000) = @vchEmailSubject + ':
-' + @vchErrorMessage
+    IF @intErrorNumber <> 0
+    BEGIN
+        SET @pintErrorNumber = @intErrorNumber;
 
-		exec msdb.dbo.sp_send_dbmail @profile_name='Wayne StockTrading',
-		@recipients = @vchEmailRecipient,
-		@subject = @vchEmailSubject,
-		@body = @vchEmailBody
-
-	END CATCH
-
-	IF @intErrorNumber = 0 OR @vchErrorProcedure = ''
-	BEGIN
-		-- No Error occured in this procedure
-
-		--COMMIT TRANSACTION 
-
-		IF @pbitDebug = 1
-		BEGIN
-			PRINT 'Procedure ' + @vchSchema + '.' + @vchProcedureName + ' finished executing (successfully) at ' + CAST(getdate() as varchar(20))
-		END
-	END
-
-	ELSE
-	BEGIN
-
-		--IF @@TRANCOUNT > 0
-		--BEGIN
-		--	ROLLBACK TRANSACTION
-		--END
-			
-		--EXECUTE da_utility.dbo.[usp_DAU_ErrorLog] 'StoredProcedure', @vchErrorProcedure, @vchSchema, @intErrorNumber,
-		--@intErrorSeverity, @intErrorState, @intErrorLine, @vchErrorMessage
-
-		--Raise the error back to the calling stored proc if needed		
-		RAISERROR (@vchErrorMessage, @intErrorSeverity, @intErrorState)
-	END
-
-
-	SET @pintErrorNumber = @intErrorNumber	-- Set the return parameter
-
-
-END
+        -- Preserve the existing behavior for procedure-level errors.
+        RAISERROR (@vchErrorMessage, @intErrorSeverity, @intErrorState);
+    END;
+END;
+GO

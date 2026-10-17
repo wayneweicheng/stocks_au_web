@@ -1,6 +1,6 @@
 # Scheduled SPX Map analysis
 
-The SPX Map analysis is submitted through the shared skill-runner launcher. Windows Task Scheduler runs it daily at 19:00 Sydney time.
+The SPX Map analysis is submitted through the shared skill-runner launcher. Windows Task Scheduler runs it daily at 19:05 and 21:05 Sydney time, allowing the delayed-option collector's observed updates shortly after each hour to publish before the strict as-of cutoff is set.
 
 ## Register the task
 
@@ -31,4 +31,4 @@ Get-ScheduledTask -TaskPath "\pegasus\" -TaskName "Pegasus SPX Map" | Get-Schedu
   --now-utc "2026-08-28T09:00:00Z"
 ```
 
-The launcher submits `/api/jobs/spx-map` with the actual current Sydney time and a 120-minute timeout.
+Each trigger submits `/api/jobs/spx-map` with the actual current Sydney time and a 120-minute timeout. The five-minute scheduling buffer is intentional; strict as-of filtering remains enabled and does not admit rows published after the request timestamp.

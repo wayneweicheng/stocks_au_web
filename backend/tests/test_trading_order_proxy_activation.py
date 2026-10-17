@@ -27,7 +27,6 @@ def _intent(**overrides):
             "lower_price": 670.0,
             "upper_price": 670.0,
             "target_price_offset_pct": -0.15,
-            "expires_at": "2099-05-01T20:00:00",
         },
         "entry_risk": {
             "profit_target": {"unit": "PERCENT", "value": 1.0},
@@ -73,6 +72,40 @@ def test_conditional_order_accepts_only_one_optional_exit_rule():
 
     assert "profit_target" not in meta["conditional_entry"]
     assert meta["conditional_entry"]["stop_loss"] == {"unit": "PERCENT", "value": 0.5}
+
+
+def test_conditional_order_defaults_to_same_session_8pm_expiry(monkeypatch):
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = cls(2026, 10, 16, 10, 0)
+            return current.replace(tzinfo=tz) if tz is not None else current
+
+    monkeypatch.setattr(router, "datetime", FrozenDateTime)
+
+    normalized = router._normalize_order_inputs(_intent())
+
+    assert normalized["activation"]["expires_at"] == datetime(2026, 10, 16, 20, 0)
+
+
+def test_conditional_order_rejects_expiry_beyond_current_session(monkeypatch):
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = cls(2026, 10, 16, 10, 0)
+            return current.replace(tzinfo=tz) if tz is not None else current
+
+    monkeypatch.setattr(router, "datetime", FrozenDateTime)
+    order = _intent(activation={
+        "instrument_code": "SPY.US",
+        "lower_price": 670.0,
+        "upper_price": 670.0,
+        "target_price_offset_pct": -0.15,
+        "expires_at": "2026-10-19T20:00:00",
+    })
+
+    with pytest.raises(HTTPException, match="current eligible session day only"):
+        router._normalize_order_inputs(order)
 
 
 def test_conditional_order_persists_target_risk_plan_and_spy_activation():

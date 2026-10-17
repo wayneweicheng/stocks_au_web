@@ -1,0 +1,31 @@
+{
+  "name": "stock-map",
+  "runner_url": "http://192.168.20.112:3205",
+  "endpoint": "/api/jobs/stock-map",
+  "token_env": "SKILL_RUNNER_API_TOKEN",
+  "token_dotenv": "backend/.env",
+  "http_timeout_seconds": 20,
+  "log_directory": "logs/stock-map-scheduler",
+  "log_filename_format": "scheduler-%Y%m%d-%H%M%S-{pid}.log",
+  "current_time": {
+    "timezone": "Australia/Sydney",
+    "format": "%Y-%m-%d %H:%M"
+  },
+  "batch": {
+    "placeholder": "stock_code",
+    "values": [
+      "QQQ",
+      "SOXL",
+      "NVDA",
+      "TSLA",
+      "MU",
+      "META"
+    ],
+    "delay_seconds": 300
+  },
+  "payload": {
+    "stock_code": "{{stock_code}}",
+    "as_at": "{{current_time}} Australia/Sydney",
+    "timeout_minutes": 120
+  }
+}

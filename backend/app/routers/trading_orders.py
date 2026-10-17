@@ -84,6 +84,19 @@ def _normalize_stock_code(symbol: str) -> str:
     return f"{s}.US"
 
 
+def _default_proxy_expiry(now_et: Optional[datetime] = None) -> datetime:
+    """Return the 20:00 ET expiry for the current or next eligible weekday session."""
+    now_et = now_et or datetime.now(ZoneInfo("America/New_York"))
+    expiry_date = now_et.date()
+    if now_et.hour >= 20 or now_et.weekday() >= 5:
+        from datetime import timedelta
+
+        expiry_date += timedelta(days=1)
+        while expiry_date.weekday() >= 5:
+            expiry_date += timedelta(days=1)
+    return datetime.combine(expiry_date, datetime.min.time()).replace(hour=20)
+
+
 def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
     side = (order.side or "").strip().upper()
     order_source_type = (order.order_source_type or "").strip().upper()
@@ -146,22 +159,20 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
             for spec in (entry_risk.profit_target, entry_risk.stop_loss):
                 if spec is not None and (spec.unit.strip().upper() not in {"PERCENT", "DOLLAR"} or not math.isfinite(spec.value) or spec.value <= 0):
                     raise HTTPException(status_code=400, detail="Conditional risk values must be positive PERCENT or DOLLAR amounts.")
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        session_expiry = _default_proxy_expiry(now_et)
         expires_at = activation.expires_at
         if expires_at is None:
-            now_et = datetime.now(ZoneInfo("America/New_York"))
-            expiry_date = now_et.date()
-            if now_et.hour >= 20 or now_et.weekday() >= 5:
-                from datetime import timedelta
-                expiry_date += timedelta(days=1)
-                while expiry_date.weekday() >= 5:
-                    expiry_date += timedelta(days=1)
-            expires_at = datetime.combine(expiry_date, datetime.min.time()).replace(hour=20)
+            expires_at = session_expiry
         elif expires_at.tzinfo is not None:
             expires_at = expires_at.astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None)
         if expires_at.hour != 20 or expires_at.minute != 0 or expires_at.second != 0 or expires_at.microsecond != 0:
             raise HTTPException(status_code=400, detail="Proxy Trade Intent expiry must be 20:00 America/New_York.")
-        if expires_at <= datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None):
-            raise HTTPException(status_code=400, detail="Proxy Trade Intent expiry must be in the future.")
+        if expires_at != session_expiry:
+            raise HTTPException(
+                status_code=400,
+                detail="Proxy Trade Intents expire at 20:00 America/New_York on the current eligible session day only.",
+            )
         activation_values = {
             "proxy_stock_code": "SPY.US",
             "lower_price": activation.lower_price,

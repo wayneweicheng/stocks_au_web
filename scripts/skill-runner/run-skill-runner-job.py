@@ -34,6 +34,8 @@ else:  # pragma: no cover - only used on Windows
 
 
 PLACEHOLDER_PATTERN = re.compile(r"\{\{([a-z_]+)\}\}")
+PLACEHOLDER_NAME_PATTERN = re.compile(r"[a-z_]+")
+BUILT_IN_PLACEHOLDERS = {"current_time", "current_date", "current_datetime"}
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -84,6 +86,34 @@ def parse_now_utc(value: str | None) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def get_batch_settings(config: dict[str, Any]) -> tuple[str | None, list[str], float]:
+    batch = config.get("batch")
+    if batch is None:
+        return None, [""], 0
+    if not isinstance(batch, dict):
+        raise ConfigurationError("batch must contain a JSON object")
+
+    placeholder = batch.get("placeholder")
+    if not isinstance(placeholder, str) or not PLACEHOLDER_NAME_PATTERN.fullmatch(placeholder):
+        raise ConfigurationError("batch.placeholder must contain only lowercase letters and underscores")
+    if placeholder in BUILT_IN_PLACEHOLDERS:
+        raise ConfigurationError(f"batch.placeholder cannot replace built-in placeholder: {placeholder}")
+
+    values = batch.get("values")
+    if not isinstance(values, list) or not values:
+        raise ConfigurationError("batch.values must contain at least one value")
+    normalized_values: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigurationError("batch.values entries must be non-empty strings")
+        normalized_values.append(value.strip())
+
+    delay_seconds = batch.get("delay_seconds", 0)
+    if isinstance(delay_seconds, bool) or not isinstance(delay_seconds, (int, float)) or delay_seconds < 0:
+        raise ConfigurationError("batch.delay_seconds must be a non-negative number")
+    return placeholder, normalized_values, float(delay_seconds)
 
 
 def get_localized_time(now_utc: datetime, timezone_name: str) -> datetime:
@@ -229,11 +259,29 @@ def run(args: argparse.Namespace) -> int:
                 "current_date": localized_now.strftime("%Y-%m-%d"),
                 "current_datetime": localized_now.isoformat(),
             }
-            payload = expand_payload(config["payload"], placeholders)
-            logger.info("RUN job=%s current_time=%s runner=%s", job_name, placeholders["current_time"], config["runner_url"])
+            batch_placeholder, batch_values, delay_seconds = get_batch_settings(config)
+            submissions: list[tuple[str | None, dict[str, Any]]] = []
+            for batch_value in batch_values:
+                submission_placeholders = dict(placeholders)
+                if batch_placeholder is not None:
+                    submission_placeholders[batch_placeholder] = batch_value
+                payload = expand_payload(config["payload"], submission_placeholders)
+                if not isinstance(payload, dict):
+                    raise ConfigurationError("The expanded payload must contain a JSON object")
+                submissions.append((batch_value if batch_placeholder else None, payload))
+
+            logger.info(
+                "RUN job=%s current_time=%s runner=%s submissions=%s delay_seconds=%s",
+                job_name,
+                placeholders["current_time"],
+                config["runner_url"],
+                len(submissions),
+                delay_seconds,
+            )
 
             if args.dry_run:
-                print(json.dumps(payload, separators=(",", ":")))
+                output: Any = submissions[0][1] if batch_placeholder is None else [payload for _, payload in submissions]
+                print(json.dumps(output, separators=(",", ":")))
                 logger.info("END job=%s status=dry-run", job_name)
                 return 0
 
@@ -245,9 +293,24 @@ def run(args: argparse.Namespace) -> int:
             if not token:
                 raise ConfigurationError(f"{token_name} is not configured")
 
-            logger.info("SUBMIT job=%s endpoint=%s", job_name, config["endpoint"])
-            job_id = submit_job(config, payload, token)
-            logger.info("SUCCESS job=%s job_id=%s", job_name, job_id)
+            failures: list[str] = []
+            for index, (batch_value, payload) in enumerate(submissions):
+                item = f" {batch_placeholder}={batch_value}" if batch_placeholder else ""
+                try:
+                    logger.info("SUBMIT job=%s%s endpoint=%s", job_name, item, config["endpoint"])
+                    job_id = submit_job(config, payload, token)
+                    logger.info("SUCCESS job=%s%s job_id=%s", job_name, item, job_id)
+                except Exception as exc:  # noqa: BLE001 - continue a configured batch after one failed request
+                    failures.append(str(batch_value or job_name))
+                    logger.exception("ERROR job=%s%s: %s", job_name, item, exc)
+
+                if index < len(submissions) - 1 and delay_seconds:
+                    logger.info("WAIT job=%s seconds=%s", job_name, delay_seconds)
+                    time.sleep(delay_seconds)
+
+            if failures:
+                logger.info("END job=%s status=failed failed_items=%s", job_name, ",".join(failures))
+                return 3
             logger.info("END job=%s status=success", job_name)
             return 0
         except Exception as exc:  # noqa: BLE001 - log every scheduled failure

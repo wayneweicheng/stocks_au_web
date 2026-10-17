@@ -58,10 +58,11 @@ $sydneyTimeZoneId = "AUS Eastern Standard Time"
 if ([TimeZoneInfo]::Local.Id -ne $sydneyTimeZoneId) {
     throw "Windows timezone is '$([TimeZoneInfo]::Local.Id)'. Set it to '$sydneyTimeZoneId' before registering this task."
 }
-$firstRun = (Get-Date).Date.AddDays(1).AddHours(19)
-$trigger = New-ScheduledTaskTrigger `
-    -Daily `
-    -At $firstRun
+$runDate = (Get-Date).Date.AddDays(1)
+$triggers = @(
+    (New-ScheduledTaskTrigger -Daily -At $runDate.AddHours(19).AddMinutes(5))
+    (New-ScheduledTaskTrigger -Daily -At $runDate.AddHours(21).AddMinutes(5))
+)
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -75,7 +76,7 @@ $principal = New-ScheduledTaskPrincipal `
     -LogonType ServiceAccount `
     -RunLevel Limited
 
-$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal
+$task = New-ScheduledTask -Action $action -Trigger $triggers -Settings $settings -Principal $principal
 $normalizedTaskPath = "\" + $TaskPath.Trim("\") + "\"
 Ensure-TaskFolder -Path $normalizedTaskPath
 Register-ScheduledTask -TaskPath $normalizedTaskPath -TaskName $TaskName -InputObject $task -Force:$Force -ErrorAction Stop | Out-Null
@@ -94,5 +95,5 @@ Write-Host "Python: $Python"
 Write-Host "Launcher: $Launcher"
 Write-Host "Config: $Config"
 Write-Host "Logs are configured by: $Config"
-Write-Host "Runs daily at 19:00 Sydney time."
+Write-Host "Runs daily at 19:05 and 21:05 Sydney time."
 Write-Host "The launcher submits the job using its actual current Sydney time."

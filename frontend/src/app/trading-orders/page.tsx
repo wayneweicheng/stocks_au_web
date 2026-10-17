@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
 interface StrategyOption {
@@ -119,7 +119,7 @@ interface OrderTimelineStage {
   price?: number | null;
   priceLabel?: string;
   quantity?: number | null;
-  state: "done" | "current" | "waiting";
+  state: "done" | "current" | "waiting" | "unverified";
 }
 
 const ENTRY_TYPES = ["LIMIT", "LIMIT_MID", "MARKET"] as const;
@@ -281,8 +281,29 @@ function hasApprovedValidation(audits?: OrderSignalAudit[]): boolean {
   );
 }
 
+function isEntryOnlyComplete(order: TradingOrder): boolean {
+  const status = (order.status || "").trim().toUpperCase();
+  const hasManagedExit = order.profit_target_price != null
+    || order.stop_loss_price != null
+    || Boolean(
+      order.exit_placed_at
+      || order.exit_filled_at
+      || order.stoploss_placed_at
+      || order.stoploss_filled_at,
+    );
+
+  return status === "OPEN" && Boolean(order.entry_filled_at) && !hasManagedExit;
+}
+
+function getOrderDisplayStatus(order: TradingOrder): string {
+  return isEntryOnlyComplete(order) ? "COMPLETE" : order.status;
+}
+
 function buildOrderTimeline(order: TradingOrder): OrderTimelineStage[] {
   const status = (order.status || "").toUpperCase();
+  const hasProfitTarget = order.profit_target_price != null || Boolean(order.exit_placed_at || order.exit_filled_at);
+  const hasStopLoss = order.stop_loss_price != null || Boolean(order.stoploss_placed_at || order.stoploss_filled_at);
+  const hasExitRules = hasProfitTarget || hasStopLoss;
   const exitPlacedTimestamp = order.exit_placed_at || order.exit_filled_at;
   const exitPlacedSourceTimeZone = order.exit_placed_at ? US_EASTERN_TIME_ZONE : SYDNEY_TIME_ZONE;
   const stageState = (
@@ -304,47 +325,60 @@ function buildOrderTimeline(order: TradingOrder): OrderTimelineStage[] {
     },
     {
       key: "entry_placed",
-      label: "Entry order placed",
-      description: "Entry order submitted to the broker or backtest engine.",
+      label: order.entry_filled_at && !order.entry_placed_at
+        ? "Entry submission time unavailable"
+        : "Entry order placed",
+      description: order.entry_filled_at && !order.entry_placed_at
+        ? "A fill record exists, but no entry submission time was saved. Verify the broker execution and order history before treating this fill as confirmed."
+        : "Entry order submitted to the broker or backtest engine.",
       timestamp: order.entry_placed_at,
-      sourceTimeZone: US_EASTERN_TIME_ZONE,
+      sourceTimeZone: SYDNEY_TIME_ZONE,
       price: order.entry_price,
       priceLabel: "Placed price",
-      state: stageState(order.entry_placed_at, status === "PLACED"),
+      state: order.entry_placed_at
+        ? "done"
+        : order.entry_filled_at
+        ? "unverified"
+        : stageState(order.entry_placed_at, status === "PLACED"),
     },
     {
       key: "entry_filled",
-      label: "Entry order filled",
-      description: "Position opened after the entry order was filled.",
+      label: "Entry filled",
+      description: "An entry fill is recorded. This does not mean the position has been closed.",
       timestamp: order.entry_filled_at,
       sourceTimeZone: SYDNEY_TIME_ZONE,
       price: order.entry_fill_price,
       priceLabel: "Execution price",
       quantity: order.entry_fill_qty,
-      state: stageState(order.entry_filled_at, status === "OPEN"),
-    },
-    {
-      key: "exit_placed",
-      label: "Exit order placed",
-      description: "Profit target or normal exit order submitted.",
-      timestamp: exitPlacedTimestamp,
-      sourceTimeZone: exitPlacedSourceTimeZone,
-      state: stageState(exitPlacedTimestamp, false),
-    },
-    {
-      key: "exit_filled",
-      label: "Exit order filled",
-      description: "Position closed by the exit order.",
-      timestamp: order.exit_filled_at,
-      sourceTimeZone: SYDNEY_TIME_ZONE,
-      price: order.exit_fill_price,
-      priceLabel: "Execution price",
-      quantity: order.exit_fill_qty,
-      state: stageState(order.exit_filled_at, status === "CLOSED" && !order.stoploss_filled_at),
+      state: stageState(order.entry_filled_at, status === "OPEN" && hasExitRules),
     },
   ];
 
-  if (order.stop_loss_price != null || order.stoploss_placed_at || order.stoploss_filled_at) {
+  if (hasProfitTarget) {
+    stages.push(
+      {
+        key: "exit_placed",
+        label: "Exit order placed",
+        description: "Profit target or normal exit order submitted.",
+        timestamp: exitPlacedTimestamp,
+        sourceTimeZone: exitPlacedSourceTimeZone,
+        state: stageState(exitPlacedTimestamp, false),
+      },
+      {
+        key: "exit_filled",
+        label: "Exit order filled",
+        description: "Position closed by the exit order.",
+        timestamp: order.exit_filled_at,
+        sourceTimeZone: SYDNEY_TIME_ZONE,
+        price: order.exit_fill_price,
+        priceLabel: "Execution price",
+        quantity: order.exit_fill_qty,
+        state: stageState(order.exit_filled_at, status === "CLOSED" && !order.stoploss_filled_at),
+      },
+    );
+  }
+
+  if (hasStopLoss) {
     stages.push(
       {
         key: "stoploss_placed",
@@ -396,6 +430,10 @@ export default function TradingOrdersPage() {
   const [backtestRuns, setBacktestRuns] = useState<BacktestRun[]>([]);
 
   const [orders, setOrders] = useState<TradingOrder[]>([]);
+  const [hideEntryOnlyComplete, setHideEntryOnlyComplete] = useState(true);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<number>>(new Set());
+  const [bulkCancelling, setBulkCancelling] = useState(false);
+  const selectAllOrdersRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -427,6 +465,28 @@ export default function TradingOrdersPage() {
     profit_target?: string;
     stop_loss?: string;
   }>({});
+
+  const cancellableOrderIds = useMemo(
+    () => orders
+      .filter((order) => order.order_id != null && canCancelTradingOrder(order))
+      .map((order) => order.order_id!),
+    [orders],
+  );
+  const selectedCancellableOrderIds = useMemo(
+    () => cancellableOrderIds.filter((orderId) => selectedOrderIds.has(orderId)),
+    [cancellableOrderIds, selectedOrderIds],
+  );
+  const visibleOrders = useMemo(
+    () => hideEntryOnlyComplete ? orders.filter((order) => !isEntryOnlyComplete(order)) : orders,
+    [hideEntryOnlyComplete, orders],
+  );
+
+  useEffect(() => {
+    if (selectAllOrdersRef.current) {
+      selectAllOrdersRef.current.indeterminate = selectedCancellableOrderIds.length > 0
+        && selectedCancellableOrderIds.length < cancellableOrderIds.length;
+    }
+  }, [cancellableOrderIds.length, selectedCancellableOrderIds.length]);
 
   const selectedStrategyCode = useMemo(() => {
     const match = strategies.find((s) => String(s.strategy_id) === String(form.strategy_id));
@@ -679,7 +739,10 @@ export default function TradingOrdersPage() {
     if (!confirm("Cancel this order?")) return false;
     try {
       const res = await authenticatedFetch(`${baseUrl}/api/trading-orders/${orderId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const result = await res.json().catch(() => ({}));
+        throw new Error(result.detail || `HTTP ${res.status}`);
+      }
       const result = await res.json();
       setMessage(result.message || "Cancelled");
       await loadOrders();
@@ -687,6 +750,44 @@ export default function TradingOrdersPage() {
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to cancel order");
       return false;
+    }
+  };
+
+  const handleBulkCancelOrders = async () => {
+    const orderIds = selectedCancellableOrderIds;
+    if (orderIds.length === 0 || bulkCancelling) return;
+    if (!confirm(`Cancel ${orderIds.length} selected pending/placed order${orderIds.length === 1 ? "" : "s"}? Open positions are not affected.`)) {
+      return;
+    }
+
+    setError("");
+    setMessage("");
+    setBulkCancelling(true);
+    let cancelledCount = 0;
+    const failures: string[] = [];
+    try {
+      for (const orderId of orderIds) {
+        try {
+          const res = await authenticatedFetch(`${baseUrl}/api/trading-orders/${orderId}`, { method: "DELETE" });
+          if (!res.ok) {
+            const result = await res.json().catch(() => ({}));
+            failures.push(`#${orderId}: ${result.detail || `HTTP ${res.status}`}`);
+          } else {
+            cancelledCount += 1;
+          }
+        } catch (e: unknown) {
+          failures.push(`#${orderId}: ${e instanceof Error ? e.message : "Request failed"}`);
+        }
+      }
+
+      setSelectedOrderIds(new Set());
+      setMessage(`Cancelled ${cancelledCount} of ${orderIds.length} selected orders.`);
+      if (failures.length > 0) {
+        setError(`Some orders could not be cancelled: ${failures.join("; ")}`);
+      }
+      await loadOrders();
+    } finally {
+      setBulkCancelling(false);
     }
   };
 
@@ -808,6 +909,11 @@ export default function TradingOrdersPage() {
   }, [form.quantity, form.entry_price, form.stop_loss_price, form.profit_target_price]);
 
   const selectedOrderTimeline = selectedOrder ? buildOrderTimeline(selectedOrder) : [];
+  const selectedOrderHasActivationFillConflict = Boolean(
+    selectedOrder
+      && selectedOrder.activation?.state?.trim().toUpperCase() === "ARMED"
+      && selectedOrder.entry_filled_at,
+  );
   const selectedSignalAudits = selectedOrder?.signal_audits || [];
   const visibleSignalAudits = approvedOnly
     ? selectedSignalAudits.filter((audit) => hasApprovedValidation([audit]))
@@ -869,6 +975,15 @@ export default function TradingOrdersPage() {
                 ))}
               </select>
             </div>
+            <label className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={hideEntryOnlyComplete}
+                onChange={(event) => setHideEntryOnlyComplete(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              Hide entry-complete positions
+            </label>
             <div>
               <label className="block text-sm mb-1 text-slate-600">Stock Filter</label>
               <input
@@ -1226,7 +1341,22 @@ export default function TradingOrdersPage() {
         )}
 
         <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto relative">
-          <h2 className="text-xl font-semibold p-6 pb-0">Orders</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3 p-6 pb-3">
+            <h2 className="text-xl font-semibold">Orders</h2>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-600">
+                {selectedCancellableOrderIds.length} selected · Only PENDING/PLACED orders can be cancelled.
+              </span>
+              <button
+                type="button"
+                onClick={handleBulkCancelOrders}
+                disabled={selectedCancellableOrderIds.length === 0 || bulkCancelling || loading}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {bulkCancelling ? "Cancelling…" : `Cancel selected${selectedCancellableOrderIds.length ? ` (${selectedCancellableOrderIds.length})` : ""}`}
+              </button>
+            </div>
+          </div>
 
           {loading && (
             <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-10">
@@ -1234,12 +1364,30 @@ export default function TradingOrdersPage() {
             </div>
           )}
 
-          {orders.length === 0 ? (
-            <div className="p-6 text-center text-slate-500">No orders found.</div>
+          {visibleOrders.length === 0 ? (
+            <div className="p-6 text-center text-slate-500">
+              {orders.length > 0 && hideEntryOnlyComplete
+                ? "All matching orders are hidden because entry-complete positions are excluded. Turn off the checkbox to show them."
+                : "No orders found."}
+            </div>
           ) : (
             <table className="min-w-full text-sm">
               <thead className="sticky top-0 z-10 bg-white text-slate-600 uppercase text-[11px] tracking-wide border-b border-slate-200">
                 <tr>
+                  <th className="px-3 py-3 text-left font-medium whitespace-nowrap">
+                    <input
+                      ref={selectAllOrdersRef}
+                      type="checkbox"
+                      aria-label="Select all cancellable visible orders"
+                      checked={cancellableOrderIds.length > 0 && selectedCancellableOrderIds.length === cancellableOrderIds.length}
+                      disabled={cancellableOrderIds.length === 0 || bulkCancelling || loading}
+                      onChange={(event) => {
+                        setSelectedOrderIds(event.target.checked ? new Set(cancellableOrderIds) : new Set());
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed"
+                    />
+                  </th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Order ID</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Strategy</th>
                   <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Stock</th>
@@ -1260,7 +1408,7 @@ export default function TradingOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o, i) => {
+                {visibleOrders.map((o, i) => {
                   const canCancel = canCancelTradingOrder(o);
                   const canEdit = canCancel && !o.activation;
                   const validationCounts = getApiValidationCounts(o.signal_audits);
@@ -1271,6 +1419,25 @@ export default function TradingOrdersPage() {
                       className={`cursor-pointer transition-colors ${i % 2 ? "bg-slate-50" : ""} hover:bg-blue-50/40`}
                       title="View order history"
                     >
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select order ${o.order_id} for cancellation`}
+                          checked={o.order_id != null && selectedOrderIds.has(o.order_id)}
+                          disabled={!canCancel || bulkCancelling || loading}
+                          onChange={(event) => {
+                            if (o.order_id == null) return;
+                            setSelectedOrderIds((previous) => {
+                              const next = new Set(previous);
+                              if (event.target.checked) next.add(o.order_id!);
+                              else next.delete(o.order_id!);
+                              return next;
+                            });
+                          }}
+                          onClick={(event) => event.stopPropagation()}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed"
+                        />
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.order_id}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.strategy_code || o.strategy_id}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100 font-medium">{o.stock_code}</td>
@@ -1320,7 +1487,14 @@ export default function TradingOrdersPage() {
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.quantity}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.profit_target_price ?? "-"}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.stop_loss_price ?? "-"}</td>
-                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.status}</td>
+                      <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
+                        <div>{getOrderDisplayStatus(o)}</div>
+                        {isEntryOnlyComplete(o) && (
+                          <div className="text-xs text-amber-700" title="The database position remains OPEN until an exit is recorded.">
+                            Position open
+                          </div>
+                        )}
+                      </td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{o.backtest_run_id ? "Backtest" : "Live"}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">{formatSydneyDate(o.created_at)}</td>
                       <td className="px-3 py-2 whitespace-nowrap border-b border-slate-100">
@@ -1410,7 +1584,14 @@ export default function TradingOrdersPage() {
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-6 text-sm">
                   <div>
                     <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
-                    <div className="font-medium text-slate-900">{selectedOrder.status}</div>
+                    <div className="font-medium text-slate-900">{getOrderDisplayStatus(selectedOrder)}</div>
+                    {isEntryOnlyComplete(selectedOrder) ? (
+                      <div className="mt-1 text-xs text-amber-700">
+                        Entry workflow is complete; no automatic exit is configured. The position remains open until an exit is executed.
+                      </div>
+                    ) : selectedOrder.status === "OPEN" ? (
+                      <div className="mt-1 text-xs text-amber-700">Entry is filled; the position remains open until an exit is executed.</div>
+                    ) : null}
                   </div>
                   <div>
                     <div className="text-xs uppercase tracking-wide text-slate-500">Side</div>
@@ -1460,7 +1641,13 @@ export default function TradingOrdersPage() {
                   </div>
                 </div>
 
-                {selectedOrder.status === "OPEN" && !selectedOrder.exit_filled_at && (
+                {selectedOrderHasActivationFillConflict && (
+                  <div className="mb-6 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+                    <strong>Order history conflict:</strong> this proxy intent is still ARMED with no trigger observed, but an entry fill is attached. The fill may have been matched to the wrong order during recovery. Verify the broker execution history before treating this as a confirmed position. Manual exit-fill recording is disabled for this inconsistent order.
+                  </div>
+                )}
+
+                {selectedOrder.status === "OPEN" && !selectedOrder.exit_filled_at && !selectedOrderHasActivationFillConflict && (
                   <form
                     onSubmit={handleRecordExitFill}
                     className="mb-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-4"
@@ -1517,6 +1704,7 @@ export default function TradingOrdersPage() {
                   {selectedOrderTimeline.map((stage, index) => {
                     const isDone = stage.state === "done";
                     const isCurrent = stage.state === "current";
+                    const isUnverified = stage.state === "unverified";
                     return (
                       <div key={stage.key} className="relative flex gap-4 pb-5 last:pb-0">
                         {index < selectedOrderTimeline.length - 1 && (
@@ -1528,6 +1716,8 @@ export default function TradingOrdersPage() {
                               ? "border-green-500 bg-green-500 text-white"
                               : isCurrent
                               ? "border-blue-500 bg-blue-50 text-blue-700"
+                              : isUnverified
+                              ? "border-amber-500 bg-amber-50 text-amber-700"
                               : "border-slate-300 bg-white text-slate-400"
                           }`}
                         />
@@ -1540,10 +1730,12 @@ export default function TradingOrdersPage() {
                                   ? "bg-green-100 text-green-700"
                                   : isCurrent
                                   ? "bg-blue-100 text-blue-700"
+                                  : isUnverified
+                                  ? "bg-amber-100 text-amber-700"
                                   : "bg-slate-100 text-slate-500"
                               }`}
                             >
-                              {isDone ? "Done" : isCurrent ? "Current" : "Waiting"}
+                              {isDone ? "Done" : isCurrent ? "Current" : isUnverified ? "Unverified" : "Waiting"}
                             </span>
                           </div>
                           <div className="mt-1 text-sm text-slate-600">{stage.description}</div>
