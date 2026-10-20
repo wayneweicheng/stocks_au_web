@@ -42,6 +42,7 @@ type MappingResponse = {
   historical_close_date?: string | null;
   price_differences?: Record<string, number>;
   live_prices?: Record<string, number>;
+  live_prices_status?: string;
 };
 
 type Instrument = {
@@ -396,6 +397,9 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
         subtitle={`Job ${jobId}. Mapped prices use the selected Daily SPX close. QQQ and TQQQ Buy/Sell range actions use their row's target stock with the SPY mapped range as the Pegasus proxy trigger; other instruments keep their mapped ranges.`}
       />
       {error ? <Alert variant="danger">{error}</Alert> : null}
+      {mapping?.live_prices_status === "not_requested_for_historical_mapping" ? (
+        <Alert variant="info">Mapped ranges use historical closes. Current IB quotes are not requested for dated reports, so Live price shows n/a rather than delaying the map.</Alert>
+      ) : null}
       {loading ? <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading SPX JSON and mapped prices...</div> : null}
       {!loading && !error && zones.length === 0 ? <Alert variant="warning">No primary SPX support or resistance zones were found in the JSON report.</Alert> : null}
 

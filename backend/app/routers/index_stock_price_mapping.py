@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import logging
 import math
 from threading import Lock
@@ -157,18 +157,25 @@ def _load_snapshot_closes(observation_date: date | None) -> Dict[str, float]:
     model = SQLServerModel(database=DATABASE)
     closes: Dict[str, float] = {}
     for symbol, (code, time_value) in time_rules.items():
-        date_clause = "AND ObservationDate <= CONVERT(date, ?)" if observation_date else ""
-        values: List[Any] = [code, time_value]
+        # The cash-close anchors here are 5M 14:55/15:55 bars, not 30M.
+        # The PK begins (TimeFrame, ASXCode, TimeIntervalStart). Constrain all
+        # three before testing the bar's clock time; filtering ObservationDate
+        # and CAST(time) alone scans years of intraday history six times.
+        date_clause = ""
+        values: List[Any] = [code]
         if observation_date:
-            values.append(observation_date.isoformat())
+            date_clause = "AND TimeIntervalStart >= CONVERT(datetime, ?) AND TimeIntervalStart < DATEADD(day, 1, CONVERT(datetime, ?))"
+            values.extend([(observation_date - timedelta(days=14)).isoformat(), observation_date.isoformat()])
+        values.append(time_value)
         rows = model.execute_read_query(
             f"""
             SELECT TOP (1) ASXCode, [Close], ObservationDate, TimeIntervalStart
             FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame] WITH (NOLOCK)
-            WHERE ASXCode = ?
-              AND CAST(TimeIntervalStart AS time) = CONVERT(time, ?)
+            WHERE TimeFrame = '5M'
+              AND ASXCode = CONVERT(varchar(10), ?)
               {date_clause}
-            ORDER BY ObservationDate DESC, TimeIntervalStart DESC
+              AND CAST(TimeIntervalStart AS time) = CONVERT(time, ?)
+            ORDER BY TimeIntervalStart DESC
             """,
             tuple(values),
         ) or []
@@ -354,7 +361,11 @@ def get_spx_map_prices(
             "historical_closes": historical_closes,
             "historical_close_date": resolved_date,
             "price_differences": price_differences,
-            "live_prices": _load_mapped_live_prices(),
+            # IB account synchronization and sequential quote lookups can take
+            # tens of seconds. These optional *current* quotes must not block
+            # a historical report or cause the Next.js proxy to reset.
+            "live_prices": {},
+            "live_prices_status": "not_requested_for_historical_mapping",
         }
     except Exception as exc:
         logger.exception("Failed to load SPX mapped-level prices")
