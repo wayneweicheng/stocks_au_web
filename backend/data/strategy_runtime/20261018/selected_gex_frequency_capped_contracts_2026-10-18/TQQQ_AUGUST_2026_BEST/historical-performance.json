@@ -1,0 +1,61 @@
+{
+  "format_version": 2,
+  "strategy_code": "GEX_TQQQ_AUGUST_2026_BEST",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-10-18T18:00:00+11:00",
+  "signal_code": "TQQQ_AUGUST_2026_BEST_SIGNAL",
+  "status": "AVAILABLE",
+  "eligible_sample_definition": "D0 has complete SQL-backed causal inputs, next valid US 07:30 ET bar, and scheduled exit bar on or before 2026-08-31.",
+  "number_signal_instances": 14,
+  "resolved_denominator": 14,
+  "unresolved_instances": 0,
+  "performance": {
+    "n": 14,
+    "mean": 2.894924207964624,
+    "wr": 78.57142857142857,
+    "pf": 2.113155026391988
+  },
+  "research_splits": {
+    "TRAIN_60": {
+      "n": 8,
+      "mean": -2.866135100293839,
+      "wr": 25.0,
+      "pf": 0.47511870141942913,
+      "start": "2026-03-06",
+      "end": "2026-03-27"
+    },
+    "RESEARCH_VALIDATION_20": {
+      "n": 3,
+      "mean": -5.18839453457166,
+      "wr": 0.0,
+      "pf": 0.0,
+      "start": "2026-07-08",
+      "end": "2026-07-15"
+    },
+    "FINAL_RESEARCH_TAIL_20": {
+      "n": 3,
+      "mean": -0.6782248351463457,
+      "wr": 33.33333333333333,
+      "pf": 0.8849719571097746,
+      "start": "2026-07-17",
+      "end": "2026-07-30"
+    }
+  },
+  "non_signal_comparison": {
+    "n": 112,
+    "mean_return_pct": -2.651026094238031,
+    "edge_vs_non_signal_pct_points": 5.545950302202655
+  },
+  "return_units": "percentage points, direction-adjusted gross return",
+  "entry_rule": "D1 07:30 ET Open",
+  "exit_rule": "D5 final regular-session Close",
+  "transaction_costs_bps_round_trip": 0,
+  "slippage_bps_round_trip": 0,
+  "position_sizing": "1x theoretical notional return per independent signal instance",
+  "overlap_treatment": "Signals are not suppressed by prior positions; manual portfolio decisions remain separate.",
+  "research_cutoff": "2026-08-31",
+  "reserved_forward_window": "2026-09-01 through 2026-10-31; not included.",
+  "classification": "ALL_UNIVERSE_RESEARCH_CANDIDATE",
+  "source_snapshot_hash": "a46e951388b33193561a0e7b900b16a9649825224acaad47c19613fcf011d551",
+  "per_instance_ledger": "historical-instance-ledger.csv"
+}

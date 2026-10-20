@@ -1,0 +1,13 @@
+{
+  "cutoff": "2026-08-31",
+  "source": "read-only StockDB_US, raw price labels audited independently",
+  "runtime_feature_impl": "strategy_runtime.strategies.capital_type_gex.features.build_contract_feature_history",
+  "rows_examined": 7127,
+  "runtime_ready_rows": 6755,
+  "nonready_by_status": {
+    "MINIMUM_HISTORY_OR_QUALITY_NOT_READY": 246,
+    "CAPITAL_NOT_READY": 126
+  },
+  "frozen_rules": 40,
+  "notes": "Per-D0 61-complete-capital-observation and independently 61-GEX-source-row window; runtime MINIMUM_HISTORY 60; predicates use actual runtime feature values; no outcome used to change thresholds or memberships. Is_Swing_Down source chronology not independently proved."
+}

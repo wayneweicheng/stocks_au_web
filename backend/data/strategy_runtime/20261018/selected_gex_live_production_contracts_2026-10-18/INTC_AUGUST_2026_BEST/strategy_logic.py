@@ -1,0 +1,11 @@
+"""Declarative candidate packet; runtime evaluates strategy.descriptor.json."""
+STRATEGY_CODE = "GEX_INTC_AUGUST_2026_BEST"
+VERSION = "1.0.0-production"
+SIGNAL_CODE = "INTC_AUGUST_2026_BEST_SIGNAL"
+DIRECTION = "SHORT"
+HOLDING_PERIOD = "D5"
+TRIGGER = 'SafeGEXVolRank60 <= 0.20 AND BPOptionCount_Rank60 >= 0.80'
+REQUIRED_INPUTS = ['SafeGEXVolRank60', 'BPOptionCount_Rank60']
+DEPLOYMENT_TARGET = "PRODUCTION"
+NOTIFICATIONS_ENABLED = True
+BROKER_EXECUTION = "HARD_DISABLED"

@@ -1,0 +1,56 @@
+{
+  "manifest_format": 2,
+  "strategy_code": "GEX_IWM_HIGH_GEX_VOL_REGIME_LONG",
+  "version_code": "2.0.0-production",
+  "as_of": "2026-10-17T18:00:00+11:00",
+  "combined_source_hash": "4c78e4431ef0950b51b3d7c729c1d1cf238cdf922e33cb676d95df54f72bd6a6",
+  "implementation_sha256": "d7c137304a2a38eaf25c8c16220ccfd51e07937d4041b53167b6e6431166da49",
+  "database": {
+    "name": "StockDB_US",
+    "read_only_research": true,
+    "cutoff": "2026-08-31",
+    "schemas": {
+      "capital": "Transform.OptionGEXChangeCapitalType",
+      "features": "Analysis.GEX_Features",
+      "intraday": "StockData.PriceHistoryTimeFrame",
+      "option_quotes_explored_not_used": "StockData.OptionDelayedQuote_V2"
+    }
+  },
+  "option_quote_timing_policy": {
+    "observation_date": "authoritative US trading date of the option data",
+    "create_date": "insert-system timestamp only; never used to relabel ObservationDate",
+    "last_trade_time": "option last-trade timestamp in the source US timezone; not the snapshot publication timestamp",
+    "open_interest_availability": "per user convention, commonly available on the second Sydney date between 20:00 and 23:00; map this schedule to the D1 07:30 ET readiness gate",
+    "production_use": "Quote fields may be researched with this point-in-time convention; they were not required by the frozen predicates in this packet."
+  },
+  "query_policy": {
+    "symbols": [
+      "IWM.US",
+      "SPY.US"
+    ],
+    "capital_types": [
+      "BC",
+      "BP",
+      "SC",
+      "SP"
+    ],
+    "timeframe": "30M",
+    "timestamp_interpretation": "TimeIntervalStart stored UTC-naive and converted to America/New_York",
+    "future_labels_excluded": [
+      "TomorrowChange",
+      "Next2DaysChange",
+      "Next5DaysChange",
+      "Next10DaysChange",
+      "Next20DaysChange"
+    ]
+  },
+  "research_source_note": "All historical rows in this packet were queried directly from StockDB_US with ObservationDate <= 2026-08-31. No Google Drive files were read. September and October 2026 are reserved for independent validation.",
+  "source_files": [
+    {
+      "role": "SQL_QUERY_OUTPUT",
+      "name": "StockDB_US cutoff extract",
+      "sha256": "4c78e4431ef0950b51b3d7c729c1d1cf238cdf922e33cb676d95df54f72bd6a6",
+      "path_identity": "SQL Server StockDB_US; not a local file"
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "strategy_code": "GEX_TXN_SELL_CALL_MACRO_BREAKDOWN",
+  "version_code": "2.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "SCShare": 0.0646530927337643,
+        "QQQ_BuyCall_GEXDeltaPerc_Rank60": 0.1694915254237288,
+        "Gold_chg5": 3.665465307464655
+      },
+      "expected_signal": "TXN_SELL_CALL_MACRO_BREAKDOWN"
+    },
+    {
+      "id": "no-signal",
+      "purpose": "Illustrative input with at least one predicate component false",
+      "trigger_condition": "SCShare >= 0.0284 AND QQQ_BuyCall_GEXDeltaPerc_Rank60 <= 0.65 AND Gold_chg5 >= -1.0",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "reserved-oos",
+      "expected": "Do not use September or October rows in this packet"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED"
+      }
+    }
+  ]
+}

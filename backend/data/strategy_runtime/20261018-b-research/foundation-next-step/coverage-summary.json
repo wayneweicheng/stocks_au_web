@@ -1,0 +1,25 @@
+{
+  "cutoff": "2026-08-31",
+  "august_gex_universe": 90,
+  "frozen_40": 40,
+  "eligible_symbols": 87,
+  "outside_40_eligible_symbols": 47,
+  "outside_40_eligible_d0": 3310,
+  "no_label_in_august_universe": [
+    "C.US",
+    "CAT.US",
+    "SPXW.US"
+  ],
+  "authoritative_92_list": "NOT_PROVIDED",
+  "feature_availability": "NOT_CERTIFIED; observation dates and file coverage are not publication timestamps",
+  "source_hashes": {
+    "universe": "b2698fb547416cc00bb858c039a128c88e966ae1a1b7f453368a2bce4d1b3665",
+    "labels": "dbc388c6b1f9b9cec458f4bebb8b875a3837b1d7a2383aff4857cf5d94357b12",
+    "bars": "f99256dea3ccb2fa7557a051951ec71570e015188df21f230f7fddb91c618156",
+    "quotes": "795c93efd3245d7e1879bc4665f1884a77703783d851e04d5e6746f8ba3b4ec3",
+    "daily": "5033c0a7c8ca8a7f877064bdd50a1d6dbe5fb69c62c9d29554a8625868b2dfd5",
+    "frozen": "e3eaa4577b97576c63101e9ce603fc7df7c13eb09a46b9019825ce159f29099f",
+    "runtime_readiness": "20bf9c2a42f10fc4c91d9527fd318173cbbbe6ff8998709182c3b48cf6bdc2c8",
+    "label_audit": "9774948c3fc9f76b79eee4faed3d5517f9f416034e7e3f2c97e919bc4fcab19f"
+  }
+}

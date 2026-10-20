@@ -1,0 +1,689 @@
+{
+  "captured_at_utc": "2026-10-18T19:59:22.212378+00:00",
+  "action": "FULL_PAUSE_40_LEGACY_LIVE_MANUAL",
+  "committed": false,
+  "deployments": [
+    {
+      "strategy_code": "GEX_AAPL_AUGUST_2026_BEST",
+      "deployment_id": 242,
+      "deployment_key": "gex-aapl-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "27a539cf9424700b6e20cdaf757a9742f4c5882753969581fc1990a66da1182c",
+      "schedule_ids": [
+        358,
+        359
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_AMAT_AUGUST_2026_BEST",
+      "deployment_id": 243,
+      "deployment_key": "gex-amat-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "d44a9f42ce28eda8c19aaec6a79545757dbf5d3e9f5dd6c3e312446af0c4e498",
+      "schedule_ids": [
+        360,
+        361
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_AMD_AUGUST_2026_BEST",
+      "deployment_id": 244,
+      "deployment_key": "gex-amd-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "0624b1be06e310678fd632753ffe9f00449b0e5b8a282ab33bd329a0325cf896",
+      "schedule_ids": [
+        362,
+        363
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_AVGO_AUGUST_2026_BEST",
+      "deployment_id": 245,
+      "deployment_key": "gex-avgo-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "d0aaa6451d9ad68ebb7fdea7c4400dd54dac271975ec9e8e25fa016de4799a43",
+      "schedule_ids": [
+        364,
+        365
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_BABA_AUGUST_2026_BEST",
+      "deployment_id": 246,
+      "deployment_key": "gex-baba-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "402aa4b84c1e1ef0a4ee604936cd998e25cebec67ac7db7cc0116e24c1494e69",
+      "schedule_ids": [
+        366,
+        367
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_BAC_AUGUST_2026_BEST",
+      "deployment_id": 247,
+      "deployment_key": "gex-bac-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "ba5ed399efd58c2f020a27494eabcd7b1991c59638e441b8d6cd89b572fbb7db",
+      "schedule_ids": [
+        368,
+        369
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_COPX_AUGUST_2026_BEST",
+      "deployment_id": 248,
+      "deployment_key": "gex-copx-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "ae508ed1f9db5095106a42d68a255635d6b0e4905fff054a1a2786e411573c8e",
+      "schedule_ids": [
+        370,
+        371
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_COST_AUGUST_2026_BEST",
+      "deployment_id": 249,
+      "deployment_key": "gex-cost-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "0851e135a6accc01d3ff6b12ab199d21bdb7c68241476b91364fdfe39ee090bc",
+      "schedule_ids": [
+        372,
+        373
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_CRWD_AUGUST_2026_BEST",
+      "deployment_id": 250,
+      "deployment_key": "gex-crwd-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "cd92b82f947f1ef0d0889cd228acfca66f97ca7d231646ed9ab049ef2e9fd3ff",
+      "schedule_ids": [
+        374,
+        375
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_DIA_AUGUST_2026_BEST",
+      "deployment_id": 251,
+      "deployment_key": "gex-dia-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "f02e007cdc63bfde4a385cc64db21354c1f9d700c226e906a446d20b5bc1f081",
+      "schedule_ids": [
+        376,
+        377
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_DIS_AUGUST_2026_BEST",
+      "deployment_id": 252,
+      "deployment_key": "gex-dis-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "37c95076a4141860a629fc4d45ecd7722ec0f28852e30a1fc1a9013df16775f5",
+      "schedule_ids": [
+        378,
+        379
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_IBIT_AUGUST_2026_BEST",
+      "deployment_id": 253,
+      "deployment_key": "gex-ibit-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "cc31c454ff1b983cdfe148be09467ecb9b0b5ab0117d64c2a9411cd711d50406",
+      "schedule_ids": [
+        380,
+        381
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_IWM_AUGUST_2026_BEST",
+      "deployment_id": 254,
+      "deployment_key": "gex-iwm-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "5fbb8d686e677871710c1c4e08863ca1bf86b7d3c86b035e9ff5a08355c1171e",
+      "schedule_ids": [
+        382,
+        383
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_JPM_AUGUST_2026_BEST",
+      "deployment_id": 255,
+      "deployment_key": "gex-jpm-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "430b41511146b1be50069ae4e5a559ebd6b05e87ad32d53d70051cae538c0834",
+      "schedule_ids": [
+        384,
+        385
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_KWEB_AUGUST_2026_BEST",
+      "deployment_id": 256,
+      "deployment_key": "gex-kweb-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "e408a9a47004da8a38c2529b137dcfac8b3147b0e3b0416978f43fd2622b6399",
+      "schedule_ids": [
+        386,
+        387
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_LLY_AUGUST_2026_BEST",
+      "deployment_id": 257,
+      "deployment_key": "gex-lly-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "d103c61cda74b0a7a06aca87e987f83c99598650b7ca1ebc77484c6a0fc1d3fc",
+      "schedule_ids": [
+        388,
+        389
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_MCD_AUGUST_2026_BEST",
+      "deployment_id": 258,
+      "deployment_key": "gex-mcd-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "b53cbb44d1675f5b5d4add9248b915080de681cc00d064596ec9095db2876355",
+      "schedule_ids": [
+        390,
+        391
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_META_AUGUST_2026_BEST",
+      "deployment_id": 259,
+      "deployment_key": "gex-meta-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "1feb2c84378a6df2177dede5a0401d00fb092d0d121078c77223d1de39a46330",
+      "schedule_ids": [
+        392,
+        393
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_MRVL_AUGUST_2026_BEST",
+      "deployment_id": 260,
+      "deployment_key": "gex-mrvl-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "5dda34c4c36bc19117dc684d55d1b1b2306fd7d2b8bd7082e6cb60ca664a61c4",
+      "schedule_ids": [
+        394,
+        395
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_MSFT_AUGUST_2026_BEST",
+      "deployment_id": 261,
+      "deployment_key": "gex-msft-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "b197ff3ff9ff7e052fb6ca2aac8784e918697a4869b078d80c1a79d5089665f3",
+      "schedule_ids": [
+        396,
+        397
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_MU_AUGUST_2026_BEST",
+      "deployment_id": 262,
+      "deployment_key": "gex-mu-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "0a2aca2a6f749d8c50c25ce0e792200c2163f4af8a19c2df791305e153f8dd9c",
+      "schedule_ids": [
+        398,
+        399
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_NFLX_AUGUST_2026_BEST",
+      "deployment_id": 263,
+      "deployment_key": "gex-nflx-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "e3fad75ba0d5d151e01f26edcb43fa591ab2db5f1253dd602f3095c44bbcd933",
+      "schedule_ids": [
+        400,
+        401
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_NVDA_AUGUST_2026_BEST",
+      "deployment_id": 264,
+      "deployment_key": "gex-nvda-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "a584d86e193ba9815e98820eec119849fab7410e7ac181f1e5f87b26d50c4943",
+      "schedule_ids": [
+        402,
+        403
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_ORCL_AUGUST_2026_BEST",
+      "deployment_id": 265,
+      "deployment_key": "gex-orcl-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "911e78367686d39f27b7ac1c8ed37fbd02ba78eceb1eef96d2926805999dc5fd",
+      "schedule_ids": [
+        404,
+        405
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_OXY_AUGUST_2026_BEST",
+      "deployment_id": 266,
+      "deployment_key": "gex-oxy-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "cea9dd3d46f7a37bb55a16d2f48b6c19447ae58bd821e8129dc8db16b648693d",
+      "schedule_ids": [
+        406,
+        407
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_PLTR_AUGUST_2026_BEST",
+      "deployment_id": 267,
+      "deployment_key": "gex-pltr-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "7aa14e1d64c1ab8a4f4e875e27e1fb7cd8b20cafc0090354b4d729a53108ec36",
+      "schedule_ids": [
+        408,
+        409
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_QQQ_AUGUST_2026_BEST",
+      "deployment_id": 268,
+      "deployment_key": "gex-qqq-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "94caa06035cfdcd8ff42ec66d34e8ea32a0fab3a5c443d5032c3b2cd314feae6",
+      "schedule_ids": [
+        410,
+        411
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_SLV_AUGUST_2026_BEST",
+      "deployment_id": 269,
+      "deployment_key": "gex-slv-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "76cbbf60ca1ba10140c24b80fcfe35a0af9829e375320cb10093a6bdd5f75633",
+      "schedule_ids": [
+        412,
+        413
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_SNDK_AUGUST_2026_BEST",
+      "deployment_id": 270,
+      "deployment_key": "gex-sndk-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "d7202bbf6a319cae04f40d97162ef54e6914b849192827de83e0097099c3446a",
+      "schedule_ids": [
+        414,
+        415
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_SNOW_AUGUST_2026_BEST",
+      "deployment_id": 271,
+      "deployment_key": "gex-snow-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "d29df8f1f9e3069ed93292317336579aa4488bf0a2b7e8b54342d9afd1d11d3d",
+      "schedule_ids": [
+        416,
+        417
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_SOXL_AUGUST_2026_BEST",
+      "deployment_id": 272,
+      "deployment_key": "gex-soxl-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "433c21fca7d2b3fd647ee82afb74f938fbcfe61814da287a3c9eedc0246d78b2",
+      "schedule_ids": [
+        418,
+        419
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_SPY_AUGUST_2026_BEST",
+      "deployment_id": 273,
+      "deployment_key": "gex-spy-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "f218a284552dc828c72394e456b18e7583f4f960baeba405023517a4e01989a1",
+      "schedule_ids": [
+        420,
+        421
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_SQQQ_AUGUST_2026_BEST",
+      "deployment_id": 274,
+      "deployment_key": "gex-sqqq-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "06302a9229a5f0cb673638e5b3c76c8859362a37001ecc9cc24c743e72c9e939",
+      "schedule_ids": [
+        422,
+        423
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_TLT_AUGUST_2026_BEST",
+      "deployment_id": 275,
+      "deployment_key": "gex-tlt-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "a0c387a7042ea375253fcb97c50cc2153ba3c79fbf29e95e599f6f0580c358ed",
+      "schedule_ids": [
+        424,
+        425
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_TQQQ_AUGUST_2026_BEST",
+      "deployment_id": 276,
+      "deployment_key": "gex-tqqq-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "7b8d5f54f1622281f97afadbdfb26be1b0004f2557222909ecfdf42627dfdc1c",
+      "schedule_ids": [
+        426,
+        427
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_TSM_AUGUST_2026_BEST",
+      "deployment_id": 277,
+      "deployment_key": "gex-tsm-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "68feb667ddc0558d7e2663204db9b50b0e42286e9e8d89eeb4211a3d7b93de7e",
+      "schedule_ids": [
+        428,
+        429
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_VST_AUGUST_2026_BEST",
+      "deployment_id": 278,
+      "deployment_key": "gex-vst-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "37d6022ba4365b041b810c38aa13a3ecfcbb4b710ff1dc7b9672b82163a0ddfd",
+      "schedule_ids": [
+        430,
+        431
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_XBI_AUGUST_2026_BEST",
+      "deployment_id": 279,
+      "deployment_key": "gex-xbi-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "2bd96c7ed326449ffb051c58119d302694d2ed0e993bde097bcf099e54bf06e0",
+      "schedule_ids": [
+        432,
+        433
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_XLE_AUGUST_2026_BEST",
+      "deployment_id": 280,
+      "deployment_key": "gex-xle-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "a5ae4692fd6c400aa86f0cde70132a48bf19c6551d6c5cb3ce629b9f9a3140c3",
+      "schedule_ids": [
+        434,
+        435
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    },
+    {
+      "strategy_code": "GEX_XOM_AUGUST_2026_BEST",
+      "deployment_id": 281,
+      "deployment_key": "gex-xom-august-2026-best-production-1-0-0-production",
+      "version_code": "1.0.0-production",
+      "old_notification_enabled": true,
+      "old_json_notification_enabled": true,
+      "old_configuration_sha256": "6e74e53a619157e4b266fcc7cafd9fd62bbd969df5728ed56ab86df7eebf96f5",
+      "schedule_ids": [
+        436,
+        437
+      ],
+      "old_schedule_is_enabled": [
+        true,
+        true
+      ]
+    }
+  ],
+  "version_unchanged": true,
+  "broker_action": "NONE"
+}

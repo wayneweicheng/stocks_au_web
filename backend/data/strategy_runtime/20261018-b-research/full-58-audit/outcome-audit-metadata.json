@@ -1,0 +1,20 @@
+{
+  "events_file": "C:\\Repo\\stocks_au_web\\backend\\data\\strategy_runtime\\20261018\\oos-backtest-events.csv",
+  "total_events_in_input": 350,
+  "finalized_events_audited": 286,
+  "symbol_count": 52,
+  "raw_symbols_fetched": 52,
+  "raw_bar_count": 38751,
+  "nqmain_bar_count": 1602,
+  "reported_returns_matching_nqmain_within_0_0001pp": 286,
+  "audit_status_counts": {
+    "RECONCILED": 286
+  },
+  "raw_return_matches_within_0_0001pp": 0,
+  "direction_matches_within_0_0001pp": 0,
+  "mismatch_count": 286,
+  "time_interpretation": "PriceHistoryTimeFrame.TimeIntervalStart treated as America/New_York wall time, consistent with StockDB values showing 04:00 premarket and existing runtime attaching USCashCalendar.timezone to naive timestamps. This was verified against raw bar timestamps, but SQL schema itself has no timezone metadata.",
+  "entry_policy": "first same-session bar whose local TimeIntervalStart is >= 07:30 ET; expected exact 07:30 bar",
+  "exit_policy": "last same-session bar before XNYS scheduled cash close; regular-day 15:30 bar expected",
+  "sql_mode": "read-only SELECT with READ UNCOMMITTED/NOLOCK; no database writes"
+}

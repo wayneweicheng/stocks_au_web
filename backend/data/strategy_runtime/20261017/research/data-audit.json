@@ -1,0 +1,36 @@
+{
+  "database": "StockDB_US",
+  "cutoff": "2026-08-31",
+  "reserved_oos": "2026-09-01 through 2026-10-31",
+  "tables": {
+    "capital": "Transform.OptionGEXChangeCapitalType",
+    "features": "Analysis.GEX_Features",
+    "intraday": "StockData.PriceHistoryTimeFrame",
+    "option_quotes_explored_not_used": "StockData.OptionDelayedQuote_V2"
+  },
+  "candidate_signal_instances_by_ticker": {
+    "AAPL": 28,
+    "ADBE": 48,
+    "BABA": 33,
+    "COHR": 25,
+    "CRWD": 36,
+    "DIA": 23,
+    "DRAM": 19,
+    "FORM": 14,
+    "GDX": 30,
+    "GLD": 23,
+    "HPE": 30,
+    "INTC": 49,
+    "IWM": 33,
+    "ORCL": 23,
+    "PANW": 54,
+    "QCOM": 29,
+    "SOXL": 31,
+    "TLT": 18,
+    "TXN": 23,
+    "WDC": 15,
+    "XLE": 41,
+    "ZS": 25
+  },
+  "source_note": "Counts and outputs were produced from direct SQL queries with ObservationDate <= 2026-08-31; no Google Drive files were read."
+}

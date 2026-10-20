@@ -1,0 +1,121 @@
+{
+  "checkpoint": "04",
+  "cutoff": "2026-08-31",
+  "sql_writes": false,
+  "production_changes": false,
+  "old_screen_preserved": true,
+  "old_replay_preserved": true,
+  "research_tests": "22 passed",
+  "files": [
+    {
+      "path": "backend/tools/multisource_research/fixed_hypothesis_screen.py",
+      "sha256": "6f0b47add7b51313bd9519ab268e2f440ff65a8cfc850dba2f5f54b5a47929f4",
+      "bytes": 14015
+    },
+    {
+      "path": "backend/tools/multisource_research/test_fixed_hypothesis_screen.py",
+      "sha256": "af4077a62e996125dbc5e0c061e03a0eef4f8b84a23721e2dc82b37f5a932aeb",
+      "bytes": 1006
+    },
+    {
+      "path": "backend/tools/multisource_research/spread_robustness.py",
+      "sha256": "e5af1db577022b9e6fc8fd0c631ace3ed5c1d8abc36e811e158469111b09dcec",
+      "bytes": 7691
+    },
+    {
+      "path": "backend/tools/multisource_research/test_spread_robustness.py",
+      "sha256": "a2b758e62799ed929c0c017d893f27dd1e96e51fb4125a49d6c67593014a6c04",
+      "bytes": 1121
+    },
+    {
+      "path": "backend/tools/multisource_research/entry_latency_sensitivity.py",
+      "sha256": "0b8ddbaf80db23d4e4457ff2d0947f93365e4201a683394e56cd0d24cdb06d36",
+      "bytes": 5729
+    },
+    {
+      "path": "backend/tools/multisource_research/test_entry_latency_sensitivity.py",
+      "sha256": "6f15e0af85e6d081954f885c453091db8fc440747024bd2c463717901a4e1058",
+      "bytes": 645
+    },
+    {
+      "path": "backend/tools/multisource_research/overlap_sensitivity.py",
+      "sha256": "2ee1cdd13fa83d5a91e63fc69d1040d43f566d5d4b4548658236aa4b6b7b6fc8",
+      "bytes": 3275
+    },
+    {
+      "path": "backend/tools/multisource_research/test_overlap_sensitivity.py",
+      "sha256": "7407f8cb2f19e20c4cb6085aac12f0b6d3ca8a07bf703e6c8c151476697f128b",
+      "bytes": 957
+    },
+    {
+      "path": "backend/tools/multisource_research/executable_universe_coverage.py",
+      "sha256": "c156d810a41b4ddb2426842affb8af9b85493dcf17231cdffd09350b2edc2c2f",
+      "bytes": 1665
+    },
+    {
+      "path": "backend/tools/multisource_research/inspect_extreme_returns.py",
+      "sha256": "a74e7dcbbd961b595f1fe58c810ae5726e471f0633ad837144736cea1e8cf02e",
+      "bytes": 3022
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/fixed_hypothesis_screen_v2/hypotheses.jsonl",
+      "sha256": "6aab8db9d542eb9150fcd429127e772cff226132d33727f9e10ce111cf117bc2",
+      "bytes": 26742
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/fixed_hypothesis_screen_v2/fixed-screen-results.csv",
+      "sha256": "0c69db1c99319b2c390c0025c5d01f9c20c9fb19cb7519e5b3cd787c6f0205dd",
+      "bytes": 514056
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/fixed_hypothesis_screen_v2/split-manifest.json",
+      "sha256": "4cb95efa04fd3b1a4797343a3bb817947168912b2771326ecb037d21e9c5c298",
+      "bytes": 488
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/spread_robustness/stress-cases.csv",
+      "sha256": "4a637b6e249bac416548fd906b1b40189aa48785bd7bcb71d069635ae67d7aef",
+      "bytes": 2029
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/spread_robustness/matched-controls.csv",
+      "sha256": "7eb5ae63e94b4b35b0e386307e20bbc4941aa308698f2fb661509fea4a7b2b47",
+      "bytes": 762
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/entry_latency_sensitivity/entry-proxy-sensitivity.csv",
+      "sha256": "27bdec908f92f951af933c718c72e57879113703db2729f9b4787e3cccfb87c4",
+      "bytes": 2800
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/entry_latency_sensitivity/entry-proxy-ledger.csv",
+      "sha256": "9c5dc117d807b4df803207ade963eebe9273d4d8b5018b844a5189d4e4579031",
+      "bytes": 1104440
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/overlap_sensitivity/overlap-policies.csv",
+      "sha256": "89ca60673f43b02639815255eb1e49333d663f1027a9c9fd2ba1b4b8247c2eab",
+      "bytes": 1729
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/expanded-universe-entry-coverage.csv",
+      "sha256": "341c47b2be22af19a526f70095175faa9e35c1b9d219d71b8ee3ea3ec77e156d",
+      "bytes": 6160
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/expanded-universe-entry-coverage.json",
+      "sha256": "cfdd3ad54d64c7362c04dc1c07cc44700ac7c617931eea857a45dce3972bd5e8",
+      "bytes": 482
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/extreme_return_audit/extreme-D5-raw-daily-context.csv",
+      "sha256": "dedba9ab598e0eb8bfcc8d1472fb7046e8c906cf10a55ab2769367acd4070aad",
+      "bytes": 3312
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/checkpoint-04.md",
+      "sha256": "44fe635e439c67e30b9ea4dd9c0aebfb2eaf4073ad74fe3eb68b4cee969bc40d",
+      "bytes": 8110
+    }
+  ]
+}

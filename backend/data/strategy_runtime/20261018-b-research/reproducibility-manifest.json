@@ -1,0 +1,204 @@
+{
+  "run_id": "20261018-b-research",
+  "research_cutoff": "2026-08-31",
+  "quote_availability_assumption": "D0 ObservationDate assumed available before D1 around 07:00 ET per operator; readiness must be verified live.",
+  "reserved_validation": "September/October 2026 outcomes were not used for new screens; the old replay was audited only and found invalid. The current final chronological tail is now consulted and not pristine forward validation.",
+  "sql_writes": false,
+  "production_actions": false,
+  "broker_execution": "HARD_DISABLED",
+  "outcome_audit": {
+    "old_full_replay_rows": 286,
+    "old_rows_matching_nqmain": 286,
+    "old_rows_matching_subject": 0,
+    "corrected_august_price_labels": 10591,
+    "corrected_label_reconciliation": "D1 10591/10591; D3 10422/10422; D5 10250/10250"
+  },
+  "option_coverage_through_cutoff": {
+    "symbols_total_in_source_profile": 956,
+    "days_at_least_120": 145,
+    "days_at_least_180": 133,
+    "days_at_least_208": 7,
+    "symbols_processed": 180,
+    "non_session_symbol_dates_excluded": 494
+  },
+  "technical_coverage": {
+    "symbols_with_pricehistory": 156,
+    "daily_feature_rows": 63056,
+    "symbols_with_30m": 90,
+    "symbols_30m_at_least_120_days": 42
+  },
+  "fixed_hypothesis_screen": {
+    "pre_registered_conditions": 62,
+    "evaluation_rows": 2232,
+    "cost_bps_round_trip": [
+      0,
+      10,
+      25,
+      50
+    ],
+    "promotion_status": "NONE"
+  },
+  "tests": {
+    "strategy_runtime": "119 passed, 1 skipped",
+    "multisource_pure": "14 passed",
+    "py_compile": "passed"
+  },
+  "artifacts": [
+    {
+      "path": "backend/tools/us_gex_sql_research.py",
+      "exists": true,
+      "sha256": "216f33dbe99fe9bae33cc1ef6f37688f9d6a4e523d66a9b2fbd01eade655704c",
+      "size_bytes": 22247
+    },
+    {
+      "path": "backend/tools/all_us_gex_discovery.py",
+      "exists": true,
+      "sha256": "38f5b091a633580f27d4ea7e12ccb1d5a2c059940f274c93b9189102f810a612",
+      "size_bytes": 12562
+    },
+    {
+      "path": "backend/tools/multisource_research/audit_oos_outcomes.py",
+      "exists": true,
+      "sha256": "f137b53f1864993da82ac37b6983b479a968aac60fb4987e0f0d6d4e60837e5f",
+      "size_bytes": 12051
+    },
+    {
+      "path": "backend/tools/multisource_research/audit_august_labels.py",
+      "exists": true,
+      "sha256": "cc1d6272a6a9858d742f9fa6ec879d4dc398deb1ddb4ae76db671f4ca7e1c810",
+      "size_bytes": 5456
+    },
+    {
+      "path": "backend/tools/multisource_research/technical_features.py",
+      "exists": true,
+      "sha256": "964bbe95a41aff1c4ad36d807fb49e37b8d086e1a83ffe05f5f46e1b1565f5af",
+      "size_bytes": 9574
+    },
+    {
+      "path": "backend/tools/multisource_research/build_technical_panel.py",
+      "exists": true,
+      "sha256": "58b82e77dfdcbc9b7346a8bbb571fa924a66ee52c8175f54141df51f9047735c",
+      "size_bytes": 4129
+    },
+    {
+      "path": "backend/tools/multisource_research/build_option_panel.py",
+      "exists": true,
+      "sha256": "281649c84f28c8948d39bb19986c4482d2559f4a84fde333faa0e6eb2d987d2e",
+      "size_bytes": 11918
+    },
+    {
+      "path": "backend/tools/multisource_research/fixed_hypothesis_screen.py",
+      "exists": true,
+      "sha256": "bd0d7db45f8899ecfac274199e2ff5f92befa226c2b1702b506d1837caef9bf1",
+      "size_bytes": 13325
+    },
+    {
+      "path": "backend/tools/multisource_research/test_outcome_audit.py",
+      "exists": true,
+      "sha256": "3a927447e244bc69f56206c6ceff53d6079208c9c6e0af56ace65bae74f24a2c",
+      "size_bytes": 3632
+    },
+    {
+      "path": "backend/tools/multisource_research/test_market_time.py",
+      "exists": true,
+      "sha256": "7d59145d1dd4b4450c698d8d68ac1a0d1793a25467c6784dedb96a37dcdb0a01",
+      "size_bytes": 1073
+    },
+    {
+      "path": "backend/tools/multisource_research/test_technical_features.py",
+      "exists": true,
+      "sha256": "1f94b032c2db5e8090f5586053a783d54535b7afa0709e259f672d4759ff75d5",
+      "size_bytes": 2849
+    },
+    {
+      "path": "backend/tools/multisource_research/test_option_panel.py",
+      "exists": true,
+      "sha256": "d63bd998c2dfac81b5a69f7acf5bea43423fbed86fc82a9ee04251fec4d99489",
+      "size_bytes": 1914
+    },
+    {
+      "path": "C:/Repo/stocks_collecting/src/strategy_runtime/outcomes/worker.py",
+      "exists": true,
+      "sha256": "d303b20a4ecd95e722aa5dfc17d5355f0cc66f46e656c9be138f20a0b8e50585",
+      "size_bytes": 19142
+    },
+    {
+      "path": "C:/Repo/stocks_collecting/src/strategy_runtime/strategies/spx_gex/__init__.py",
+      "exists": true,
+      "sha256": "45b452dbab194824278e47a34607cce2574dfbeae0afed8f0a15c9f54b9debbf",
+      "size_bytes": 1027
+    },
+    {
+      "path": "C:/Repo/stocks_collecting/tests/strategy_runtime/test_outcomes.py",
+      "exists": true,
+      "sha256": "1016601061ef6bad8b822c5a1aaf2f185fa6abd993351f13aac8d84f43732a5c",
+      "size_bytes": 7430
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018/oos-backtest-events.csv",
+      "exists": true,
+      "sha256": "a5f19aa9b00198dcf9189f68fa1663af645de78e4a2b980df453a94ef4f4a712",
+      "size_bytes": 52974
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018/oos-backtest-frequency-capped-221-trades.csv",
+      "exists": true,
+      "sha256": "ce60909516fb8a5f9aff2eeb43512249d08dbb3bab79f9252386dd1ccfd2164f",
+      "size_bytes": 41860
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/research_corrected/eligible-outcomes.csv",
+      "exists": true,
+      "sha256": "dbc388c6b1f9b9cec458f4bebb8b875a3837b1d7a2383aff4857cf5d94357b12",
+      "size_bytes": 19822571
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/august-label-audit.csv",
+      "exists": true,
+      "sha256": "9774948c3fc9f76b79eee4faed3d5517f9f416034e7e3f2c97e919bc4fcab19f",
+      "size_bytes": 2958313
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/option-quote-universe-coverage-through-cutoff.csv",
+      "exists": true,
+      "sha256": "795c93efd3245d7e1879bc4665f1884a77703783d851e04d5e6746f8ba3b4ec3",
+      "size_bytes": 32050
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/intraday-30m-coverage-through-cutoff.csv",
+      "exists": true,
+      "sha256": "f99256dea3ccb2fa7557a051951ec71570e015188df21f230f7fddb91c618156",
+      "size_bytes": 3554
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/technical_features/causal-technical-features.csv",
+      "exists": true,
+      "sha256": "38cd12ba39de7026f6640e093c9ebbe02bff0907e20e7f4511e95bcdbe5d7084",
+      "size_bytes": 89403168
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/option_features/option-daily-features.csv",
+      "exists": true,
+      "sha256": "a1468dab3810d4207ff5d578cad412dd52288fe3bcded49bedb977dceda04a54",
+      "size_bytes": 50620964
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/multi-source-feature-panel.csv",
+      "exists": true,
+      "sha256": "74040ef1b0363e1622be41b8b09115b99950fa5e3bdbe9aa4afe4c7133fba514",
+      "size_bytes": 51700266
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/fixed_hypothesis_screen/hypotheses.jsonl",
+      "exists": true,
+      "sha256": "3debac2e1e1df86c2b35be153d42c93fc2d62f75a3ef4a95600bb399da907986",
+      "size_bytes": 26260
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/fixed_hypothesis_screen/fixed-screen-results.csv",
+      "exists": true,
+      "sha256": "190f1e03c59a89b6f93e2c2f89dbbdc09b37e6abd3617b73069b5e221fb534ab",
+      "size_bytes": 473209
+    }
+  ]
+}

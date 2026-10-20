@@ -1,0 +1,15 @@
+{
+  "audited_finalized_signals": 165,
+  "matched": 165,
+  "mismatches": 0,
+  "symbols": 35,
+  "horizons": {
+    "D5": 150,
+    "D3": 15
+  },
+  "D0_dates": 27,
+  "pending_entry_after_cutoff": 17,
+  "pending_exit_after_cutoff": 39,
+  "missing_price_bars": 0,
+  "method": "Independent SQL SELECT per event by exact symbol, TimeFrame=30M and scheduled XNYS timestamps; no fallback or SQL writes."
+}

@@ -1,0 +1,37 @@
+{
+  "strategy_code": "GEX_ORCL_PUT_FLOW_ROTATION_BREAKDOWN",
+  "version_code": "2.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "PutBuyShareChgAbsRank60": 0.8166666666666667,
+        "BuyCall_GEXDeltaPerc_Rank60": 0.1153846153846153
+      },
+      "expected_signal": "ORCL_PUT_FLOW_ROTATION_BREAKDOWN"
+    },
+    {
+      "id": "no-signal",
+      "purpose": "Illustrative input with at least one predicate component false",
+      "trigger_condition": "PutBuyShareChgAbsRank60 >= 0.65 AND BuyCall_GEXDeltaPerc_Rank60 <= 0.48",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "reserved-oos",
+      "expected": "Do not use September or October rows in this packet"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED"
+      }
+    }
+  ]
+}

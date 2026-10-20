@@ -1,0 +1,38 @@
+{
+  "frozen_packet_zip": "C:\\Repo\\stocks_au_web\\backend\\data\\strategy_runtime\\20261018-b-research\\baseline_40_runtime_aligned_review_packets_2026-10-18-b.zip",
+  "frozen_packet_zip_sha256": "eae64a7bd1fbdaaa1746bf2424c640abcb712233e6b752086e4dd6e8b78ae4c3",
+  "old_source_40_master_sha256": "e3eaa4577b97576c63101e9ce603fc7df7c13eb09a46b9019825ce159f29099f",
+  "query_mode": "SQL SELECT only",
+  "observation_window": [
+    "2026-09-01",
+    "2026-10-15"
+  ],
+  "label_cutoff": "2026-10-15",
+  "time_zone": "America/New_York",
+  "entry": "exact scheduled D1 07:30 30M bar OPEN, optimistic after 07:30 decision",
+  "exit": "exact last scheduled 30M bar close at XNYS regular close, half-day aware; no substitute bars",
+  "runtime_feature_contract": "D0+60 prior complete capital-type observations and independently GEX_Features source window via build_contract_feature_history and CapitalTypeGexImplementation",
+  "costs_round_trip_bps": [
+    0,
+    25,
+    50,
+    100
+  ],
+  "pending_policy": "do not score unresolved outcomes as wins/losses or carry them into later source dates",
+  "caveats": [
+    "September\u2013October 15 was already inspected; NOT pristine OOS",
+    "historical feature revisions/first-ready timestamps not independently proven",
+    "Is_Swing_Down source publication chronology unverified",
+    "25bps cost is sensitivity, not measured premarket fill/slippage",
+    "signal PF is instance-weighted, not portfolio NAV"
+  ],
+  "date_count": 32,
+  "ticker_count": 40,
+  "all_dates": 1280,
+  "runtime_ready_dates": 1181,
+  "frozen_signal_dates": 221,
+  "source_file_hashes": {
+    "ledger": "af8ab94b20aed71609a616314606c8db92af4e4a63b68d956dcf55b6757c0431",
+    "results": "ce7ff8945dca032368d7b1f0cddd43f13825962ec6b0b64f4067830219ea62c9"
+  }
+}

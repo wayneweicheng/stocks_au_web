@@ -1,0 +1,10 @@
+{
+  "strategy_code": "GEX_VST_AUGUST_2026_BEST",
+  "version_code": "1.0.0-production",
+  "status": "IMPLEMENTABLE",
+  "classification": "ALL_UNIVERSE_RESEARCH_CANDIDATE",
+  "research_cutoff": "2026-08-31",
+  "reserved_oos": "2026-09-01 through 2026-10-31",
+  "broker_execution": "HARD_DISABLED",
+  "notification_only": true
+}

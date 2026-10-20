@@ -1,0 +1,274 @@
+{
+  "descriptor_format": 2,
+  "contract_format_version": "2",
+  "strategy_code": "GEX_INTC_AUGUST_2026_BEST",
+  "strategy_definition": "INTC SafeGEXVolRank60 <= 0.20 AND BPOptionCount_Rank60 >= 0.80 SHORT candidate with D5 scheduled exit.",
+  "display_name": "INTC August 2026 Best GEX Candidate",
+  "version_code": "1.0.0-production",
+  "implementation_key": "gex-intc-august-2026-best",
+  "status": "IMPLEMENTABLE",
+  "definition": {
+    "purpose": "INTC all-August-universe GEX candidate selected from best-by-ticker research.",
+    "rationale": "Research candidate generated from the complete August 2026 Analysis.GEX_Features universe; not a claim of proof or automatic production promotion.",
+    "market_timezone": "America/New_York",
+    "calendar": "US listed-equity sessions; DST and holidays handled by runtime.",
+    "multiple_signal_policy": "One actionable signal per D0; DATA_ERROR precedes NO_SIGNAL.",
+    "trigger_precedence": [
+      "INTC_AUGUST_2026_BEST_SIGNAL",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ],
+    "source_refresh_gate": "At/after D1 07:30 ET require previous completed D0, complete required StockDB_US rows, causal history, and executable D1 entry. Missing/stale/null inputs => NOT_READY."
+  },
+  "research_governance": {
+    "owner": "USER",
+    "research_date": "2026-10-18",
+    "freeze_date": "2026-10-18",
+    "research_cutoff": "2026-08-31",
+    "reserved_oos_window": "2026-09-01 through 2026-10-31",
+    "change_summary": "All-August-universe candidate packet; no September or October data used.",
+    "classification": "ALL_UNIVERSE_RESEARCH_CANDIDATE",
+    "validation_method": "Chronological 60/20/20 split through the August cutoff.",
+    "bias_controls": [
+      "future-return fields excluded from predicates",
+      "prior-only causal ranks",
+      "D1 07:30 ET entry",
+      "SQL date cutoff",
+      "broker execution hard-disabled",
+      "multiple-testing risk disclosed"
+    ]
+  },
+  "instruments": [
+    {
+      "code": "INTC",
+      "role": "SUBJECT",
+      "market": "US listed market",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    }
+  ],
+  "instrument_roles": [
+    {
+      "role": "SUBJECT",
+      "instrument": "INTC.US"
+    }
+  ],
+  "environments": [
+    "BACKTEST",
+    "LIVE_MANUAL"
+  ],
+  "run_kinds": [
+    "DATA_CHECK",
+    "EVALUATE",
+    "MONITOR",
+    "SUMMARY"
+  ],
+  "schedule_requirements": [
+    "07:30 America/New_York daily EVALUATE",
+    "30-minute MONITOR until session close"
+  ],
+  "report_kinds": [
+    "SIGNAL",
+    "DATA_ERROR",
+    "NO_SIGNAL"
+  ],
+  "required_sources": [
+    "StockDB_US.Transform.OptionGEXChangeCapitalType",
+    "StockDB_US.Analysis.GEX_Features",
+    "StockDB_US.StockData.PriceHistoryTimeFrame"
+  ],
+  "execution_enabled_capability": false,
+  "outcome_horizons": [
+    "D5"
+  ],
+  "feature_specification": [
+    {
+      "name": "SafeGEXVolRank60",
+      "source": "Analysis.GEX_Features + causal layer",
+      "formula": "causal_rank60(GEX_Volatility)",
+      "units": "0..1",
+      "lookback": "prior 60 valid observations excluding current for causal ranks",
+      "minimum_prior_observations": 60,
+      "current_D0_in_reference_distribution": false,
+      "null_behavior": "NOT_READY",
+      "future_information_proof": "Computed from completed D0/prior SQL rows only; future-return labels are prohibited."
+    },
+    {
+      "name": "BPOptionCount_Rank60",
+      "source": "Transform.OptionGEXChangeCapitalType + causal layer",
+      "formula": "causal_rank60(NoOfOption where CapitalType='BP')",
+      "units": "0..1",
+      "lookback": "prior 60 valid observations excluding current for causal ranks",
+      "minimum_prior_observations": 60,
+      "current_D0_in_reference_distribution": false,
+      "null_behavior": "NOT_READY",
+      "future_information_proof": "Computed from completed D0/prior SQL rows only; future-return labels are prohibited."
+    }
+  ],
+  "signal_definitions": [
+    {
+      "signal_code": "INTC_AUGUST_2026_BEST_SIGNAL",
+      "display_name": "INTC August 2026 Best GEX Candidate",
+      "strategy_definition": "INTC SafeGEXVolRank60 <= 0.20 AND BPOptionCount_Rank60 >= 0.80 SHORT candidate with D5 scheduled exit.",
+      "direction": "SHORT",
+      "confidence": "MEDIUM",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "definition": "SafeGEXVolRank60 <= 0.20 AND BPOptionCount_Rank60 >= 0.80 with direction-adjusted D5 outcome.",
+      "trigger_condition": "SafeGEXVolRank60 <= 0.20 AND BPOptionCount_Rank60 >= 0.80",
+      "variables": [
+        "SafeGEXVolRank60",
+        "BPOptionCount_Rank60"
+      ],
+      "entry_policy": "D1 07:30 America/New_York 30-minute bar Open; D1 is next valid US session after D0.",
+      "holding_period": "D5",
+      "exit_conditions": [
+        {
+          "kind": "SCHEDULED_CLOSE",
+          "description": "Scheduled exit at D5 final regular-session bar Close",
+          "horizon": "D5"
+        },
+        {
+          "kind": "NO_STOP",
+          "description": "No stop-loss or take-profit in this contract",
+          "horizon": null
+        },
+        {
+          "kind": "MISSING_EXIT",
+          "description": "Missing exit bar => PENDING",
+          "horizon": null
+        }
+      ],
+      "creates_report": true,
+      "creates_paper_plan": true,
+      "sends_notification": true,
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 25,
+        "sample_start": "2026-05-06",
+        "sample_end": "2026-08-24",
+        "measurement_horizon": "D5",
+        "win_rate_pct": 52.0,
+        "profit_factor": 1.124088216148954,
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv",
+        "as_of_utc": "2026-10-18T07:00:00Z",
+        "notes": "August all-universe research candidate; September and October 2026 were excluded."
+      }
+    },
+    {
+      "signal_code": "DATA_ERROR",
+      "display_name": "Data Error",
+      "strategy_definition": "Readiness-passed evaluation error catalogue state.",
+      "direction": "NONE",
+      "confidence": "NONE",
+      "action": "NONE",
+      "notification_level": "HIGH",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed but evaluation received invalid input.",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": [],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        {
+          "kind": "NONE",
+          "description": "No trade action",
+          "horizon": null
+        }
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "instances": 0,
+        "sample_start": null,
+        "sample_end": null,
+        "measurement_horizon": "NONE",
+        "win_rate_pct": null,
+        "profit_factor": null,
+        "source_reference": "No actionable instances",
+        "as_of_utc": "2026-10-18T07:00:00Z",
+        "notes": "Non-actionable catalogue state."
+      }
+    },
+    {
+      "signal_code": "NO_SIGNAL",
+      "display_name": "No Signal",
+      "strategy_definition": "Readiness-passed non-actionable catalogue state.",
+      "direction": "NONE",
+      "confidence": "NONE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed and candidate predicate is false.",
+      "trigger_condition": "NOT(SafeGEXVolRank60 <= 0.20 AND BPOptionCount_Rank60 >= 0.80)",
+      "variables": [
+        "SafeGEXVolRank60",
+        "BPOptionCount_Rank60"
+      ],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        {
+          "kind": "NONE",
+          "description": "No trade action",
+          "horizon": null
+        }
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE",
+        "instances": 0,
+        "sample_start": null,
+        "sample_end": null,
+        "measurement_horizon": "NONE",
+        "win_rate_pct": null,
+        "profit_factor": null,
+        "source_reference": "No actionable instances",
+        "as_of_utc": "2026-10-18T07:00:00Z",
+        "notes": "Non-actionable catalogue state."
+      }
+    }
+  ],
+  "production_policy": {
+    "deployment_state": "PRODUCTION",
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "mode": "NOTIFICATION_ONLY",
+    "broker_execution": "HARD_DISABLED",
+    "broker_orders_authorized": false,
+    "human_trade_recording_required": true,
+    "notification_default": true,
+    "manual_trade_optional": true,
+    "manual_trade_required_for_outcome": false,
+    "notifications": {
+      "enabled": true,
+      "channel": "PUSHOVER",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "recipient": "Configured production recipient from secrets; never embedded"
+    },
+    "report_authentication_required": true,
+    "change_control": "Any trigger, feature, direction, entry, exit, or notification change requires a new version."
+  },
+  "provenance": {
+    "as_of": "2026-10-18T18:00:00+11:00",
+    "research_window": {
+      "start": "2026-05-06",
+      "end": "2026-08-31"
+    },
+    "reserved_oos_window": {
+      "start": "2026-09-01",
+      "end": "2026-10-31",
+      "status": "UNTOUCHED_BY_THIS_PACKET"
+    },
+    "source_hash": "a46e951388b33193561a0e7b900b16a9649825224acaad47c19613fcf011d551",
+    "implementation_hash": "7319d78bfa5cdd34236e0b99b32813ae5a224738ce455a8c50dca544e691d7e2",
+    "source_manifest": "source-manifest.json"
+  },
+  "markdown_path": "strategy.md",
+  "markdown_sha256": "dfe0f0e3effaf3a8ed41c2f7d1b347638abed2b6c4bf260b1f85348535ba0edc"
+}

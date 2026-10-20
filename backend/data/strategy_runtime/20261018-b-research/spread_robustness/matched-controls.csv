@@ -1,0 +1,4 @@
+split,signal_n_with_atr_and_volume_rank,matched_signal_n,matched_ticker_n,matched_dates,unmatched_signal_n,mean_signal_minus_controls_pp,mean_date_equal_weight_incremental_pp,date_block_ci_95_descriptive_pp,top5_tickers_by_inspected_gross_net_contribution
+TRAIN,816,698,41,96,118,0.3269018738510682,0.3282520719841598,"[-0.2106054759179772, 0.8703272162101812]","['GDX.US', 'FCX.US', 'META.US', 'AMAT.US', 'OXY.US']"
+VALIDATION,594,557,52,38,37,0.18403599946504443,0.3062692838840523,"[-0.5058767421396451, 1.1637216844333533]","['AMD.US', 'SOXL.US', 'MU.US', 'PANW.US', 'SNDK.US']"
+FINAL_RESEARCH_TAIL,818,799,86,39,19,0.1080494469408528,0.0728764062102934,"[-0.6128856826490995, 0.8421937958600706]","['SNDU.US', 'ADBE.US', 'ZS.US', 'MSFT.US', 'PLTR.US']"

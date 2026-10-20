@@ -1,0 +1,37 @@
+{
+  "strategy_code": "GEX_WDC_HEALTHY_GEX_SEMI_FADE",
+  "version_code": "2.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "GEX_Rank60": 0.2166666666666666,
+        "QQQ_SafeGEXZ60": -0.3267196054006946
+      },
+      "expected_signal": "WDC_HEALTHY_GEX_SEMI_FADE"
+    },
+    {
+      "id": "no-signal",
+      "purpose": "Illustrative input with at least one predicate component false",
+      "trigger_condition": "GEX_Rank60 >= 0.20 AND QQQ_GEX_ZScore_60day > -1.5",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "reserved-oos",
+      "expected": "Do not use September or October rows in this packet"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED"
+      }
+    }
+  ]
+}

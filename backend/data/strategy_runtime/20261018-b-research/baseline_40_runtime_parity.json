@@ -1,0 +1,11 @@
+{
+  "tested_ledger_rows": 1298,
+  "status_counts": {
+    "MATCH": 839,
+    "MISMATCH": 458,
+    "MISSING_COMPLETE_CAPITAL_DAY": 1
+  },
+  "source": "StockDB_US read-only; use live runtime capital-type feature and expression implementations; descriptor metadata only, no provisioning",
+  "minimum_history": 60,
+  "note": "Any mismatch means research-ledger trigger counts are NOT runtime-equivalent. Never use packet PF as validated production PF."
+}

@@ -1,0 +1,13 @@
+{
+  "symbols_requested": 180,
+  "symbols_with_daily_bars": 156,
+  "quote_universe_symbols_with_at_least_120_pre_cutoff_days": 145,
+  "source_rows": 63056,
+  "feature_rows": 63056,
+  "date_start": "2025-01-02",
+  "date_end": "2026-08-31",
+  "cutoff": "2026-08-31",
+  "source": "StockDB_US.StockData.PriceHistory",
+  "no_outcomes_used_for_feature_selection": true,
+  "no_db_writes": true
+}

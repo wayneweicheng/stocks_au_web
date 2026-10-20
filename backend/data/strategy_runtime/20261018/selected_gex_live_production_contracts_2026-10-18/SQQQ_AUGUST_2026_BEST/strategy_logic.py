@@ -1,0 +1,11 @@
+"""Declarative candidate packet; runtime evaluates strategy.descriptor.json."""
+STRATEGY_CODE = "GEX_SQQQ_AUGUST_2026_BEST"
+VERSION = "1.0.0-production"
+SIGNAL_CODE = "SQQQ_AUGUST_2026_BEST_SIGNAL"
+DIRECTION = "SHORT"
+HOLDING_PERIOD = "D5"
+TRIGGER = 'Is_Swing_Down == 1'
+REQUIRED_INPUTS = ['Is_Swing_Down']
+DEPLOYMENT_TARGET = "PRODUCTION"
+NOTIFICATIONS_ENABLED = True
+BROKER_EXECUTION = "HARD_DISABLED"

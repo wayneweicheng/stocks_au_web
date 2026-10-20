@@ -1,0 +1,14 @@
+{
+  "checked_at_utc": "2026-10-18T10:14:10.825161+00:00",
+  "original_40_master_sha256": "e3eaa4577b97576c63101e9ce603fc7df7c13eb09a46b9019825ce159f29099f",
+  "selected_tickers": 40,
+  "deployments_for_selected_codes": 111,
+  "live_manual_deployments_enabled": 40,
+  "live_manual_notifications_enabled": 40,
+  "live_manual_execution_enabled": 0,
+  "live_manual_schedules_enabled": 80,
+  "live_manual_archived_source_hash_matches_sql": 40,
+  "live_manual_subjects_match_source": 40,
+  "action": "READ_ONLY_NO_CHANGES",
+  "warning": "Enabled deployments and notification schedules exist despite previous research handoff saying not activated. Do not alter without explicit operator authorization."
+}

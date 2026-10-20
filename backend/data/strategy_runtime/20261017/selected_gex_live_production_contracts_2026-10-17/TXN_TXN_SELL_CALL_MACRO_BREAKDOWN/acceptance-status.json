@@ -1,0 +1,27 @@
+{
+  "strategy_code": "GEX_TXN_SELL_CALL_MACRO_BREAKDOWN",
+  "version_code": "2.0.0-production",
+  "status": "IMPLEMENTABLE",
+  "deployment_target": "PRODUCTION",
+  "enabled": true,
+  "classification": "VALIDATED",
+  "checks": {
+    "descriptor_format_2": "PASS",
+    "sql_source_only": "PASS",
+    "research_cutoff_august_2026": "PASS",
+    "september_october_reserved": "PASS",
+    "complete_signal_catalogue": "PASS",
+    "readiness_fail_closed": "PASS",
+    "future_leak_fields_excluded": "PASS",
+    "causal_rank60_excludes_current": "PASS",
+    "production_notifications_enabled": "PASS",
+    "broker_execution_hard_disabled": "PASS",
+    "strategy_logic_compiles": "PASS"
+  },
+  "limitations": [
+    "Historical rule was selected after screening candidate families.",
+    "September and October 2026 are reserved for user validation and are not present in the packet.",
+    "Gross returns use zero modeled transaction costs and slippage.",
+    "No claim of proof; forward validation remains required."
+  ]
+}

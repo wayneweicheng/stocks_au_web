@@ -26,6 +26,7 @@ type StockZone = {
   score: number | null;
   confidence: string;
   levelConfidence: string;
+  reportZone: JsonObject;
 };
 
 type MappedStock = {
@@ -63,7 +64,9 @@ type ReferenceLevel = {
 };
 
 function numberValue(value: unknown): number | null {
-  const parsed = typeof value === "number" ? value : Number(value);
+  if (value == null || (typeof value === "string" && !value.trim())) return null;
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -271,6 +274,7 @@ function extractZones(data: JsonObject): StockZone[] {
         score: numberValue(row.total_score) ?? numberValue(metadata?.total_score),
         confidence: String(row.confidence || metadata?.confidence || "unknown"),
         levelConfidence: String(row.level_confidence || metadata?.level_confidence || ""),
+        reportZone: { ...metadata, ...row },
       });
     });
   }
@@ -523,6 +527,8 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
                   <MappedLevelReportDetails
                     side={zone.side}
                     detail={htmlLevelDetails[levelReportKey(zone.side, zone.rank)]}
+                    rank={zone.rank}
+                    zone={zone.reportZone}
                   />
                 </div>
                 <div className="text-right text-sm text-slate-600">

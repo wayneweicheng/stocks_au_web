@@ -1,0 +1,11 @@
+"""Declarative candidate packet; runtime evaluates strategy.descriptor.json."""
+STRATEGY_CODE = "GEX_MOD_AUGUST_2026_BEST"
+VERSION = "1.0.0-production"
+SIGNAL_CODE = "MOD_AUGUST_2026_BEST_SIGNAL"
+DIRECTION = "LONG"
+HOLDING_PERIOD = "D3"
+TRIGGER = 'PriceDistSMA50Pct <= -2.0 AND BPOptionCount_Rank60 >= 0.80'
+REQUIRED_INPUTS = ['PriceDistSMA50Pct', 'BPOptionCount_Rank60']
+DEPLOYMENT_TARGET = "PRODUCTION"
+NOTIFICATIONS_ENABLED = True
+BROKER_EXECUTION = "HARD_DISABLED"

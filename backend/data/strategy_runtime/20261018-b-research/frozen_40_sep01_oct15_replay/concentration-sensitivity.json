@@ -1,0 +1,33 @@
+{
+  "full_including_sqqq": {
+    "n": 165,
+    "wr_pct": 44.24242424242424,
+    "mean_net_pct": -0.4620346099479538,
+    "pf_net": 0.7672429662703651
+  },
+  "exclude_SQQQ_unverified_swing_flag": {
+    "n": 164,
+    "wr_pct": 44.51219512195122,
+    "mean_net_pct": -0.45330161889883785,
+    "pf_net": 0.7717060232655754
+  },
+  "exclude_META_posthoc_diagnostic_only": {
+    "n": 142,
+    "wr_pct": 46.478873239436616,
+    "mean_net_pct": 0.06737475359030333,
+    "pf_net": 1.0413199944327047
+  },
+  "top_three_tickers_by_inspected_net_return": [
+    "MRVL.US",
+    "NVDA.US",
+    "SNDK.US"
+  ],
+  "exclude_inspected_top_three_influence_only": {
+    "n": 155,
+    "wr_pct": 40.64516129032258,
+    "mean_net_pct": -0.8880568906957882,
+    "pf_net": 0.5797411696175521
+  },
+  "status": "POSTHOC_DESCRIPTIVE_ONLY_NOT_A_TRADING_FILTER",
+  "note": "Ranking ticker contributions after inspecting this window cannot be used as a selection rule. PF is instance-weighted, not NAV."
+}

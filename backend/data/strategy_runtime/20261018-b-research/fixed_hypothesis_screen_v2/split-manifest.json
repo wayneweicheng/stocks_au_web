@@ -1,0 +1,10 @@
+{
+  "date_count": 215,
+  "train_raw_end_exclusive": "2026-04-23",
+  "validation_start": "2026-04-23",
+  "final_start": "2026-06-30",
+  "final_end_inclusive": "2026-08-28",
+  "purge_policy": "For each D1/D3/D5, retain a row in a split only if its scheduled exit date is strictly before the next split start; final rows require resolved labels. This purges label overlap across split boundaries.",
+  "thresholds_fixed_in_source": true,
+  "thresholds_selected_from_final": false
+}

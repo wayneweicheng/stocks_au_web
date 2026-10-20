@@ -1,0 +1,25 @@
+{
+  "committed_at_utc": "2026-10-18T19:59:22.898389+00:00",
+  "post_read_utc": "2026-10-18T19:59:22.889388+00:00",
+  "deployment_updates": 40,
+  "schedule_updates": 80,
+  "independent_readback_pass": true,
+  "post_summary": {
+    "checked_at_utc": "2026-10-18T19:59:22.889388+00:00",
+    "sql_operations": "SELECT_ONLY",
+    "selected_codes": 40,
+    "all_deployment_rows": 111,
+    "enabled_live_manual": 40,
+    "notification_enabled_live_manual": 0,
+    "live_notification_config_override_true": 0,
+    "execution_enabled_live_manual": 0,
+    "enabled_live_schedules": 0,
+    "archived_source_hash_matches_live_version": 40,
+    "live_observations": 0,
+    "live_runs": 0,
+    "last_20_observed_days_extracted": 0,
+    "readiness_and_raw_predicate_parity": "NOT_TESTED; no live rows is not NO_SIGNAL"
+  },
+  "rollback_metadata": "prestate.json",
+  "notice": "Reactivation requires separate explicit operator approval; no broker or descriptor changes."
+}

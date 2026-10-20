@@ -1,0 +1,61 @@
+{
+  "format_version": 2,
+  "strategy_code": "GEX_GDX_AUGUST_2026_BEST",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-10-18T18:00:00+11:00",
+  "signal_code": "GDX_AUGUST_2026_BEST_SIGNAL",
+  "status": "AVAILABLE",
+  "eligible_sample_definition": "D0 has complete SQL-backed causal inputs, next valid US 07:30 ET bar, and scheduled exit bar on or before 2026-08-31.",
+  "number_signal_instances": 41,
+  "resolved_denominator": 41,
+  "unresolved_instances": 0,
+  "performance": {
+    "n": 41,
+    "mean": -0.357448458817367,
+    "wr": 48.78048780487805,
+    "pf": 0.8890515933123718
+  },
+  "research_splits": {
+    "TRAIN_60": {
+      "n": 24,
+      "mean": -1.375704533349159,
+      "wr": 45.83333333333333,
+      "pf": 0.6523824078109611,
+      "start": "2026-03-19",
+      "end": "2026-06-16"
+    },
+    "RESEARCH_VALIDATION_20": {
+      "n": 8,
+      "mean": -2.2857495259590395,
+      "wr": 25.0,
+      "pf": 0.08997878532120807,
+      "start": "2026-06-17",
+      "end": "2026-07-24"
+    },
+    "FINAL_RESEARCH_TAIL_20": {
+      "n": 9,
+      "mean": 7.328699091062685,
+      "wr": 88.88888888888889,
+      "pf": 28.925440170367512,
+      "start": "2026-07-27",
+      "end": "2026-08-10"
+    }
+  },
+  "non_signal_comparison": {
+    "n": 85,
+    "mean_return_pct": 0.10578565120731889,
+    "edge_vs_non_signal_pct_points": -0.46323411002468584
+  },
+  "return_units": "percentage points, direction-adjusted gross return",
+  "entry_rule": "D1 07:30 ET Open",
+  "exit_rule": "D5 final regular-session Close",
+  "transaction_costs_bps_round_trip": 0,
+  "slippage_bps_round_trip": 0,
+  "position_sizing": "1x theoretical notional return per independent signal instance",
+  "overlap_treatment": "Signals are not suppressed by prior positions; manual portfolio decisions remain separate.",
+  "research_cutoff": "2026-08-31",
+  "reserved_forward_window": "2026-09-01 through 2026-10-31; not included.",
+  "classification": "ALL_UNIVERSE_RESEARCH_CANDIDATE",
+  "source_snapshot_hash": "a46e951388b33193561a0e7b900b16a9649825224acaad47c19613fcf011d551",
+  "per_instance_ledger": "historical-instance-ledger.csv"
+}

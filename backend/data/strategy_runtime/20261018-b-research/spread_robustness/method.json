@@ -1,0 +1,12 @@
+{
+  "status": "EXPLORATORY_POST_INSPECTION",
+  "source": "corrected August labels and causal daily panels",
+  "horizon": "D5",
+  "stock_round_trip_cost_bps": 25,
+  "condition": "option spread volume weighted prior 60 rank >= 0.80",
+  "matched_controls": "non-trigger observations same date, ATR14Pct bin <=2, (2,5], (5,10], >10, and stock prior-only within-symbol 60-day volume rank <=.33, (.33,.66], (.66,1]; exclude unmatched signals. Absolute volume units not assumed validated",
+  "bootstrap": "2000 circular 5-date block resamples of cross-sectional day-mean differences; descriptive, NOT post-selection confidence",
+  "extra_quote_lag": "D0 uses the immediately previous XNYS session option-rank (D-1), not an arbitrarily old quote; same D0 underlying label, no forward fill",
+  "exclusions": "top five determined separately per split using inspected returns and solely an influence diagnostic; NEVER a tradable rule",
+  "cutoff": "2026-08-31"
+}

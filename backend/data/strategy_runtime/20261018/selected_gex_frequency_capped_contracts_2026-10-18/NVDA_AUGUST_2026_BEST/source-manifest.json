@@ -1,0 +1,45 @@
+{
+  "manifest_format": 2,
+  "strategy_code": "GEX_NVDA_AUGUST_2026_BEST",
+  "version_code": "1.0.0-production",
+  "as_of": "2026-10-18T18:00:00+11:00",
+  "combined_source_hash": "a46e951388b33193561a0e7b900b16a9649825224acaad47c19613fcf011d551",
+  "implementation_sha256": "27e2fa82fdc23fdc654fdc839b4832ed90c773ac17bc0e24ae47c7e2139d0e66",
+  "database": {
+    "name": "StockDB_US",
+    "read_only_research": true,
+    "cutoff": "2026-08-31",
+    "schemas": {
+      "capital": "Transform.OptionGEXChangeCapitalType",
+      "features": "Analysis.GEX_Features",
+      "intraday": "StockData.PriceHistoryTimeFrame",
+      "option_quotes_explored_not_used": "StockData.OptionDelayedQuote_V2"
+    }
+  },
+  "option_quote_timing_policy": {
+    "observation_date": "authoritative US trading date",
+    "create_date": "insert-system timestamp only; never relabels ObservationDate",
+    "last_trade_time": "option last-trade timestamp in source US timezone",
+    "open_interest_availability": "commonly available on the second Sydney date between 20:00 and 23:00; map to the D1 07:30 ET readiness gate"
+  },
+  "query_policy": {
+    "symbols": [
+      "NVDA.US"
+    ],
+    "capital_types": [
+      "BC",
+      "BP",
+      "SC",
+      "SP"
+    ],
+    "timeframe": "30M",
+    "future_labels_excluded": [
+      "TomorrowChange",
+      "Next2DaysChange",
+      "Next5DaysChange",
+      "Next10DaysChange",
+      "Next20DaysChange"
+    ]
+  },
+  "research_source_note": "Direct StockDB_US research through 2026-08-31 only; no Google Drive; September and October reserved."
+}

@@ -1,0 +1,15 @@
+{
+  "status": "EXPLORATORY_PRICE_PROXY_NOT_EXECUTABLE_FILLS",
+  "sql_mode": "SELECT only, no replay changes",
+  "cutoff": "2026-08-31",
+  "quote_availability": "D0 quote readiness at D1 07:00 ET is an OPERATOR ASSUMPTION; CreateDate/revisions cannot by themselves prove historical first readiness",
+  "entry_price_proxies": [
+    "07:30 bar open",
+    "07:30 bar close (only observable at 08:00)",
+    "08:00 bar open",
+    "09:30 bar open (different trading window)"
+  ],
+  "exit": "unchanged audited D5 regular close derived from original 07:30 label; exit availability and same-stock price units assumed",
+  "cost": "25 bps flat round trip; no premarket liquidity, impact or short borrow modeled",
+  "interpretation": "07:30 bar close is not a fill at 07:30; opens at 08:00/09:30 may also be unavailable once the decision has been made. Proxy sensitivity, NOT execution validation."
+}

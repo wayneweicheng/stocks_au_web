@@ -1,0 +1,21 @@
+{
+  "strategy_code": "GEX_XOM_AUGUST_2026_BEST",
+  "version_code": "1.0.0-production",
+  "fixtures": [
+    {
+      "id": "missing-required-input",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED"
+      }
+    },
+    {
+      "id": "reserved-oos",
+      "expected": "September and October 2026 excluded"
+    }
+  ]
+}

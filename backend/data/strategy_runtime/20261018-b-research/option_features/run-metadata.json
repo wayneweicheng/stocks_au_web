@@ -1,0 +1,15 @@
+{
+  "symbols_requested": 180,
+  "symbols_with_quote_days": 180,
+  "failed_symbol_count": 0,
+  "non_session_symbol_dates_excluded": 494,
+  "resumable_cache_dir": "C:\\Repo\\stocks_au_web\\backend\\data\\strategy_runtime\\20261018-b-research\\option_features\\daily_cache",
+  "quote_min_days_filter": 120,
+  "development_cutoff": "2026-08-31",
+  "date_start": "2025-06-02",
+  "date_end": "2026-08-31",
+  "assumed_availability": "D0 ObservationDate is assumed available before D1 around 07:00 ET; runtime must gate on freshness.",
+  "weights": "Every weighted feature uses its own valid-value denominator. Greek columns are volume-weighted absolute source values, not asserted dollar exposures.",
+  "no_oos_selection": true,
+  "no_db_writes": true
+}

@@ -1,0 +1,38 @@
+{
+  "strategy_code": "GEX_BABA_BULL_TREND_WEAK_CALL_EXHAUSTION",
+  "version_code": "2.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "Price_SMA20": 173.7885,
+        "Price_SMA50": 150.961458,
+        "BuyCall_GEXDeltaPerc_Rank60": 0.0
+      },
+      "expected_signal": "BABA_BULL_TREND_WEAK_CALL_EXHAUSTION"
+    },
+    {
+      "id": "no-signal",
+      "purpose": "Illustrative input with at least one predicate component false",
+      "trigger_condition": "Price_SMA20 > Price_SMA50 AND BuyCall_GEXDeltaPerc_Rank60 <= 0.80",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "reserved-oos",
+      "expected": "Do not use September or October rows in this packet"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED"
+      }
+    }
+  ]
+}

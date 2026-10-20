@@ -1,0 +1,8 @@
+{
+  "legacy_signal_rows": 221,
+  "new_signal_rows": 221,
+  "same_symbol_and_D0": 221,
+  "old_only": 0,
+  "new_only": 0,
+  "caveat": "Legacy NQMAIN-sourced RETURNS ARE INVALID even when the trigger identity matches. New replay uses stock-specific, independently audited bars and only labels through October 15."
+}

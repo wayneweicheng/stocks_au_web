@@ -1,0 +1,13 @@
+ticker,trigger,full_n,full_mean_return_pct,validation_n,validation_mean_return_pct,final_n,final_mean_return_pct,reason
+CRWD,SCOptionCountChg_Rank60 <= 0.80 AND Prev2DaysChange >= -1.0,36,-1.5931621478228082,7,0.7649414852591708,8,2.200547364207943,full-history directional expectancy/PF failed
+QCOM,BB_Bandwidth <= 0.346 AND BullShareChgAbsRank60 <= 0.65,29,-0.09187138193961794,6,0.08297573668942237,6,-0.0785378106690604,full-history directional expectancy/PF failed
+GLD,GEX > GEX_SMA20 AND RSI > 65,23,0.05145501271960824,5,1.1769528783755634,5,-1.231660680072213,final research tail failed
+INTC,BPOptionShare >= 0.31 AND BB_Bandwidth >= 0.253,49,4.4756258499553025,10,-0.7128756877062405,10,3.6965453403462583,chronological validation failed
+PANW,ABS(PCRChangePct) >= 10.0 AND QQQ_BB_Bandwidth >= 0.07,54,5.108679181051569,11,8.815670739307901,11,-0.3827807468984839,final research tail failed
+TLT,PriceDistSMA50Pct >= -1.0 AND SCShareChgRank60 >= 0.60,18,0.6309664229922006,4,-0.3109677478155132,4,1.4806259335762406,chronological validation failed
+COHR,SCShareRank60 <= 0.60 AND PX_WholeDayRet >= -4.0 AND PX_RTHRet >= -2.5,25,7.213985102483564,5,2.6067071204412744,5,0.9285649600712189,not selected
+DRAM,GEX_Rank60 >= 0.30 AND TodayChange >= -3.0,19,5.401145469143497,4,1.373232340186764,4,-0.07726920755884159,final research tail failed
+FORM,GEX_SMA5 >= -814.3 AND ConcentrationHHI <= 0.5445,14,6.615513039196633,3,0.9693231345168906,3,8.421064306888185,not selected
+ZS,BTC_chg5 <= 2.1 AND BullShareChgAbsRank60 <= 0.65,25,3.171077067727118,5,4.9654662778726255,5,-0.9682373098430453,final research tail failed
+HPE,SPShareChgRank60 > 0.37,30,0.09349006894497063,6,-0.08832581524068073,6,1.2294068929468438,chronological validation failed
+SOXL,SafeGEXVolRank60 >= 0.65 AND QQQ_BB_Bandwidth > 0.081,31,8.367320599414441,6,0.9979314975878046,7,-1.4291407592286627,final research tail failed

@@ -1,0 +1,11 @@
+"""Declarative candidate packet; runtime evaluates strategy.descriptor.json."""
+STRATEGY_CODE = "GEX_TLT_AUGUST_2026_BEST"
+VERSION = "1.0.0-production"
+SIGNAL_CODE = "TLT_AUGUST_2026_BEST_SIGNAL"
+DIRECTION = "SHORT"
+HOLDING_PERIOD = "D5"
+TRIGGER = 'BullShareChgAbsRank60 >= 0.80'
+REQUIRED_INPUTS = ['BullShareChgAbsRank60']
+DEPLOYMENT_TARGET = "PRODUCTION"
+NOTIFICATIONS_ENABLED = True
+BROKER_EXECUTION = "HARD_DISABLED"

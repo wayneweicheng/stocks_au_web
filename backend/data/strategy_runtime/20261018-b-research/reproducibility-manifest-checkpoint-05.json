@@ -1,0 +1,90 @@
+{
+  "cutoff": "2026-08-31",
+  "source": "StockDB_US SQL read-only",
+  "old_archive_preserved": true,
+  "broker_execution": "HARD_DISABLED",
+  "new_packets_status": "RESEARCH_DRAFT in ZIP only; not provisioned",
+  "tests": "25 research passed; 119 strategy-runtime passed, 1 skipped",
+  "files": [
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/baseline_40_runtime_aligned_review_packets_2026-10-18-b.zip",
+      "sha256": "eae64a7bd1fbdaaa1746bf2424c640abcb712233e6b752086e4dd6e8b78ae4c3",
+      "bytes": 581891
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/baseline_40_corrected_review_packets_2026-10-18-b.zip",
+      "sha256": "1e8b08430a808fbead0acf9433e69ada3085475a21dedd2829161766aa749345",
+      "bytes": 583749
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/baseline_40_legacy_ledger_audit.json",
+      "sha256": "249a7a9406adceb39817ff4329b6170e71d9467284229a44ebfc22b5e8f78737",
+      "bytes": 454
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/baseline_40_runtime_parity.json",
+      "sha256": "a5659bc869bfe9ca1fc827620c0f548c35c8dfb20812e98248a8724d56e46560",
+      "bytes": 460
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/baseline_40_runtime_panel_metadata.json",
+      "sha256": "c95133d25f29270e61c27c73e244d8751560ae51f1487fa9c998acc5b82ce88b",
+      "bytes": 700
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/baseline_40_runtime_aligned_split_comparison.csv",
+      "sha256": "15864e3fd57e780572bd2cb1291a3d81a4d2abe3732068bb04bef70ae44a3c2e",
+      "bytes": 767
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/baseline_40_runtime_aligned_split_manifest.json",
+      "sha256": "e43609b4aaeabb95821f63b54bad275bf9b7025d58bf762f0a591c8aa76a3d66",
+      "bytes": 431
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/baseline_40_live_state_read_only.json",
+      "sha256": "3a07a6e8722cb88b17a3df3790813917abfd7d94cb91cf88b35a9c9c28b60e16",
+      "bytes": 712
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/checkpoint-05.md",
+      "sha256": "2d169d129a824f5c72b10f72fa735b707fe341816b53ab483ed1cee34e04e92b",
+      "bytes": 6932
+    },
+    {
+      "path": "backend/tools/multisource_research/rebuild_baseline_40_packets.py",
+      "sha256": "936e701e8acc4ce85b7c96e0a38d9ead39c18de28b67cd89afc43853ce8dd1c5",
+      "bytes": 18741
+    },
+    {
+      "path": "backend/tools/multisource_research/test_rebuild_baseline_40_packets.py",
+      "sha256": "9055d35376af7853a69052e06971e855b8627f41f8848a451b81621deb16a9bf",
+      "bytes": 3325
+    },
+    {
+      "path": "backend/tools/multisource_research/audit_baseline_40_archive.py",
+      "sha256": "666709ab27941e21e657b1225b385c0e62dfd8665f80f3687eec5de693aeb2c2",
+      "bytes": 2504
+    },
+    {
+      "path": "backend/tools/multisource_research/audit_baseline_40_runtime_parity.py",
+      "sha256": "835c71a9a3ff3e4353fd05ace5002a2fcba5c207879af53c0eb54426fdb553fa",
+      "bytes": 7135
+    },
+    {
+      "path": "backend/tools/multisource_research/build_baseline_40_runtime_panel.py",
+      "sha256": "b57d5b4581748934aade5ddc56a46c212fa508d20e4565d67dea8523309f992b",
+      "bytes": 6269
+    },
+    {
+      "path": "backend/tools/multisource_research/report_baseline_40_splits.py",
+      "sha256": "6aa423cf0e56f9abc2a6ed72faa07203ed38e3e0ce9db1559ba3ab5e5068a3a2",
+      "bytes": 2411
+    },
+    {
+      "path": "backend/tools/multisource_research/audit_live_baseline_40_state.py",
+      "sha256": "bae4af5a5f5cb25d79bccb1a40f56f5fdb2006319766eb45721a008cb410254e",
+      "bytes": 4159
+    }
+  ]
+}

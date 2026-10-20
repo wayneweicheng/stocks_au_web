@@ -1,0 +1,19 @@
+{
+  "rows": 10591,
+  "entry_matches": 10591,
+  "audit_sha256": "9774948c3fc9f76b79eee4faed3d5517f9f416034e7e3f2c97e919bc4fcab19f",
+  "exits": {
+    "D1": {
+      "resolved": 10591,
+      "pending_or_unresolved": 0
+    },
+    "D3": {
+      "resolved": 10422,
+      "pending_or_unresolved": 169
+    },
+    "D5": {
+      "resolved": 10250,
+      "pending_or_unresolved": 341
+    }
+  }
+}

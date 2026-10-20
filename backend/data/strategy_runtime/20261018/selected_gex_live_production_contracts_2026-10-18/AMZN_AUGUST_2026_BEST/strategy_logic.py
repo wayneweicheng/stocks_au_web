@@ -1,0 +1,11 @@
+"""Declarative candidate packet; runtime evaluates strategy.descriptor.json."""
+STRATEGY_CODE = "GEX_AMZN_AUGUST_2026_BEST"
+VERSION = "1.0.0-production"
+SIGNAL_CODE = "AMZN_AUGUST_2026_BEST_SIGNAL"
+DIRECTION = "LONG"
+HOLDING_PERIOD = "D5"
+TRIGGER = 'BPOptionCount_Rank60 >= 0.80'
+REQUIRED_INPUTS = ['BPOptionCount_Rank60']
+DEPLOYMENT_TARGET = "PRODUCTION"
+NOTIFICATIONS_ENABLED = True
+BROKER_EXECUTION = "HARD_DISABLED"

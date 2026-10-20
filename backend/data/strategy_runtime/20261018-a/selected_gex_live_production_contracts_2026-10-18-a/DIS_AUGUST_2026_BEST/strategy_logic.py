@@ -1,0 +1,11 @@
+"""Declarative candidate packet; runtime evaluates strategy.descriptor.json."""
+STRATEGY_CODE = "GEX_DIS_AUGUST_2026_BEST"
+VERSION = "1.0.0-production"
+SIGNAL_CODE = "DIS_AUGUST_2026_BEST_SIGNAL"
+DIRECTION = "SHORT"
+HOLDING_PERIOD = "D5"
+TRIGGER = 'SafeGEXVolRank60 >= 0.80 AND ConcentrationHHIRank60 >= 0.80'
+REQUIRED_INPUTS = ['SafeGEXVolRank60', 'ConcentrationHHIRank60']
+DEPLOYMENT_TARGET = "PRODUCTION"
+NOTIFICATIONS_ENABLED = True
+BROKER_EXECUTION = "HARD_DISABLED"

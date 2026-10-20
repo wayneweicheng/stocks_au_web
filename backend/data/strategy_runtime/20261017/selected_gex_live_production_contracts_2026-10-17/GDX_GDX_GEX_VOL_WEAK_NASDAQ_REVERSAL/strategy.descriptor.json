@@ -1,0 +1,191 @@
+{
+  "descriptor_format": 2,
+  "strategy_code": "GEX_GDX_GEX_VOL_WEAK_NASDAQ_REVERSAL",
+  "display_name": "GDX GEX-Vol Weak-NASDAQ Reversal GEX Strategy",
+  "version_code": "2.0.0-production",
+  "implementation_key": "gex_gdx_gex_vol_weak_nasdaq_reversal.v2_0_0",
+  "status": "IMPLEMENTABLE",
+  "definition": {
+    "purpose": "GDX gex-vol weak-nasdaq reversal based on causal StockDB_US GEX, capital-type, and benchmark context.",
+    "rationale": "Empirical candidate retained after chronological SQL-backed research through 2026-08-31; not a claim of proof.",
+    "market_timezone": "America/New_York",
+    "calendar": "US listed-equity sessions; DST and holidays handled by the runtime.",
+    "multiple_signal_policy": "One actionable signal per D0; DATA_ERROR precedes NO_SIGNAL.",
+    "trigger_precedence": [
+      "GDX_GEX_VOL_WEAK_NASDAQ_REVERSAL",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ],
+    "source_refresh_gate": "At/after D1 07:30 ET require previous completed D0, complete required StockDB_US rows, causal rank history, and executable D1 entry. Missing/stale/null inputs => NOT_READY; no notification is created."
+  },
+  "research_governance": {
+    "owner": "USER",
+    "research_date": "2026-10-17",
+    "freeze_date": "2026-10-17",
+    "research_cutoff": "2026-08-31",
+    "reserved_oos_window": "2026-09-01 through 2026-10-31",
+    "change_summary": "New SQL-backed version; previous Google Drive packet was not used as a data source. Trigger frozen for user forward validation.",
+    "classification": "STRONG_VALIDATED",
+    "validation_method": "Chronological 60/20/20 split on resolved signal instances through the August cutoff. September and October are intentionally untouched.",
+    "bias_controls": [
+      "future-return fields excluded",
+      "prior-only causal rank60",
+      "D1 07:30 ET entry",
+      "SQL date cutoff",
+      "broker execution hard-disabled",
+      "multiple-testing risk disclosed"
+    ]
+  },
+  "instruments": [
+    {
+      "code": "GDX",
+      "role": "SUBJECT",
+      "market": "US listed market",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    }
+  ],
+  "feature_specification": [
+    {
+      "name": "SafeGEXVolRank60",
+      "source": "GEX_Features + causal layer",
+      "formula": "causal_rank60(GEX_Volatility)",
+      "units": "0..1",
+      "lookback": "prior 60 valid observations excluding current for causal ranks",
+      "minimum_prior_observations": 10,
+      "current_D0_in_reference_distribution": false,
+      "null_behavior": "NOT_READY",
+      "future_information_proof": "Computed from completed D0/prior SQL rows only; future-return labels are prohibited."
+    },
+    {
+      "name": "NASDAQ_chg5",
+      "source": "GEX_Features",
+      "formula": "100*(NASDAQ[D0]/NASDAQ[D-5]-1)",
+      "units": "percent",
+      "lookback": "prior 60 valid observations excluding current for causal ranks",
+      "minimum_prior_observations": null,
+      "current_D0_in_reference_distribution": "SOURCE_DEFINED",
+      "null_behavior": "NOT_READY",
+      "future_information_proof": "Computed from completed D0/prior SQL rows only; future-return labels are prohibited."
+    }
+  ],
+  "signal_definitions": [
+    {
+      "signal_code": "GDX_GEX_VOL_WEAK_NASDAQ_REVERSAL",
+      "display_name": "GEX-Vol Weak-NASDAQ Reversal",
+      "direction": "LONG",
+      "confidence": "STRONG_VALIDATED",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "definition": "GEX-Vol Weak-NASDAQ Reversal using SQL-backed causal inputs.",
+      "trigger_condition": "SafeGEXVolRank60 >= 0.40 AND NASDAQ_chg5 <= -1.0",
+      "variables": [
+        "SafeGEXVolRank60",
+        "NASDAQ_chg5"
+      ],
+      "entry_policy": "D1 07:30 America/New_York 30-minute bar Open; D1 is next valid US session after D0.",
+      "holding_period": "D5",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session bar Close",
+        "No stop-loss or take-profit in this contract",
+        "Missing exit bar => PENDING",
+        "Opposing signal does not alter this instance"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": true,
+      "sends_notification": true,
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 30,
+        "wins": 25,
+        "losses": 5,
+        "win_rate_pct": 83.33333333333334,
+        "profit_factor": 15.846040888693738,
+        "as_of": "2026-10-17T18:00:00+11:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      }
+    },
+    {
+      "signal_code": "DATA_ERROR",
+      "display_name": "Data Error",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed but evaluation received invalid non-finite input.",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": [],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE"
+      }
+    },
+    {
+      "signal_code": "NO_SIGNAL",
+      "display_name": "No Signal",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed and actionable predicate is false.",
+      "trigger_condition": "NOT(SafeGEXVolRank60 >= 0.40 AND NASDAQ_chg5 <= -1.0)",
+      "variables": [
+        "SafeGEXVolRank60",
+        "NASDAQ_chg5"
+      ],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE"
+      }
+    }
+  ],
+  "production_policy": {
+    "deployment_state": "PRODUCTION",
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "mode": "NOTIFICATION_ONLY",
+    "broker_execution": "HARD_DISABLED",
+    "manual_trade_optional": true,
+    "manual_trade_required_for_outcome": false,
+    "notifications": {
+      "enabled": true,
+      "channel": "PUSHOVER",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "recipient": "Configured production recipient from secrets; never embedded"
+    },
+    "report_authentication_required": true,
+    "change_control": "Any trigger, feature, direction, entry, exit, or notification change requires a new version."
+  },
+  "provenance": {
+    "as_of": "2026-10-17T18:00:00+11:00",
+    "research_window": {
+      "start": "2026-03-18",
+      "end": "2026-08-31"
+    },
+    "reserved_oos_window": {
+      "start": "2026-09-01",
+      "end": "2026-10-31",
+      "status": "UNTOUCHED_BY_THIS_PACKET"
+    },
+    "source_hash": "4c78e4431ef0950b51b3d7c729c1d1cf238cdf922e33cb676d95df54f72bd6a6",
+    "implementation_hash": "8f6f1a31ee2d95d40d614b6639f6258a08738b4019a5fb014a535931a1317806",
+    "source_manifest": "source-manifest.json"
+  }
+}

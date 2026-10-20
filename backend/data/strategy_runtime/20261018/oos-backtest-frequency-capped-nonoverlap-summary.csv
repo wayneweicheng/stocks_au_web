@@ -1,0 +1,2 @@
+rule,total_signals,finalized,pending,win_rate_pct,mean_return_pct,profit_factor
+"frequency<=25%, keep first non-overlapping D5 per ticker",120,100,20,50.0,0.3700890894999999,1.4733942729527885

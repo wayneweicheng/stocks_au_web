@@ -1,0 +1,11 @@
+"""Declarative candidate packet; runtime evaluates strategy.descriptor.json."""
+STRATEGY_CODE = "GEX_XBI_AUGUST_2026_BEST"
+VERSION = "1.0.0-production"
+SIGNAL_CODE = "XBI_AUGUST_2026_BEST_SIGNAL"
+DIRECTION = "LONG"
+HOLDING_PERIOD = "D5"
+TRIGGER = 'GEX_ZScore >= 1.0 AND PriceDistSMA50Pct >= 2.0'
+REQUIRED_INPUTS = ['GEX_ZScore', 'PriceDistSMA50Pct']
+DEPLOYMENT_TARGET = "PRODUCTION"
+NOTIFICATIONS_ENABLED = True
+BROKER_EXECUTION = "HARD_DISABLED"

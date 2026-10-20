@@ -1,0 +1,11 @@
+"""Declarative candidate packet; runtime evaluates strategy.descriptor.json."""
+STRATEGY_CODE = "GEX_OXY_AUGUST_2026_BEST"
+VERSION = "1.0.0-production"
+SIGNAL_CODE = "OXY_AUGUST_2026_BEST_SIGNAL"
+DIRECTION = "LONG"
+HOLDING_PERIOD = "D5"
+TRIGGER = 'ConcentrationHHIRank60 <= 0.20'
+REQUIRED_INPUTS = ['ConcentrationHHIRank60']
+DEPLOYMENT_TARGET = "PRODUCTION"
+NOTIFICATIONS_ENABLED = True
+BROKER_EXECUTION = "HARD_DISABLED"

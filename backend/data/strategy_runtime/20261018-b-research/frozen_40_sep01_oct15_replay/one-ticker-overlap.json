@@ -1,0 +1,9 @@
+{
+  "all_finalized_signals": 165,
+  "one_position_per_ticker_n": 88,
+  "n": 88,
+  "wr_pct": 48.86363636363637,
+  "mean_net_pct": 0.04998246719147384,
+  "pf_net": 1.027591145718311,
+  "note": "Close-day position occupies the morning slot. Pending trades are excluded from this selection diagnostic, so it is NOT a historical capital/NAV backtest."
+}

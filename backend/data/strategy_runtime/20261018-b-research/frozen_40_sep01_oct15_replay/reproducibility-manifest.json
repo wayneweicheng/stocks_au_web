@@ -1,0 +1,89 @@
+{
+  "research_status": "RETROSPECTIVE_ALREADY_INSPECTED_NOT_PRISTINE",
+  "cutoff": "2026-10-15",
+  "SQL_writes": false,
+  "production_changes": false,
+  "tests": "31 research passed; 119 strategy runtime passed, 1 skipped",
+  "files": [
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/run-manifest.json",
+      "sha256": "e4c8eb2d50a2feed8b4c070827d5231827bf91bf3e9a2da1f80eaf91bfe05ddc",
+      "bytes": 1815
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/candidate-dates-and-labels.csv",
+      "sha256": "b0ff08d066fdaeb7adce7e749c141423f7523618077155ae273b2af2b2f5dc46",
+      "bytes": 225286
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/signal-ledger-including-pending.csv",
+      "sha256": "af8ab94b20aed71609a616314606c8db92af4e4a63b68d956dcf55b6757c0431",
+      "bytes": 39456
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/results-by-period-and-cost.csv",
+      "sha256": "ce7ff8945dca032368d7b1f0cddd43f13825962ec6b0b64f4067830219ea62c9",
+      "bytes": 4113
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/results-by-ticker.csv",
+      "sha256": "26f3b456fd5cca266e56f490e62849616c8fe2bf59a1b66490809a443616bb4b",
+      "bytes": 3070
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/source-coverage-by-symbol.csv",
+      "sha256": "b8c67219cba8f8c1e2f6728b400be9b25491d3ddd345d63e367e79076d00e0f0",
+      "bytes": 973
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/independent-raw-bar-audit.csv",
+      "sha256": "b041270105dc7bbd9374598c1d11d038c0034e46a947a7c251751d5dcfec8521",
+      "bytes": 22870
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/independent-raw-bar-audit.json",
+      "sha256": "f0f13f031e7eaaea4640eadec91b930d1930f1bfce6686d95f8ef0bb3b595bfd",
+      "bytes": 410
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/one-ticker-overlap.json",
+      "sha256": "d73cc5027dacb65670310716a04c131abb0226b6d64ad132280410b7a170ad0f",
+      "bytes": 358
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/concentration-sensitivity.json",
+      "sha256": "fcb01edfb057875b0d97a3444f6d9c66871bdde9060ad393d487ed5f8b68399e",
+      "bytes": 1005
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/frozen_40_sep01_oct15_replay/legacy-signal-parity-not-outcome-parity.json",
+      "sha256": "3c31acb4d986e10e5c82ccd851da4f853af4b331dcdd0877f344347b5ddbdc86",
+      "bytes": 321
+    },
+    {
+      "path": "backend/tools/multisource_research/backtest_frozen_40_sep_oct.py",
+      "sha256": "fae5cf9718caf934ea2ad1f68133eabf8e3958f2b82ddf4a58e9de48153701fe",
+      "bytes": 13654
+    },
+    {
+      "path": "backend/tools/multisource_research/audit_frozen_40_sep_oct_prices.py",
+      "sha256": "7bf0c9b8fc85994424853c7cf05dd390cda840ef0b86de639f070e3800197e88",
+      "bytes": 3723
+    },
+    {
+      "path": "backend/tools/multisource_research/report_frozen_40_sep_oct.py",
+      "sha256": "30ba8b6701f1ca550327001f00296b5c6ebed6ebaa663708ce9a89f6c6afb176",
+      "bytes": 3214
+    },
+    {
+      "path": "backend/tools/multisource_research/test_backtest_frozen_40_sep_oct.py",
+      "sha256": "7c9d99832cac88ac2a1be40bfb8114f94e20bbbf348c896a0fc68fc826385a76",
+      "bytes": 3073
+    },
+    {
+      "path": "backend/data/strategy_runtime/20261018-b-research/checkpoint-06.md",
+      "sha256": "5c60fe2a9d0600722ab3c7b202c3611dada55afde970de5500c8c375a929d750",
+      "bytes": 5722
+    }
+  ]
+}

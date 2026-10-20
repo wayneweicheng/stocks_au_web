@@ -34,6 +34,7 @@ type SpxZone = {
   relevanceScore: number | null;
   polarity: string;
   structure: LevelStructure;
+  reportZone: JsonObject;
 };
 
 type MappingResponse = {
@@ -68,7 +69,9 @@ const INSTRUMENTS: Instrument[] = [
 ];
 
 function numberValue(value: unknown): number | null {
-  const parsed = typeof value === "number" ? value : Number(value);
+  if (value == null || (typeof value === "string" && !value.trim())) return null;
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -211,6 +214,7 @@ function extractZones(data: JsonObject): SpxZone[] {
         relevanceScore: numberValue(row.execution_relevance_score),
         polarity: String(row.polarity || side),
         structure: structureFromRow(row, side),
+        reportZone: row,
       });
     });
   }
@@ -420,6 +424,8 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
                   <MappedLevelReportDetails
                     side={zone.side}
                     detail={htmlLevelDetails[levelReportKey(zone.side, zone.rank)]}
+                    rank={zone.rank}
+                    zone={zone.reportZone}
                   />
                 </div>
                 <div className="text-right text-sm text-slate-600">

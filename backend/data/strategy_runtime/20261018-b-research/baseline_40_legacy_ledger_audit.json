@@ -1,0 +1,9 @@
+{
+  "old_packets": 40,
+  "old_instances": 869,
+  "corrected_D0_present": 862,
+  "old_entry_prices_matching_corrected": 1,
+  "old_returns_matching_corrected": 0,
+  "old_returns_with_resolved_corrected_comparator": 862,
+  "note": "Old archive immutable. Differences reflect historical entry-time/session labeling defects; legacy gross performance is not a valid stock baseline. Date/trigger selection was originally made using flawed research."
+}

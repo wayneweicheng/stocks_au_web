@@ -1,0 +1,37 @@
+{
+  "strategy_code": "GEX_ADBE_OPTION_ACTIVITY_REBOUND",
+  "version_code": "2.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "BPOptionCount_Rank60": 0.1,
+        "TotalOptionCount_Rank60": 0.4833333333333333
+      },
+      "expected_signal": "ADBE_OPTION_ACTIVITY_REBOUND"
+    },
+    {
+      "id": "no-signal",
+      "purpose": "Illustrative input with at least one predicate component false",
+      "trigger_condition": "BPOptionCount_Rank60 <= 0.70 AND TotalOptionCount_Rank60 <= 0.70",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "reserved-oos",
+      "expected": "Do not use September or October rows in this packet"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED"
+      }
+    }
+  ]
+}

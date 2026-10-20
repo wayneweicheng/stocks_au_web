@@ -1,0 +1,19 @@
+{
+  "research_cutoff": "2026-08-31",
+  "reserved_forward_window": "2026-09-01 through 2026-10-31",
+  "selected_candidate_count": 58,
+  "frequency_capped_ticker_count": 40,
+  "frequency_capped_signal_count": 869,
+  "frequency_rule": "candidate frequency_pct <= 25; frozen from pre-cutoff research and not fitted to OOS",
+  "tested": [
+    "fixed D1/D3/D5 exits",
+    "causal regime partitions",
+    "signal strength distances",
+    "daily signal caps",
+    "0/10/25/50/100 bps costs"
+  ],
+  "not_tested": [
+    "trailing/MAE stops require intraday path replay and are not inferred from daily returns"
+  ],
+  "source": "StockDB_US-derived eligible-outcomes.csv and best-by-ticker.csv"
+}

@@ -1,0 +1,12 @@
+{
+  "quote_symbols_at_least_120_days": 145,
+  "with_30m_history": 55,
+  "with_30m_at_least_120_days": 42,
+  "existing_label_symbols_with_long_quotes": 52,
+  "long_quote_symbols_with_30m_outside_existing_label_universe": [
+    "SPX.US",
+    "SPXW.US",
+    "_VIX.US"
+  ],
+  "conclusion": "Only non-equity context instruments have 30M history beyond the original 87. A daily-open/09:30 entry is a distinct untested execution family, not an expansion of the 07:30 label."
+}

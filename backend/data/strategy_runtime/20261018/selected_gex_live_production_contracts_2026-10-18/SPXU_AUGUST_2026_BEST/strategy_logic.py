@@ -1,0 +1,11 @@
+"""Declarative candidate packet; runtime evaluates strategy.descriptor.json."""
+STRATEGY_CODE = "GEX_SPXU_AUGUST_2026_BEST"
+VERSION = "1.0.0-production"
+SIGNAL_CODE = "SPXU_AUGUST_2026_BEST_SIGNAL"
+DIRECTION = "LONG"
+HOLDING_PERIOD = "D1"
+TRIGGER = 'PutBuyShareChgAbsRank60 >= 0.80'
+REQUIRED_INPUTS = ['PutBuyShareChgAbsRank60']
+DEPLOYMENT_TARGET = "PRODUCTION"
+NOTIFICATIONS_ENABLED = True
+BROKER_EXECUTION = "HARD_DISABLED"

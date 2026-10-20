@@ -1,0 +1,191 @@
+{
+  "descriptor_format": 2,
+  "strategy_code": "GEX_ADBE_OPTION_ACTIVITY_REBOUND",
+  "display_name": "ADBE Option Activity Rebound GEX Strategy",
+  "version_code": "2.0.0-production",
+  "implementation_key": "gex_adbe_option_activity_rebound.v2_0_0",
+  "status": "IMPLEMENTABLE",
+  "definition": {
+    "purpose": "ADBE option activity rebound based on causal StockDB_US GEX, capital-type, and benchmark context.",
+    "rationale": "Empirical candidate retained after chronological SQL-backed research through 2026-08-31; not a claim of proof.",
+    "market_timezone": "America/New_York",
+    "calendar": "US listed-equity sessions; DST and holidays handled by the runtime.",
+    "multiple_signal_policy": "One actionable signal per D0; DATA_ERROR precedes NO_SIGNAL.",
+    "trigger_precedence": [
+      "ADBE_OPTION_ACTIVITY_REBOUND",
+      "DATA_ERROR",
+      "NO_SIGNAL"
+    ],
+    "source_refresh_gate": "At/after D1 07:30 ET require previous completed D0, complete required StockDB_US rows, causal rank history, and executable D1 entry. Missing/stale/null inputs => NOT_READY; no notification is created."
+  },
+  "research_governance": {
+    "owner": "USER",
+    "research_date": "2026-10-17",
+    "freeze_date": "2026-10-17",
+    "research_cutoff": "2026-08-31",
+    "reserved_oos_window": "2026-09-01 through 2026-10-31",
+    "change_summary": "New SQL-backed version; previous Google Drive packet was not used as a data source. Trigger frozen for user forward validation.",
+    "classification": "STRONG_VALIDATED",
+    "validation_method": "Chronological 60/20/20 split on resolved signal instances through the August cutoff. September and October are intentionally untouched.",
+    "bias_controls": [
+      "future-return fields excluded",
+      "prior-only causal rank60",
+      "D1 07:30 ET entry",
+      "SQL date cutoff",
+      "broker execution hard-disabled",
+      "multiple-testing risk disclosed"
+    ]
+  },
+  "instruments": [
+    {
+      "code": "ADBE",
+      "role": "SUBJECT",
+      "market": "US listed market",
+      "currency": "USD",
+      "timezone": "America/New_York"
+    }
+  ],
+  "feature_specification": [
+    {
+      "name": "BPOptionCount_Rank60",
+      "source": "Option_GEX_Change_Capital_Type",
+      "formula": "causal_rank60(NoOfOption where CapitalType='BP')",
+      "units": "0..1",
+      "lookback": "prior 60 valid observations excluding current for causal ranks",
+      "minimum_prior_observations": 10,
+      "current_D0_in_reference_distribution": false,
+      "null_behavior": "NOT_READY",
+      "future_information_proof": "Computed from completed D0/prior SQL rows only; future-return labels are prohibited."
+    },
+    {
+      "name": "TotalOptionCount_Rank60",
+      "source": "Option_GEX_Change_Capital_Type",
+      "formula": "causal_rank60(sum(NoOfOption by BC/BP/SC/SP))",
+      "units": "0..1",
+      "lookback": "prior 60 valid observations excluding current for causal ranks",
+      "minimum_prior_observations": 10,
+      "current_D0_in_reference_distribution": false,
+      "null_behavior": "NOT_READY",
+      "future_information_proof": "Computed from completed D0/prior SQL rows only; future-return labels are prohibited."
+    }
+  ],
+  "signal_definitions": [
+    {
+      "signal_code": "ADBE_OPTION_ACTIVITY_REBOUND",
+      "display_name": "Option Activity Rebound",
+      "direction": "LONG",
+      "confidence": "STRONG_VALIDATED",
+      "action": "PLAN_ENTRY",
+      "notification_level": "NORMAL",
+      "production_notification_allowed": true,
+      "definition": "Option Activity Rebound using SQL-backed causal inputs.",
+      "trigger_condition": "BPOptionCount_Rank60 <= 0.70 AND TotalOptionCount_Rank60 <= 0.70",
+      "variables": [
+        "BPOptionCount_Rank60",
+        "TotalOptionCount_Rank60"
+      ],
+      "entry_policy": "D1 07:30 America/New_York 30-minute bar Open; D1 is next valid US session after D0.",
+      "holding_period": "D5",
+      "exit_conditions": [
+        "Scheduled exit at D5 final regular-session bar Close",
+        "No stop-loss or take-profit in this contract",
+        "Missing exit bar => PENDING",
+        "Opposing signal does not alter this instance"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": true,
+      "sends_notification": true,
+      "historical_performance": {
+        "status": "AVAILABLE",
+        "instances": 48,
+        "wins": 38,
+        "losses": 10,
+        "win_rate_pct": 79.16666666666666,
+        "profit_factor": 5.273660527324492,
+        "as_of": "2026-10-17T18:00:00+11:00",
+        "source_reference": "historical-performance.json + historical-instance-ledger.csv"
+      }
+    },
+    {
+      "signal_code": "DATA_ERROR",
+      "display_name": "Data Error",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "ERROR_AUDIT_ONLY",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed but evaluation received invalid non-finite input.",
+      "trigger_condition": "evaluation_error_after_readiness == true",
+      "variables": [],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE"
+      }
+    },
+    {
+      "signal_code": "NO_SIGNAL",
+      "display_name": "No Signal",
+      "direction": "NONE",
+      "confidence": "NOT_APPLICABLE",
+      "action": "NONE",
+      "notification_level": "NONE",
+      "production_notification_allowed": false,
+      "definition": "Readiness passed and actionable predicate is false.",
+      "trigger_condition": "NOT(BPOptionCount_Rank60 <= 0.70 AND TotalOptionCount_Rank60 <= 0.70)",
+      "variables": [
+        "BPOptionCount_Rank60",
+        "TotalOptionCount_Rank60"
+      ],
+      "entry_policy": "NONE",
+      "holding_period": "NONE",
+      "exit_conditions": [
+        "NONE"
+      ],
+      "creates_report": true,
+      "creates_paper_plan": false,
+      "sends_notification": false,
+      "historical_performance": {
+        "status": "NOT_AVAILABLE"
+      }
+    }
+  ],
+  "production_policy": {
+    "deployment_state": "PRODUCTION",
+    "deployment_target": "PRODUCTION",
+    "enabled": true,
+    "mode": "NOTIFICATION_ONLY",
+    "broker_execution": "HARD_DISABLED",
+    "manual_trade_optional": true,
+    "manual_trade_required_for_outcome": false,
+    "notifications": {
+      "enabled": true,
+      "channel": "PUSHOVER",
+      "deduplication_key": "SHA256(strategy_code|version_code|market_date|signal_code|source_revision)",
+      "recipient": "Configured production recipient from secrets; never embedded"
+    },
+    "report_authentication_required": true,
+    "change_control": "Any trigger, feature, direction, entry, exit, or notification change requires a new version."
+  },
+  "provenance": {
+    "as_of": "2026-10-17T18:00:00+11:00",
+    "research_window": {
+      "start": "2026-05-07",
+      "end": "2026-08-31"
+    },
+    "reserved_oos_window": {
+      "start": "2026-09-01",
+      "end": "2026-10-31",
+      "status": "UNTOUCHED_BY_THIS_PACKET"
+    },
+    "source_hash": "4c78e4431ef0950b51b3d7c729c1d1cf238cdf922e33cb676d95df54f72bd6a6",
+    "implementation_hash": "10eac839e03587b73b070bdcbb330309cbb7b700ff28c81ab7c9fb96378badcc",
+    "source_manifest": "source-manifest.json"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "strategy_code": "GEX_XLE_GEX_REGIME_ENERGY_REBOUND",
+  "version_code": "2.0.0-production",
+  "fixtures": [
+    {
+      "id": "actionable-true",
+      "inputs": {
+        "QQQ_SafeGEXVolRank60": 0.5,
+        "GEX_ZScore_60day": 0.4275643234414559
+      },
+      "expected_signal": "XLE_GEX_REGIME_ENERGY_REBOUND"
+    },
+    {
+      "id": "no-signal",
+      "purpose": "Illustrative input with at least one predicate component false",
+      "trigger_condition": "QQQ_SafeGEXVolRank60 <= 0.60 AND GEX_ZScore_60day > 0",
+      "expected_signal": "NO_SIGNAL"
+    },
+    {
+      "id": "missing-required-input",
+      "expected_state": "NOT_READY"
+    },
+    {
+      "id": "reserved-oos",
+      "expected": "Do not use September or October rows in this packet"
+    },
+    {
+      "id": "production-policy",
+      "expected": {
+        "enabled": true,
+        "notifications_enabled": true,
+        "mode": "NOTIFICATION_ONLY",
+        "broker_execution": "HARD_DISABLED"
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "train_before": "2026-04-23",
+  "validation_before": "2026-06-30",
+  "last_exit_cutoff": "2026-08-31",
+  "purge": "Exit date strictly before next split starts",
+  "cost_round_trip_bps": 25,
+  "bias": "Frozen rule set was selected on earlier flawed pre-cutoff research and September/October inspected; splits are descriptive, not independent validation. Repeated D5 instances overlap. No NAV or execution fill model."
+}
