@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from app.routers.auth import verify_credentials
 from app.services.gex_data_service import GEXDataService
@@ -11,6 +11,7 @@ from app.services.discord_market_intelligence_service import (
     FOLLOWER_USERNAMES,
     DiscordFollowerMarketIntelligenceService,
     DiscordMarketIntelligenceService,
+    SYDNEY_TIMEZONE,
 )
 
 import logging
@@ -78,14 +79,14 @@ def get_latest_discord_summary(
 
 @router.get("/discord-summary-prompt")
 def get_discord_summary_prompt(
-    observation_date: date,
+    observation_date: date | None = None,
     username: str = Depends(verify_credentials)
 ) -> Dict:
     """
-    Get the LLM prompt that would be used for Discord summary generation.
+    Get a current rolling-24-hour Discord prompt (independent of the date picker).
 
     Args:
-        observation_date: Date to analyze Discord messages
+        observation_date: Legacy optional parameter; not used to filter this live extract
         username: Authenticated username (from dependency)
 
     Returns:
@@ -94,20 +95,21 @@ def get_discord_summary_prompt(
     try:
         service = DiscordMarketIntelligenceService()
         gex_service = service.gex_service
+        # SQL uses SYSDATETIMEOFFSET() at execution; these timestamps describe
+        # the corresponding window to within the time spent making the query.
+        window_end_utc = datetime.now(timezone.utc)
+        window_start = (window_end_utc - timedelta(hours=24)).astimezone(SYDNEY_TIMEZONE)
+        window_end = window_end_utc.astimezone(SYDNEY_TIMEZONE)
+        prompt_date = window_end.date()
 
-        logger.info(f"Discord summary prompt request for {observation_date}")
+        logger.info("Current rolling-24-hour Discord summary prompt request")
 
-        # Query Discord messages data
         try:
-            window_start, window_end = service.summary_window(observation_date)
-            discord_rows = gex_service.get_discord_messages_between(window_start, window_end)
+            discord_rows = gex_service.get_discord_messages_last_24_hours()
             if not discord_rows:
                 raise HTTPException(
                     status_code=404,
-                    detail=(
-                        f"No Discord messages found between {window_start.isoformat()} "
-                        f"and {window_end.isoformat()}"
-                    )
+                    detail="No Discord messages found in the current rolling 24 hours",
                 )
         except HTTPException:
             raise
@@ -129,12 +131,12 @@ def get_discord_summary_prompt(
 
             template = template_file.read_text(encoding="utf-8")
 
-            # Replace placeholders
-            prompt = template.replace("{{ observation_date }}", observation_date.isoformat())
+            # Replace placeholders with the actual rolling window, not a selected historical date.
+            prompt = template.replace("{{ observation_date }}", prompt_date.isoformat())
             prompt = prompt.replace("{{ discord_messages }}", discord_data)
             prompt = prompt.replace("{{ window_start }}", window_start.isoformat())
             prompt = prompt.replace("{{ window_end }}", window_end.isoformat())
-            prompt = prompt.replace("{{observation_date}}", observation_date.isoformat())
+            prompt = prompt.replace("{{observation_date}}", prompt_date.isoformat())
             prompt = prompt.replace("{{discord_messages}}", discord_data)
             prompt = prompt.replace("{{window_start}}", window_start.isoformat())
             prompt = prompt.replace("{{window_end}}", window_end.isoformat())
@@ -151,9 +153,11 @@ def get_discord_summary_prompt(
 
         return {
             "prompt": prompt,
-            "observation_date": observation_date.isoformat(),
+            "observation_date": prompt_date.isoformat(),
+            "requested_observation_date": observation_date.isoformat() if observation_date else None,
             "window_start": window_start.isoformat(),
             "window_end": window_end.isoformat(),
+            "window_mode": "current_rolling_24h",
             "estimated_tokens": estimated_tokens,
             "message_count": len(discord_rows)
         }

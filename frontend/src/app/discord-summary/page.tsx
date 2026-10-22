@@ -33,6 +33,8 @@ export default function DiscordSummaryPage() {
   const [promptMetadata, setPromptMetadata] = useState<{
     estimatedTokens: number;
     messageCount: number;
+    windowStart: string;
+    windowEnd: string;
   } | null>(null);
 
   const [activeTab, setActiveTab] = useState<"overview" | "followers">("overview");
@@ -160,18 +162,12 @@ export default function DiscordSummaryPage() {
   );
 
   const fetchPrompt = useCallback(async () => {
-    if (!observationDate) return;
-
     setPromptLoading(true);
     setPromptError("");
     setPromptCopied(false);
 
-    const params = new URLSearchParams({
-      observation_date: observationDate,
-    });
-
     try {
-      const r = await authenticatedFetch(`${baseUrl}/api/discord-summary-prompt?${params}`);
+      const r = await authenticatedFetch(`${baseUrl}/api/discord-summary-prompt`);
       if (!r.ok) {
         const data = await r.json().catch(() => ({}));
         throw new Error(data.detail || `HTTP ${r.status}`);
@@ -181,6 +177,8 @@ export default function DiscordSummaryPage() {
       setPromptMetadata({
         estimatedTokens: data.estimated_tokens || 0,
         messageCount: data.message_count || 0,
+        windowStart: data.window_start || "",
+        windowEnd: data.window_end || "",
       });
     } catch (e: any) {
       setPromptError(e.message);
@@ -189,7 +187,7 @@ export default function DiscordSummaryPage() {
     } finally {
       setPromptLoading(false);
     }
-  }, [baseUrl, observationDate]);
+  }, [baseUrl]);
 
   const fetchFollowersPrompt = useCallback(async () => {
     if (!observationDate) return;
@@ -411,7 +409,7 @@ export default function DiscordSummaryPage() {
                   disabled={promptLoading}
                   className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
                 >
-                  {promptLoading ? "Loading..." : "Get Prompt"}
+                  {promptLoading ? "Loading..." : "Get Current 24h Prompt"}
                 </button>
 
                 {promptText && (
@@ -441,7 +439,8 @@ export default function DiscordSummaryPage() {
 
               {promptMetadata && (
                 <div className="mb-4 text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded border border-slate-200">
-                  Messages: {promptMetadata.messageCount} | Est. Tokens: {promptMetadata.estimatedTokens.toLocaleString()}
+                  Current rolling 24 hours (independent of Observation Date) | Messages: {promptMetadata.messageCount} | Est. Tokens: {promptMetadata.estimatedTokens.toLocaleString()}
+                  {promptMetadata.windowStart && promptMetadata.windowEnd ? <> | Window: {new Date(promptMetadata.windowStart).toLocaleString()} to {new Date(promptMetadata.windowEnd).toLocaleString()}</> : null}
                 </div>
               )}
 

@@ -6,6 +6,7 @@ import math
 import random
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.core.config import settings
@@ -46,7 +47,7 @@ def _base_symbol(symbol: str) -> str:
     return (symbol or "").strip().upper().split(".", 1)[0]
 
 
-def _connect_ib(connect_timeout: float = 3.0) -> "IB":
+def _connect_ib(connect_timeout: float = 3.0, *, quote_only: bool = False) -> "IB":
     if IB is None:
         raise RuntimeError("ib_insync is not installed on the backend")
 
@@ -69,7 +70,14 @@ def _connect_ib(connect_timeout: float = 3.0) -> "IB":
     client_id = random.randint(76001, 79000)
     for port in ports:
         try:
-            ib.connect(host, port, clientId=client_id, timeout=connect_timeout)
+            if quote_only:
+                # IB.connect synchronizes positions, accounts, orders and executions
+                # before returning. That can time out even when the API socket and
+                # market-data requests are healthy. Quotes need only the client.
+                ib.wrapper.clientId = client_id
+                ib.client.connect(host, port, clientId=client_id, timeout=connect_timeout)
+            else:
+                ib.connect(host, port, clientId=client_id, timeout=connect_timeout)
             return ib
         except Exception as exc:
             last_error = exc
@@ -78,7 +86,7 @@ def _connect_ib(connect_timeout: float = 3.0) -> "IB":
     raise RuntimeError(f"Failed to connect to IB API at {host}:{ports} ({last_error})")
 
 
-def _ticker_price(ticker: Any) -> Optional[float]:
+def _ticker_price(ticker: Any, *, allow_close_fallback: bool = True) -> Optional[float]:
     last = _positive_price(getattr(ticker, "last", None))
     if last is not None:
         return last
@@ -91,7 +99,7 @@ def _ticker_price(ticker: Any) -> Optional[float]:
         return bid or ask
 
     close = _positive_price(getattr(ticker, "close", None))
-    return close
+    return close if allow_close_fallback else None
 
 
 def get_live_index_price(
@@ -228,16 +236,95 @@ def get_live_futures_closes(
             pass
 
 
+def get_live_futures_prices(
+    symbols: Iterable[str],
+    exchange: str = "CME",
+    wait_seconds: float = 1.0,
+    connect_timeout: float = 0.5,
+    quote_only: bool = False,
+) -> Dict[str, Dict[str, Any]]:
+    """Return futures ticks; never present yesterday's settlement close as live."""
+    codes = list(dict.fromkeys(str(symbol).strip().upper() for symbol in symbols if str(symbol).strip()))
+    if not codes:
+        return {}
+    if Future is None:
+        raise RuntimeError("ib_insync futures contracts are unavailable on the backend")
+
+    ib = _connect_ib(connect_timeout=connect_timeout, quote_only=quote_only)
+    subscriptions: List[Any] = []
+    try:
+        today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d")
+        selected: Dict[str, Any] = {}
+        for code in codes:
+            details = ib.reqContractDetails(Future(symbol=code, exchange=exchange, currency="USD"))
+            candidates = [
+                detail.contract for detail in details
+                if str(getattr(detail.contract, "lastTradeDateOrContractMonth", ""))[:8] >= today
+            ]
+            if candidates:
+                selected[code] = min(
+                    candidates,
+                    key=lambda contract: str(getattr(contract, "lastTradeDateOrContractMonth", "")),
+                )
+
+        results: Dict[str, Dict[str, Any]] = {}
+        remaining = set(selected)
+        for market_data_type, source in ((1, "ib_live"), (3, "ib_delayed")):
+            if not remaining:
+                break
+            try:
+                ib.reqMarketDataType(market_data_type)
+            except Exception:
+                pass
+            tickers: Dict[str, Any] = {}
+            for code in remaining:
+                contract = selected[code]
+                tickers[code] = ib.reqMktData(contract, "", False, False)
+                subscriptions.append(contract)
+
+            deadline = time.time() + wait_seconds
+            while time.time() < deadline and tickers:
+                ib.sleep(0.2)
+                if all(_ticker_price(ticker, allow_close_fallback=False) is not None for ticker in tickers.values()):
+                    break
+
+            for code, ticker in tickers.items():
+                price = _ticker_price(ticker, allow_close_fallback=False)
+                if price is None:
+                    continue
+                actual_type = getattr(ticker, "marketDataType", None)
+                results[code] = {
+                    "price": round(price, 4),
+                    "source": "ib_live" if actual_type == 1 else (
+                        "ib_delayed" if actual_type in {2, 3, 4} else source
+                    ),
+                }
+            remaining.difference_update(results)
+        return results
+    finally:
+        for contract in subscriptions:
+            try:
+                ib.cancelMktData(contract)
+            except Exception:
+                pass
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+
+
 def get_live_stock_prices(
     stock_codes: Iterable[str],
     wait_seconds: float = 3.0,
     connect_timeout: float = 3.0,
+    allow_close_fallback: bool = True,
+    quote_only: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
     codes = list(dict.fromkeys(str(code).strip().upper() for code in stock_codes if str(code).strip()))
     if not codes:
         return {}
 
-    ib = _connect_ib(connect_timeout=connect_timeout)
+    ib = _connect_ib(connect_timeout=connect_timeout, quote_only=quote_only)
     subscriptions: List[Any] = []
     try:
         contracts = [Stock(_base_symbol(code), "SMART", "USD") for code in codes]
@@ -271,7 +358,7 @@ def get_live_stock_prices(
             while time.time() < deadline:
                 ib.sleep(0.2)
                 if active and all(
-                    _ticker_price(ticker) is not None
+                    _ticker_price(ticker, allow_close_fallback=allow_close_fallback) is not None
                     and (
                         _volatility(getattr(ticker, "impliedVolatility", None)) is not None
                         or _volatility(getattr(ticker, "histVolatility", None)) is not None
@@ -281,7 +368,7 @@ def get_live_stock_prices(
                     break
 
             for code, ticker in active.items():
-                price = _ticker_price(ticker)
+                price = _ticker_price(ticker, allow_close_fallback=allow_close_fallback)
                 if price is None:
                     continue
                 actual_type = getattr(ticker, "marketDataType", None)

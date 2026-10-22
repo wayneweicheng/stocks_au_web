@@ -11,6 +11,7 @@ from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
 from app.routers.auth import verify_credentials
 from app.services.live_stock_price_service import (
     get_live_futures_closes,
+    get_live_futures_prices,
     get_live_index_price,
     get_live_stock_prices,
 )
@@ -20,10 +21,19 @@ router = APIRouter(prefix="/api", tags=["index-stock-price-mapping"])
 logger = logging.getLogger("app.index_stock_price_mapping")
 
 DATABASE = "StockDB_US"
+# Expanded, on-demand stocks on the SPX mapped-levels page. Preserve user
+# symbols exactly; an unrecognised ticker must surface as unavailable.
+SPX_MAP_EXTRA_STOCKS = (
+    "NVDA", "MSFT", "META", "AMZN", "AAPL", "GOOG", "TSM", "SPCX",
+    "SQQQ", "MU", "SKHY", "SOXX", "AMD", "AVGO",
+)
 CACHE_TTL_SECONDS = 90
 # Live prices are optional for this report. Keep an unavailable IB Gateway from
 # holding the historical mapping request open long enough for the proxy to fail.
 LIVE_CONNECT_TIMEOUT_SECONDS = 0.5
+# The quote-only socket can briefly contend with another request (stock vs ES).
+# It does not synchronize account/portfolio state; allow a bounded handshake.
+QUOTE_CONNECT_TIMEOUT_SECONDS = 1.5
 
 _cache_lock = Lock()
 _cache_rows: List[Dict[str, Any]] = []
@@ -139,7 +149,7 @@ def _load_stock_atr_14d(
     return round(atr, 4) if math.isfinite(atr) and atr > 0 else None
 
 
-def _load_snapshot_closes(observation_date: date | None) -> Dict[str, float]:
+def _load_snapshot_closes(observation_date: date | None, close_dates: Dict[str, str] | None = None) -> Dict[str, float]:
     """Load one end-of-session 30-minute close per instrument.
 
     The requested date is treated as an upper bound so weekends, holidays, or
@@ -150,6 +160,7 @@ def _load_snapshot_closes(observation_date: date | None) -> Dict[str, float]:
         "SPX": ("SPXW.US", "14:55:00"),
         "SPY": ("SPY.US", "15:55:00"),
         "ESMain": ("ESMain.US", "15:55:00"),
+        "NQMain": ("NQMain.US", "15:55:00"),
         "QQQ": ("QQQ.US", "15:55:00"),
         "SPXL": ("SPXL.US", "15:55:00"),
         "TQQQ": ("TQQQ.US", "15:55:00"),
@@ -187,6 +198,8 @@ def _load_snapshot_closes(observation_date: date | None) -> Dict[str, float]:
             continue
         if math.isfinite(close) and close > 0:
             closes[symbol] = close
+            if close_dates is not None and rows[0].get("ObservationDate") is not None:
+                close_dates[symbol] = str(rows[0]["ObservationDate"])[:10]
     return closes
 
 
@@ -196,8 +209,8 @@ def _load_latest_snapshot_date() -> date | None:
         """
         SELECT MAX(ObservationDate) AS ObservationDate
         FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame] WITH (NOLOCK)
-        WHERE ASXCode IN ('SPXW.US', 'SPY.US', 'ESMain.US', 'QQQ.US', 'SPXL.US', 'TQQQ.US')
-          AND CAST(TimeIntervalStart AS time) IN (CONVERT(time, '14:55:00'), CONVERT(time, '15:55:00'))
+        WHERE ASXCode = 'SPXW.US' AND TimeFrame = '5M'
+          AND CAST(TimeIntervalStart AS time) = CONVERT(time, '14:55:00')
         """,
         (),
     ) or []
@@ -349,7 +362,16 @@ def get_spx_map_prices(
 ) -> Dict[str, Any]:
     try:
         resolved_date = observation_date or _load_latest_snapshot_date()
-        historical_closes = _load_snapshot_closes(observation_date)
+        close_dates: Dict[str, str] = {}
+        historical_closes = _load_snapshot_closes(observation_date, close_dates)
+        # Never calibrate an old report with today's IB quotes.
+        latest_date = resolved_date
+        if observation_date is not None:
+            try:
+                latest_date = _load_latest_snapshot_date()
+            except Exception:
+                logger.warning("Latest SPX close date unavailable; live calibration disabled", exc_info=True)
+                latest_date = None
         price_differences: Dict[str, float] = {}
         spx_close = historical_closes.get("SPX")
         if spx_close is not None:
@@ -360,6 +382,8 @@ def get_spx_map_prices(
         return {
             "historical_closes": historical_closes,
             "historical_close_date": resolved_date,
+            "historical_close_dates": close_dates,
+            "calibration_eligible": resolved_date is not None and resolved_date == latest_date,
             "price_differences": price_differences,
             # IB account synchronization and sequential quote lookups can take
             # tens of seconds. These optional *current* quotes must not block
@@ -370,6 +394,148 @@ def get_spx_map_prices(
     except Exception as exc:
         logger.exception("Failed to load SPX mapped-level prices")
         raise HTTPException(status_code=500, detail="Unable to load SPX mapped-level prices") from exc
+
+
+@router.get("/spx-map-live-prices")
+def get_spx_map_live_prices(username: str = Depends(verify_credentials)) -> Dict[str, Any]:
+    """Optional IB stock quotes; never block the historical SPX mapping request."""
+    symbols = ["SPY", "QQQ", "SPXL", "TQQQ"]
+    try:
+        quotes = get_live_stock_prices(
+            symbols,
+            wait_seconds=2.0,
+            connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
+            allow_close_fallback=False,
+            quote_only=True,
+        )
+    except Exception as exc:
+        logger.warning("SPX mapped stock quotes unavailable (%s)", type(exc).__name__)
+        quotes = {}
+
+    prices: Dict[str, float] = {}
+    sources: Dict[str, str] = {}
+    for symbol in symbols:
+        quote = quotes.get(symbol) or {}
+        price = quote.get("price")
+        if isinstance(price, (int, float)) and math.isfinite(price) and price > 0:
+            prices[symbol] = float(price)
+            sources[symbol] = str(quote.get("source") or "ib_unverified")
+    return {
+        "live_prices": prices,
+        "sources": sources,
+        "status": "available" if len(prices) == len(symbols) else "partial" if prices else "unavailable",
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/spx-map-live-futures")
+def get_spx_map_live_futures(username: str = Depends(verify_credentials)) -> Dict[str, Any]:
+    """Optional current ES/NQ futures quotes, independent of historical levels and stocks."""
+    try:
+        quotes = get_live_futures_prices(
+            ["ES", "NQ"],
+            wait_seconds=2.0,
+            connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
+            quote_only=True,
+        )
+    except Exception as exc:
+        logger.warning("SPX mapped futures quotes unavailable (%s)", type(exc).__name__)
+        quotes = {}
+    prices: Dict[str, float] = {}
+    sources: Dict[str, str] = {}
+    for code, label in (("ES", "ESMain"), ("NQ", "NQMain")):
+        quote = quotes.get(code) or {}
+        value = quote.get("price")
+        if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
+            prices[label] = float(value)
+            sources[label] = str(quote.get("source") or "ib_unverified")
+    return {
+        "live_prices": prices,
+        "sources": sources,
+        "status": "available" if len(prices) == 2 else "partial" if prices else "unavailable",
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/spx-map-extra-prices")
+def get_spx_map_extra_prices(
+    observation_date: date = Query(...),
+    username: str = Depends(verify_credentials),
+) -> Dict[str, Any]:
+    """Most recent regular-session 30M closes through the selected date."""
+    try:
+        model = SQLServerModel(database=DATABASE)
+        codes = tuple(f"{symbol}.US" for symbol in SPX_MAP_EXTRA_STOCKS)
+        placeholders = ", ".join("CONVERT(varchar(10), ?)" for _ in codes)
+        rows = model.execute_read_query(
+            f"""
+            WITH LatestBars AS (
+                SELECT ASXCode, [Close], TimeIntervalStart,
+                    ROW_NUMBER() OVER (PARTITION BY ASXCode ORDER BY TimeIntervalStart DESC) AS RowNumber
+                FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame] WITH (NOLOCK)
+                WHERE TimeFrame = '30M'
+                  AND ASXCode IN ({placeholders})
+                  AND TimeIntervalStart >= CONVERT(datetime, ?)
+                  AND TimeIntervalStart < DATEADD(day, 1, CONVERT(datetime, ?))
+                  AND CAST(TimeIntervalStart AS time) BETWEEN CONVERT(time, '09:30:00') AND CONVERT(time, '15:30:00')
+                  AND [Close] > 0
+            )
+            SELECT ASXCode, [Close], TimeIntervalStart
+            FROM LatestBars WHERE RowNumber = 1
+            """,
+            (*codes, (observation_date - timedelta(days=14)).isoformat(), observation_date.isoformat()),
+        ) or []
+        closes: Dict[str, float] = {}
+        close_dates: Dict[str, str] = {}
+        for row in rows:
+            code = str(row.get("ASXCode") or "").upper()
+            symbol = code.removesuffix(".US")
+            value = row.get("Close")
+            try:
+                close = float(value)
+            except (TypeError, ValueError):
+                continue
+            bar_time = row.get("TimeIntervalStart")
+            if symbol in SPX_MAP_EXTRA_STOCKS and math.isfinite(close) and close > 0 and bar_time is not None:
+                bar_date = str(bar_time)[:10]
+                if bar_date <= observation_date.isoformat():
+                    closes[symbol] = close
+                    close_dates[symbol] = bar_date
+        return {
+            "historical_closes": closes,
+            "historical_close_dates": close_dates,
+            "historical_close_date": observation_date.isoformat(),
+            "historical_close_source": "30m_regular_session",
+        }
+    except Exception as exc:
+        logger.exception("Failed to load SPX extra stock closes")
+        raise HTTPException(status_code=500, detail="Unable to load SPX extra stock closes") from exc
+
+
+@router.get("/spx-map-live-extra-prices")
+def get_spx_map_live_extra_prices(username: str = Depends(verify_credentials)) -> Dict[str, Any]:
+    """On-demand IB ticks for the optional stocks (never a prior-close fallback)."""
+    try:
+        quotes = get_live_stock_prices(
+            SPX_MAP_EXTRA_STOCKS,
+            wait_seconds=2.0,
+            connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
+            allow_close_fallback=False,
+            quote_only=True,
+        )
+    except Exception as exc:
+        logger.warning("SPX extra stock IB quotes unavailable (%s)", type(exc).__name__)
+        quotes = {}
+    prices: Dict[str, float] = {}
+    for symbol in SPX_MAP_EXTRA_STOCKS:
+        value = (quotes.get(symbol) or {}).get("price")
+        if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
+            prices[symbol] = float(value)
+    return {
+        "live_prices": prices,
+        "status": "available" if len(prices) == len(SPX_MAP_EXTRA_STOCKS) else "partial" if prices else "unavailable",
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _load_latest_closes() -> Dict[str, float]:

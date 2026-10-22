@@ -31,7 +31,7 @@ export function parseHtmlLevelDetails(content: string): Record<string, HtmlLevel
   if (typeof DOMParser === "undefined" || !content.trim()) return {};
 
   const document = new DOMParser().parseFromString(content, "text/html");
-  const rows = Array.from(document.querySelectorAll("table tr"));
+  const rows = Array.from(document.querySelectorAll<HTMLTableRowElement>("table tr"));
   const headers = rows.filter((row) => {
     const text = cellText(row);
     return /等级/.test(text) && /主要依据/.test(text) && /期权验证/.test(text);
@@ -131,11 +131,13 @@ export default function MappedLevelReportDetails({
   detail,
   rank,
   zone,
+  spxLastClose,
 }: {
   side: LevelSide;
   detail: HtmlLevelDetail | undefined;
   rank?: number;
   zone?: JsonZone;
+  spxLastClose?: number | null;
 }) {
   const fromJson = !detail && Boolean(zone && rank);
   const resolved = detail ?? (zone && rank ? levelDetailFromZone(side, rank, zone) : undefined);
@@ -149,9 +151,10 @@ export default function MappedLevelReportDetails({
     ? zone.option_validation as JsonZone : null;
   const significance = finiteNumber(validation?.significance_score);
   const sideLabel = side === "resistance" ? "压力" : "支撑";
-  const compactParts = [sideLabel, resolved.optionVerification, resolved.distanceToPreviousClose
-    ? `前收 ${resolved.distanceToPreviousClose}`
-    : ""]
+  const closeLabel = spxLastClose !== null && spxLastClose !== undefined && Number.isFinite(spxLastClose) && spxLastClose > 0
+    ? spxLastClose.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "n/a";
+  const compactParts = [sideLabel, resolved.optionVerification,
+    `前收 ${closeLabel}${resolved.distanceToPreviousClose ? ` ${resolved.distanceToPreviousClose}` : ""}`]
     .filter(Boolean);
 
   return (

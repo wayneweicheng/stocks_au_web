@@ -699,6 +699,22 @@ class GEXDataService:
             logger.error(f"Failed to query Discord messages for {observation_date}: {e}")
             raise
 
+    def get_discord_messages_last_24_hours(self) -> List[Dict[str, Any]]:
+        """Read the current rolling 24 hours, comparing offset-aware instants."""
+        model = get_sql_model()
+        sql = """
+            SELECT MessageId, ChannelId,
+                   CAST(TimeStamp AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS TimeStamp_Sydney,
+                   UserName, Content, CreateDate,
+                   CAST(TimeStamp_USEst AS datetime) AS TimeStamp_USEst
+            FROM StockDB_US.Discord.v_DiscordMessages
+            WHERE TimeStamp > DATEADD(hour, -24, SYSDATETIMEOFFSET())
+            ORDER BY TimeStamp DESC
+        """
+        rows = model.execute_read_query(sql, ()) or []
+        logger.info("Retrieved %d Discord messages for the current rolling 24 hours", len(rows))
+        return rows
+
     def get_discord_messages_between(
         self,
         window_start: datetime,
