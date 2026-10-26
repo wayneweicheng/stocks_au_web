@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from app.routers.auth import verify_credentials
 from app.services.gex_data_service import GEXDataService
@@ -83,10 +83,10 @@ def get_discord_summary_prompt(
     username: str = Depends(verify_credentials)
 ) -> Dict:
     """
-    Get a current rolling-24-hour Discord prompt (independent of the date picker).
+    Get today's rolling 24h prompt or a selected 16:00–16:00 Sydney window.
 
     Args:
-        observation_date: Legacy optional parameter; not used to filter this live extract
+        observation_date: Selected Sydney date, or None for the current rolling window
         username: Authenticated username (from dependency)
 
     Returns:
@@ -95,21 +95,32 @@ def get_discord_summary_prompt(
     try:
         service = DiscordMarketIntelligenceService()
         gex_service = service.gex_service
-        # SQL uses SYSDATETIMEOFFSET() at execution; these timestamps describe
-        # the corresponding window to within the time spent making the query.
-        window_end_utc = datetime.now(timezone.utc)
-        window_start = (window_end_utc - timedelta(hours=24)).astimezone(SYDNEY_TIMEZONE)
-        window_end = window_end_utc.astimezone(SYDNEY_TIMEZONE)
-        prompt_date = window_end.date()
+        # SQL uses SYSDATETIMEOFFSET() for today's rolling extract; historical
+        # windows use Sydney calendar boundaries, including DST changes.
+        now_sydney = datetime.now(timezone.utc).astimezone(SYDNEY_TIMEZONE)
+        selected_date = observation_date is not None and observation_date != now_sydney.date()
+        if selected_date:
+            window_start = datetime.combine(observation_date - timedelta(days=1), time(16), SYDNEY_TIMEZONE)
+            window_end = datetime.combine(observation_date, time(16), SYDNEY_TIMEZONE)
+            prompt_date = observation_date
+            window_mode = "selected_sydney_16_window"
+        else:
+            window_end = now_sydney
+            window_start = (now_sydney.astimezone(timezone.utc) - timedelta(hours=24)).astimezone(SYDNEY_TIMEZONE)
+            prompt_date = now_sydney.date()
+            window_mode = "current_rolling_24h"
 
-        logger.info("Current rolling-24-hour Discord summary prompt request")
+        logger.info("Discord summary prompt request: mode=%s, date=%s", window_mode, prompt_date)
 
         try:
-            discord_rows = gex_service.get_discord_messages_last_24_hours()
+            discord_rows = (
+                gex_service.get_discord_messages_between(window_start, window_end)
+                if selected_date else gex_service.get_discord_messages_last_24_hours()
+            )
             if not discord_rows:
                 raise HTTPException(
                     status_code=404,
-                    detail="No Discord messages found in the current rolling 24 hours",
+                    detail=f"No Discord messages found for {window_start.isoformat()} to {window_end.isoformat()}",
                 )
         except HTTPException:
             raise
@@ -131,7 +142,7 @@ def get_discord_summary_prompt(
 
             template = template_file.read_text(encoding="utf-8")
 
-            # Replace placeholders with the actual rolling window, not a selected historical date.
+            # Fill the template with the window actually used for extraction.
             prompt = template.replace("{{ observation_date }}", prompt_date.isoformat())
             prompt = prompt.replace("{{ discord_messages }}", discord_data)
             prompt = prompt.replace("{{ window_start }}", window_start.isoformat())
@@ -157,7 +168,7 @@ def get_discord_summary_prompt(
             "requested_observation_date": observation_date.isoformat() if observation_date else None,
             "window_start": window_start.isoformat(),
             "window_end": window_end.isoformat(),
-            "window_mode": "current_rolling_24h",
+            "window_mode": window_mode,
             "estimated_tokens": estimated_tokens,
             "message_count": len(discord_rows)
         }

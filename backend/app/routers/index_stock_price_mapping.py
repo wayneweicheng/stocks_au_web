@@ -397,9 +397,14 @@ def get_spx_map_prices(
 
 
 @router.get("/spx-map-live-prices")
-def get_spx_map_live_prices(username: str = Depends(verify_credentials)) -> Dict[str, Any]:
-    """Optional IB stock quotes; never block the historical SPX mapping request."""
-    symbols = ["SPY", "QQQ", "SPXL", "TQQQ"]
+def get_spx_map_live_prices(
+    username: str = Depends(verify_credentials), symbol: str | None = None,
+) -> Dict[str, Any]:
+    """Initial IB batch or one explicitly requested primary stock quote."""
+    allowed = ("SPY", "QQQ", "SPXL", "TQQQ")
+    if symbol is not None and symbol.upper() not in allowed:
+        raise HTTPException(status_code=400, detail="Unsupported SPX mapped stock symbol")
+    symbols = [symbol.upper()] if symbol else list(allowed)
     try:
         quotes = get_live_stock_prices(
             symbols,
@@ -420,20 +425,28 @@ def get_spx_map_live_prices(username: str = Depends(verify_credentials)) -> Dict
         if isinstance(price, (int, float)) and math.isfinite(price) and price > 0:
             prices[symbol] = float(price)
             sources[symbol] = str(quote.get("source") or "ib_unverified")
+    status = "available" if len(prices) == len(symbols) else "partial" if prices else "unavailable"
+    logger.info("SPX mapped IB stock quotes: %s (%d/%d symbols)", status, len(prices), len(symbols))
     return {
         "live_prices": prices,
         "sources": sources,
-        "status": "available" if len(prices) == len(symbols) else "partial" if prices else "unavailable",
+        "status": status,
         "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
     }
 
 
 @router.get("/spx-map-live-futures")
-def get_spx_map_live_futures(username: str = Depends(verify_credentials)) -> Dict[str, Any]:
-    """Optional current ES/NQ futures quotes, independent of historical levels and stocks."""
+def get_spx_map_live_futures(
+    username: str = Depends(verify_credentials), symbol: str | None = None,
+) -> Dict[str, Any]:
+    """Initial ES/NQ batch or one explicitly requested futures quote."""
+    codes_by_label = {"ESMAIN": "ES", "NQMAIN": "NQ"}
+    if symbol is not None and symbol.upper() not in codes_by_label:
+        raise HTTPException(status_code=400, detail="Unsupported SPX mapped futures symbol")
+    codes = [codes_by_label[symbol.upper()]] if symbol else ["ES", "NQ"]
     try:
         quotes = get_live_futures_prices(
-            ["ES", "NQ"],
+            codes,
             wait_seconds=2.0,
             connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
             quote_only=True,
@@ -444,15 +457,19 @@ def get_spx_map_live_futures(username: str = Depends(verify_credentials)) -> Dic
     prices: Dict[str, float] = {}
     sources: Dict[str, str] = {}
     for code, label in (("ES", "ESMain"), ("NQ", "NQMain")):
+        if code not in codes:
+            continue
         quote = quotes.get(code) or {}
         value = quote.get("price")
         if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
             prices[label] = float(value)
             sources[label] = str(quote.get("source") or "ib_unverified")
+    status = "available" if len(prices) == len(codes) else "partial" if prices else "unavailable"
+    logger.info("SPX mapped IB futures quotes: %s (%d/%d symbols)", status, len(prices), len(codes))
     return {
         "live_prices": prices,
         "sources": sources,
-        "status": "available" if len(prices) == 2 else "partial" if prices else "unavailable",
+        "status": status,
         "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -513,11 +530,16 @@ def get_spx_map_extra_prices(
 
 
 @router.get("/spx-map-live-extra-prices")
-def get_spx_map_live_extra_prices(username: str = Depends(verify_credentials)) -> Dict[str, Any]:
-    """On-demand IB ticks for the optional stocks (never a prior-close fallback)."""
+def get_spx_map_live_extra_prices(
+    symbol: str = Query(..., min_length=1), username: str = Depends(verify_credentials),
+) -> Dict[str, Any]:
+    """One explicitly requested extra stock tick (never a prior-close fallback)."""
+    code = symbol.upper()
+    if code not in SPX_MAP_EXTRA_STOCKS:
+        raise HTTPException(status_code=400, detail="Unsupported SPX extra stock symbol")
     try:
         quotes = get_live_stock_prices(
-            SPX_MAP_EXTRA_STOCKS,
+            [code],
             wait_seconds=2.0,
             connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
             allow_close_fallback=False,
@@ -527,13 +549,12 @@ def get_spx_map_live_extra_prices(username: str = Depends(verify_credentials)) -
         logger.warning("SPX extra stock IB quotes unavailable (%s)", type(exc).__name__)
         quotes = {}
     prices: Dict[str, float] = {}
-    for symbol in SPX_MAP_EXTRA_STOCKS:
-        value = (quotes.get(symbol) or {}).get("price")
-        if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
-            prices[symbol] = float(value)
+    value = (quotes.get(code) or {}).get("price")
+    if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
+        prices[code] = float(value)
     return {
         "live_prices": prices,
-        "status": "available" if len(prices) == len(SPX_MAP_EXTRA_STOCKS) else "partial" if prices else "unavailable",
+        "status": "available" if prices else "unavailable",
         "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
     }
 

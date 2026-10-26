@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from threading import BoundedSemaphore
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -17,6 +17,7 @@ from app.services.saved_price_levels_service import (
     get_recorded_support_resistance_hours,
     get_saved_support_resistance,
 )
+from app.services.stock_map_chart_service import get_stock_map_chart_bars
 
 
 router = APIRouter(
@@ -61,6 +62,42 @@ def saved_support_resistance(
         raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/chart-bars")
+def support_resistance_chart_bars(
+    stock_code: str = Query(..., min_length=1, max_length=40),
+    timeframe: Literal["30M", "5M"] = Query(default="5M"),
+    observation_date: Optional[date] = Query(default=None),
+    observation_datetime: Optional[datetime] = Query(default=None),
+    lookback_days: int = Query(default=10, ge=1, le=60),
+    end_inclusive: bool = Query(default=False),
+) -> dict:
+    """Candles for the chart only; 30M calculations and saved levels remain unchanged."""
+    try:
+        return get_stock_map_chart_bars(
+            stock_code, observation_date, timeframe=timeframe,
+            observation_datetime=observation_datetime, lookback_days=lookback_days,
+            end_inclusive=end_inclusive,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SavedPriceLevelsDatabaseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/stock-map-bars")
+def stock_map_chart_bars(
+    stock_code: str = Query(..., min_length=1, max_length=40),
+    observation_date: Optional[date] = Query(default=None),
+) -> dict:
+    """30M candles for report as-at classification; chart view is selected separately."""
+    try:
+        return get_stock_map_chart_bars(stock_code, observation_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SavedPriceLevelsDatabaseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("")

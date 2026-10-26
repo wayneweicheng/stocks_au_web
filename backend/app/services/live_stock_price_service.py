@@ -350,7 +350,9 @@ def get_live_stock_prices(
                 contract = contracts_by_symbol.get(_base_symbol(code))
                 if contract is None:
                     continue
-                ticker = ib.reqMktData(contract, "104,106,221,225,294,295", False, False)
+                # Quote-only callers need a price, not optional volatility or
+                # auction subscriptions (which can be unavailable and slow).
+                ticker = ib.reqMktData(contract, "" if quote_only else "104,106,221,225,294,295", False, False)
                 subscriptions.append(contract)
                 active[code] = ticker
 
@@ -359,7 +361,7 @@ def get_live_stock_prices(
                 ib.sleep(0.2)
                 if active and all(
                     _ticker_price(ticker, allow_close_fallback=allow_close_fallback) is not None
-                    and (
+                    and (quote_only or
                         _volatility(getattr(ticker, "impliedVolatility", None)) is not None
                         or _volatility(getattr(ticker, "histVolatility", None)) is not None
                     )

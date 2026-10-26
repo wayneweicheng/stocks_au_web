@@ -80,39 +80,74 @@ function finiteNumber(value: unknown): number | null {
   return value;
 }
 
-function levelDetailFromZone(side: LevelSide, rank: number, zone: JsonZone): HtmlLevelDetail {
+function text(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (Array.isArray(value)) return value.map(text).filter(Boolean).join(", ");
+  if (value && typeof value === "object") return Object.entries(value as JsonZone)
+    .map(([key, item]) => `${key.replace(/_/g, " ")}: ${text(item)}`).filter(Boolean).join("; ");
+  return "";
+}
+
+function formatPrice(value: number): string {
+  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function interval(low: unknown, high: unknown): string {
+  const a = finiteNumber(low);
+  const b = finiteNumber(high);
+  return a === null || b === null ? "" : `${formatPrice(Math.min(a, b))}–${formatPrice(Math.max(a, b))}`;
+}
+
+function percent(value: unknown): string {
+  const amount = finiteNumber(value);
+  return amount === null ? "" : `${amount >= 0 ? "+" : ""}${amount.toFixed(2)}%`;
+}
+
+function optionEvidence(validation: JsonZone, instrument: "stock" | "spx"): string {
+  const parts: string[] = [];
+  const symbol = instrument === "spx" ? "SPX" : text(validation.option_underlying_symbol);
+  const strike = instrument === "spx"
+    ? finiteNumber(validation.spx_price_level) ?? finiteNumber(validation.strike)
+    : finiteNumber(validation.option_price_level);
+  const label = text(validation.label);
+  const wall = text(validation.wall_type) || text(validation.option_type) ||
+    (instrument === "stock" && symbol && strike !== null
+      ? label.match(/\b(?:put|call) wall\b/i)?.[0]?.toLowerCase() || ""
+      : label);
+  if (symbol && strike !== null) parts.push(`${symbol} ${formatPrice(strike)}${wall ? ` ${wall}` : ""}`);
+  else if (wall && (instrument === "spx" || !/\bSPX\b/i.test(wall))) parts.push(wall);
+  const expiries = text(validation.expiry_dates);
+  if (expiries) parts.push(`Expiries ${expiries}`);
+  if (text(validation.expiry_bucket)) parts.push(`Bucket ${text(validation.expiry_bucket)}`);
+  if (text(validation.observation_date)) parts.push(`Observed ${text(validation.observation_date)}`);
+  const stale = validation.stale ?? validation.stale_status ?? validation.is_stale;
+  if (stale !== undefined && stale !== null) parts.push(`Stale: ${text(stale)}`);
+  const oi = finiteNumber(validation.oi_contracts);
+  if (oi !== null) parts.push(`OI ${oi.toLocaleString("en-US")}`);
+  const gex = finiteNumber(validation.gex_magnitude);
+  if (gex !== null) parts.push(`|GEX| ${Math.abs(gex).toLocaleString("en-US", { maximumFractionDigits: 0 })} (size only, not direction)`);
+  return parts.join(" · ");
+}
+
+function levelDetailFromZone(side: LevelSide, rank: number, zone: JsonZone, instrument: "stock" | "spx"): HtmlLevelDetail {
   const validation = zone.option_validation && typeof zone.option_validation === "object"
     ? zone.option_validation as JsonZone : {};
-  const low = finiteNumber(zone.zone_low);
-  const high = finiteNumber(zone.zone_high);
-  const center = finiteNumber(zone.reference_price) ?? finiteNumber(zone.tradable_center);
-  const format = (value: number) => value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const optionParts = [typeof validation.label === "string" ? validation.label : "Option verification unavailable in JSON"];
-  if (validation.matched === true) {
-    const strike = finiteNumber(validation.strike) ?? finiteNumber(validation.spx_price_level);
-    if (strike !== null) optionParts.push(`SPX ${format(strike)}`);
-    if (typeof validation.expiry_bucket === "string") optionParts.push(validation.expiry_bucket);
-    const oi = finiteNumber(validation.oi_contracts);
-    if (oi !== null) optionParts.push(`OI ${oi.toLocaleString("en-US")}`);
-    const gex = finiteNumber(validation.gex_magnitude);
-    if (gex !== null) optionParts.push(`|GEX| ${Math.abs(gex).toLocaleString("en-US", { maximumFractionDigits: 0 })}`);
-  }
-  const previousClose = finiteNumber(zone.distance_from_last_close_pct);
+  const anchor = finiteNumber(zone.core_anchor_price) ?? finiteNumber(zone.reference_price) ?? finiteNumber(zone.tradable_center);
   const evidence = Array.isArray(zone.main_evidence) ? zone.main_evidence.filter((item): item is string => typeof item === "string") : [];
-  const behavior = [zone.hold_condition, zone.failure_or_flip_condition]
-    .filter((item): item is string => typeof item === "string" && Boolean(item.trim())).join("；");
   const raw = finiteNumber(zone.raw_confluence_score) ?? finiteNumber(zone.total_score);
   const relevance = finiteNumber(zone.execution_relevance_score);
   return {
     key: levelReportKey(side, rank),
     level: levelReportKey(side, rank),
-    areaReference: low !== null && high !== null ? `${format(low)}–${format(high)}${center !== null ? ` · 参考 ${format(center)}` : ""}` : "",
-    distanceToExecution: finiteNumber(zone.distance_from_execution_reference)?.toFixed(2) ?? "",
-    distanceToPreviousClose: previousClose === null ? "" : `${previousClose >= 0 ? "+" : ""}${previousClose.toFixed(2)}%`,
+    areaReference: `${interval(zone.zone_low, zone.zone_high)}${anchor !== null ? ` · Reference anchor ${formatPrice(anchor)}` : ""}`,
+    distanceToExecution: percent(zone.distance_from_execution_reference_pct) || text(zone.distance_from_execution_reference),
+    distanceToPreviousClose: percent(zone.distance_from_last_close_pct),
     executionStrength: `${relevance === null ? "—" : relevance.toFixed(0)} / ${raw === null ? "—" : raw.toFixed(0)}`,
     mainBasis: evidence.join("；"),
-    optionVerification: optionParts.filter(Boolean).join(" · "),
-    behavior,
+    optionVerification: optionEvidence(validation, instrument),
+    behavior: [zone.hold_condition, zone.failure_or_flip_condition].map(text).filter(Boolean).join("；"),
   };
 }
 
@@ -132,15 +167,19 @@ export default function MappedLevelReportDetails({
   rank,
   zone,
   spxLastClose,
+  instrument = "spx",
 }: {
   side: LevelSide;
   detail: HtmlLevelDetail | undefined;
   rank?: number;
   zone?: JsonZone;
   spxLastClose?: number | null;
+  instrument?: "stock" | "spx";
 }) {
   const fromJson = !detail && Boolean(zone && rank);
-  const resolved = detail ?? (zone && rank ? levelDetailFromZone(side, rank, zone) : undefined);
+  // Structured JSON is authoritative for price bases and option identity; the HTML
+  // table is retained only as a fallback for reports without structured zones.
+  const resolved = zone && rank ? levelDetailFromZone(side, rank, zone, instrument) : detail;
   if (!resolved) return null;
   const components = zone?.score_components && typeof zone.score_components === "object"
     ? Object.entries(zone.score_components as JsonZone).filter((entry): entry is [string, number] => finiteNumber(entry[1]) !== null)
@@ -154,8 +193,14 @@ export default function MappedLevelReportDetails({
   const closeLabel = spxLastClose !== null && spxLastClose !== undefined && Number.isFinite(spxLastClose) && spxLastClose > 0
     ? spxLastClose.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "n/a";
   const compactParts = [sideLabel, resolved.optionVerification,
-    `前收 ${closeLabel}${resolved.distanceToPreviousClose ? ` ${resolved.distanceToPreviousClose}` : ""}`]
+    spxLastClose != null ? `前收 ${closeLabel}${resolved.distanceToPreviousClose ? ` ${resolved.distanceToPreviousClose}` : ""}` :
+      resolved.distanceToPreviousClose ? `Previous completed daily close: ${resolved.distanceToPreviousClose}` : ""]
     .filter(Boolean);
+  const anchor = finiteNumber(zone?.core_anchor_price) ?? finiteNumber(zone?.reference_price);
+  const midpoint = finiteNumber(zone?.zone_low) !== null && finiteNumber(zone?.zone_high) !== null && anchor !== null &&
+    Math.abs(anchor - ((zone!.zone_low as number) + (zone!.zone_high as number)) / 2) < 0.000001;
+  const anchorMethod = text(zone?.reference_price_method);
+  const anchorInputs = text(zone?.core_anchor_inputs);
 
   return (
     <div className="mt-2 max-w-4xl text-sm">
@@ -164,17 +209,25 @@ export default function MappedLevelReportDetails({
       </div>
       <details className="mt-2 rounded-md border border-slate-200 bg-white/70 px-3 py-2">
         <summary className="cursor-pointer text-xs font-semibold text-slate-600">
-          {fromJson ? "Level details (JSON; not in compact HTML table)" : "HTML report level details"}
+          {fromJson ? "Level details (JSON; not in compact HTML table)" : "HTML report level details (structured JSON where available)"}
         </summary>
         <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
           {field("等级", resolved.level)}
-          {field("区域 / 参考价", resolved.areaReference)}
-          {field("距执行参考", resolved.distanceToExecution)}
-          {field("距前收", resolved.distanceToPreviousClose)}
-          {field("执行相关 / 原始强度", resolved.executionStrength)}
+          {field("System zone interval", zone ? interval(zone.zone_low, zone.zone_high) : resolved.areaReference)}
+          {zone ? field(midpoint ? "Core anchor (zone midpoint)" : "Core reference anchor (not zone midpoint)", anchor === null ? "" : formatPrice(anchor)) : null}
+          {zone ? field("Anchor method / source", [anchorMethod, anchorInputs].filter(Boolean).join(" · ")) : null}
+          {zone ? field("Boundary basis (raw vs system)", text(zone.boundary_basis)) : null}
+          {zone ? field("Raw mathematical interval", text(zone.mathematical_interval) || interval(zone.mathematical_zone_low, zone.mathematical_zone_high)) : null}
+          {zone ? field("Raw option interval", text(zone.option_interval) || interval(zone.option_zone_low, zone.option_zone_high)) : null}
+          {field(`Distance vs execution reference${text(zone?.distance_from_execution_reference_pct_basis ?? zone?.distance_from_execution_reference_basis) ? ` (${text(zone?.distance_from_execution_reference_pct_basis ?? zone?.distance_from_execution_reference_basis)})` : ""}`, zone ? percent(zone.distance_from_execution_reference_pct) : resolved.distanceToExecution)}
+          {field(`Distance vs previous completed daily close${text(zone?.distance_from_last_close_pct_basis ?? zone?.distance_from_last_close_basis) ? ` (${text(zone?.distance_from_last_close_pct_basis ?? zone?.distance_from_last_close_basis)})` : ""}`, resolved.distanceToPreviousClose)}
+          {field("Execution relevance / raw strength", resolved.executionStrength)}
           {field("主要依据", resolved.mainBasis)}
           {field("期权验证", resolved.optionVerification)}
-          <div className="sm:col-span-2">{field("守住、失效或翻转", resolved.behavior)}</div>
+          {zone ? field("Hold condition", text(zone.hold_condition)) : null}
+          {zone ? field("Failure / flip condition", text(zone.failure_or_flip_condition)) : null}
+          {!zone ? <div className="sm:col-span-2">{field("守住、失效或翻转", resolved.behavior)}</div> : null}
+          {validation ? <div className="sm:col-span-2 text-slate-500">Option evidence is dated by observation, not proof it was available at the report’s historical as-of time. |GEX| measures size, not direction or dealer behavior.</div> : null}
         </dl>
         {zone && (rawScore !== null || relevanceScore !== null || components.length > 0) ? (
           <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-600">

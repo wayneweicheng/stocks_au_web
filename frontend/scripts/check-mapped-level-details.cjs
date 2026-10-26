@@ -42,8 +42,25 @@ const htmlFirst = renderToStaticMarkup(React.createElement(Component, {
     mainBasis: '', optionVerification: 'HTML first-row option', behavior: '' },
 }));
 assert.match(htmlFirst, /HTML report level details/);
-assert.match(htmlFirst, /HTML first-row option/);
+assert.doesNotMatch(htmlFirst, /HTML first-row option/);
+assert.match(htmlFirst, /SPX 7,655\.00/);
 assert.doesNotMatch(htmlFirst, /JSON; not in compact HTML table/);
+const stock = renderToStaticMarkup(React.createElement(Component, { side: 'support', rank: 2, instrument: 'stock',
+  detail: { key: 'S2', level: 'S2', optionVerification: 'SPX 700.00', areaReference: 'MID 700' },
+  zone: { zone_low: 695, zone_high: 705, reference_price: 699, reference_price_method: 'weighted sources',
+    core_anchor_inputs: ['daily pivot', 'option wall'], boundary_basis: { mathematical: [698, 700], system: [695, 705] },
+    distance_from_last_close_pct: -2.1, distance_from_last_close_pct_basis: 'previous completed daily close',
+    distance_from_execution_reference_pct: -1.3, distance_from_execution_reference_pct_basis: 'execution reference',
+    option_validation: { matched: true, option_underlying_symbol: 'QQQ', option_price_level: 700,
+      spx_price_level: null, label: 'put wall', expiry_dates: ['2026-04-24'], expiry_bucket: 'next session',
+      observation_date: '2026-04-23', stale: true, gex_magnitude: -123 },
+    hold_condition: 'hold 695', failure_or_flip_condition: 'below 695', total_score: 31 },
+}));
+assert.match(stock, /QQQ 700\.00 put wall/);
+assert.doesNotMatch(stock, /SPX 700\.00|MID 700/);
+for (const expected of ['Expiries 2026-04-24', 'Bucket next session', 'Observed 2026-04-23', 'Stale: yes',
+  'Core reference anchor (not zone midpoint)', '699.00', 'weighted sources', 'previous completed daily close',
+  'execution reference', 'hold 695', 'below 695', 'size only, not direction']) assert.ok(stock.includes(expected), expected);
 const noOption = renderToStaticMarkup(React.createElement(Component, { side: 'resistance', rank: 5,
   zone: { zone_low: 7700, zone_high: 7710, total_score: 12 }, detail: undefined }));
 assert.doesNotMatch(noOption, /OI 2,164|524,941,165/);

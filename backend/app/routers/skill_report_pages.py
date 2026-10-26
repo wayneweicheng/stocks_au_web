@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 import json
@@ -676,6 +677,75 @@ def get_ride_bullish_momentum_job(
     username: str = Depends(verify_credentials),
 ) -> SkillJobResponse:
     return SkillJobResponse(data=call_skill_runner("GET", f"/api/jobs/{job_id}"))
+
+
+def _legacy_skill_runner_status() -> Dict[str, Any]:
+    """Compatibility snapshot for runners predating /api/system/status.
+
+    Only fetch active jobs; /api/jobs without a status filter can contain thousands
+    of historical records. Memory belongs to the remote host and cannot be
+    inferred from this backend, so unavailable metrics stay null.
+    """
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        health_task = pool.submit(call_skill_runner, "GET", "/health", timeout_seconds=10)
+        running_task = pool.submit(call_skill_runner, "GET", "/api/jobs?status=running", timeout_seconds=10)
+        queued_task = pool.submit(call_skill_runner, "GET", "/api/jobs?status=queued", timeout_seconds=10)
+        health, running, queued = health_task.result(), running_task.result(), queued_task.result()
+
+    capacity = health.get("skill_runner_capacity") if isinstance(health, dict) else None
+    if not isinstance(capacity, dict) or not isinstance(running, list) or not isinstance(queued, list):
+        raise HTTPException(status_code=502, detail="Skill runner returned an invalid compatibility status response")
+    if health.get("status") != "ok":
+        raise HTTPException(status_code=503, detail="Skill runner health check failed")
+    max_outstanding = capacity.get("max_outstanding")
+    max_concurrent = capacity.get("max_concurrent")
+    if not isinstance(max_outstanding, int) or not isinstance(max_concurrent, int):
+        raise HTTPException(status_code=502, detail="Skill runner did not report job capacity")
+
+    by_type: Dict[str, Dict[str, int]] = {}
+    def public_jobs(items: List[Any], state: str) -> List[Dict[str, Any]]:
+        result = []
+        for item in items:
+            if not isinstance(item, dict) or item.get("status") != state:
+                raise HTTPException(status_code=502, detail="Skill runner returned invalid active jobs")
+            job_type = str(item.get("job_type") or "unknown")
+            counts = by_type.setdefault(job_type, {"running": 0, "queued": 0})
+            counts[state] += 1
+            result.append({key: item.get(key) for key in (
+                "job_id", "job_type", "label", "stock_code", "status", "created_at", "updated_at"
+            )} | {"name": item.get("label") or item.get("stock_code")})
+        return result
+
+    running_jobs = public_jobs(running, "running")
+    queued_jobs = public_jobs(queued, "queued")
+    return {
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "source": "compatibility",
+        "skill_runner": {
+            "running": len(running_jobs), "queued": len(queued_jobs),
+            "outstanding": len(running_jobs) + len(queued_jobs),
+            "max_outstanding": max_outstanding, "max_concurrent": max_concurrent,
+            "by_job_type": by_type, "running_jobs": running_jobs, "queued_jobs": queued_jobs,
+        },
+        "memory": {key: None for key in (
+            "process_rss_bytes", "system_total_bytes", "system_available_bytes",
+            "system_used_bytes", "swap_total_bytes", "swap_used_bytes"
+        )},
+    }
+
+
+@router.get("/skill-runner/system-status")
+def get_skill_runner_system_status(username: str = Depends(verify_credentials)) -> Dict[str, Any]:
+    """Authenticated proxy; never expose the runner Bearer token to browsers."""
+    try:
+        data = call_skill_runner("GET", "/api/system/status", timeout_seconds=10, expected_not_found=True)
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        return _legacy_skill_runner_status()
+    if not isinstance(data, dict) or not isinstance(data.get("skill_runner"), dict):
+        raise HTTPException(status_code=502, detail="Skill runner returned an invalid system status response")
+    return data
 
 
 @router.get("/spx-map-reports", response_model=SkillReportPage)

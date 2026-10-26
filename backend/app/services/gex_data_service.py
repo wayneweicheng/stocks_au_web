@@ -720,21 +720,23 @@ class GEXDataService:
         window_start: datetime,
         window_end: datetime
     ) -> List[Dict[str, Any]]:
-        """Query Discord messages in a half-open Sydney-time window."""
+        """Query Discord datetimeoffset instants in a half-open Sydney-clock window."""
         try:
             model = get_sql_model()
 
             sql = """
             SELECT MessageId, ChannelId,
-                   CAST(TimeStamp AS datetime) as TimeStamp_Sydney,
+                   CAST(TimeStamp AT TIME ZONE 'AUS Eastern Standard Time' AS datetime) AS TimeStamp_Sydney,
                    UserName, Content, CreateDate,
-                   CAST(TimeStamp_USEst AS datetime) as TimeStamp_USEst
+                   CAST(TimeStamp_USEst AS datetime) AS TimeStamp_USEst
             FROM StockDB_US.Discord.v_DiscordMessages
-            WHERE TimeStamp >= convert(datetime, ?)
-              AND TimeStamp < convert(datetime, ?)
+            WHERE TimeStamp >= (CONVERT(datetime2, ?) AT TIME ZONE 'AUS Eastern Standard Time')
+              AND TimeStamp < (CONVERT(datetime2, ?) AT TIME ZONE 'AUS Eastern Standard Time')
             ORDER BY TimeStamp DESC
             """
 
+            # Bind local wall-clock values; SQL Server resolves each boundary's
+            # Sydney UTC offset independently (23/25-hour DST days included).
             params = (
                 window_start.replace(tzinfo=None),
                 window_end.replace(tzinfo=None),

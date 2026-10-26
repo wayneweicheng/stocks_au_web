@@ -99,6 +99,7 @@ export default function StockMapReportsPage() {
       initialTab="html"
       htmlReports={{
         label: "HTML Reports",
+        evidenceNotice: "This HTML artifact is generated upstream and may use shorthand such as MID or next session. For instrument-specific option strikes, actual expiries/freshness, boundary basis, calculated reference anchor, scores and close denominators, open Mapped Levels and Orders (structured JSON). Option observations do not prove historical as-of availability; |GEX| is size, not direction.",
         getReportFileType: getStockMapReportFileType,
       }}
       reportAction={{

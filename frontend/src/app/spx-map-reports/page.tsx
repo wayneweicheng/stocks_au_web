@@ -105,6 +105,7 @@ export default function SpxMapReportsPage() {
       initialTab="html"
       htmlReports={{
         label: "HTML Reports",
+        evidenceNotice: "This HTML artifact is generated upstream. Use Mapped Levels and Orders for structured JSON zone boundaries, anchor method, scores, expiry dates, observation/freshness and correctly labeled percent bases. Option observations do not prove historical as-of availability; |GEX| is size, not direction.",
         getReportFileType: getSpxMapReportFileType,
       }}
       reportAction={{

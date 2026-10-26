@@ -129,6 +129,7 @@ type Props = {
   initialTab?: "viewer" | "html" | "runner";
   htmlReports?: {
     label?: string;
+    evidenceNotice?: string;
     getReportFileType: (report: ReportSummary) => ReportFileType | null;
     getReportDateRange?: (report: ReportSummary) => ReportDateRange | null;
   };
@@ -945,12 +946,15 @@ export default function SkillReportPage({
                   <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500">Loading report...</div>
                 ) : detail ? (
                   activeTab === "html" ? (
-                    <iframe
-                      title={detail.title}
-                      srcDoc={detail.content}
-                      sandbox="allow-forms allow-modals allow-popups allow-scripts"
-                      className="h-[60vh] min-h-[420px] w-full rounded-md border border-slate-200 bg-white sm:h-[calc(100vh-300px)] sm:min-h-[620px]"
-                    />
+                    <>
+                      {htmlReports?.evidenceNotice ? <p className="mb-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{htmlReports.evidenceNotice}</p> : null}
+                      <iframe
+                        title={detail.title}
+                        srcDoc={detail.content}
+                        sandbox="allow-forms allow-modals allow-popups allow-scripts"
+                        className="h-[60vh] min-h-[420px] w-full rounded-md border border-slate-200 bg-white sm:h-[calc(100vh-300px)] sm:min-h-[620px]"
+                      />
+                    </>
                   ) : (
                     <MarkdownRenderer content={detail.content} />
                   )

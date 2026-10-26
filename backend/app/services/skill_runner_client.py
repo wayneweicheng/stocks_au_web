@@ -16,7 +16,14 @@ SKILL_RUNNER_REQUEST_TIMEOUT_SECONDS = 180
 logger = logging.getLogger(__name__)
 
 
-def call_skill_runner(method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Any:
+def call_skill_runner(
+    method: str,
+    path: str,
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    timeout_seconds: int = SKILL_RUNNER_REQUEST_TIMEOUT_SECONDS,
+    expected_not_found: bool = False,
+) -> Any:
     token = settings.skill_runner_api_token.strip()
     if not token:
         raise HTTPException(status_code=500, detail="SKILL_RUNNER_API_TOKEN is not configured")
@@ -34,7 +41,7 @@ def call_skill_runner(method: str, path: str, payload: Optional[Dict[str, Any]] 
     request = Request(f"{base_url}{path}", data=body, headers=headers, method=method)
     started = time.perf_counter()
     try:
-        with urlopen(request, timeout=SKILL_RUNNER_REQUEST_TIMEOUT_SECONDS) as response:
+        with urlopen(request, timeout=timeout_seconds) as response:
             raw = response.read().decode("utf-8")
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             logger.info(
@@ -70,7 +77,8 @@ def call_skill_runner(method: str, path: str, payload: Optional[Dict[str, Any]] 
             detail = detail_data.get("detail") or detail_data
         except (json.JSONDecodeError, AttributeError):
             pass
-        logger.error(
+        logger.log(
+            logging.INFO if expected_not_found and exc.code == 404 else logging.ERROR,
             "Skill runner %s %s -> %s %.1fms detail=%r",
             method,
             path,
@@ -88,7 +96,7 @@ def call_skill_runner(method: str, path: str, payload: Optional[Dict[str, Any]] 
         logger.error("Skill runner %s %s timed out after %.1fms", method, path, elapsed_ms)
         raise HTTPException(
             status_code=504,
-            detail=f"Skill runner request timed out after {SKILL_RUNNER_REQUEST_TIMEOUT_SECONDS} seconds",
+            detail=f"Skill runner request timed out after {timeout_seconds} seconds",
         )
 
     if not raw:

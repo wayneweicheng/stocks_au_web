@@ -80,6 +80,7 @@ const NAV: NavGroup[] = [
   {
     label: "System",
     items: [
+      { href: "/skill-runner-status", label: "Skill Runner Status" },
       { href: "/ib-gateway", label: "IB Gateway" },
       { href: "/notification-subscriptions", label: "Notification Subscriptions" },
       { href: "/users", label: "Users" },

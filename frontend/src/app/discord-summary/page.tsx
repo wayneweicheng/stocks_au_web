@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
+import { overviewPromptUrl, sydneyDate, sydneyWindowLabel } from "./promptWindow";
 import {
   DEFAULT_MARKET_FLOW_MODEL,
   SHARED_MARKET_FLOW_MODEL_OPTIONS,
 } from "../components/llmModelOptions";
 
 export default function DiscordSummaryPage() {
-  const [observationDate, setObservationDate] = useState<string>(() => {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
-  });
+  const [observationDate, setObservationDate] = useState<string>(() => sydneyDate());
+  const [latestFollowerDate, setLatestFollowerDate] = useState<string>("");
+  const promptRequestId = useRef(0);
 
   const [summary, setSummary] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -35,6 +35,7 @@ export default function DiscordSummaryPage() {
     messageCount: number;
     windowStart: string;
     windowEnd: string;
+    windowMode: string;
   } | null>(null);
 
   const [activeTab, setActiveTab] = useState<"overview" | "followers">("overview");
@@ -110,7 +111,9 @@ export default function DiscordSummaryPage() {
           throw new Error(data.detail || `HTTP ${r.status}`);
         }
         const data = await r.json();
-        setObservationDate(data.summary_date || data.observation_date);
+        // The latest follower summary may be yesterday's date. Do not silently
+        // change the Overview date picker away from today in Sydney.
+        setLatestFollowerDate(data.summary_date || data.observation_date || "");
         setFollowersSummary(data.summary_markdown || "");
         setFollowersCached(data.cached || false);
         setFollowersSummaryMetadata({
@@ -161,33 +164,50 @@ export default function DiscordSummaryPage() {
     [baseUrl, observationDate, followersModel]
   );
 
+  const changeObservationDate = (nextDate: string) => {
+    promptRequestId.current += 1;
+    setObservationDate(nextDate);
+    setPromptLoading(false);
+    setPromptText("");
+    setPromptMetadata(null);
+    setPromptError("");
+    setPromptCopied(false);
+  };
+
   const fetchPrompt = useCallback(async () => {
+    if (!observationDate) return;
+    const requestId = ++promptRequestId.current;
     setPromptLoading(true);
     setPromptError("");
     setPromptCopied(false);
 
     try {
-      const r = await authenticatedFetch(`${baseUrl}/api/discord-summary-prompt`);
+      const r = await authenticatedFetch(overviewPromptUrl(baseUrl, observationDate), { cache: "no-store" });
+      if (requestId !== promptRequestId.current) return;
       if (!r.ok) {
         const data = await r.json().catch(() => ({}));
         throw new Error(data.detail || `HTTP ${r.status}`);
       }
       const data = await r.json();
+      if (requestId !== promptRequestId.current) return;
       setPromptText(data.prompt || "");
       setPromptMetadata({
         estimatedTokens: data.estimated_tokens || 0,
         messageCount: data.message_count || 0,
         windowStart: data.window_start || "",
         windowEnd: data.window_end || "",
+        windowMode: data.window_mode || "",
       });
     } catch (e: any) {
-      setPromptError(e.message);
-      setPromptText("");
-      setPromptMetadata(null);
+      if (requestId === promptRequestId.current) {
+        setPromptError(e.message);
+        setPromptText("");
+        setPromptMetadata(null);
+      }
     } finally {
-      setPromptLoading(false);
+      if (requestId === promptRequestId.current) setPromptLoading(false);
     }
-  }, [baseUrl]);
+  }, [baseUrl, observationDate]);
 
   const fetchFollowersPrompt = useCallback(async () => {
     if (!observationDate) return;
@@ -328,9 +348,10 @@ export default function DiscordSummaryPage() {
               type="button"
               aria-label="Previous day"
               onClick={() => {
-                const d = new Date(observationDate);
-                d.setDate(d.getDate() - 1);
-                setObservationDate(d.toISOString().slice(0, 10));
+                if (!observationDate) return;
+                const d = new Date(`${observationDate}T12:00:00Z`);
+                d.setUTCDate(d.getUTCDate() - 1);
+                changeObservationDate(d.toISOString().slice(0, 10));
               }}
               className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-purple-50"
             >
@@ -339,16 +360,17 @@ export default function DiscordSummaryPage() {
             <input
               type="date"
               value={observationDate}
-              onChange={(e) => setObservationDate(e.target.value)}
+              onChange={(e) => changeObservationDate(e.target.value)}
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/40 focus:border-purple-400/40"
             />
             <button
               type="button"
               aria-label="Next day"
               onClick={() => {
-                const d = new Date(observationDate);
-                d.setDate(d.getDate() + 1);
-                setObservationDate(d.toISOString().slice(0, 10));
+                if (!observationDate) return;
+                const d = new Date(`${observationDate}T12:00:00Z`);
+                d.setUTCDate(d.getUTCDate() + 1);
+                changeObservationDate(d.toISOString().slice(0, 10));
               }}
               className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm hover:bg-purple-50"
             >
@@ -406,10 +428,10 @@ export default function DiscordSummaryPage() {
 
                 <button
                   onClick={fetchPrompt}
-                  disabled={promptLoading}
+                  disabled={promptLoading || !observationDate}
                   className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
                 >
-                  {promptLoading ? "Loading..." : "Get Current 24h Prompt"}
+                  {promptLoading ? "Loading..." : observationDate === sydneyDate() ? "Get Current 24h Prompt" : "Get Selected 16:00 Prompt"}
                 </button>
 
                 {promptText && (
@@ -439,8 +461,8 @@ export default function DiscordSummaryPage() {
 
               {promptMetadata && (
                 <div className="mb-4 text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded border border-slate-200">
-                  Current rolling 24 hours (independent of Observation Date) | Messages: {promptMetadata.messageCount} | Est. Tokens: {promptMetadata.estimatedTokens.toLocaleString()}
-                  {promptMetadata.windowStart && promptMetadata.windowEnd ? <> | Window: {new Date(promptMetadata.windowStart).toLocaleString()} to {new Date(promptMetadata.windowEnd).toLocaleString()}</> : null}
+                  {promptMetadata.windowMode === "selected_sydney_16_window" ? "Selected date: previous day 16:00 → selected day 16:00 Sydney" : "Current rolling 24 hours"} | Messages: {promptMetadata.messageCount} | Est. Tokens: {promptMetadata.estimatedTokens.toLocaleString()}
+                  {promptMetadata.windowStart && promptMetadata.windowEnd ? <> | Window (Sydney): {sydneyWindowLabel(promptMetadata.windowStart)} to {sydneyWindowLabel(promptMetadata.windowEnd)}</> : null}
                 </div>
               )}
 
@@ -550,7 +572,7 @@ export default function DiscordSummaryPage() {
 
               {followersSummaryMetadata && (
                 <div className="mb-4 rounded border border-purple-100 bg-purple-50 px-3 py-2 text-xs text-slate-600">
-                  Automated daily at 4:00 PM Sydney time
+                  Automated daily at 4:00 PM Sydney time{latestFollowerDate ? ` · Latest follower summary: ${latestFollowerDate}` : ""}
                   {followersSummaryMetadata.windowStart && followersSummaryMetadata.windowEnd && (
                     <> | Window: {new Date(followersSummaryMetadata.windowStart).toLocaleString()} to {new Date(followersSummaryMetadata.windowEnd).toLocaleString()}</>
                   )}

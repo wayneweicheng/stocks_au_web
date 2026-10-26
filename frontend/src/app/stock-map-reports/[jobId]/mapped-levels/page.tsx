@@ -11,6 +11,7 @@ import MappedLevelReportDetails, {
   type HtmlLevelDetail,
 } from "../../../components/MappedLevelReportDetails";
 import { authenticatedFetch } from "../../../utils/authenticatedFetch";
+import { selectedClose, StockZonePriceCells, StockZonePriceHeaders } from "./priceComparison";
 
 type JsonObject = Record<string, unknown>;
 type LevelSide = "support" | "resistance";
@@ -36,7 +37,7 @@ type MappedStock = {
   low: number;
   high: number;
   mid: number;
-  lastClose: number | null;
+  selectedClose: number | null;
   livePrice: number | null;
   clamped: boolean;
 };
@@ -137,7 +138,7 @@ function matchingZoneMetadata(data: JsonObject, side: LevelSide, reference: numb
     .map((candidate) => ({
       candidate,
       distance: Math.abs(
-        (numberValue(candidate.tradable_center) ?? numberValue(candidate.mathematical_center) ?? reference) - reference,
+        (numberValue(candidate.core_anchor_price) ?? numberValue(candidate.reference_price) ?? numberValue(candidate.tradable_center) ?? numberValue(candidate.mathematical_center) ?? reference) - reference,
       ),
     }))
     .sort((left, right) => left.distance - right.distance);
@@ -262,7 +263,7 @@ function extractZones(data: JsonObject): StockZone[] {
       const low = numberValue(row.zone_low);
       const high = numberValue(row.zone_high);
       if (low === null || high === null) return;
-      const center = numberValue(row.tradable_center) ?? numberValue(row.mathematical_center) ?? (low + high) / 2;
+      const center = numberValue(row.core_anchor_price) ?? numberValue(row.reference_price) ?? numberValue(row.tradable_center) ?? numberValue(row.mathematical_center) ?? (low + high) / 2;
       const metadata = matchingZoneMetadata(data, side, center);
       zones.push({
         id: `${side}-${index}-${low}-${high}`,
@@ -279,6 +280,17 @@ function extractZones(data: JsonObject): StockZone[] {
     });
   }
   return zones.sort((left, right) => left.side.localeCompare(right.side) || left.rank - right.rank);
+}
+
+function pathPrice(item: JsonObject): number | null {
+  return numberValue(item.price) ?? numberValue(item.price_level) ?? numberValue(item.core_anchor_price) ??
+    numberValue(item.reference_price) ?? numberValue(item.zone_high);
+}
+
+function supportPath(data: JsonObject): JsonObject[] {
+  const path = data.downside_support_path;
+  return Array.isArray(path) ? path.filter((value): value is JsonObject => Boolean(value && typeof value === "object"))
+    .sort((a, b) => (pathPrice(b) ?? -Infinity) - (pathPrice(a) ?? -Infinity)) : [];
 }
 
 function percentChange(value: number | null, lastClose: number | null) {
@@ -404,11 +416,12 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
 
   const zones = useMemo(() => (mapData ? extractZones(mapData) : []), [mapData]);
   const stockCode = mapData ? firstStockCode(mapData, routeStockCode) : (normalizeStockCode(routeStockCode) || "Mapped stock");
-  const stockLastClose = stockPrices?.last_close ?? null;
+  const { value: stockSelectedClose, source: selectedCloseSource, isNative30m, fromReport } = selectedClose(mapData, stockPrices);
   const stockLivePrice = stockPrices?.live_price ?? null;
   const atr14d = stockPrices?.atr_14d ?? null;
   const overallRange = useMemo(() => wholeMapRange(zones, atr14d), [zones, atr14d]);
   const referenceLevels = useMemo(() => (mapData ? extractReferenceLevels(mapData) : []), [mapData]);
+  const downsidePath = useMemo(() => (mapData ? supportPath(mapData) : []), [mapData]);
 
   return (
     <div className="space-y-6">
@@ -418,12 +431,12 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
       />
       {error ? <Alert variant="danger">{error}</Alert> : null}
       {loading ? <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading Stock Map JSON...</div> : null}
-      {!loading && !error && zones.length === 0 ? <Alert variant="warning">No primary stock support or resistance zones were found in the JSON report.</Alert> : null}
+      {!loading && !error && zones.length === 0 ? <Alert variant="warning">No major primary zones were found. Weaker support references or a downside support path may still be available below.</Alert> : null}
       {!loading && !error && overallRange ? (
         <section className="rounded-lg border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-indigo-950">Overall six-level price range</h2>
+          <h2 className="text-lg font-semibold text-indigo-950">Overall primary-level price span</h2>
           <p className="mt-1 text-sm text-indigo-800">
-            Lowest support {price(overallRange.lowestLevel)} to highest resistance {price(overallRange.highestLevel)}.
+            Lowest primary anchor {price(overallRange.lowestLevel)} to highest primary anchor {price(overallRange.highestLevel)}. Applied range is a display/ATR envelope, not a raw support/resistance interval.
           </p>
           <div className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-sm text-indigo-900">
             <span>Applied range: <strong>{price(overallRange.low)} – {price(overallRange.high)}</strong></span>
@@ -433,6 +446,18 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
         </section>
       ) : null}
 
+      {!loading && !error && downsidePath.length > 0 ? (
+        <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
+          <h2 className="font-semibold">Downside support path (descending price)</h2>
+          <p className="mt-1 text-slate-600">Includes weaker references even when no major zone qualifies.</p>
+          <ol className="mt-2 list-inside list-decimal space-y-1">
+            {downsidePath.map((item, index) => <li key={index}>
+              {String(item.label ?? item.name ?? item.id ?? `Reference ${index + 1}`)} · {price(pathPrice(item))}
+              {item.evidence || item.main_evidence ? ` · ${Array.isArray(item.main_evidence) ? item.main_evidence.join("; ") : String(item.evidence ?? "")}` : ""}
+            </li>)}
+          </ol>
+        </section>
+      ) : null}
       {!loading && !error && referenceLevels.length > 0 ? (
         <section className="rounded-lg border border-slate-300 bg-slate-50 shadow-sm">
           <div className="border-b border-slate-200 px-5 py-4">
@@ -446,7 +471,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <th className="px-3 py-2">Reference</th>
-                  <th className="px-3 py-2">Price (% vs close)</th>
+                  <th className="px-3 py-2">Price (vs selected close)</th>
                   <th className="px-3 py-2">Side</th>
                   <th className="px-3 py-2">Timeframe</th>
                   <th className="px-3 py-2">Reference band</th>
@@ -463,7 +488,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
                     <tr key={level.id} className="border-b border-slate-100 last:border-b-0">
                       <td className="px-3 py-3 font-semibold text-slate-800">{level.label}</td>
                       <td className="px-3 py-3 font-mono text-slate-700">
-                        {price(level.price)} <span className="text-xs text-slate-500">{percentLabel(level.price, stockLastClose)}</span>
+                        {price(level.price)} <span className="text-xs text-slate-500">{percentLabel(level.price, stockSelectedClose)}</span>
                       </td>
                       <td className={`px-3 py-3 text-xs font-semibold uppercase tracking-wide ${sideClass}`}>{sideLabel}</td>
                       <td className="px-3 py-3 text-slate-600">{level.timeframe}</td>
@@ -512,7 +537,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
             low: zone.low,
             high: zone.high,
             mid: zone.center,
-            lastClose: stockLastClose,
+            selectedClose: stockSelectedClose,
             livePrice: stockLivePrice,
             clamped: false,
           };
@@ -529,6 +554,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
                     detail={htmlLevelDetails[levelReportKey(zone.side, zone.rank)]}
                     rank={zone.rank}
                     zone={zone.reportZone}
+                    instrument="stock"
                   />
                 </div>
                 <div className="text-right text-sm text-slate-600">
@@ -542,10 +568,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
                   <thead>
                     <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <th className="px-3 py-2">Stock</th>
-                      <th className="px-3 py-2">Last close (30M)</th>
-                      <th className="px-3 py-2">Live price (IB)</th>
-                      <th className="px-3 py-2">ATR range (% vs close)</th>
-                      <th className="px-3 py-2">Mid (% vs close)</th>
+                      <StockZonePriceHeaders isNative30m={isNative30m} fromReport={fromReport} />
                       <th className="px-3 py-2">Source</th>
                       <th className="px-3 py-2">Actions</th>
                     </tr>
@@ -553,21 +576,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
                   <tbody>
                     <tr className="border-b border-slate-100">
                       <td className="px-3 py-3 font-semibold text-slate-800">{mapped.label}</td>
-                      <td className="px-3 py-3 font-mono text-slate-700">
-                        {price(mapped.lastClose)}
-                        <div className="text-xs font-sans text-slate-400">{stockPrices?.last_close_source || "n/a"}</div>
-                      </td>
-                      <td className="px-3 py-3 font-mono text-slate-700">
-                        {price(mapped.livePrice)}
-                        <div className="text-xs font-sans text-slate-400">{stockPrices?.live_price_source || "n/a"}</div>
-                      </td>
-                      <td className="px-3 py-3 font-mono text-slate-700">
-                        <div>{price(mapped.low)} <span className="text-xs text-slate-500">{percentLabel(mapped.low, mapped.lastClose)}</span></div>
-                        <div>{price(mapped.high)} <span className="text-xs text-slate-500">{percentLabel(mapped.high, mapped.lastClose)}</span></div>
-                      </td>
-                      <td className="px-3 py-3 font-mono text-slate-700">
-                        {price(mapped.mid)} <span className="text-xs text-slate-500">{percentLabel(mapped.mid, mapped.lastClose)}</span>
-                      </td>
+                      <StockZonePriceCells low={mapped.low} high={mapped.high} close={mapped.selectedClose} closeSource={selectedCloseSource} livePrice={mapped.livePrice} livePriceSource={stockPrices?.live_price_source || "n/a"} />
                       <td className="px-3 py-3 text-xs text-slate-500">{mapped.sourceColumn}</td>
                       <td className="px-3 py-3">
                         <div className="flex flex-wrap gap-2">

@@ -192,6 +192,37 @@ class IndexStockPriceMappingTests(unittest.TestCase):
         self.assertEqual(response["status"], "partial")
         self.assertEqual(response["live_prices"], {"NQMain": 25700.0})
 
+    def test_quote_only_stock_request_uses_price_ticks_without_optional_subscriptions(self):
+        from types import SimpleNamespace
+        from app.services import live_stock_price_service
+
+        class FakeIB:
+            def qualifyContracts(self, *contracts):
+                return [SimpleNamespace(symbol="SPY")]
+
+            def reqMarketDataType(self, kind):
+                pass
+
+            def reqMktData(self, contract, generic_ticks, snapshot, regulatory):
+                self.generic_ticks = generic_ticks
+                return SimpleNamespace(last=700.0, bid=None, ask=None, close=None, marketDataType=1)
+
+            def cancelMktData(self, contract):
+                pass
+
+            def disconnect(self):
+                pass
+
+        fake_ib = FakeIB()
+        with patch.object(live_stock_price_service, "_connect_ib", return_value=fake_ib), patch.object(
+            live_stock_price_service, "Stock", return_value=object()
+        ):
+            quotes = live_stock_price_service.get_live_stock_prices(
+                ["SPY"], wait_seconds=0, allow_close_fallback=False, quote_only=True,
+            )
+        self.assertEqual(fake_ib.generic_ticks, "")
+        self.assertEqual(quotes["SPY"]["price"], 700.0)
+
     def test_quote_only_connection_does_not_synchronize_account(self):
         from app.services import live_stock_price_service
 
@@ -275,20 +306,63 @@ class IndexStockPriceMappingTests(unittest.TestCase):
         self.assertNotIn("[StockData].[PriceHistory]", model.query)
         self.assertEqual(response["historical_close_date"], "2026-10-21")
 
-    def test_extra_ib_quotes_are_partial_not_historical_fallback(self):
+    def test_extra_ib_quotes_request_only_the_clicked_symbol(self):
         with patch.object(index_stock_price_mapping, "get_live_stock_prices", return_value={
-            "NVDA": {"price": 208.5, "source": "ib_live"}, "SPCX": {"price": float("nan")},
+            "NVDA": {"price": 208.5, "source": "ib_live"},
         }) as quotes:
-            response = index_stock_price_mapping.get_spx_map_live_extra_prices(username="test-user")
+            response = index_stock_price_mapping.get_spx_map_live_extra_prices(symbol="nvda", username="test-user")
         self.assertEqual(response["live_prices"], {"NVDA": 208.5})
-        self.assertEqual(response["status"], "partial")
+        self.assertEqual(response["status"], "available")
         quotes.assert_called_once_with(
-            index_stock_price_mapping.SPX_MAP_EXTRA_STOCKS,
-            wait_seconds=2.0,
+            ["NVDA"], wait_seconds=2.0,
             connect_timeout=index_stock_price_mapping.QUOTE_CONNECT_TIMEOUT_SECONDS,
-            allow_close_fallback=False,
-            quote_only=True,
+            allow_close_fallback=False, quote_only=True,
         )
+
+    def test_manual_symbol_quote_routes_reject_unknown_symbols_without_contacting_ib(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        app.dependency_overrides[index_stock_price_mapping.verify_credentials] = lambda: "test-user"
+        try:
+            with patch.object(index_stock_price_mapping, "get_live_stock_prices") as stocks, patch.object(
+                index_stock_price_mapping, "get_live_futures_prices"
+            ) as futures:
+                client = TestClient(app)
+                self.assertEqual(client.get("/api/spx-map-live-extra-prices").status_code, 422)
+                for url in (
+                    "/api/spx-map-live-extra-prices?symbol=XYZ",
+                    "/api/spx-map-live-prices?symbol=NVDA",
+                    "/api/spx-map-live-futures?symbol=MNQ",
+                ):
+                    self.assertEqual(client.get(url).status_code, 400)
+                stocks.assert_not_called()
+                futures.assert_not_called()
+        finally:
+            app.dependency_overrides.pop(index_stock_price_mapping.verify_credentials, None)
+
+    def test_manual_symbol_quote_routes_request_only_one_contract(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        app.dependency_overrides[index_stock_price_mapping.verify_credentials] = lambda: "test-user"
+        try:
+            with patch.object(index_stock_price_mapping, "get_live_stock_prices", return_value={"QQQ": {"price": 720.25}}) as stocks, patch.object(
+                index_stock_price_mapping, "get_live_futures_prices", return_value={"NQ": {"price": 25000.5}}
+            ) as futures:
+                client = TestClient(app)
+                self.assertEqual(client.get("/api/spx-map-live-prices?symbol=qqq").json()["live_prices"], {"QQQ": 720.25})
+                self.assertEqual(client.get("/api/spx-map-live-futures?symbol=NQMain").json()["live_prices"], {"NQMain": 25000.5})
+                stocks.assert_called_once_with(
+                    ["QQQ"], wait_seconds=2.0, connect_timeout=index_stock_price_mapping.QUOTE_CONNECT_TIMEOUT_SECONDS,
+                    allow_close_fallback=False, quote_only=True,
+                )
+                futures.assert_called_once_with(
+                    ["NQ"], wait_seconds=2.0, connect_timeout=index_stock_price_mapping.QUOTE_CONNECT_TIMEOUT_SECONDS,
+                    quote_only=True,
+                )
+        finally:
+            app.dependency_overrides.pop(index_stock_price_mapping.verify_credentials, None)
 
     def test_load_latest_closes_falls_back_to_futures_for_missing_mes_and_mnq(self):
         class FakeModel:

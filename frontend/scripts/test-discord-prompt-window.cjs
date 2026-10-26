@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const Module = require('node:module');
+const ts = require('typescript');
+const file = path.resolve(__dirname, '../src/app/discord-summary/promptWindow.ts');
+const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+const mod = new Module(file, module);
+mod._compile(code, file);
+const { sydneyDate, overviewPromptUrl, sydneyWindowLabel } = mod.exports;
+assert.equal(sydneyDate(new Date('2026-10-21T13:30:00Z')), '2026-10-22');
+assert.equal(new URL(overviewPromptUrl('https://example.com', '2026-10-21')).searchParams.get('observation_date'), '2026-10-21');
+assert.match(sydneyWindowLabel('2026-10-20T16:00:00+11:00'), /20 Oct 2026.*4:00 pm/i);
+assert.match(sydneyWindowLabel('2026-10-21T16:00:00+11:00'), /21 Oct 2026.*4:00 pm/i);
+console.log('Discord Overview Sydney date and selected prompt URL: OK');
