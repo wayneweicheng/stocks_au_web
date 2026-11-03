@@ -69,7 +69,7 @@ export default function PatternPredictionsPage() {
     chartPath: "ChartPath",
   } as const;
 
-  const visibleColumns = columns.filter((c) => [
+  const visibleColumns = columns.filter((c) => ([
     FIELD.date,
     FIELD.code,
     FIELD.confidence,
@@ -77,7 +77,7 @@ export default function PatternPredictionsPage() {
     FIELD.dailyPattern,
     FIELD.weeklyPattern,
     FIELD.chartPath,
-  ].includes(c));
+  ] as string[]).includes(c));
 
   return (
     <div className="min-h-screen text-slate-800">

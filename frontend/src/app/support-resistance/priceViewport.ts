@@ -29,7 +29,7 @@ export function priceWindowForBars(bars: Candle[], zones: Zone[]): PriceWindow |
   const fullSpan = maximum - minimum;
   const recent = bars.slice(-30).flatMap((bar) => [bar.low, bar.high]).filter(Number.isFinite);
   const recentSpan = recent.length ? Math.max(...recent) - Math.min(...recent) : 0;
-  const span = Math.min(fullSpan, Math.max(fullSpan * 0.30, Math.abs(latest) * 0.025, recentSpan * 1.35));
+  const span = Math.min(fullSpan, Math.max(fullSpan * 0.42, Math.abs(latest) * 0.035, recentSpan * 1.5));
   const bottom = clamp(latest - span * 0.44, minimum, maximum - span);
   const contentHeight = Math.min(7000, Math.ceil(TRACK_HEIGHT * fullSpan / span));
   const initialScrollTop = scrollTopForPrice({ minimum, maximum, span, trackHeight: TRACK_HEIGHT, contentHeight }, bottom);

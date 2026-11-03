@@ -15,12 +15,12 @@ class SavedPriceLevelsDatabaseError(RuntimeError):
     """Raised when saved support/resistance levels cannot be loaded."""
 
 
-def _open_saved_price_levels_model():
+def _open_saved_price_levels_model(*, query_timeout: int | None = None):
     try:
         return get_timed_sql_model(
             database="StockDB_US",
             connection_timeout=settings.support_resistance_db_connection_timeout,
-            query_timeout=settings.support_resistance_db_query_timeout,
+            query_timeout=query_timeout if query_timeout is not None else settings.support_resistance_db_query_timeout,
         )
     except Exception as exc:
         raise SavedPriceLevelsDatabaseError(

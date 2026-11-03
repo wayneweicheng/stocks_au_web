@@ -1,6 +1,7 @@
 "use client";
 
 import SkillReportPage, { type ReportSummary } from "../components/SkillReportPage";
+import StockMapComparisonWorkspace from "./StockMapComparisonWorkspace";
 
 function getCurrentDateTimeInTimezone(timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -97,6 +98,10 @@ export default function StockMapReportsPage() {
       emptyLabel="No Stock Map reports found."
       fields={fields}
       initialTab="html"
+      extraTabs={[
+        { key: "comparison-lab", label: "Two-Day Lab", content: <StockMapComparisonWorkspace mode="lab" /> },
+        { key: "comparison-viewer", label: "Analysis Viewer", content: <StockMapComparisonWorkspace mode="viewer" /> },
+      ]}
       htmlReports={{
         label: "HTML Reports",
         evidenceNotice: "This HTML artifact is generated upstream and may use shorthand such as MID or next session. For instrument-specific option strikes, actual expiries/freshness, boundary basis, calculated reference anchor, scores and close denominators, open Mapped Levels and Orders (structured JSON). Option observations do not prove historical as-of availability; |GEX| is size, not direction.",

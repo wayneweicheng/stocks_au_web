@@ -87,6 +87,40 @@ function formatPercent(value: MetricValue) {
   return `${(Number(value) * 100).toFixed(1)}%`;
 }
 
+function marginUseSummary(metrics: Record<string, MetricValue>) {
+  const initialRequirement = metrics.init_margin_req;
+  const availableFunds = metrics.available_funds;
+  const maintenanceRequirement = metrics.maint_margin_req;
+  const excessLiquidity = metrics.excess_liquidity;
+  const usage = (requirement: MetricValue, remaining: MetricValue): number | null => {
+    if (requirement == null || remaining == null) return null;
+    const required = Number(requirement);
+    const spare = Number(remaining);
+    const total = required + spare;
+    return Number.isFinite(required) && Number.isFinite(spare) && total > 0 ? required / total : null;
+  };
+  const initialUsage = usage(initialRequirement, availableFunds);
+  const maintenanceUsage = usage(maintenanceRequirement, excessLiquidity);
+  const constraints = [
+    { label: "Initial", value: initialUsage },
+    { label: "Maintenance", value: maintenanceUsage },
+  ].filter((item): item is { label: string; value: number } => item.value !== null);
+  const bindingConstraint = constraints.reduce<{ label: string; value: number } | null>(
+    (current, item) => !current || item.value > current.value ? item : current,
+    null,
+  );
+  const headroom = [availableFunds, excessLiquidity].every((value) => value != null && Number.isFinite(Number(value)))
+    ? Math.min(Number(availableFunds), Number(excessLiquidity))
+    : null;
+
+  return {
+    initialUsage,
+    maintenanceUsage,
+    bindingConstraint,
+    headroom,
+  };
+}
+
 function formatSignedCapacityPercent(exposure: MetricValue, netLiquidation: MetricValue, leverage: number) {
   const exposureValue = Number(exposure);
   const netLiqValue = Number(netLiquidation);
@@ -152,6 +186,7 @@ export default function PortfolioRiskPage() {
   const currency = data?.currency || "USD";
   const metrics = data?.metrics || {};
   const leverage = metrics.current_leverage;
+  const marginUse = marginUseSummary(metrics);
 
   const leverageTone = useMemo(() => {
     const value = Number(leverage);
@@ -274,8 +309,8 @@ export default function PortfolioRiskPage() {
         <StatCard
           label="Excess Liquidity"
           value={formatMoney(metrics.excess_liquidity, currency)}
-          hint={`Buffer ratio: ${formatPercent(metrics.excess_liquidity_ratio)}`}
-          tone={Number(metrics.excess_liquidity_ratio) > 0.25 ? "good" : "warn"}
+          hint={`IB cushion: ${formatPercent(metrics.cushion ?? metrics.excess_liquidity_ratio)}`}
+          tone={Number(metrics.cushion ?? metrics.excess_liquidity_ratio) > 0.25 ? "good" : "warn"}
         />
         <StatCard
           label="Buying Power"
@@ -283,10 +318,60 @@ export default function PortfolioRiskPage() {
           hint="IB-reported buying power, not a personal risk limit."
         />
         <StatCard
-          label="Margin Used"
-          value={formatPercent(metrics.init_margin_ratio)}
-          hint={`Maint margin: ${formatPercent(metrics.maint_margin_ratio)}`}
+          label="IB Maintenance Cushion"
+          value={formatPercent(metrics.cushion ?? metrics.excess_liquidity_ratio)}
+          hint="IB-reported cushion above maintenance margin; 0% means no buffer remains."
+          tone={Number(metrics.cushion ?? metrics.excess_liquidity_ratio) > 0.25 ? "good" : "warn"}
         />
+        <StatCard
+          label="Initial Margin Used"
+          value={formatPercent(metrics.init_margin_ratio)}
+          hint={`Maintenance margin: ${formatMoney(metrics.maint_margin_req, currency)} (${formatPercent(metrics.maint_margin_ratio)} of equity)`}
+        />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Margin Capacity Used — Stricter Constraint</CardTitle>
+          <p className="mt-1 text-sm text-slate-600">
+            One progress indicator using the higher of initial- and maintenance-margin utilization. It measures margin capacity used, not a percentage of maximum position notional.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="text-3xl font-semibold text-slate-900">
+              {formatPercent(marginUse.bindingConstraint?.value)}
+            </div>
+            <div className="text-sm text-slate-600">
+              Tighter reported headroom: <strong>{formatMoney(marginUse.headroom, currency)}</strong>
+              {marginUse.bindingConstraint ? ` · ${marginUse.bindingConstraint.label} margin is stricter` : ""}
+            </div>
+          </div>
+          <div
+            className="mt-3 h-3 overflow-hidden rounded-full bg-slate-200"
+            role="progressbar"
+            aria-label="Margin capacity used under stricter margin constraint"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={marginUse.bindingConstraint ? Math.min(100, Math.max(0, marginUse.bindingConstraint.value * 100)) : 0}
+          >
+            <div
+              className={`h-full rounded-full ${Number(marginUse.bindingConstraint?.value) >= 0.85 ? "bg-red-600" : Number(marginUse.bindingConstraint?.value) >= 0.65 ? "bg-amber-500" : "bg-emerald-600"}`}
+              style={{ width: `${Math.min(100, Math.max(0, (marginUse.bindingConstraint?.value || 0) * 100))}%` }}
+            />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-600">
+            <span>Initial-margin capacity used: {formatPercent(marginUse.initialUsage)}</span>
+            <span>Maintenance-margin capacity used: {formatPercent(marginUse.maintenanceUsage)}</span>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Headroom is the lower of IB Available Funds and Excess Liquidity. IB requirements vary by holding; open-order figures below are not margin what-if estimates and are not included as if filled.
+          </p>
+        </CardContent>
+      </Card>
+
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        For margin-call risk, also monitor <strong>Excess Liquidity</strong> and <strong>IB Maintenance Cushion</strong>. They are broker-reported buffers, not a guaranteed warning time: IB can change house requirements or liquidate positions. Open-order exposure below is a notional estimate—not a margin estimate or a projection of cushion after fills.
       </div>
 
       <Card>

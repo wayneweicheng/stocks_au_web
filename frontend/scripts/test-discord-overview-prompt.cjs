@@ -48,10 +48,10 @@ function all(node, type, out = []) {
 (async () => {
   states[0] = '2026-10-22';
   let tree = render();
-  effects[0](); // auto-load latest follower summary, which is older than selected Overview date
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(states[0], '2026-10-22', 'auto-loading followers must not overwrite Overview date');
-  tree = render();
+  assert.ok(all(tree, 'button').find(b => b.children === 'Overview').className.includes('bg-purple-600'), 'Overview is selected by default');
+  assert.equal(effects.length, 0, 'opening the page must not request or generate a follower summary');
+  assert.equal(calls.length, 0);
+  assert.equal(states[0], '2026-10-22');
   all(tree, 'button').find(b => b.children === 'Overview').onClick();
   tree = render();
   all(tree, 'input').find(input => input.type === 'date').onChange({ target: { value: '2026-10-21' } });
@@ -61,5 +61,5 @@ function all(node, type, out = []) {
   await prompt.onClick();
   const requested = calls.find(url => url.includes('/api/discord-summary-prompt'));
   assert.equal(new URL(requested, 'https://example.com').searchParams.get('observation_date'), '2026-10-21');
-  console.log('Overview button sends selected date; follower auto-load does not override it: OK');
+  console.log('Overview is default, no follower auto-load, and the prompt uses the selected date: OK');
 })().catch(err => { console.error(err); process.exitCode = 1; });

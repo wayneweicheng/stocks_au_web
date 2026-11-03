@@ -1,6 +1,7 @@
 "use client";
 
 import SkillReportPage from "../components/SkillReportPage";
+import IndexBottomStatesTab from "./IndexBottomStatesTab";
 
 function getCurrentDateTimeInTimezone(timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -61,6 +62,7 @@ export default function FindIndexBottomsReportsPage() {
       storageKey="stocks_au_find_index_bottoms_jobs"
       submitLabel="Submit Index Bottom Job"
       emptyLabel="No index-bottom reports found."
+      extraTabs={[{ key: "states", label: "States & Returns", content: <IndexBottomStatesTab /> }]}
       fields={fields}
       makeJobLabel={(values) => {
         const asAt = String(values.as_at || "").trim();

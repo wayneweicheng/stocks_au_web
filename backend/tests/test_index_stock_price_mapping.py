@@ -56,7 +56,7 @@ class IndexStockPriceMappingTests(unittest.TestCase):
 
         self.assertEqual(response["historical_close_date"], date(2026, 9, 15))
 
-    def test_snapshot_closes_use_indexed_5m_bounded_date_lookup(self):
+    def test_snapshot_closes_use_matched_30m_spx_es_cash_close_bars(self):
         calls = []
 
         class FakeModel:
@@ -67,22 +67,184 @@ class IndexStockPriceMappingTests(unittest.TestCase):
         with patch.object(index_stock_price_mapping, "SQLServerModel", return_value=FakeModel()):
             self.assertEqual(index_stock_price_mapping._load_snapshot_closes(date(2026, 10, 20)), {})
         self.assertEqual(len(calls), 7)
-        self.assertIn("NQMain.US", [params[0] for _, params in calls])
+        by_code = {params[1]: params for _, params in calls}
+        self.assertEqual(by_code["SPXW.US"], ("30M", "SPXW.US", "2026-10-06", "2026-10-20", "14:30:00"))
+        self.assertEqual(by_code["ESMain.US"], ("30M", "ESMain.US", "2026-10-06", "2026-10-20", "15:30:00"))
+        self.assertEqual(by_code["NQMain.US"][0], "5M")
         for query, params in calls:
-            self.assertIn("TimeFrame = '5M'", query)
+            self.assertIn("TimeFrame = CONVERT(varchar(10), ?)", query)
             self.assertIn("TimeIntervalStart >=", query)
             self.assertIn("TimeIntervalStart <", query)
             self.assertIn("ORDER BY TimeIntervalStart DESC", query)
             self.assertEqual(params[-3], "2026-10-06")
             self.assertEqual(params[-2], "2026-10-20")
-            self.assertIn(params[-1], {"14:55:00", "15:55:00"})
+            self.assertIn(params[-1], {"14:30:00", "15:30:00", "15:55:00"})
+
+    def test_report_asof_before_cash_close_uses_previous_session_close_anchors(self):
+        captured = {}
+        def closes(anchor_date, close_dates):
+            captured["anchor_date"] = anchor_date
+            close_dates.update({symbol: "2026-10-29" for symbol in ("SPX", "SPY", "ESMain")})
+            return {"SPX": 7700.0, "SPY": 770.0, "ESMain": 7720.0}
+
+        with patch.object(index_stock_price_mapping, "_load_snapshot_closes", side_effect=closes), patch.object(
+            index_stock_price_mapping, "_load_latest_snapshot_date", return_value=date(2026, 10, 30)
+        ), patch.object(index_stock_price_mapping, "_load_effective_spx_prices", return_value={
+            "effective_prices": {"SPX": 7644.2, "SPY": 762.03, "ESMain": 7676.0},
+            "effective_price_source": "as-of history", "effective_price_timestamp": "2026-10-30T06:00:00",
+        }):
+            response = index_stock_price_mapping.get_spx_map_prices(
+                observation_date=date(2026, 10, 30),
+                as_of_et=datetime.fromisoformat("2026-10-30T06:05:00-04:00"),
+                username="test-user",
+            )
+
+        self.assertEqual(captured["anchor_date"], date(2026, 10, 29))
+        self.assertEqual(response["historical_close_date"], date(2026, 10, 29))
+
+    def test_effective_intraday_bar_uses_last_fully_closed_bar_not_future_start(self):
+        captured = {}
+
+        class FakeModel:
+            def execute_read_query(self, query, params):
+                captured["query"] = query
+                captured["params"] = params
+                return [{"Price": 7721.5, "TimeIntervalStart": datetime(2026, 10, 30, 20, 30), "BarCloseTime": datetime(2026, 10, 30, 21, 0)}]
+
+        as_of = datetime.fromisoformat("2026-10-30T21:20:00-04:00")
+        with patch.object(index_stock_price_mapping, "SQLServerModel", return_value=FakeModel()):
+            bar = index_stock_price_mapping._load_effective_intraday_bar(as_of, "ESMain.US", "30M")
+
+        self.assertEqual(bar["price"], 7721.5)
+        self.assertEqual(captured["params"], (30, "ESMain.US", "30M", 30, datetime(2026, 10, 30, 21, 20)))
+        self.assertIn("TimeIntervalStart <= DATEADD(minute, -?, CONVERT(datetime, ?))", captured["query"])
+
+    def test_stock_map_prices_returns_daily_close_before_report_asof(self):
+        captured = {}
+        class FakeModel:
+            def execute_read_query(self, query, params):
+                captured["query"] = query
+                captured["params"] = params
+                return [{"ASXCode": "QQQ.US", "LastClose": 690.49, "LastCloseObservationDate": date(2026, 10, 30)}]
+
+        with patch.object(index_stock_price_mapping, "SQLServerModel", return_value=FakeModel()), patch.object(
+            index_stock_price_mapping, "_load_stock_atr_14d", return_value=10.0
+        ) as atr, patch.object(index_stock_price_mapping, "get_live_stock_prices", return_value={"QQQ": {"price": 696.37, "source": "ib_live"}}):
+            result = index_stock_price_mapping.get_stock_map_prices(
+                stock_code="QQQ", observation_date=date(2026, 11, 2),
+                as_of_et=datetime.fromisoformat("2026-11-02T02:25:00-05:00"), username="test-user",
+            )
+
+        self.assertIn("StockData].[PriceHistory]", captured["query"])
+        self.assertEqual(captured["params"][-1], "2026-10-30")
+        self.assertEqual(result["last_close"], 690.49)
+        self.assertEqual(result["last_close_source"], "last_completed_daily_close")
+        self.assertEqual(result["last_close_observation_date"], "2026-10-30")
+        self.assertEqual(result["live_price"], 696.37)
+        atr.assert_called_once()
+        self.assertEqual(atr.call_args.args[2], date(2026, 10, 30))
+
+    def test_stock_map_prior_close_cutoff_uses_last_completed_session_at_report_asof(self):
+        cutoff = index_stock_price_mapping._stock_map_prior_close_cutoff(
+            date(2026, 11, 2), datetime.fromisoformat("2026-11-02T02:25:00-05:00")
+        )
+        self.assertEqual(cutoff, date(2026, 10, 30))
+        self.assertEqual(
+            index_stock_price_mapping._stock_map_prior_close_cutoff(
+                date(2026, 10, 29), datetime.fromisoformat("2026-11-02T02:25:00-05:00")
+            ),
+            date(2026, 10, 30),
+        )
+        self.assertEqual(
+            index_stock_price_mapping._stock_map_prior_close_cutoff(
+                date(2026, 10, 30), datetime.fromisoformat("2026-10-30T16:10:00-04:00")
+            ),
+            date(2026, 10, 30),
+        )
+        self.assertEqual(index_stock_price_mapping._stock_map_prior_close_cutoff(date(2026, 11, 2), None), date(2026, 10, 30))
+
+    def test_effective_spx_prices_translate_es_price_with_cash_basis(self):
+        bars = {
+            ("ESMain.US", "30M"): {"price": 7721.5, "bar_close_at": datetime(2026, 10, 30, 21, 0), "timestamp": datetime(2026, 10, 30, 20, 30)},
+            ("SPY.US", "30M"): {"price": 769.0, "bar_close_at": datetime(2026, 10, 30, 21, 0), "timestamp": datetime(2026, 10, 30, 20, 30)},
+        }
+        with patch.object(index_stock_price_mapping, "_load_effective_intraday_bar", side_effect=lambda _as_of, symbol, timeframe: bars.get((symbol, timeframe))):
+            result = index_stock_price_mapping._load_effective_spx_prices(
+                datetime.fromisoformat("2026-10-30T21:20:00-04:00"),
+                {"SPX": 7700.0, "ESMain": 7720.0, "SPY": 770.0},
+                {"SPX": "2026-10-30", "ESMain": "2026-10-30", "SPY": "2026-10-30"},
+            )
+
+        self.assertEqual(result["effective_prices"], {"SPX": 7701.5, "SPY": 770.15, "ESMain": 7721.5, "QQQ": None, "TQQQ": None, "NQMain": None, "SPXL": None, "SOXL": None, "SOXX": None})
+        self.assertFalse(result["effective_price_fallback"])
+
+    def test_effective_spx_prices_include_same_as_of_qqq_tqqq_and_esmain_prices(self):
+        as_of = datetime.fromisoformat("2026-10-30T21:20:00-04:00")
+        expected_bar = {"bar_close_at": datetime(2026, 10, 30, 21, 0), "timestamp": datetime(2026, 10, 30, 20, 30)}
+        bars = {
+            ("ESMain.US", "30M"): {**expected_bar, "price": 7676.0},
+            ("SPY.US", "30M"): {**expected_bar, "price": 762.03},
+            ("QQQ.US", "30M"): {**expected_bar, "price": 720.5},
+            ("TQQQ.US", "30M"): {**expected_bar, "price": 58.25},
+            ("NQMain.US", "30M"): {**expected_bar, "price": 30001.25},
+            ("SPXL.US", "30M"): {**expected_bar, "price": 283.2},
+            ("SOXL.US", "30M"): {**expected_bar, "price": 34.5},
+            ("SOXX.US", "30M"): {**expected_bar, "price": 214.2},
+        }
+        calls = []
+
+        def load_bar(timestamp, symbol, timeframe):
+            calls.append((timestamp, symbol, timeframe))
+            return bars.get((symbol, timeframe))
+
+        with patch.object(index_stock_price_mapping, "_load_effective_intraday_bar", side_effect=load_bar):
+            result = index_stock_price_mapping._load_effective_spx_prices(
+                as_of,
+                {"SPX": 7644.2, "SPY": 762.03, "ESMain": 7676.0},
+                {"SPX": "2026-10-30", "SPY": "2026-10-30", "ESMain": "2026-10-30"},
+            )
+
+        self.assertEqual(result["effective_prices"]["QQQ"], 720.5)
+        self.assertEqual(result["effective_prices"]["TQQQ"], 58.25)
+        self.assertEqual(result["effective_prices"]["NQMain"], 30001.25)
+        self.assertEqual(result["effective_prices"]["SPXL"], 283.2)
+        self.assertEqual(result["effective_prices"]["SOXL"], 34.5)
+        self.assertEqual(result["effective_prices"]["SOXX"], 214.2)
+        for symbol in ("QQQ.US", "TQQQ.US", "NQMain.US", "SPXL.US", "SOXL.US", "SOXX.US"):
+            self.assertTrue(any(call[1] == symbol for call in calls))
+
+    def test_effective_price_translation_refuses_mismatched_close_dates(self):
+        with patch.object(index_stock_price_mapping, "_load_effective_intraday_bar", return_value={"price": 7721.5, "timestamp": datetime(2026, 10, 30, 20, 30), "bar_close_at": datetime(2026, 10, 30, 21, 0), "timeframe": "30M"}):
+            result = index_stock_price_mapping._load_effective_spx_prices(
+                datetime.fromisoformat("2026-10-30T21:20:00-04:00"),
+                {"SPX": 7700.0, "ESMain": 7720.0, "SPY": 770.0},
+                {"SPX": "2026-10-30", "ESMain": "2026-10-29", "SPY": "2026-10-29"},
+            )
+
+        self.assertIsNone(result["effective_prices"]["SPX"])
+        self.assertEqual(result["effective_prices"]["SPY"], 7721.5)
+
+    def test_effective_spy_fallback_derives_spx_when_es_bar_is_missing(self):
+        spy_bar = {"price": 771.0, "timeframe": "30M", "bar_close_at": datetime(2026, 10, 30, 21, 0), "timestamp": datetime(2026, 10, 30, 20, 30)}
+        def load_bar(_as_of, symbol, timeframe):
+            return spy_bar if symbol == "SPY.US" and timeframe == "30M" else None
+
+        with patch.object(index_stock_price_mapping, "_load_effective_intraday_bar", side_effect=load_bar):
+            result = index_stock_price_mapping._load_effective_spx_prices(
+                datetime.fromisoformat("2026-10-30T21:20:00-04:00"),
+                {"SPX": 7700.0, "ESMain": 7720.0, "SPY": 770.0},
+                {"SPX": "2026-10-30", "ESMain": "2026-10-30", "SPY": "2026-10-30"},
+            )
+
+        self.assertEqual(result["effective_prices"], {"SPX": 7710.0, "SPY": 771.0, "ESMain": 7730.0, "QQQ": None, "TQQQ": None, "NQMain": None, "SPXL": None, "SOXL": None, "SOXX": None})
+        self.assertTrue(result["effective_price_fallback"])
 
     def test_snapshot_tracks_each_close_date_for_live_ratio_safety(self):
         class FakeModel:
             def execute_read_query(self, query, params):
-                if params[0] == "NQMain.US":
+                if params[1] == "NQMain.US":
                     return [{"Close": 25000, "ObservationDate": date(2026, 10, 19)}]
-                if params[0] == "SPY.US":
+                if params[1] == "SPY.US":
                     return [{"Close": 700, "ObservationDate": date(2026, 10, 20)}]
                 return []
 
@@ -94,7 +256,10 @@ class IndexStockPriceMappingTests(unittest.TestCase):
 
     def test_dated_spx_mapping_does_not_wait_for_optional_live_ib(self):
         historical = {"SPX": 7655.0, "SPY": 765.5, "ESMain": 7670.0}
-        with patch.object(index_stock_price_mapping, "_load_snapshot_closes", return_value=historical), patch.object(
+        def closes(_date, close_dates):
+            close_dates.update({symbol: "2026-10-20" for symbol in historical})
+            return historical
+        with patch.object(index_stock_price_mapping, "_load_snapshot_closes", side_effect=closes), patch.object(
             index_stock_price_mapping, "_load_latest_snapshot_date", return_value=date(2026, 10, 21)
         ), patch.object(index_stock_price_mapping, "_load_mapped_live_prices", side_effect=RuntimeError("IB sync stalled")) as live:
             response = index_stock_price_mapping.get_spx_map_prices(
@@ -106,6 +271,42 @@ class IndexStockPriceMappingTests(unittest.TestCase):
         self.assertEqual(response["price_differences"], {"SPY": -6889.5, "ESMain": 15.0})
         self.assertEqual(response["live_prices"], {})
         live.assert_not_called()
+
+    def test_es_basis_unavailable_when_es_close_is_from_different_session(self):
+        def closes(_date, close_dates):
+            close_dates.update({"SPX": "2026-10-20", "ESMain": "2026-10-19"})
+            return {"SPX": 7655.0, "ESMain": 7670.0}
+        with patch.object(index_stock_price_mapping, "_load_snapshot_closes", side_effect=closes), patch.object(
+            index_stock_price_mapping, "_load_latest_snapshot_date", return_value=date(2026, 10, 20)
+        ):
+            response = index_stock_price_mapping.get_spx_map_prices(date(2026, 10, 20), username="test-user")
+        self.assertNotIn("ESMain", response["price_differences"])
+        self.assertEqual(response["historical_close_dates"]["ESMain"], "2026-10-19")
+
+    def test_spx_map_prices_endpoint_accepts_report_as_of_and_returns_effective_proxy(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        app.dependency_overrides[index_stock_price_mapping.verify_credentials] = lambda: "test-user"
+        effective = {
+            "effective_prices": {"SPX": 7701.5, "SPY": 770.15, "ESMain": 7721.5},
+            "effective_price_source": "ESMain completed 30M bar",
+            "effective_price_timestamp": "2026-10-30T21:00:00",
+            "effective_price_bar_start": "2026-10-30T20:30:00",
+            "effective_price_basis": 20.0,
+            "effective_price_fallback": False,
+        }
+        try:
+            with patch.object(index_stock_price_mapping, "_load_snapshot_closes", return_value={"SPX": 7700.0, "SPY": 770.0, "ESMain": 7720.0}), patch.object(
+                index_stock_price_mapping, "_load_latest_snapshot_date", return_value=date(2026, 10, 30)
+            ), patch.object(index_stock_price_mapping, "_load_effective_spx_prices", return_value=effective) as proxy:
+                response = TestClient(app).get("/api/spx-map-prices?observation_date=2026-10-30&as_of_et=2026-10-30T21:20:00-04:00")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["effective_prices"], effective["effective_prices"])
+            self.assertEqual(response.json()["report_as_of_et"], "2026-10-30T21:20:00-04:00")
+            proxy.assert_called_once()
+        finally:
+            app.dependency_overrides.pop(index_stock_price_mapping.verify_credentials, None)
 
     def test_dated_spx_prices_http_response_survives_unavailable_ib(self):
         from fastapi.testclient import TestClient
@@ -283,6 +484,7 @@ class IndexStockPriceMappingTests(unittest.TestCase):
                 return [
                     {"ASXCode": "NVDA.US", "Close": 210.25, "TimeIntervalStart": datetime(2026, 10, 21, 15, 30)},
                     {"ASXCode": "MSFT.US", "Close": 530.0, "TimeIntervalStart": datetime(2026, 10, 20, 15, 30)},
+                    {"ASXCode": "SOXL.US", "Close": 44.5, "TimeIntervalStart": datetime(2026, 10, 21, 15, 30)},
                     {"ASXCode": "SPCX.US", "Close": None, "TimeIntervalStart": datetime(2026, 10, 21, 15, 30)},
                     {"ASXCode": "OTHER.US", "Close": 5, "TimeIntervalStart": datetime(2026, 10, 21, 15, 30)},
                 ]
@@ -290,10 +492,10 @@ class IndexStockPriceMappingTests(unittest.TestCase):
         model = FakeModel()
         with patch.object(index_stock_price_mapping, "SQLServerModel", return_value=model):
             response = index_stock_price_mapping.get_spx_map_extra_prices(date(2026, 10, 21), username="test-user")
-        self.assertEqual(response["historical_closes"], {"NVDA": 210.25, "MSFT": 530.0})
+        self.assertEqual(response["historical_closes"], {"NVDA": 210.25, "MSFT": 530.0, "SOXL": 44.5})
         self.assertIn("SOXX.US", model.params)
-        self.assertNotIn("SOXL.US", model.params)
-        self.assertEqual(response["historical_close_dates"], {"NVDA": "2026-10-21", "MSFT": "2026-10-20"})
+        self.assertIn("SOXL.US", model.params)
+        self.assertEqual(response["historical_close_dates"], {"NVDA": "2026-10-21", "MSFT": "2026-10-20", "SOXL": "2026-10-21"})
         self.assertEqual(response["historical_close_source"], "30m_regular_session")
         self.assertEqual(model.params[-2:], ("2026-10-07", "2026-10-21"))
         self.assertEqual(len(model.params), len(index_stock_price_mapping.SPX_MAP_EXTRA_STOCKS) + 2)
@@ -318,6 +520,19 @@ class IndexStockPriceMappingTests(unittest.TestCase):
             connect_timeout=index_stock_price_mapping.QUOTE_CONNECT_TIMEOUT_SECONDS,
             allow_close_fallback=False, quote_only=True,
         )
+
+    def test_semiconductor_extra_quotes_require_actual_quote_only_ib_prices(self):
+        for symbol in ("SOXL", "SOXX"):
+            with patch.object(index_stock_price_mapping, "get_live_stock_prices", return_value={
+                symbol: {"price": 100.5, "source": "ib_delayed"},
+            }) as quotes:
+                response = index_stock_price_mapping.get_spx_map_live_extra_prices(symbol=symbol.lower(), username="test-user")
+            self.assertEqual(response["live_prices"], {symbol: 100.5})
+            quotes.assert_called_once_with(
+                [symbol], wait_seconds=2.0,
+                connect_timeout=index_stock_price_mapping.QUOTE_CONNECT_TIMEOUT_SECONDS,
+                allow_close_fallback=False, quote_only=True,
+            )
 
     def test_manual_symbol_quote_routes_reject_unknown_symbols_without_contacting_ib(self):
         from fastapi.testclient import TestClient

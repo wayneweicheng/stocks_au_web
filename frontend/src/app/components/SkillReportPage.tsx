@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import Alert from "./ui/Alert";
 import Badge from "./ui/Badge";
@@ -138,6 +138,7 @@ type Props = {
     getHref: (report: ReportSummary) => string;
   };
   alternateJobMode?: ReportJobMode;
+  extraTabs?: Array<{ key: string; label: string; content: ReactNode }>;
 };
 
 const MAX_SAVED_JOBS = 25;
@@ -251,6 +252,7 @@ export default function SkillReportPage({
   htmlReports,
   reportAction,
   alternateJobMode,
+  extraTabs,
 }: Props) {
   const baseUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || "");
   const initialValues = useMemo(() => {
@@ -261,7 +263,7 @@ export default function SkillReportPage({
     return values;
   }, [fields]);
 
-  const [activeTab, setActiveTab] = useState<"viewer" | "html" | "runner">(initialTab);
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
   const [activeJobModeKey, setActiveJobModeKey] = useState("default");
   const [values, setValues] = useState<Record<string, string | number>>(initialValues);
   const [items, setItems] = useState<ReportSummary[]>([]);
@@ -326,7 +328,7 @@ export default function SkillReportPage({
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
-    const reportItems = activeTab === "runner" ? [] : getReportsForTab(items, activeTab);
+    const reportItems = activeTab === "viewer" || activeTab === "html" ? getReportsForTab(items, activeTab) : [];
     const visibleItems = reportItems.filter((item) => {
       if (selectedReportDate && getReportDate?.(item) !== selectedReportDate) return false;
       if (!query) return true;
@@ -728,6 +730,7 @@ export default function SkillReportPage({
     optionCountsRangeStartDate,
   ]);
 
+  const activeExtraTab = extraTabs?.find((tab) => tab.key === activeTab);
   const visibleJobStatus = jobStatus ? getStatus(jobStatus) : jobResponse ? getStatus(jobResponse) : "";
   const optionCountsPanelEnabled = Boolean(optionCountsEndpoint && (!activeJobMode || optionCountsDateRangeFields));
   const optionCountsDateLabel = activeJobMode
@@ -739,29 +742,29 @@ export default function SkillReportPage({
       <PageHeader
         title={title}
         subtitle={subtitle}
-        actions={<Button type="button" variant="secondary" onClick={() => void loadReports()} disabled={loadingList}>{loadingList ? "Refreshing..." : "Refresh Reports"}</Button>}
+        actions={activeTab === "viewer" || activeTab === "html" ? <Button type="button" variant="secondary" onClick={() => void loadReports()} disabled={loadingList}>{loadingList ? "Refreshing..." : "Refresh Reports"}</Button> : undefined}
       />
 
       <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-        {(["viewer", ...(htmlReports ? ["html" as const] : []), "runner"] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => {
-              setActiveTab(key);
-              if (key !== "viewer") setSelectedReportDate("");
-            }}
-            className={[
-              "rounded-md px-4 py-2 text-sm font-medium transition-colors",
-              activeTab === key ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
-            ].join(" ")}
-          >
-            {key === "viewer" ? "Viewer" : key === "html" ? (htmlReports?.label || "HTML Reports") : "Run Job"}
+        {[
+          { key: "viewer", label: "Viewer" },
+          ...(htmlReports ? [{ key: "html", label: htmlReports.label || "HTML Reports" }] : []),
+          { key: "runner", label: "Run Job" },
+          ...(extraTabs || []),
+        ].map(({ key, label }) => (
+          <button key={key} type="button" onClick={() => {
+            setActiveTab(key);
+            if (key !== "viewer") setSelectedReportDate("");
+          }} className={[
+            "rounded-md px-4 py-2 text-sm font-medium transition-colors",
+            activeTab === key ? "bg-indigo-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+          ].join(" ")}>
+            {label}
           </button>
         ))}
       </div>
 
-      {activeTab === "viewer" || activeTab === "html" ? (
+      {activeExtraTab ? activeExtraTab.content : activeTab === "viewer" || activeTab === "html" ? (
         <div className="space-y-4">
           {viewerError ? <Alert variant="danger">{viewerError}</Alert> : null}
           {activeTab === "viewer" && reportDateCards.length > 0 ? (

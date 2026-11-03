@@ -3,11 +3,20 @@ from fastapi import HTTPException
 from unittest.mock import patch
 
 from app.core import db
+from app.core.config import settings
 from app.routers import support_resistance
-from app.services import price_levels_30m_service
+from app.services import price_levels_30m_service, saved_price_levels_service
 
 
 class SupportResistanceReliabilityTests(unittest.TestCase):
+    def test_chart_uses_longer_query_timeout_without_raising_saved_level_timeout(self):
+        with patch.object(saved_price_levels_service, "get_timed_sql_model", return_value=object()) as open_model:
+            saved_price_levels_service._open_saved_price_levels_model()
+            saved_price_levels_service._open_saved_price_levels_model(query_timeout=20)
+        self.assertEqual(open_model.call_args_list[0].kwargs["query_timeout"], settings.support_resistance_db_query_timeout)
+        self.assertEqual(open_model.call_args_list[1].kwargs["query_timeout"], 20)
+        self.assertEqual(open_model.call_args_list[0].kwargs["database"], "StockDB_US")
+
     def test_timed_sql_model_sets_query_timeout_and_closes_connection(self):
         class FakeCursor:
             description = [("Value",)]

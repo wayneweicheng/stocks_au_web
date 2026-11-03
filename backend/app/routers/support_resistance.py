@@ -18,6 +18,7 @@ from app.services.saved_price_levels_service import (
     get_saved_support_resistance,
 )
 from app.services.stock_map_chart_service import get_stock_map_chart_bars
+from app.services.stock_map_option_snapshot import load_d1_option_rows
 
 
 router = APIRouter(
@@ -84,6 +85,15 @@ def support_resistance_chart_bars(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except SavedPriceLevelsDatabaseError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/spx-map-options")
+def spx_map_option_context(
+    observation_date: date = Query(..., description="SPX Map US as-of observation date"),
+    reference_price: float = Query(..., gt=0, le=100000, description="SPX report reference, for nearest-strike selection"),
+) -> dict:
+    """Read-only SPXW option pair by ObservationDate; never a live quote."""
+    return load_d1_option_rows("SPXW", observation_date, observation_date, reference_price)
 
 
 @router.get("/stock-map-bars")

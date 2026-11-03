@@ -48,6 +48,77 @@ export function mapObservationDate(data: ObjectValue): string | null {
   return null;
 }
 
+export type NextSessionStraddle = {
+  quoteDate: string;
+  nextSession: string;
+  expiry: string;
+  tradingSessionsToExpiry: number;
+  spot: number;
+  strike: number;
+  callPrice: number;
+  putPrice: number;
+  premium: number;
+  quoteSource: string;
+  expiryRange: { low: number; high: number };
+  nextSessionMove: number;
+  nextSessionRange: { low: number; high: number };
+};
+
+function utcDate(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : null;
+}
+
+function nextWeekday(date: Date): Date {
+  const next = new Date(date);
+  do { next.setUTCDate(next.getUTCDate() + 1); } while ([0, 6].includes(next.getUTCDay()));
+  return next;
+}
+
+/** The report's ATM call+put is an expiry-horizon straddle, not a one-day forecast.
+ * Square-root-of-time scaling is only an indicative next-session volatility proxy.
+ */
+export function mapNextSessionStraddle(data: ObjectValue): NextSessionStraddle | null {
+  if (!Array.isArray(data.expected_moves)) return null;
+  const asOfDate = typeof data.as_of_et === "string" ? data.as_of_et.slice(0, 10) : null;
+  const asOfWallTime = typeof data.as_of_et === "string" ? data.as_of_et.match(/^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2})/)?.[1] : null;
+  const candidates = data.expected_moves.flatMap((value) => {
+    const row = object(value);
+    if (!row || !Array.isArray(row.data_timestamps) || row.data_timestamps.length < 2) return [];
+    const quoteDate = typeof row.data_timestamps[0] === "string" ? row.data_timestamps[0].slice(0, 10) : "";
+    const putDate = typeof row.data_timestamps[1] === "string" ? row.data_timestamps[1].slice(0, 10) : "";
+    const expiry = typeof row.expiry === "string" ? row.expiry : "";
+    const start = utcDate(quoteDate);
+    const end = utcDate(expiry);
+    const spot = number(row.spot_at_quote);
+    const strike = number(row.atm_strike);
+    const callPrice = number(row.call_price);
+    const putPrice = number(row.put_price);
+    if (!start || !end || quoteDate !== putDate || (asOfDate && quoteDate > asOfDate) ||
+      spot === null || spot <= 0 || strike === null || strike <= 0 ||
+      callPrice === null || callPrice <= 0 || putPrice === null || putPrice <= 0) return [];
+    const nextSession = nextWeekday(start);
+    const nextSessionDate = nextSession.toISOString().slice(0, 10);
+    // Do not label a stale historical quote as a future next-session forecast.
+    if (asOfDate && (nextSessionDate < asOfDate ||
+      (nextSessionDate === asOfDate && asOfWallTime !== null && asOfWallTime !== undefined && asOfWallTime >= "09:30"))) return [];
+    let sessions = 0;
+    for (let cursor = nextSession; cursor <= end; cursor = nextWeekday(cursor)) sessions++;
+    if (!sessions) return [];
+    const premium = callPrice + putPrice;
+    // E[|X|] ≈ 0.8 sigma for a near-ATM straddle under a diffusion model.
+    const nextSessionMove = premium / 0.8 / Math.sqrt(sessions);
+    return [{ quoteDate, nextSession: nextSessionDate, expiry,
+      tradingSessionsToExpiry: sessions, spot, strike, callPrice, putPrice, premium,
+      quoteSource: typeof row.quote_source === "string" ? row.quote_source : "not specified",
+      expiryRange: { low: spot - premium, high: spot + premium }, nextSessionMove,
+      nextSessionRange: { low: Math.max(0, spot - nextSessionMove), high: spot + nextSessionMove },
+    }];
+  });
+  return candidates.sort((a, b) => a.expiry.localeCompare(b.expiry))[0] ?? null;
+}
+
 export function mapZones(data: ObjectValue, side: "support" | "resistance"): MapZone[] {
   const rows = data[side === "support" ? "primary_supports" : "primary_resistances"];
   const metadata = data[`zone_primary_${side}s`];
@@ -100,6 +171,7 @@ export type StockMapReport = {
   job_id: string;
   title: string;
   stock_code?: string | null;
+  status?: string | null;
   created_at?: string | null;
   file_name?: string | null;
   raw?: Record<string, unknown>;

@@ -16,6 +16,20 @@ SKILL_RUNNER_REQUEST_TIMEOUT_SECONDS = 180
 logger = logging.getLogger(__name__)
 
 
+def _safe_error_detail(detail: Any) -> Any:
+    """Pydantic 422 errors echo the entire submitted input, including report data.
+
+    Retain actionable field paths/messages without sending the payload into logs
+    or back to the browser.
+    """
+    if isinstance(detail, list) and all(
+        isinstance(item, dict) and "loc" in item and "msg" in item for item in detail
+    ):
+        return [{key: item[key] for key in ("type", "loc", "msg") if key in item}
+                for item in detail[:20]]
+    return detail
+
+
 def call_skill_runner(
     method: str,
     path: str,
@@ -77,6 +91,7 @@ def call_skill_runner(
             detail = detail_data.get("detail") or detail_data
         except (json.JSONDecodeError, AttributeError):
             pass
+        detail = _safe_error_detail(detail)
         logger.log(
             logging.INFO if expected_not_found and exc.code == 404 else logging.ERROR,
             "Skill runner %s %s -> %s %.1fms detail=%r",
@@ -107,8 +122,18 @@ def call_skill_runner(
         return {"raw": raw}
 
 
-def list_reports(job_type: str) -> Any:
-    return call_skill_runner("GET", f"/api/reports?{urlencode({'job_type': job_type})}")
+def list_reports(
+    job_type: str, *, stock_code: str | None = None,
+    start_date: str | None = None, end_date: str | None = None,
+) -> Any:
+    params = {"job_type": job_type}
+    if stock_code:
+        params["stock_code"] = stock_code
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    return call_skill_runner("GET", f"/api/reports?{urlencode(params)}")
 
 
 def get_job_report(job_id: str) -> Any:

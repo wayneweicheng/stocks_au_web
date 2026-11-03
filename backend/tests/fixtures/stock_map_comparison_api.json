@@ -1,0 +1,163 @@
+{
+  "_comment": "DEMO ONLY. These responses exist solely in the isolated test mock; they are not live skill-runner results or trading recommendations.",
+  "frontend_submit_request": {
+    "stock_code": "FORM",
+    "observation_date": "2026-10-29",
+    "timeout_minutes": 120
+  },
+  "stock_map_report_list": [
+    {
+      "job_id": "stock-29",
+      "stock_code": "FORM",
+      "status": "succeeded",
+      "report_path": "stock_map_FORM_20261029_0630_ET.html",
+      "created_at": "2026-10-29T10:40:00+00:00"
+    },
+    {
+      "job_id": "stock-28",
+      "stock_code": "FORM",
+      "status": "succeeded",
+      "report_path": "stock_map_FORM_20261028_0630_ET.html",
+      "created_at": "2026-10-28T10:40:00+00:00"
+    },
+    {
+      "job_id": "stock-27",
+      "stock_code": "FORM",
+      "status": "succeeded",
+      "report_path": "stock_map_FORM_20261027_0630_ET.html",
+      "created_at": "2026-10-27T10:40:00+00:00"
+    }
+  ],
+  "stock_map_report_json": {
+    "stock-29": {
+      "job_id": "stock-29",
+      "content": {
+        "ticker": "FORM",
+        "as_of_et": "2026-10-29T06:30:00-04:00",
+        "execution_reference": 101.0,
+        "execution_reference_type": "completed_30m_bar",
+        "structural_bias": "bullish",
+        "primary_supports": [
+          {"rank": 1, "zone_low": 97, "zone_high": 99, "core_anchor_price": 98, "total_score": 72, "main_evidence": ["daily pivot"]}
+        ],
+        "primary_resistances": [],
+        "near_term_raw_levels": [],
+        "orders": [],
+        "expected_moves": [
+          {"expiry": "2026-10-30", "atm_strike": 100, "spot_at_quote": 101,
+           "call_price": 3, "put_price": 2, "quote_source": "C:bid_ask_mid; P:last",
+           "data_timestamps": ["2026-10-29T06:00:00-04:00", "2026-10-29T06:00:00-04:00"]}
+        ]
+      }
+    },
+    "stock-28": {
+      "job_id": "stock-28",
+      "content": {
+        "ticker": "FORM",
+        "as_of_et": "2026-10-28T06:30:00-04:00",
+        "execution_reference": 101.0,
+        "execution_reference_type": "completed_30m_bar",
+        "structural_bias": "bullish",
+        "primary_supports": [
+          {
+            "rank": 1,
+            "zone_low": 97,
+            "zone_high": 99,
+            "core_anchor_price": 98,
+            "total_score": 72,
+            "main_evidence": ["daily pivot"]
+          }
+        ],
+        "primary_resistances": [
+          {
+            "rank": 1,
+            "zone_low": 104,
+            "zone_high": 106,
+            "core_anchor_price": 105,
+            "total_score": 63
+          }
+        ],
+        "near_term_raw_levels": [],
+        "orders": [
+          {
+            "direction": "long",
+            "entry_zone": [97, 99],
+            "targets": [105],
+            "invalidation": "below 96"
+          }
+        ],
+        "expected_moves": [
+          {
+            "expiry": "2026-10-30",
+            "atm_strike": 100,
+            "spot_at_quote": 101,
+            "call_price": 3,
+            "put_price": 2,
+            "quote_source": "C:bid_ask_mid; P:last",
+            "data_timestamps": ["2026-10-28T06:00:00-04:00", "2026-10-28T06:00:00-04:00"]
+          }
+        ]
+      }
+    },
+    "stock-27": {
+      "job_id": "stock-27",
+      "content": {
+        "ticker": "FORM",
+        "as_of_et": "2026-10-27T06:30:00-04:00",
+        "execution_reference": 100.0,
+        "execution_reference_type": "completed_30m_bar",
+        "structural_bias": "neutral",
+        "primary_supports": [
+          {
+            "rank": 1,
+            "zone_low": 96,
+            "zone_high": 98,
+            "core_anchor_price": 97,
+            "total_score": 60
+          }
+        ],
+        "primary_resistances": [],
+        "near_term_raw_levels": [],
+        "orders": [],
+        "expected_moves": []
+      }
+    }
+  },
+  "current_price": {
+    "stock_code": "FORM",
+    "live_price": 103.0,
+    "live_price_source": "ib_live",
+    "last_close": 102.0,
+    "last_close_timestamp": "2026-10-29T06:00:00"
+  },
+  "runner_submit_response": {
+    "job_id": "mock-comparison-001",
+    "status": "queued"
+  },
+  "runner_status_responses": {
+    "queued": {
+      "job_id": "mock-comparison-001",
+      "status": "queued"
+    },
+    "succeeded": {
+      "job_id": "mock-comparison-001",
+      "status": "succeeded"
+    }
+  },
+  "runner_list_response": [
+    {
+      "job_id": "mock-comparison-001",
+      "job_type": "stock-map-comparison",
+      "status": "succeeded",
+      "stock_code": "FORM",
+      "title": "FORM D2-to-D1 Comparison (MOCK)",
+      "file_name": "mock_FORM_20261029.md",
+      "created_at": "2026-10-29T12:00:00+00:00"
+    }
+  ],
+  "runner_report_response": {
+    "job_id": "mock-comparison-001",
+    "file_name": "mock_FORM_20261029.md",
+    "content": "# FORM: D2 → D1 (MOCK REPORT)\n\nD2: 2026-10-28; D1: 2026-10-29. D1 support 97–99 versus D2 support 97–99.\n\nThis illustrative report contains NO executable order recommendation. No order was sent.\n"
+  }
+}

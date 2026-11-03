@@ -5,6 +5,7 @@ Chart timeframe never changes how levels or a Stock Map's as-at 30M close are ca
 from datetime import date, datetime, timedelta
 import math
 
+from app.core.config import settings
 from app.services.saved_price_levels_service import (
     _close_saved_price_levels_model,
     _execute_saved_price_levels_query,
@@ -28,14 +29,25 @@ def get_stock_map_chart_bars(
         raise ValueError("Use observation_date or observation_datetime, not both")
     if not 1 <= lookback_days <= 60:
         raise ValueError("lookback_days must be between 1 and 60")
-    aliases = _stock_code_aliases(stock_code)
+    # SPX Map chart labels are not SQL symbols. Each derived instrument reads
+    # its own candles, while its level projection comes from the SPX report.
+    mapped_codes = {
+        "SPX": "SPXW.US", "ESMAIN": "ESMain.US", "SPY_D": "SPY.US",
+        "QQQ_D": "QQQ.US", "SPXL_D": "SPXL.US", "TQQQ_D": "TQQQ.US",
+        "SOXL_D": "SOXL.US", "SOXX_D": "SOXX.US",
+    }
+    mapped = mapped_codes.get(stock_code.strip().upper())
+    aliases = [mapped] if mapped else _stock_code_aliases(stock_code)
     if not aliases:
         raise ValueError("stock_code is required")
-    placeholders = ", ".join("?" for _ in aliases)
+    # pyodbc binds Python strings as NVARCHAR. Convert the *parameters* to
+    # VARCHAR so SQL Server can seek on the (TimeFrame, ASXCode, TimeIntervalStart)
+    # primary key instead of converting indexed columns to NVARCHAR.
+    placeholders = ", ".join("CONVERT(varchar(10), ?)" for _ in aliases)
     # Most StockDB_US rows use '5M'; accept the requested '5min' spelling too.
     frame_values = ("5M", "5min") if timeframe == "5M" else ("30M",)
-    frame_clause = ", ".join("?" for _ in frame_values)
-    model = _open_saved_price_levels_model()
+    frame_clause = ", ".join("CONVERT(varchar(10), ?)" for _ in frame_values)
+    model = _open_saved_price_levels_model(query_timeout=settings.support_resistance_chart_db_query_timeout)
     try:
         # For historical maps, end on the report's observation date, not today.
         # For current maps, use the most recent stored candle as the cutoff.

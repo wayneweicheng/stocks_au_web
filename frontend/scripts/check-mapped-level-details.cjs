@@ -64,6 +64,16 @@ for (const expected of ['Expiries 2026-04-24', 'Bucket next session', 'Observed 
 const noOption = renderToStaticMarkup(React.createElement(Component, { side: 'resistance', rank: 5,
   zone: { zone_low: 7700, zone_high: 7710, total_score: 12 }, detail: undefined }));
 assert.doesNotMatch(noOption, /OI 2,164|524,941,165/);
+const derived = renderToStaticMarkup(React.createElement(Component, { side: 'support', rank: 7, instrument: 'spx',
+  spxLastClose: 7721.02, detail: undefined,
+  zone: { zone_low: 7652.5, zone_high: 7659.06, reference_price: 7655.19,
+    distance_from_last_close_pct: -0.85, main_evidence: ['Daily S3 7655.97'],
+    derived_instrument: 'QQQ_D', mapped_zone_low: 697.9827, mapped_zone_high: 698.5798,
+    mapped_anchor: 698.2276, mapping_selected_close: 704.47,
+    mapping_selected_close_date: '2026-10-30', mapped_anchor_vs_selected_close_pct: -0.885 } }));
+const derivedSummary = derived.match(/<div class="font-medium[^\"]*">([^<]*)<\/div>/)?.[1] || "";
+assert.match(derivedSummary, /QQQ_D 698\.23 \(-0\.89%\) vs 30M close 704\.47 \(2026-10-30\)/);
+assert.doesNotMatch(derivedSummary, /前收 7,721\.02/);
 
 // Minimal DOMParser double exercising the actual parser against two report tables.
 // The complete audit table must supply the levels missing from the compact table.

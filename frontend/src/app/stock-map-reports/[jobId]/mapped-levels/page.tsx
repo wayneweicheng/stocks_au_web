@@ -46,6 +46,7 @@ type StockPrices = {
   last_close?: number | null;
   last_close_source?: string | null;
   last_close_timestamp?: string | null;
+  last_close_observation_date?: string | null;
   atr_14d?: number | null;
   atr_source?: string | null;
   live_price?: number | null;
@@ -96,12 +97,16 @@ function observationDateFromData(data: JsonObject): string | null {
   const metadata = [data.metadata, data.meta, data.parameters]
     .filter((value): value is JsonObject => Boolean(value && typeof value === "object"));
   const candidates = [
+    data.trading_date,
+    data.as_of_date,
+    data.as_of_et,
+    data.report_date,
+    ...metadata.flatMap((value) => [value.trading_date, value.as_of_date, value.as_of_et, value.report_date]),
     data.observation_date,
     data.observationDate,
-    data.as_of_date,
     data.as_at,
     data.asAt,
-    ...metadata.flatMap((value) => [value.observation_date, value.observationDate, value.as_of_date, value.as_at]),
+    ...metadata.flatMap((value) => [value.observation_date, value.observationDate, value.as_at]),
   ];
   for (const candidate of candidates) {
     if (typeof candidate !== "string") continue;
@@ -109,6 +114,14 @@ function observationDateFromData(data: JsonObject): string | null {
     if (match) return match[0];
   }
   return null;
+}
+
+function asOfDateTimeFromData(data: JsonObject): string | null {
+  const metadata = [data.metadata, data.meta, data.parameters]
+    .filter((value): value is JsonObject => Boolean(value && typeof value === "object"));
+  const candidates = [data.as_of_et, data.report_as_of_et, data.as_of_datetime,
+    ...metadata.flatMap((value) => [value.as_of_et, value.report_as_of_et, value.as_of_datetime])];
+  return candidates.find((value): value is string => typeof value === "string" && Boolean(value.trim())) || null;
 }
 
 function price(value: number | null) {
@@ -398,6 +411,8 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
         pricesUrl.searchParams.set("stock_code", stockCode);
         const observationDate = queryObservationDate || observationDateFromData(parsedMap);
         if (observationDate) pricesUrl.searchParams.set("observation_date", observationDate);
+        const asOfEt = asOfDateTimeFromData(parsedMap);
+        if (asOfEt) pricesUrl.searchParams.set("as_of_et", asOfEt);
         const pricesResponse = await authenticatedFetch(pricesUrl.toString(), { cache: "no-store" });
         const pricesPayload = await pricesResponse.json().catch(() => ({}));
         if (!pricesResponse.ok) throw new Error(pricesPayload.detail || `Stock mapped prices request failed: HTTP ${pricesResponse.status}`);
@@ -416,7 +431,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
 
   const zones = useMemo(() => (mapData ? extractZones(mapData) : []), [mapData]);
   const stockCode = mapData ? firstStockCode(mapData, routeStockCode) : (normalizeStockCode(routeStockCode) || "Mapped stock");
-  const { value: stockSelectedClose, source: selectedCloseSource, isNative30m, fromReport } = selectedClose(mapData, stockPrices);
+  const { value: stockSelectedClose, source: selectedCloseSource } = selectedClose(mapData, stockPrices);
   const stockLivePrice = stockPrices?.live_price ?? null;
   const atr14d = stockPrices?.atr_14d ?? null;
   const overallRange = useMemo(() => wholeMapRange(zones, atr14d), [zones, atr14d]);
@@ -568,7 +583,7 @@ export default function StockMappedLevelsPage({ params }: { params: Promise<{ jo
                   <thead>
                     <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <th className="px-3 py-2">Stock</th>
-                      <StockZonePriceHeaders isNative30m={isNative30m} fromReport={fromReport} />
+                      <StockZonePriceHeaders />
                       <th className="px-3 py-2">Source</th>
                       <th className="px-3 py-2">Actions</th>
                     </tr>

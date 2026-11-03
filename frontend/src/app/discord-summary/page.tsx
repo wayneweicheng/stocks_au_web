@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import { overviewPromptUrl, sydneyDate, sydneyWindowLabel } from "./promptWindow";
+import DiscordMessageExtractorTab from "./DiscordMessageExtractorTab";
 import {
   DEFAULT_MARKET_FLOW_MODEL,
   SHARED_MARKET_FLOW_MODEL_OPTIONS,
@@ -11,7 +12,6 @@ import {
 
 export default function DiscordSummaryPage() {
   const [observationDate, setObservationDate] = useState<string>(() => sydneyDate());
-  const [latestFollowerDate, setLatestFollowerDate] = useState<string>("");
   const promptRequestId = useRef(0);
 
   const [summary, setSummary] = useState<string>("");
@@ -38,7 +38,7 @@ export default function DiscordSummaryPage() {
     windowMode: string;
   } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"overview" | "followers">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "followers" | "extractor">("overview");
 
   const [followersModel, setFollowersModel] = useState<string>(DEFAULT_MARKET_FLOW_MODEL);
   const [followersLoading, setFollowersLoading] = useState(false);
@@ -98,41 +98,6 @@ export default function DiscordSummaryPage() {
     [baseUrl, observationDate, selectedModel]
   );
 
-  useEffect(() => {
-
-    const loadLatestSummary = async () => {
-      setFollowersLoading(true);
-      setFollowersError("");
-      try {
-        const params = new URLSearchParams({ model: followersModel });
-        const r = await authenticatedFetch(`${baseUrl}/api/discord-summary-latest?${params}`);
-        if (!r.ok) {
-          const data = await r.json().catch(() => ({}));
-          throw new Error(data.detail || `HTTP ${r.status}`);
-        }
-        const data = await r.json();
-        // The latest follower summary may be yesterday's date. Do not silently
-        // change the Overview date picker away from today in Sydney.
-        setLatestFollowerDate(data.summary_date || data.observation_date || "");
-        setFollowersSummary(data.summary_markdown || "");
-        setFollowersCached(data.cached || false);
-        setFollowersSummaryMetadata({
-          windowStart: data.window_start,
-          windowEnd: data.window_end,
-          generatedAt: data.generated_at,
-          messageCount: data.message_count,
-        });
-        setActiveTab("followers");
-      } catch (e: any) {
-        setFollowersError(e.message);
-      } finally {
-        setFollowersLoading(false);
-      }
-    };
-
-    loadLatestSummary();
-  }, [baseUrl]);
-
   const fetchFollowersSummary = useCallback(
     async (forceRegenerate: boolean = false) => {
       if (!observationDate) return;
@@ -154,7 +119,12 @@ export default function DiscordSummaryPage() {
         const data = await r.json();
         setFollowersSummary(data.summary_markdown || "");
         setFollowersCached(data.cached || false);
-        setFollowersSummaryMetadata(null);
+        setFollowersSummaryMetadata({
+          windowStart: data.window_start,
+          windowEnd: data.window_end,
+          generatedAt: data.generated_at,
+          messageCount: data.message_count,
+        });
       } catch (e: any) {
         setFollowersError(e.message);
       } finally {
@@ -338,10 +308,21 @@ export default function DiscordSummaryPage() {
           >
             Follower Messages
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("extractor")}
+            className={`rounded-md border px-4 py-2 text-sm font-medium ${
+              activeTab === "extractor"
+                ? "border-indigo-600 bg-indigo-600 text-white"
+                : "border-slate-300 bg-white text-slate-700 hover:bg-indigo-50"
+            }`}
+          >
+            Message Extractor
+          </button>
         </div>
 
         {/* Date Filter */}
-        <div className="mb-6 max-w-md">
+        {activeTab !== "extractor" ? <div className="mb-6 max-w-md">
           <label className="block text-sm mb-1 text-slate-600">Observation Date</label>
           <div className="flex items-center gap-2">
             <button
@@ -377,9 +358,9 @@ export default function DiscordSummaryPage() {
               →
             </button>
           </div>
-        </div>
+        </div> : null}
 
-        {error && (
+        {activeTab !== "extractor" && error && (
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
             Error: {error}
           </div>
@@ -446,7 +427,7 @@ export default function DiscordSummaryPage() {
 
               {summaryMetadata && (
                 <div className="mb-4 rounded border border-purple-100 bg-purple-50 px-3 py-2 text-xs text-slate-600">
-                  Automated daily at 4:00 PM Sydney time
+                  Selected window ends at 4:00 PM Sydney time; generated only when requested.
                   {summaryMetadata.windowStart && summaryMetadata.windowEnd && (
                     <> | Window: {new Date(summaryMetadata.windowStart).toLocaleString()} to {new Date(summaryMetadata.windowEnd).toLocaleString()}</>
                   )}
@@ -572,7 +553,7 @@ export default function DiscordSummaryPage() {
 
               {followersSummaryMetadata && (
                 <div className="mb-4 rounded border border-purple-100 bg-purple-50 px-3 py-2 text-xs text-slate-600">
-                  Automated daily at 4:00 PM Sydney time{latestFollowerDate ? ` · Latest follower summary: ${latestFollowerDate}` : ""}
+                  Generated on request for {observationDate}
                   {followersSummaryMetadata.windowStart && followersSummaryMetadata.windowEnd && (
                     <> | Window: {new Date(followersSummaryMetadata.windowStart).toLocaleString()} to {new Date(followersSummaryMetadata.windowEnd).toLocaleString()}</>
                   )}
@@ -603,7 +584,7 @@ export default function DiscordSummaryPage() {
               ) : (
                 !followersLoading && (
                   <div className="text-sm text-slate-500 text-center py-8">
-                    The latest cached 24-hour follower summary will load automatically.
+                    No follower summary loaded. Choose Generate to create or load the selected date’s cached summary.
                   </div>
                 )
               )}
@@ -611,8 +592,10 @@ export default function DiscordSummaryPage() {
           </div>
         )}
 
+        {activeTab === "extractor" ? <DiscordMessageExtractorTab /> : null}
+
         {/* Information Section */}
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+        {activeTab !== "extractor" ? <div className="rounded-lg border border-slate-200 bg-white p-4">
           <h2 className="text-lg font-semibold mb-3 text-slate-700">About Discord Summaries</h2>
           <div className="text-sm text-slate-700 space-y-2">
             <p>
@@ -635,7 +618,7 @@ export default function DiscordSummaryPage() {
               vs. casual speculation.
             </p>
           </div>
-        </div>
+        </div> : null}
       </div>
     </div>
   );

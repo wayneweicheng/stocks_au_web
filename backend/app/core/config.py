@@ -47,6 +47,17 @@ class Settings(BaseSettings):
             "SUPPORT_RESISTANCE_DB_QUERY_TIMEOUT",
         ),
     )
+    # Candle queries use a separate deadline: brief SQL contention should not
+    # blank an otherwise available Stock Map, while the web proxy remains bounded.
+    support_resistance_chart_db_query_timeout: int = Field(
+        default=20,
+        ge=1,
+        le=25,
+        validation_alias=AliasChoices(
+            "support_resistance_chart_db_query_timeout",
+            "SUPPORT_RESISTANCE_CHART_DB_QUERY_TIMEOUT",
+        ),
+    )
     support_resistance_max_concurrent_requests: int = Field(
         default=1,
         ge=1,

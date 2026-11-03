@@ -16,7 +16,9 @@ const js = ts.transpileModule(`const load = ${loader};`, { compilerOptions: { mo
 require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }, fileName: filename,
 }).outputText, filename);
-const helpers = require(path.join(__dirname, '../src/app/support-resistance/stockMapLevels.ts'));
+const helpers = { ...require(path.join(__dirname, '../src/app/support-resistance/stockMapLevels.ts')),
+  ...require(path.join(__dirname, '../src/app/support-resistance/spxMapLevels.ts')),
+  ...require(path.join(__dirname, '../src/app/support-resistance/spxDerivedLevels.ts')) };
 const { DEFAULT_CHART_DAYS } = require(path.join(__dirname, '../src/app/support-resistance/chartRange.ts'));
 const asAt = { time: '2026-10-21T18:00:00', open: 722, high: 723, low: 721, close: 721.63, volume: 20 };
 const later = { time: '2026-10-22T09:30:00', open: 730, high: 732, low: 729, close: 731, volume: 30 };

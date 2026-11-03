@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from app.core.db import get_sql_model
 import logging
 import json
@@ -851,6 +851,106 @@ class GEXDataService:
         except Exception as e:
             logger.error(f"Failed to query Discord messages by users for {observation_date}: {e}")
             raise
+
+    def get_discord_channels(self) -> List[Dict[str, Any]]:
+        """List every configured Discord channel, including inactive channels."""
+        model = get_sql_model()
+        sql = """
+            SELECT ChannelId, ChannelName, IsActive
+            FROM StockDB_US.Discord.DiscordChannels
+            ORDER BY ChannelName, ChannelId
+        """
+        return model.execute_read_query(sql, ()) or []
+
+    def get_discord_earliest_observation_date(self) -> Optional[date]:
+        """Find the oldest Sydney 16:00 observation day available in Discord messages."""
+        model = get_sql_model()
+        sql = """
+            SELECT MIN(CONVERT(date, DATEADD(hour, -16,
+                       CONVERT(datetime2, TimeStamp AT TIME ZONE 'AUS Eastern Standard Time')))) AS EarliestObservationDate
+            FROM StockDB_US.Discord.v_DiscordMessages
+        """
+        rows = model.execute_read_query(sql, ()) or []
+        earliest = rows[0].get("EarliestObservationDate") if rows else None
+        return earliest.date() if isinstance(earliest, datetime) else earliest
+
+    def get_discord_channel_daily_counts(
+        self,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> List[Dict[str, Any]]:
+        """Count channel messages by Sydney 16:00-to-16:00 observation date."""
+        model = get_sql_model()
+        sql = """
+            SELECT c.ChannelId, c.ChannelName, c.IsActive,
+                   CONVERT(date, DATEADD(hour, -16,
+                       CONVERT(datetime2, m.TimeStamp AT TIME ZONE 'AUS Eastern Standard Time'))) AS ObservationDate,
+                   COUNT_BIG(m.MessageId) AS MessageCount
+            FROM StockDB_US.Discord.DiscordChannels AS c
+            LEFT JOIN StockDB_US.Discord.v_DiscordMessages AS m
+              ON m.ChannelId = c.ChannelId
+             AND m.TimeStamp >= (CONVERT(datetime2, ?) AT TIME ZONE 'AUS Eastern Standard Time')
+             AND m.TimeStamp < (CONVERT(datetime2, ?) AT TIME ZONE 'AUS Eastern Standard Time')
+            GROUP BY c.ChannelId, c.ChannelName, c.IsActive,
+                     CONVERT(date, DATEADD(hour, -16,
+                         CONVERT(datetime2, m.TimeStamp AT TIME ZONE 'AUS Eastern Standard Time')))
+            ORDER BY c.ChannelName, c.ChannelId, ObservationDate
+        """
+        params = (window_start.replace(tzinfo=None), window_end.replace(tzinfo=None))
+        return model.execute_read_query(sql, params) or []
+
+    def get_discord_messages_for_channel_days(
+        self,
+        channel_id: int,
+        observation_dates: List[date],
+    ) -> List[Dict[str, Any]]:
+        """Read messages from multiple selected Sydney 16:00 observation days."""
+        unique_dates = sorted(set(observation_dates))
+        if not unique_dates:
+            return []
+        windows = []
+        params: List[Any] = [channel_id]
+        for observation_day in unique_dates:
+            start = datetime.combine(observation_day - timedelta(days=1), time(16))
+            end = datetime.combine(observation_day, time(16))
+            windows.append(
+                "(m.TimeStamp >= (CONVERT(datetime2, ?) AT TIME ZONE 'AUS Eastern Standard Time') "
+                "AND m.TimeStamp < (CONVERT(datetime2, ?) AT TIME ZONE 'AUS Eastern Standard Time'))"
+            )
+            params.extend((start, end))
+        sql = f"""
+            SELECT m.MessageId, m.ChannelId, c.ChannelName,
+                   CONVERT(datetime2, m.TimeStamp AT TIME ZONE 'AUS Eastern Standard Time') AS TimeStamp_Sydney,
+                   m.UserName, m.Content, m.CreateDate
+            FROM StockDB_US.Discord.v_DiscordMessages AS m
+            INNER JOIN StockDB_US.Discord.DiscordChannels AS c ON c.ChannelId = m.ChannelId
+            WHERE m.ChannelId = ?
+              AND ({' OR '.join(windows)})
+            ORDER BY m.TimeStamp ASC, m.MessageId ASC
+        """
+        return get_sql_model().execute_read_query(sql, tuple(params)) or []
+
+    def get_discord_messages_for_channel(
+        self,
+        channel_id: int,
+        window_start: datetime,
+        window_end: datetime,
+    ) -> List[Dict[str, Any]]:
+        """Read one channel's messages for one half-open Sydney 16:00 day."""
+        model = get_sql_model()
+        sql = """
+            SELECT m.MessageId, m.ChannelId, c.ChannelName,
+                   CONVERT(datetime2, m.TimeStamp AT TIME ZONE 'AUS Eastern Standard Time') AS TimeStamp_Sydney,
+                   m.UserName, m.Content, m.CreateDate
+            FROM StockDB_US.Discord.v_DiscordMessages AS m
+            INNER JOIN StockDB_US.Discord.DiscordChannels AS c ON c.ChannelId = m.ChannelId
+            WHERE m.ChannelId = ?
+              AND m.TimeStamp >= (CONVERT(datetime2, ?) AT TIME ZONE 'AUS Eastern Standard Time')
+              AND m.TimeStamp < (CONVERT(datetime2, ?) AT TIME ZONE 'AUS Eastern Standard Time')
+            ORDER BY m.TimeStamp ASC, m.MessageId ASC
+        """
+        params = (channel_id, window_start.replace(tzinfo=None), window_end.replace(tzinfo=None))
+        return model.execute_read_query(sql, params) or []
 
     def format_discord_messages_as_pipe_delimited(self, rows: List[Dict[str, Any]]) -> str:
         """

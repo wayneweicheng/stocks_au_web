@@ -9,11 +9,13 @@ import Input from "../components/ui/Input";
 import PageHeader from "../components/PageHeader";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MappedLevelReportDetails from "../components/MappedLevelReportDetails";
-import { classifyMapZones, mapLineColor, mapLineWidth, mapAsOfTime, mapObservationDate, mapStockCode, mapZones, parseStockMap, reportAsAtClose, reportMatchesStock, reportTimeCategoryPosition, type MapZone, type ReportAsOfTime, type StockMapReport } from "./stockMapLevels";
+import { classifyMapZones, mapLineColor, mapLineWidth, mapAsOfTime, mapNextSessionStraddle, mapObservationDate, mapStockCode, mapZones, parseStockMap, reportAsAtClose, reportMatchesStock, reportTimeCategoryPosition, type MapZone, type NextSessionStraddle, type ReportAsOfTime, type StockMapReport } from "./stockMapLevels";
+import { parseSpxMap, spxOptionObservationDate, spxOptionPair, spxPreviousCompletedClose, spxReportReference, type SpxOptionPair } from "./spxMapLevels";
+import { deriveSpxZones, effectivePriceForSpxInstrument, spxInstrumentForCode } from "./spxDerivedLevels";
 import { clickedLevelPanelId, levelPanelId, type LevelTab } from "./chartLevelNavigation";
 import { sortLevelEntries, topPercentEntries, type LevelSort } from "./levelSorting";
 import { CHART_RANGE_OPTIONS, DEFAULT_CHART_DAYS, chartRangeParams, type ChartTimeframe } from "./chartRange";
-import { chartLevelColor, chartMinimumWidth } from "./chartLayout";
+import { chartLevelColor, chartMinimumWidth, spxExpiryRangeShape, straddleZoneShape } from "./chartLayout";
 import { priceBottomForScroll, priceWindowForBars } from "./priceViewport";
 
 const LOOKBACK_DAY_OPTIONS = ["3", "5", "10", "20", "30"];
@@ -21,6 +23,19 @@ const SUPPORT_RESISTANCE_REQUEST_TIMEOUT_MS = 60000;
 
 function formatPrice(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(4)}` : "n/a";
+}
+
+function formatMapPrice(value: number | null | undefined, reportType: StockMapSelection["reportType"], instrument = "SPX") {
+  if (reportType !== "spx-map") return formatPrice(value);
+  if (instrument !== "SPX" && instrument !== "ESMain") return formatPrice(value);
+  const label = instrument === "ESMain" ? "ES" : "SPX";
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${label} ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${label} n/a`;
+}
+
+function mappedAnchorPercent(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `(${value >= 0 ? "+" : ""}${value.toFixed(2)}%)` : "(n/a)";
 }
 
 function priceSourceLabel(source: string) {
@@ -151,6 +166,7 @@ interface SavedSupportResistanceResponse {
 
 interface StockMapSelection {
   jobId: string;
+  reportType: "stock-map" | "spx-map";
   stockCode: string;
   stock_code: string;
   observationDate: string | null;
@@ -159,6 +175,19 @@ interface StockMapSelection {
   executionReference: number | null;
   executionReferenceType: string | null;
   asAtClose: { price: number; barTime: string } | null;
+  effectivePrice: number | null;
+  effectivePriceSource: string | null;
+  effectivePriceTimestamp: string | null;
+  nextSessionStraddle: NextSessionStraddle | null;
+  spxOptions: SpxOptionPair | null;
+  spxOptionObservationDate: string | null;
+  spxEtfOrderLevels: Partial<Record<"SPY" | "SPXL" | "QQQ", MapZone[]>>;
+  spxOptionLoading: boolean;
+  spxOptionError: string | null;
+  spxPreviousClose: number | null;
+  sourceSpxReference: number | null;
+  mappingSource: string | null;
+  mappingError: string | null;
   bars: PriceBar[];
   supports: MapZone[];
   resistances: MapZone[];
@@ -247,8 +276,30 @@ function LevelActions({
   );
 }
 
-function ChartZoomHelp() {
-  return <p className="mb-3 text-xs text-slate-500">Scroll left/right to see more candles. Zoom with the mouse wheel, drag a box over the chart, or use the + / − toolbar buttons. Double-click to reset. Click a colored level line or band to jump to its order links.</p>;
+function SpxEtfLevelActions({ zone, tone, levels }: {
+  zone: MapZone;
+  tone: "support" | "resistance";
+  levels: StockMapSelection["spxEtfOrderLevels"];
+}) {
+  const side = tone === "support" ? "Buy" : "Sell";
+  const tickers = ["SPY", "SPXL", "QQQ"] as const;
+  return <div className="mt-2 flex flex-wrap items-center gap-1" aria-label={`${side} mapped ETF levels`}>
+    {tickers.map((ticker) => {
+      const mapped = levels[ticker]?.find((candidate) => candidate.rank === zone.rank && candidate.sourceSide === zone.sourceSide);
+      if (!mapped) return <span key={ticker} title={`${ticker} mapped level unavailable`} className="rounded border border-slate-200 px-2 py-1 text-[10px] text-slate-400">{ticker} n/a</span>;
+      const params = new URLSearchParams({ stock: ticker, side, start: mapped.range_low.toFixed(2), end: mapped.range_high.toFixed(2) });
+      return <a key={ticker} href={`/range-orders?${params.toString()}`} target="_blank" rel="noopener noreferrer"
+        aria-label={`Open ${side.toLowerCase()} ${ticker} range order, ${formatPrice(mapped.range_low)} to ${formatPrice(mapped.range_high)}`}
+        title={`${side} ${ticker}: ${formatPrice(mapped.range_low)}–${formatPrice(mapped.range_high)}`}
+        className={`rounded border px-2 py-1 text-[10px] font-semibold ${tone === "support" ? "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50" : "border-red-200 bg-white text-red-800 hover:bg-red-50"}`}>
+        {ticker} {side} · {formatPrice(mapped.range_low)}–{formatPrice(mapped.range_high)}
+      </a>;
+    })}
+  </div>;
+}
+
+function ChartZoomHelp({ indexLevels = false }: { indexLevels?: boolean }) {
+  return <p className="mb-3 text-xs text-slate-500">Scroll left/right to see more candles. Zoom with the mouse wheel, drag a box over the chart, or use the + / − toolbar buttons. Double-click to reset. Click a colored level line or band to jump to its {indexLevels ? "SPX report details" : "order links"}.</p>;
 }
 
 function focusLevelPanel(id: string) {
@@ -297,17 +348,24 @@ function StockMapPanels({ stock, percentBySide }: { stock: StockMapSelection; pe
               sortBySide[side], distanceReference, (zone) => zone.score).map(({ level: zone, originalIndex }) => (
               <div key={`${side}-${zone.rank}-${originalIndex}`} id={levelPanelId("stock-map", side, originalIndex)} tabIndex={-1} className={`scroll-mt-24 rounded border p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${side === "support" ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <div className="font-semibold">${zone.price.toFixed(4)} - ${zone.range_low.toFixed(4)} to ${zone.range_high.toFixed(4)}</div>
-                  {stock.asAtClose ? <LevelActions zone={zone} tone={side} stockCode={stock.stockCode} /> : null}
+                  <div className="font-semibold">{stock.reportType === "spx-map"
+                  ? `${formatMapPrice(zone.price, stock.reportType, stock.stockCode)} · zone ${formatMapPrice(zone.range_low, stock.reportType, stock.stockCode)}–${formatMapPrice(zone.range_high, stock.reportType, stock.stockCode)}`
+                  : `$${zone.price.toFixed(4)} - $${zone.range_low.toFixed(4)} to $${zone.range_high.toFixed(4)}`}</div>
+                  {stock.asAtClose && stock.reportType === "stock-map" ? <LevelActions zone={zone} tone={side} stockCode={stock.stockCode} /> : null}
                 </div>
-                <div className="mt-1 text-xs text-slate-700">Stock Map {zone.sourceSide === "support" ? "S" : "R"}{zone.rank}{zone.sourceSide !== side ? ` · Now ${side} vs as-at close` : ""} &bull; Score {zone.score === null ? "n/a" : zone.score.toFixed(1)} &bull; Strength {zone.strength}{zone.levelConfidence ? ` · ${zone.levelConfidence}` : ""}</div>
+                <div className="mt-1 text-xs text-slate-700">{stock.reportType === "spx-map" ? "SPX Map" : "Stock Map"} {zone.sourceSide === "support" ? "S" : "R"}{zone.rank}{zone.sourceSide !== side ? ` · Now ${side} vs as-at close` : ""} &bull; Score {zone.score === null ? "n/a" : zone.score.toFixed(1)} &bull; Strength {zone.strength}{zone.levelConfidence ? ` · ${zone.levelConfidence}` : ""}</div>
+                {stock.reportType === "spx-map" && stock.stockCode !== "SPX" ? <>
+                  <div className="mt-1 text-xs text-indigo-900">Mapped reference anchor (vs selected close): {formatMapPrice(zone.price, stock.reportType, stock.stockCode)} {mappedAnchorPercent(zone.details.mapped_anchor_vs_selected_close_pct)} vs selected 30M close {formatMapPrice(typeof zone.details.mapping_selected_close === "number" ? zone.details.mapping_selected_close : null, stock.reportType, stock.stockCode)} ({String(zone.details.mapping_selected_close_date || "date n/a")}).</div>
+                  <div className="mt-1 text-xs text-indigo-900">Source SPX {typeof zone.details.source_spx_anchor === "number" ? zone.details.source_spx_anchor.toFixed(2) : "n/a"} · SPX zone {Array.isArray(zone.details.source_spx_range) ? zone.details.source_spx_range.map((value) => typeof value === "number" ? value.toFixed(2) : "n/a").join("–") : "n/a"}. {stock.mappingSource} Original SPX score/evidence; not target-instrument option positioning.</div>
+                </> : null}
                 {Array.isArray(zone.details.main_evidence) ? <div className="mt-1 text-xs text-slate-600">Matches: {zone.details.main_evidence.filter((item): item is string => typeof item === "string").join(" · ")}</div> : null}
                 {zone.sourceSide !== side ? <div className="mt-1 text-xs text-slate-500">Details below retain the report&apos;s original {zone.sourceSide} terminology.</div> : null}
-                <MappedLevelReportDetails side={zone.sourceSide} detail={undefined} rank={zone.rank} zone={zone.details} instrument="stock" />
+                {stock.reportType === "spx-map" && stock.stockCode === "SPX" ? <SpxEtfLevelActions zone={zone} tone={side} levels={stock.spxEtfOrderLevels} /> : null}
+                <MappedLevelReportDetails side={zone.sourceSide} detail={undefined} rank={zone.rank} zone={zone.details} instrument={stock.reportType === "spx-map" ? "spx" : "stock"} spxLastClose={stock.spxPreviousClose} />
               </div>
             ))}
             {(side === "support" ? stock.supports : stock.resistances).length === 0
-              ? <div className="text-slate-500">No {side} levels {stock.asAtClose ? "relative to the as-at close" : "in this report"}</div>
+              ? <div className="text-slate-500">No {side} levels {stock.reportType === "spx-map" && stock.stockCode !== "SPX" ? "in the SPX source map" : stock.effectivePrice !== null ? "relative to the report as-of price" : "in this report"}</div>
               : percentBySide[side] === 0 ? <div className="text-slate-500">No {side} levels shown at 0%. Increase the {side} slider to see levels.</div> : null}
           </CardContent>
         </Card>
@@ -592,18 +650,25 @@ export default function SupportResistancePage() {
     setMapLoading(true);
     setMapError("");
     try {
-      const response = await authenticatedFetch(`${baseUrl}/api/stock-map-reports/${encodeURIComponent(report.job_id)}/json`, { cache: "no-store" });
+      const requestedCode = code.trim().toUpperCase().replace(/\.(US|AX)$/i, "");
+      const spxInstrument = spxInstrumentForCode(requestedCode);
+      const isSpx = spxInstrument !== null;
+      const displayCode = spxInstrument || requestedCode;
+      const reportType = isSpx ? "spx-map" : "stock-map";
+      const response = await authenticatedFetch(`${baseUrl}/api/${reportType}-reports/${encodeURIComponent(report.job_id)}/json`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.detail || `HTTP ${response.status}`);
-      const map = parseStockMap(payload.data ?? payload);
-      if (!map) throw new Error("The Stock Map JSON artifact was not returned in a readable format.");
-      const reportedCode = mapStockCode(map);
-      const requestedCode = code.trim().toUpperCase().replace(/\.(US|AX)$/i, "");
-      if (!reportedCode || reportedCode !== requestedCode) throw new Error(`Report stock ${reportedCode || "unknown"} does not match ${requestedCode}.`);
+      const map = isSpx ? parseSpxMap(payload.data ?? payload) : parseStockMap(payload.data ?? payload);
+      if (!map) throw new Error(`The ${isSpx ? "SPX Map" : "Stock Map"} JSON artifact was not returned in a readable format.`);
+      if (!isSpx) {
+        const reportedCode = mapStockCode(map);
+        if (!reportedCode || reportedCode !== requestedCode) throw new Error(`Report stock ${reportedCode || "unknown"} does not match ${requestedCode}.`);
+      }
       const asOfTime = mapAsOfTime(map, report);
       // PriceHistoryTimeFrame stores New York wall time, so use the ET as-of date.
       const observationDate = asOfTime?.easternWallTime.slice(0, 10) || mapObservationDate(map);
-      const params = new URLSearchParams({ stock_code: requestedCode });
+      const optionObservationDate = isSpx ? spxOptionObservationDate(map, observationDate) : null;
+      const params = new URLSearchParams({ stock_code: displayCode });
       if (observationDate) params.set("observation_date", observationDate);
       const barsResponse = await authenticatedFetch(`${baseUrl}/api/support-resistance/stock-map-bars?${params}`, { cache: "no-store" });
       const barsPayload = await barsResponse.json();
@@ -613,22 +678,123 @@ export default function SupportResistancePage() {
       const asAtClose = asOfTime ? reportAsAtClose(historicalBars, asOfTime.easternWallTime) : null;
       // The historical cutoff is for as-at classification only. Fetch chart
       // candles independently so later sessions are visible on a saved map.
-      const chartParams = new URLSearchParams({ stock_code: requestedCode, timeframe: "30M", lookback_days: String(DEFAULT_CHART_DAYS["30m"]) });
+      const chartParams = new URLSearchParams({ stock_code: displayCode, timeframe: "30M", lookback_days: String(DEFAULT_CHART_DAYS["30m"]) });
       const chartResponse = await authenticatedFetch(`${baseUrl}/api/support-resistance/chart-bars?${chartParams}`, { cache: "no-store" });
       const chartPayload = await chartResponse.json();
       if (!chartResponse.ok) throw new Error(chartPayload?.detail || `HTTP ${chartResponse.status}`);
       if (mapRequest.current !== requestId) return;
       const bars: PriceBar[] = chartPayload.bars?.length ? chartPayload.bars : historicalBars;
-      const reportSupports = mapZones(map, "support");
-      const reportResistances = mapZones(map, "resistance");
-      const zones = asAtClose ? classifyMapZones(reportSupports, reportResistances, asAtClose.price)
+      let reportSupports = mapZones(map, "support");
+      let reportResistances = mapZones(map, "resistance");
+      let mappingSource: string | null = null;
+      let mappingError: string | null = null;
+      const spxEtfOrderLevels: StockMapSelection["spxEtfOrderLevels"] = {};
+      let effectivePrice = asAtClose?.price ?? null;
+      let effectivePriceSource: string | null = asAtClose ? "Latest fully completed selected-instrument 30M bar at report as-of" : null;
+      let effectivePriceTimestamp: string | null = asAtClose?.barTime ?? null;
+      if (spxInstrument) {
+        // All SPX/derived instruments use the same as-of history snapshot as
+        // SPX Mapped Levels; never substitute current IB quotes for D-levels.
+        if (!observationDate || !asOfTime) {
+          mappingError = "Report as-of timestamp unavailable; effective price and reclassification cannot be calculated.";
+          effectivePrice = null;
+          if (spxInstrument !== "SPX") { reportSupports = []; reportResistances = []; }
+        } else {
+          try {
+            const mappingParams = new URLSearchParams({ observation_date: observationDate, as_of_et: asOfTime.easternWallTime });
+            const mappingResponse = await authenticatedFetch(`${baseUrl}/api/spx-map-prices?${mappingParams}`, { cache: "no-store" });
+            const snapshot = await mappingResponse.json();
+            if (!mappingResponse.ok) throw new Error(typeof snapshot?.detail === "string" ? snapshot.detail : `HTTP ${mappingResponse.status}`);
+            effectivePrice = effectivePriceForSpxInstrument(spxInstrument, snapshot.effective_prices);
+            if (spxInstrument === "SPX") {
+              const sourceZones = [...mapZones(map, "support"), ...mapZones(map, "resistance")];
+              const prices = snapshot.effective_prices || {};
+              for (const [ticker, instrument] of [["SPY", "SPY_D"], ["SPXL", "SPXL_D"], ["QQQ", "QQQ_D"]] as const) {
+                const mapped = deriveSpxZones(sourceZones, instrument, snapshot, prices);
+                if (mapped) spxEtfOrderLevels[ticker] = mapped.zones;
+              }
+            }
+            const effectiveKey = spxInstrument === "SPX" ? "SPX" : spxInstrument === "ESMain" ? "ESMain" : spxInstrument.replace(/_D$/, "");
+            effectivePriceSource = snapshot.effective_price_sources?.[effectiveKey] || snapshot.effective_price_source || null;
+            effectivePriceTimestamp = snapshot.effective_price_timestamps?.[effectiveKey] || snapshot.effective_price_timestamp || null;
+            if (effectivePrice === null) mappingError = `Effective ${effectiveKey} price unavailable at report as-of; no current quote substituted.`;
+            if (spxInstrument !== "SPX") {
+              // A failed projection must never leave original SPX prices on a
+              // target axis. Preserve source zones only for report details.
+              reportSupports = [];
+              reportResistances = [];
+              if (effectivePrice === null) {
+                mappingError = `Effective ${effectiveKey} price unavailable at report as-of; no derived levels are shown.`;
+              } else {
+                const semiconductor = spxInstrument === "SOXL_D" || spxInstrument === "SOXX_D";
+                if (semiconductor) {
+                  const selectedDate = snapshot.historical_close_date;
+                  if (typeof selectedDate !== "string" || !selectedDate) throw new Error("Selected SPX close date unavailable for semiconductor mapping.");
+                  const extraParams = new URLSearchParams({ observation_date: selectedDate });
+                  const extraResponse = await authenticatedFetch(`${baseUrl}/api/spx-map-extra-prices?${extraParams}`, { cache: "no-store" });
+                  const extra = await extraResponse.json();
+                  if (!extraResponse.ok) throw new Error(typeof extra?.detail === "string" ? extra.detail : `HTTP ${extraResponse.status}`);
+                  if (extra.historical_close_source !== "30m_regular_session" || extra.historical_close_date !== selectedDate) throw new Error("Semiconductor 30M close source or selected date unavailable.");
+                  snapshot.historical_closes = { ...snapshot.historical_closes, ...extra.historical_closes };
+                  snapshot.historical_close_dates = { ...snapshot.historical_close_dates, ...extra.historical_close_dates };
+                }
+                const sourceZones = [...mapZones(map, "support"), ...mapZones(map, "resistance")];
+                const projected = deriveSpxZones(sourceZones, spxInstrument, snapshot, snapshot.effective_prices || {});
+                if (projected) {
+                  reportSupports = projected.zones.filter((zone) => zone.sourceSide === "support");
+                  reportResistances = projected.zones.filter((zone) => zone.sourceSide === "resistance");
+                  mappingSource = projected.source;
+                } else {
+                  mappingError = `Matched report-date close anchors and effective ${effectiveKey}/SPY prices unavailable. No SPX price is plotted as a derived instrument price.`;
+                }
+              }
+            }
+          } catch (exc) {
+            effectivePrice = null;
+            mappingError = exc instanceof Error ? exc.message : String(exc);
+            if (spxInstrument !== "SPX") { reportSupports = []; reportResistances = []; }
+          }
+        }
+        if (mapRequest.current !== requestId) return;
+      }
+      // Every map is reclassified against the instrument's effective price at
+      // its own report timestamp. A missing as-of price leaves source sides.
+      const classificationPrice = spxInstrument ? effectivePrice : asAtClose?.price ?? null;
+      const zones = classificationPrice !== null
+        ? classifyMapZones(reportSupports, reportResistances, classificationPrice)
         : { supports: reportSupports, resistances: reportResistances };
-      setMapData({ jobId: report.job_id, stockCode: requestedCode, stock_code: requestedCode, observationDate,
-        asOfTime, asAtClose, bars, ...zones,
+      const spxReference = isSpx ? spxReportReference(map) : null;
+      const fetchSpxOptions = spxInstrument === "SPX" && !!optionObservationDate && effectivePrice !== null;
+      setMapData({ jobId: report.job_id, reportType, stockCode: displayCode, stock_code: displayCode, observationDate,
+        asOfTime, asAtClose, nextSessionStraddle: isSpx ? null : mapNextSessionStraddle(map), bars, ...zones,
+        effectivePrice, effectivePriceSource, effectivePriceTimestamp,
+        spxOptions: null, spxOptionObservationDate: optionObservationDate, spxEtfOrderLevels, spxOptionLoading: fetchSpxOptions,
+        spxOptionError: spxInstrument === "SPX" && !fetchSpxOptions ? "SPX report as-of date or effective price unavailable; cannot select SPXW options." : null,
+        spxPreviousClose: isSpx ? spxPreviousCompletedClose(map) : null,
+        sourceSpxReference: spxReference, mappingSource, mappingError,
         generatedAtSydney: typeof map.generated_at_sydney === "string" ? map.generated_at_sydney : null,
-        executionReference: typeof map.execution_reference === "number" && Number.isFinite(map.execution_reference) ? map.execution_reference : null,
+        executionReference: isSpx ? spxInstrument === "SPX" ? spxReference : null : typeof map.execution_reference === "number" && Number.isFinite(map.execution_reference) ? map.execution_reference : null,
         executionReferenceType: typeof map.execution_reference_type === "string" ? map.execution_reference_type : null,
       });
+      // SPXW evidence is optional and can be unavailable pre-market. Do not
+      // block an otherwise valid SPX chart or substitute an earlier SQL date.
+      if (fetchSpxOptions) void (async () => {
+        try {
+          const optionParams = new URLSearchParams({ observation_date: optionObservationDate!, reference_price: String(effectivePrice) });
+          const optionResponse = await authenticatedFetch(`${baseUrl}/api/support-resistance/spx-map-options?${optionParams}`, { cache: "no-store" });
+          const optionPayload = await optionResponse.json();
+          if (!optionResponse.ok) throw new Error(typeof optionPayload?.detail === "string" ? optionPayload.detail : `HTTP ${optionResponse.status}`);
+          const pair = spxOptionPair(optionPayload, optionObservationDate!);
+          if (mapRequest.current === requestId) setMapData((current) => current?.jobId === report.job_id ? {
+            ...current, spxOptions: pair, spxOptionLoading: false,
+            spxOptionError: !pair && optionPayload.status === "available_historical_d1" ? "The SPXW call/put pair did not pass date, strike and expiry validation." : null,
+          } : current);
+        } catch (exc) {
+          if (mapRequest.current === requestId) setMapData((current) => current?.jobId === report.job_id ? {
+            ...current, spxOptionLoading: false, spxOptionError: exc instanceof Error ? exc.message : String(exc),
+          } : current);
+        }
+      })();
     } catch (exc) {
       if (mapRequest.current !== requestId) return;
       setMapError(exc instanceof Error ? exc.message : String(exc));
@@ -647,11 +813,13 @@ export default function SupportResistancePage() {
     setMapLoading(true);
     setMapError("");
     try {
-      const response = await authenticatedFetch(`${baseUrl}/api/stock-map-reports`, { cache: "no-store" });
+      const isSpx = spxInstrumentForCode(code) !== null;
+      const response = await authenticatedFetch(`${baseUrl}/api/${isSpx ? "spx-map" : "stock-map"}-reports`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.detail || `HTTP ${response.status}`);
       if (mapRequest.current !== requestId) return;
-      const reports = ((payload.items || []) as StockMapReport[]).filter((item) => reportMatchesStock(item, code));
+      const reports = ((payload.items || []) as StockMapReport[]).filter((item) => isSpx
+        ? item.status === "succeeded" : reportMatchesStock(item, code));
       setMapReports(reports);
       if (reports.length) await loadMapReport(reports[0], code, requestId);
       else setMapLoading(false);
@@ -698,9 +866,16 @@ export default function SupportResistancePage() {
       resistances: topPercentEntries<MapZone | PriceRange>(resistances, levelPercent.resistance, quality, Boolean(map)),
     };
   }, [chartData, activeTab, mapData, levelPercent.support, levelPercent.resistance]);
-  const priceWindow = useMemo(() => visibleBars?.length && visibleChartLevels
-    ? priceWindowForBars(visibleBars, [...visibleChartLevels.supports, ...visibleChartLevels.resistances].map(({ level }) => level)) : null,
-  [visibleBars, visibleChartLevels]);
+  const priceWindow = useMemo(() => {
+    if (!visibleBars?.length || !visibleChartLevels) return null;
+    const zones: Array<{ price: number; range_low: number; range_high: number }> =
+      [...visibleChartLevels.supports, ...visibleChartLevels.resistances].map(({ level }) => level);
+    const range = activeTab === "stock-map" ? mapData?.nextSessionStraddle?.nextSessionRange : null;
+    const spxExpiryRange = activeTab === "stock-map" ? mapData?.spxOptions?.expiryRange : null;
+    if (range) zones.push({ price: (range.low + range.high) / 2, range_low: range.low, range_high: range.high });
+    if (spxExpiryRange) zones.push({ price: (spxExpiryRange.low + spxExpiryRange.high) / 2, range_low: spxExpiryRange.low, range_high: spxExpiryRange.high });
+    return priceWindowForBars(visibleBars, zones);
+  }, [visibleBars, visibleChartLevels, activeTab, mapData]);
 
   useEffect(() => {
     if (!chartData) return;
@@ -804,8 +979,30 @@ export default function SupportResistancePage() {
 
       const escapeHover = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] || char);
       const zoneHover = (zone: PriceRange | MapZone, side: string, index: number) => {
-        const hint = `<br><b>Click to view level${mapChart && !mapChart.asAtClose ? " details" : " and order links"}</b>`;
-        if ("score" in zone) return `<b>${side} Zone</b><br>Stock Map ${zone.sourceSide === "support" ? "S" : "R"}${zone.rank}${zone.sourceSide.toLowerCase() !== side.toLowerCase() ? ` (reclassified as ${side.toLowerCase()})` : ""}<br>Anchor: ${zone.price.toFixed(4)}<br>Range: ${zone.range_low.toFixed(4)} – ${zone.range_high.toFixed(4)}<br>Rank: ${zone.rank}<br>Score: ${zone.score === null ? "n/a" : zone.score.toFixed(1)}<br>Strength: ${escapeHover(zone.strength)}<br>${escapeHover(zone.levelConfidence)}<br>${escapeHover(Array.isArray(zone.details.main_evidence) ? zone.details.main_evidence.filter((item): item is string => typeof item === "string").join("; ") : "")}${hint}<extra></extra>`;
+        const hint = `<br><b>Click to view level${mapChart?.reportType === "spx-map" || (mapChart && !mapChart.asAtClose) ? " details" : " and order links"}</b>`;
+        if ("score" in zone) {
+          const sourceRange = zone.details.source_spx_range;
+          const sourceAnchor = zone.details.source_spx_anchor;
+          const origin = mapChart?.reportType === "spx-map" && mapChart.stockCode !== "SPX" &&
+            Array.isArray(sourceRange) && sourceRange.length === 2 && typeof sourceAnchor === "number"
+            ? `<br>Source SPX: ${sourceAnchor.toFixed(2)} · zone ${Number(sourceRange[0]).toFixed(2)}–${Number(sourceRange[1]).toFixed(2)} (SPX score/evidence)` : "";
+          const selectedClose = zone.details.mapping_selected_close;
+          const closeDate = zone.details.mapping_selected_close_date;
+          const mappedReference = mapChart?.reportType === "spx-map" && mapChart.stockCode !== "SPX" &&
+            typeof selectedClose === "number" && Number.isFinite(selectedClose) && selectedClose > 0
+            ? `<br>Mapped reference anchor (vs selected close): ${zone.price.toFixed(2)} ${mappedAnchorPercent(zone.details.mapped_anchor_vs_selected_close_pct)} vs ${selectedClose.toFixed(2)} (selected 30M close ${typeof closeDate === "string" ? escapeHover(closeDate) : "date n/a"})` : "";
+          const validation = zone.details.option_validation;
+          const option = validation && typeof validation === "object" && !Array.isArray(validation)
+            ? validation as Record<string, unknown> : null;
+          const oi = typeof option?.oi_contracts === "number" && Number.isFinite(option.oi_contracts) ? ` · OI ${option.oi_contracts.toLocaleString()}` : "";
+          const wall = typeof option?.wall_type === "string" ? ` ${escapeHover(option.wall_type)}` : "";
+          const expiries = Array.isArray(option?.expiry_dates) ? ` · Expiries ${escapeHover(option.expiry_dates.filter((date): date is string => typeof date === "string").join(", "))}` : "";
+          const observed = typeof option?.observation_date === "string" ? ` · Observed ${escapeHover(option.observation_date)}` : "";
+          const gex = typeof option?.absolute_gex_at_strike === "number" && Number.isFinite(option.absolute_gex_at_strike)
+            ? ` · |GEX| ${Math.abs(option.absolute_gex_at_strike).toLocaleString()} (size only)` : "";
+          const optionText = mapChart?.reportType === "spx-map" && option && (oi || wall) ? `<br>SPXW source${wall}${oi}${gex}${expiries}${observed}` : "";
+          return `<b>${side} Zone</b><br>${mapChart?.reportType === "spx-map" ? "SPX Map" : "Stock Map"} ${zone.sourceSide === "support" ? "S" : "R"}${zone.rank}${zone.sourceSide.toLowerCase() !== side.toLowerCase() ? ` (reclassified as ${side.toLowerCase()})` : ""}<br>Anchor: ${zone.price.toFixed(4)}<br>Range: ${zone.range_low.toFixed(4)} – ${zone.range_high.toFixed(4)}<br>Rank: ${zone.rank}<br>Score: ${zone.score === null ? "n/a" : zone.score.toFixed(1)}<br>Strength: ${escapeHover(zone.strength)}<br>${escapeHover(zone.levelConfidence)}<br>${escapeHover(Array.isArray(zone.details.main_evidence) ? zone.details.main_evidence.filter((item): item is string => typeof item === "string").join("; ") : "")}${mappedReference}${origin}${optionText}${hint}<extra></extra>`;
+        }
         return `<b>${side} Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>Change From Reference Price: ${zone.distance_pct > 0 ? "+" : ""}${zone.distance_pct.toFixed(2)}%<br>ATR Distance: ${zone.distance_atr.toFixed(2)}${hint}<extra></extra>`;
       };
 
@@ -898,11 +1095,15 @@ export default function SupportResistancePage() {
           ...(markerPosition !== null && markerPosition >= bars.length
             ? { range: [-0.5, bars.length + 0.5] } : {}),
         },
-        shapes: markerPosition === null ? [] : [{
-          type: "line", xref: "x", yref: "paper",
-          x0: markerPosition, x1: markerPosition, y0: 0, y1: 1,
-          line: { color: "#7c3aed", width: 2, dash: "dash" },
-        }],
+        shapes: [
+          ...(mapChart?.nextSessionStraddle ? [straddleZoneShape(mapChart.nextSessionStraddle.nextSessionRange)] : []),
+          ...(mapChart?.spxOptions ? [spxExpiryRangeShape(mapChart.spxOptions.expiryRange)] : []),
+          ...(markerPosition === null ? [] : [{
+            type: "line", xref: "x", yref: "paper",
+            x0: markerPosition, x1: markerPosition, y0: 0, y1: 1,
+            line: { color: "#7c3aed", width: 2, dash: "dash" },
+          }]),
+        ],
         annotations: markerPosition === null ? [] : [{
           x: markerPosition, xref: "x", y: 1, yref: "paper", yanchor: "top",
           xanchor: markerPosition >= bars.length - 1 ? "right" : "left",
@@ -1025,7 +1226,7 @@ export default function SupportResistancePage() {
       {activeTab === "stock-map" ? <p className="mb-2 text-xs text-slate-500">Candles show the latest {selectedDays} calendar days; the selected report’s as-at price and level classification remain historical.</p> : null}
       {mapOutsideWindow ? <Alert variant="info">Map as-at is outside the chart’s recent candle window. The historical as-at close is still used for level classification; the purple marker is not drawn in this window.</Alert> : null}
       {levels ? <details className="mb-3 text-sm text-slate-700">
-        <summary className="cursor-pointer text-indigo-700">Jump to a level and its order links (keyboard accessible)</summary>
+        <summary className="cursor-pointer text-indigo-700">Jump to a level{activeTab === "stock-map" && mapData?.reportType === "spx-map" ? " and its SPX source details" : " and its order links"} (keyboard accessible)</summary>
         <div className="mt-2 flex flex-wrap gap-2">
           {(["support", "resistance"] as const).flatMap((side) => visibleSide(side).map(({ level: zone, originalIndex }) => (
             <a key={`${side}-${originalIndex}`} href={`#${levelPanelId(activeTab as LevelTab, side, originalIndex)}`}
@@ -1038,9 +1239,9 @@ export default function SupportResistancePage() {
       {chartError ? <Alert variant="danger">Unable to load chart candles: {chartError}</Alert> : null}
       {bars === null ? (!chartError ? <div className="py-8 text-center text-slate-500">{chartLoading ? `Loading ${chartTimeframe} candles for ${selectedDays} days...` : "Waiting for chart data..."}</div> : null)
         : bars.length ? <>
-          <ChartZoomHelp />
-          {priceWindow && priceWindow.contentHeight > priceWindow.trackHeight ? <p className="mb-2 text-xs text-slate-600">Visible price: {formatPrice(priceReadout?.bottom ?? priceWindow.bottom)}–{formatPrice(priceReadout?.top ?? priceWindow.bottom + priceWindow.span)}. Use the right-hand vertical scrollbar to reveal older highs or lower supports.</p> : null}
-          {activeTab === "stock-map" ? <p className="mb-2 text-xs text-slate-500">Stock Map: darker, thicker green/red lines indicate higher scores.</p> : null}
+          <ChartZoomHelp indexLevels={activeTab === "stock-map" && mapData?.reportType === "spx-map"} />
+          {priceWindow && priceWindow.contentHeight > priceWindow.trackHeight ? <p className="mb-2 text-xs text-slate-600">Visible price: {activeTab === "stock-map" && mapData ? formatMapPrice(priceReadout?.bottom ?? priceWindow.bottom, mapData.reportType, mapData.stockCode) : formatPrice(priceReadout?.bottom ?? priceWindow.bottom)}–{activeTab === "stock-map" && mapData ? formatMapPrice(priceReadout?.top ?? priceWindow.bottom + priceWindow.span, mapData.reportType, mapData.stockCode) : formatPrice(priceReadout?.top ?? priceWindow.bottom + priceWindow.span)}. Use the right-hand vertical scrollbar to reveal older highs or lower supports.</p> : null}
+          {activeTab === "stock-map" ? <p className="mb-2 text-xs text-slate-500">{mapData?.reportType === "spx-map" ? "SPX Map" : "Stock Map"}: darker, thicker green/red lines indicate higher scores.</p> : null}
           <div className="flex min-w-0 items-start gap-2">
             <div ref={chartScrollRef} className="min-w-0 flex-1 overflow-x-auto rounded border border-slate-200" role="region" aria-label="Horizontally scrollable price chart" tabIndex={0}>
               <div key={`${activeTab}-${chartTimeframe}`} ref={plotRef}
@@ -1061,6 +1262,8 @@ export default function SupportResistancePage() {
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-200 pt-3 text-xs text-slate-700" aria-label="Chart legend">
             <span className="inline-flex items-center gap-1"><span className="h-3 w-3 border border-emerald-600 bg-emerald-200" />Price candles</span>
             <span className="inline-flex items-center gap-1"><span className="h-3 w-3 bg-slate-400" />Volume</span>
+            {activeTab === "stock-map" && mapData?.nextSessionStraddle ? <span className="inline-flex items-center gap-1" title={`Indicative next-session range for ${mapData.nextSessionStraddle.nextSession}, derived from ${mapData.nextSessionStraddle.quoteDate} quotes; not support or resistance`}><span className="h-3 w-3 border border-amber-500 bg-yellow-200" />ATM {mapData.nextSessionStraddle.quoteDate}: {formatPrice(mapData.nextSessionStraddle.strike)} call {formatPrice(mapData.nextSessionStraddle.callPrice)} + put {formatPrice(mapData.nextSessionStraddle.putPrice)} · next-session range {formatPrice(mapData.nextSessionStraddle.nextSessionRange.low)}–{formatPrice(mapData.nextSessionStraddle.nextSessionRange.high)}</span> : null}
+            {activeTab === "stock-map" && mapData?.spxOptions ? <span className="inline-flex items-center gap-1" title={`Illustrative SPXW observation-date call+put premium range to ${mapData.spxOptions.expiry}; quote timestamps unverified, not support/resistance`}><span className="h-3 w-3 border border-orange-700 bg-orange-200" />SPXW expiry proxy {formatMapPrice(mapData.spxOptions.expiryRange.low, "spx-map")}–{formatMapPrice(mapData.spxOptions.expiryRange.high, "spx-map")}</span> : null}
             {levels ? (["support", "resistance"] as const).flatMap((side) => visibleSide(side).map(({ level: zone, originalIndex }) => (
               <button key={`${side}-${originalIndex}`} type="button" onClick={() => focusLevelPanel(levelPanelId(activeTab as LevelTab, side, originalIndex))}
                 title={`Jump to ${side} ${zone.price.toFixed(2)}${"score" in zone ? ` · Score ${zone.score ?? "n/a"}` : ` · Rank ${zone.strength_rank || "n/a"}`}`}
@@ -1133,7 +1336,7 @@ export default function SupportResistancePage() {
           <div className="space-y-4">
             <div className="flex gap-3">
               <Input
-                placeholder="Enter stock code (e.g., QQQ, SPY, NVDA)"
+                placeholder="SPX, ESMain, SPY_D, QQQ_D, SPXL_D, TQQQ_D, SOXL_D, SOXX_D or a stock"
                 value={stockCode}
                 onChange={(e) => setStockCode(e.target.value)}
                 onKeyPress={(e) => {
@@ -1178,7 +1381,7 @@ export default function SupportResistancePage() {
                 </div>
               ) : activeTab === "stock-map" ? (
                 <div className="md:col-span-4">
-                  <label className="text-sm font-medium text-slate-700">Stock Map Report</label>
+                  <label className="text-sm font-medium text-slate-700">{spxInstrumentForCode(stockCode) ? "SPX Map Report" : "Stock Map Report"}</label>
                   <select
                     value={selectedMapJob}
                     onChange={(e) => {
@@ -1188,7 +1391,7 @@ export default function SupportResistancePage() {
                     disabled={mapLoading || !mapReports.length}
                     className="mt-1 flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   >
-                    {!mapReports.length ? <option value="">No reports for this stock</option> : null}
+                    {!mapReports.length ? <option value="">No {spxInstrumentForCode(stockCode) ? "SPX Map" : "Stock Map"} reports</option> : null}
                     {mapReports.map((report) => <option key={report.job_id} value={report.job_id}>{report.title || report.file_name || report.job_id}{report.file_name && report.file_name !== report.title ? ` (${report.file_name})` : ""}</option>)}
                   </select>
                 </div>
@@ -1311,22 +1514,57 @@ export default function SupportResistancePage() {
       {activeTab === "stock-map" && mapData ? (
         <>
           <Card>
-            <CardHeader><CardTitle>Stock Map Report</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{mapData.reportType === "spx-map" ? "SPX Map Report" : "Stock Map Report"}</CardTitle></CardHeader>
             <CardContent className="text-sm text-slate-700">
               <div>Report: {mapReports.find((report) => report.job_id === mapData.jobId)?.title || mapData.jobId}</div>
-              <div>Observation date: {mapData.observationDate || "not specified"} · Chart: 30-minute candles</div>
+              <div>Observation date: {mapData.observationDate || "not specified"} · Chart: 30-minute {mapData.stockCode === "SPX" ? "SPXW.US index" : mapData.stockCode === "ESMain" ? "ESMain.US futures" : "stock"} candles</div>
               <div>Map as-at: {mapData.asOfTime?.label || "Timestamp unavailable in report"}{mapData.asOfTime ? " · Purple dashed line when inside the recent candle window (New York bar time)" : ""}</div>
               {mapData.generatedAtSydney ? <div>Report actually generated: {mapData.generatedAtSydney} (Sydney)</div> : null}
-              {mapData.executionReference !== null ? <div>Report execution reference: {formatPrice(mapData.executionReference)} ({mapData.executionReferenceType?.replace(/_/g, " ") || "report reference"}{mapData.executionReferenceType === "completed_30m_bar" ? "; latest completed 30M bar at map as-at" : "; not the as-at market price"})</div> : null}
-              {mapData.asAtClose ? (
-                <div>As-at 30M close: {formatPrice(mapData.asAtClose.price)} (bar starting {mapData.asAtClose.barTime} New York). Levels below this price are supports; above are resistances. Matching anchors retain their report side.</div>
-              ) : <div className="text-amber-700">No completed 30M bar at the report time. Showing original report sides; order links are unavailable.</div>}
-              {mapData.asAtClose && mapData.resistances.length > 0 && mapData.resistances.every((zone) => zone.price > mapData.asAtClose!.price) && mapData.supports.length === 0 ? (
-                <Alert variant="warning">The as-at 30M close is below every mapped anchor. Under the selected price-relative rule, all mapped levels are resistance, even those labelled support in the original report. {mapData.executionReferenceType === "prior_session_close" ? "The report uses the prior-session close as its execution reference, not the as-at market price." : mapData.executionReferenceType === "completed_30m_bar" ? "This report also uses a completed 30M bar as its execution reference." : "The report execution reference is not substituted for the as-at 30M close."}</Alert>
+              {mapData.sourceSpxReference !== null && mapData.stockCode !== "SPX" ? <div>Source SPX report reference: {formatMapPrice(mapData.sourceSpxReference, "spx-map")} (not a {mapData.stockCode} quote).</div> : null}
+              {mapData.executionReference !== null ? <div>Report execution reference: {formatMapPrice(mapData.executionReference, mapData.reportType, mapData.stockCode)} ({mapData.executionReferenceType?.replace(/_/g, " ") || "report reference"}{mapData.executionReferenceType === "completed_30m_bar" ? "; latest completed 30M bar at map as-at" : "; not the as-at market price"})</div> : null}
+              {mapData.effectivePrice !== null ? (
+                <div>Effective price at report as-of: {formatMapPrice(mapData.effectivePrice, mapData.reportType, mapData.stockCode)}{mapData.effectivePriceTimestamp ? ` (completed bar ${mapData.effectivePriceTimestamp} New York)` : ""}. Levels below this price are supports; above are resistances. {mapData.effectivePriceSource || "Selected-instrument completed historical bar."}</div>
+              ) : <div className="text-amber-700">No effective price at the report as-of is available. Source report sides are retained; no current quote is substituted.</div>}
+              {mapData.asAtClose && mapData.stockCode !== "SPX" ? <div className="text-xs">Direct selected-instrument 30M bar: {formatMapPrice(mapData.asAtClose.price, mapData.reportType, mapData.stockCode)} (bar starting {mapData.asAtClose.barTime} New York).</div> : null}
+              {mapData.reportType === "spx-map" ? <p className="mt-2 text-xs text-amber-800">{mapData.stockCode === "SPX" ? "SPX ranges are index points, not ETF prices. SPY, SPXL and QQQ links use separately mapped ETF price ranges; support levels open Buy range orders and resistance levels open Sell range orders." : `${mapData.stockCode} ranges are derived from SPX zones, not direct ${mapData.stockCode} report levels.`} These links open prefilled order forms; they do not submit orders. The original SPX scores and option evidence do not establish target-instrument option positioning.</p> : null}
+              {mapData.mappingSource ? <div className="mt-1 text-xs">Derived mapping: {mapData.mappingSource}. These instrument levels use matched report-date closes and report-time effective prices; current IB quotes are not used.</div> : null}
+              {mapData.mappingError ? <Alert variant="warning">{mapData.mappingError} No current quote is substituted. Where an effective price is unavailable, levels retain their original report sides or derived levels are omitted.</Alert> : null}
+              {mapData.effectivePrice !== null && mapData.resistances.length > 0 && mapData.resistances.every((zone) => zone.price > mapData.effectivePrice!) && mapData.supports.length === 0 ? (
+                <Alert variant="warning">The effective report-as-of price is below every mapped anchor. Under the selected price-relative rule, all mapped levels are resistance, even those labelled support in the original report. {mapData.executionReferenceType === "prior_session_close" ? "The report uses the prior-session close as its execution reference, not the as-at market price." : mapData.executionReferenceType === "completed_30m_bar" ? "This report also uses a completed 30M bar as its execution reference." : "The report execution reference is not substituted for the as-at 30M close."}</Alert>
               ) : null}
-              <a className="text-indigo-700 underline" href={`/stock-map-reports/${encodeURIComponent(mapData.jobId)}/mapped-levels?stock_code=${encodeURIComponent(mapData.stockCode)}`} target="_blank" rel="noopener noreferrer">Open full Stock Map details</a>
+              <a className="text-indigo-700 underline" href={`/${mapData.reportType}-reports/${encodeURIComponent(mapData.jobId)}/mapped-levels${mapData.reportType === "spx-map" ? "" : `?stock_code=${encodeURIComponent(mapData.stockCode)}`}`} target="_blank" rel="noopener noreferrer">Open full {mapData.reportType === "spx-map" ? "SPX Map" : "Stock Map"} details</a>
             </CardContent>
           </Card>
+          {mapData.reportType === "spx-map" && mapData.stockCode !== "SPX" ? <Card>
+            <CardHeader><CardTitle>SPX Source Evidence · {mapData.stockCode} Derived Ranges</CardTitle></CardHeader>
+            <CardContent className="text-sm text-slate-700">Each derived level lists its source SPX anchor and SPX zone. SPXW options in the source map are SPX evidence, not a same-day ATM quote for {mapData.stockCode}. No target option premium is inferred.</CardContent>
+          </Card> : mapData.reportType === "spx-map" ? <Card>
+            <CardHeader><CardTitle>SPXW ATM Proxy · Observation-Date Call + Put</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm text-slate-700">
+              {mapData.spxOptionLoading ? <p>Loading SPXW option evidence…</p> : mapData.spxOptionError
+                ? <Alert variant="warning">SPXW option evidence unavailable: {mapData.spxOptionError}. The SPX levels remain visible.</Alert>
+                : mapData.spxOptions ? <>
+                  <div>SPXW observation date: {mapData.spxOptions.observationDate} · Expiry: {mapData.spxOptions.expiry} · Same strike: {mapData.spxOptions.strike.toFixed(2)} (nearest to effective SPX {formatMapPrice(mapData.spxOptions.reference, "spx-map")})</div>
+                  <div>Call {formatPrice(mapData.spxOptions.callPrice)} ({mapData.spxOptions.callSource}) + put {formatPrice(mapData.spxOptions.putPrice)} ({mapData.spxOptions.putSource}) = {formatPrice(mapData.spxOptions.premium)} premium.</div>
+                  <div>Illustrative effective-SPX ± premium to expiry: {formatMapPrice(mapData.spxOptions.expiryRange.low, "spx-map")} – {formatMapPrice(mapData.spxOptions.expiryRange.high, "spx-map")}.</div>
+                  <p className="text-xs text-amber-800">These SQL rows were selected by ObservationDate only. Their quote times are unverified and they may postdate the report as-at; this is not a live ATM quote, next-session range, support/resistance, or executable price.</p>
+                </> : <p className="text-amber-800">No valid same-strike, same-expiry SPXW call/put pair for option observation date {mapData.spxOptionObservationDate || "unavailable"}. No premium is inferred from another day.</p>}
+            </CardContent>
+          </Card> : <Card>
+            <CardHeader><CardTitle>ATM Straddle · Indicative Next-Session Move</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm text-slate-700">
+              {mapData.nextSessionStraddle ? <>
+                <div className="text-lg font-semibold text-indigo-800">
+                  {formatPrice(mapData.nextSessionStraddle.nextSessionRange.low)} – {formatPrice(mapData.nextSessionStraddle.nextSessionRange.high)}
+                  <span className="ml-2 text-sm font-normal text-slate-600">for {mapData.nextSessionStraddle.nextSession} (approx. ±{formatPrice(mapData.nextSessionStraddle.nextSessionMove)})</span>
+                </div>
+                <div>Quote date: {mapData.nextSessionStraddle.quoteDate} · Underlying at quote: {formatPrice(mapData.nextSessionStraddle.spot)} · ATM strike: {formatPrice(mapData.nextSessionStraddle.strike)}</div>
+                <div>Call: {formatPrice(mapData.nextSessionStraddle.callPrice)} + put: {formatPrice(mapData.nextSessionStraddle.putPrice)} = straddle: {formatPrice(mapData.nextSessionStraddle.premium)} · {mapData.nextSessionStraddle.quoteSource}</div>
+                <div>Actual option expiry: {mapData.nextSessionStraddle.expiry} ({mapData.nextSessionStraddle.tradingSessionsToExpiry} weekdays after the quote). The unscaled expiry-horizon premium band is {formatPrice(mapData.nextSessionStraddle.expiryRange.low)} – {formatPrice(mapData.nextSessionStraddle.expiryRange.high)}.</div>
+                <p className="text-xs text-amber-800">Next-session range is an approximate one-sigma volatility proxy: (ATM call + put premium) ÷ 0.8 ÷ √weekdays to expiry. It assumes stable volatility and ignores market holidays and event jumps. The expiry band is not a next-day range or a guaranteed trading boundary; neither range is a support/resistance level.</p>
+              </> : <p className="text-amber-800">No complete, same-date ATM call/put straddle with valid premiums and a future expiry is available in this report. No next-session range is estimated.</p>}
+            </CardContent>
+          </Card>}
           <Card>
             <CardHeader><CardTitle>Interactive Chart</CardTitle></CardHeader>
             <CardContent>{renderChart(mapData)}</CardContent>
@@ -1334,7 +1572,7 @@ export default function SupportResistancePage() {
           <StockMapPanels key={mapData.jobId} stock={mapData} percentBySide={levelPercent} />
         </>
       ) : null}
-      {activeTab === "stock-map" && !mapLoading && !mapError && !mapData ? <Card><CardContent><div className="py-8 text-center text-slate-500">No Stock Map reports for this stock</div></CardContent></Card> : null}
+      {activeTab === "stock-map" && !mapLoading && !mapError && !mapData ? <Card><CardContent><div className="py-8 text-center text-slate-500">No {spxInstrumentForCode(stockCode) ? "SPX Map" : "Stock Map"} reports for this symbol</div></CardContent></Card> : null}
 
       {activeTab === "database" && databaseData && databaseData.found ? (
         <>

@@ -1,6 +1,7 @@
 "use client";
 
 import SkillReportPage, { type ReportSummary } from "../components/SkillReportPage";
+import SpxMapComparisonWorkspace from "./SpxMapComparisonWorkspace";
 
 function getCurrentDateTimeInTimezone(timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -103,9 +104,13 @@ export default function SpxMapReportsPage() {
       emptyLabel="No SPX Map reports found."
       fields={fields}
       initialTab="html"
+      extraTabs={[
+        { key: "comparison-lab", label: "Two-Day Lab", content: <SpxMapComparisonWorkspace mode="lab" /> },
+        { key: "comparison-viewer", label: "Analysis Viewer", content: <SpxMapComparisonWorkspace mode="viewer" /> },
+      ]}
       htmlReports={{
         label: "HTML Reports",
-        evidenceNotice: "This HTML artifact is generated upstream. Use Mapped Levels and Orders for structured JSON zone boundaries, anchor method, scores, expiry dates, observation/freshness and correctly labeled percent bases. Option observations do not prove historical as-of availability; |GEX| is size, not direction.",
+        evidenceNotice: "This HTML artifact is generated upstream. Successful reports may additionally include the optional positioning_intelligence object (schema_version spx-positioning-intelligence-v1); existing map fields remain unchanged and older reports may omit it. Missing/null values are unavailable, not zero; status strings are meaningful. Signed GEX and Gamma Flip are modelled/convention-based, not observed dealer positioning. Wall qualification joins map levels by level_id. long_orders/short_orders are advisory only (active_order=false, execution_enabled=false) and must never be routed for execution. Flow does not prove customer/dealer identity or opening/closing activity. Tolerate additional fields. Use Mapped Levels and Orders for structured JSON zone boundaries, anchor method, scores, expiry dates, observation/freshness and correctly labeled percent bases.",
         getReportFileType: getSpxMapReportFileType,
       }}
       reportAction={{

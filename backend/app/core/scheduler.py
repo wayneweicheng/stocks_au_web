@@ -160,30 +160,6 @@ def gex_auto_insight_job():
         )
 
 
-def discord_market_intelligence_job():
-    """Generate the cached rolling 24-hour Discord summary at 4 PM Sydney time."""
-    from app.services.discord_market_intelligence_service import (
-        DEFAULT_DISCORD_SUMMARY_MODEL,
-        DiscordFollowerMarketIntelligenceService,
-    )
-
-    logger.info("[Discord Summary] Starting scheduled follower-summary generation")
-    try:
-        result = DiscordFollowerMarketIntelligenceService().get_latest_or_generate(
-            force_regenerate=True,
-            model=DEFAULT_DISCORD_SUMMARY_MODEL,
-        )
-        logger.info(
-            "[Discord Summary] Generated follower summary %s using %s messages",
-            result["summary_date"],
-            result["message_count"],
-        )
-    except ValueError as exc:
-        logger.warning("[Discord Summary] Skipped scheduled generation: %s", exc)
-    except Exception as exc:
-        logger.error("[Discord Summary] Scheduled generation failed: %s", exc, exc_info=True)
-
-
 def _persist_volatility_runner_job(job_response: dict) -> dict:
     from app.services.skill_runner_client import call_skill_runner, get_job_json
     from app.services.volatility_options_alerts import VolatilityOptionsAlertService, candidate_alert_message
@@ -323,18 +299,7 @@ def start_scheduler():
 
     # GEX Auto Insight processing is manual-only from the market-flow admin tab.
 
-    scheduler.add_job(
-        discord_market_intelligence_job,
-        trigger=CronTrigger(
-            hour=16,
-            minute=0,
-            timezone="Australia/Sydney",
-        ),
-        id="discord_market_intelligence",
-        name="Discord Follower Messages Summary",
-        replace_existing=True,
-        misfire_grace_time=3600,
-    )
+    # Discord follower summaries are on-demand only. No daily generation job.
 
     # SPX scheduling was retired from FastAPI. The generic strategy-runtime
     # heartbeat owns claims, lifecycle, reports, and notifications. Keeping

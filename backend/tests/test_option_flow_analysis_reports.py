@@ -46,6 +46,62 @@ def test_option_flow_report_list_and_read_from_skill_runner(monkeypatch):
     assert detail.json()["content"] == "# Option Flow\n\n- MU call buying expanded."
 
 
+def test_option_flow_detail_without_listing_fetches_only_requested_report(monkeypatch, tmp_path):
+    monkeypatch.setattr(skill_report_pages, "_REPORT_SUMMARY_CACHE", {})
+    monkeypatch.setattr(skill_report_pages, "DELETED_REPORTS_PATH", tmp_path / "deleted.json")
+    monkeypatch.setattr(skill_report_pages, "list_reports", lambda job_type: (_ for _ in ()).throw(AssertionError("detail must not list reports")))
+    calls = []
+
+    def fake_get_job_report(job_id):
+        calls.append(job_id)
+        return {
+            "job_id": job_id,
+            "label": "2026-10-26:SPY",
+            "ticker": "SPY",
+            "status": "succeeded",
+            "content": "# SPY option flow",
+        }
+
+    monkeypatch.setattr(skill_report_pages, "get_job_report", fake_get_job_report)
+    client = TestClient(app)
+
+    response = client.get("/api/option-flow-analysis-reports/a92c27c8fdce470b9e77a4b82c7109a0", headers=_auth())
+
+    assert response.status_code == 200
+    assert calls == ["a92c27c8fdce470b9e77a4b82c7109a0"]
+    assert response.json()["title"] == "2026-10-26:SPY"
+    assert response.json()["stock_code"] == "SPY"
+    assert response.json()["content"] == "# SPY option flow"
+
+
+def test_option_flow_detail_uses_cached_html_metadata_without_relisting(monkeypatch, tmp_path):
+    monkeypatch.setattr(skill_report_pages, "_REPORT_SUMMARY_CACHE", {})
+    monkeypatch.setattr(skill_report_pages, "DELETED_REPORTS_PATH", tmp_path / "deleted.json")
+    monkeypatch.setattr(
+        skill_report_pages,
+        "list_reports",
+        lambda job_type: [{
+            "job_id": "range-123", "label": "AMZN range report",
+            "filename": "AMZN_20260725_20260803.html", "status": "succeeded",
+        }] if job_type == "analyze-option-flow-range" else [],
+    )
+    client = TestClient(app)
+    assert client.get("/api/option-flow-analysis-reports", headers=_auth()).status_code == 200
+
+    def forbid_relisting(job_type):
+        raise AssertionError("detail must not list reports")
+
+    monkeypatch.setattr(skill_report_pages, "list_reports", forbid_relisting)
+    monkeypatch.setattr(skill_report_pages, "get_job_report", lambda job_id: {"report_html": "<h1>AMZN</h1>"})
+
+    response = client.get("/api/option-flow-analysis-reports/range-123", headers=_auth())
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "AMZN range report"
+    assert response.json()["file_type"] == "html"
+    assert response.json()["content"] == "<h1>AMZN</h1>"
+
+
 def test_option_flow_report_delete_hides_report(monkeypatch, tmp_path):
     deleted_path = tmp_path / "deleted_skill_reports.json"
 

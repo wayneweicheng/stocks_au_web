@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -356,9 +357,10 @@ def test_follower_dashboard_prefers_newer_manual_cache(tmp_path: Path):
 """,
         encoding="utf-8",
     )
-    automated_path.touch()
-    manual_path.touch()
-    manual_path.touch()
+    # Filesystems can coalesce consecutive touch() timestamps; make the
+    # preference ordering explicit instead of relying on scheduler timing.
+    automated_mtime = automated_path.stat().st_mtime_ns
+    os.utime(manual_path, ns=(automated_mtime + 2_000_000_000, automated_mtime + 2_000_000_000))
     service = DiscordFollowerMarketIntelligenceService(
         cache_dir=str(automated_cache),
         manual_cache_dir=str(manual_cache),

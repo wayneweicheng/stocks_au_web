@@ -12,6 +12,7 @@ import MappedLevelReportDetails, {
 } from "../../../components/MappedLevelReportDetails";
 import { authenticatedFetch } from "../../../utils/authenticatedFetch";
 import { assessLiveMoveRatio, directStockRangeHref, liveMoveSpread, mappedFromLeveragedParent, mappedFromSpy, mappedFromSpySpread, MOVE_RATIO_THRESHOLD, shouldUseMoveRatio } from "./calibration";
+import { matchedEsBasis, spxEsLevel } from "./esBasis";
 
 type JsonObject = Record<string, unknown>;
 type LevelSide = "support" | "resistance";
@@ -25,6 +26,8 @@ type LevelStructure = {
 type SpxZone = {
   id: string;
   side: LevelSide;
+  reportSide: LevelSide;
+  reportRank: number;
   rank: number;
   low: number;
   high: number;
@@ -44,6 +47,14 @@ type MappingResponse = {
   historical_close_dates?: Record<string, string>;
   price_differences?: Record<string, number>;
   calibration_eligible?: boolean;
+  report_as_of_et?: string | null;
+  effective_prices?: Record<string, number | null>;
+  effective_price_source?: string | null;
+  effective_price_timestamp?: string | null;
+  effective_price_timestamps?: Record<string, string | null>;
+  effective_price_bar_start?: string | null;
+  effective_price_basis?: number | null;
+  effective_price_fallback?: boolean;
 };
 
 type LivePricesResponse = {
@@ -183,6 +194,19 @@ function dailyDateFromReport(content: string): string | null {
   return dailyPeriod?.[1] || null;
 }
 
+function mapAsOfEt(data: JsonObject): string | null {
+  const nested = [data.metadata, data.meta, data.parameters]
+    .filter((value): value is JsonObject => Boolean(value && typeof value === "object"));
+  const candidates = [data.as_of_et, data.asOfEt, data.as_at, data.asAt, data.report_as_of, data.report_timestamp,
+    ...nested.flatMap((value) => [value.as_of_et, value.asOfEt, value.as_at, value.asAt, value.report_timestamp])];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const match = candidate.match(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?/);
+    if (match) return match[0].replace(" ", "T");
+  }
+  return null;
+}
+
 function mapObservationDate(data: JsonObject): string | null {
   const nested = [data.metadata, data.meta, data.parameters]
     .filter((value): value is JsonObject => Boolean(value && typeof value === "object"));
@@ -238,6 +262,8 @@ function extractZones(data: JsonObject): SpxZone[] {
       zones.push({
         id: `${side}-${index}-${low}-${high}`,
         side,
+        reportSide: side,
+        reportRank: numberValue(row.rank) ?? index + 1,
         rank: numberValue(row.rank) ?? index + 1,
         low: Math.min(low, high),
         high: Math.max(low, high),
@@ -299,11 +325,11 @@ function mapZone(
   if (LIVE_CALIBRATION_REQUIRED.has(instrument.label)) return noMapping;
 
   if (instrument.label === "ESMain") {
-    if (spxClose === null || lastClose === null) return noMapping;
-    const difference = numberValue(priceDifferences.ESMain) ?? lastClose - spxClose;
+    const difference = numberValue(priceDifferences.ESMain);
+    if (spxClose === null || lastClose === null || difference === null) return noMapping;
     return {
       ...instrument,
-      sourceColumn: `Fallback: SPX difference (${difference >= 0 ? "+" : ""}${difference.toFixed(2)})`,
+      sourceColumn: `Matched cash-close ES−SPX difference (${difference >= 0 ? "+" : ""}${difference.toFixed(2)})`,
       low: zone.low + difference,
       high: zone.high + difference,
       mid: zone.center + difference,
@@ -368,8 +394,8 @@ function percentLabel(value: number | null, lastClose: number | null) {
   return change === null ? "" : `(${change >= 0 ? "+" : ""}${change.toFixed(2)}%)`;
 }
 
-function structureLabel(zone: SpxZone) {
-  const parts = [`SPX ${price(zone.center)}`];
+function structureLabel(zone: SpxZone, esBasis: number | null) {
+  const parts = [spxEsLevel(zone.center, esBasis)];
   if (zone.structure.label) parts.push(zone.structure.label);
   if (zone.structure.openInterest !== null) parts.push(`OI ${zone.structure.openInterest.toLocaleString()}`);
   if (zone.structure.gex !== null) parts.push(`|GEX| ${Math.abs(zone.structure.gex).toLocaleString()} (size only)`);
@@ -401,26 +427,65 @@ function optionHref(mapped: MappedInstrument, zone: SpxZone, action: "SELL" | "B
   return `/option-orders?${params.toString()}`;
 }
 
-function LiveQuoteCell({ item, refreshing, disabled, error, onRefresh }: {
+function LiveQuoteCell({ item, refreshing, disabled, error, onRefresh, allowRefresh = true }: {
   item: MappedInstrument;
   refreshing: boolean;
   disabled: boolean;
   error?: string;
   onRefresh: (symbol: string) => void;
+  allowRefresh?: boolean;
 }) {
   return (
     <td className="px-3 py-3 font-mono text-slate-700">
       <div className="flex items-center gap-2">
         <span>{price(item.livePrice)}</span>
-        <button type="button" onClick={() => onRefresh(item.label)} disabled={disabled || refreshing}
+        {allowRefresh ? <button type="button" onClick={() => onRefresh(item.label)} disabled={disabled || refreshing}
           aria-label={`Refresh ${item.label} live price`} title={`Refresh ${item.label} from IB`}
           className="rounded border border-slate-300 px-1.5 py-0.5 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">
           {refreshing ? "…" : "↻"}
-        </button>
+        </button> : null}
       </div>
       {error && <span className="block max-w-48 text-xs text-amber-800">{error}</span>}
     </td>
   );
+}
+
+function displayValue(value: unknown): string {
+  if (value == null) return "Unavailable";
+  if (typeof value === "number") return Number.isFinite(value) ? value.toLocaleString() : "Unavailable";
+  if (typeof value === "string") return value || "Unavailable";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return Array.isArray(value) ? `${value.length} entries` : "Details available";
+}
+
+function PositioningIntelligence({ data, zones }: { data: JsonObject; zones: SpxZone[] }) {
+  const raw = data.positioning_intelligence;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const intelligence = raw as JsonObject;
+  const wallEntries = Array.isArray(intelligence.wall_qualification)
+    ? intelligence.wall_qualification.filter((item): item is JsonObject => Boolean(item && typeof item === "object")) : [];
+  const advisoryOrders = ([...(Array.isArray(intelligence.long_orders) ? intelligence.long_orders : []),
+    ...(Array.isArray(intelligence.short_orders) ? intelligence.short_orders : [])])
+    .filter((item): item is JsonObject => Boolean(item && typeof item === "object"));
+  const summaryKeys = ["underlying_price", "reference_price_source", "absolute_gex", "convention_signed_gex", "signal_strength"];
+  return <section className="rounded-lg border border-violet-200 bg-white p-5 shadow-sm">
+    <h2 className="text-lg font-semibold text-violet-950">Positioning intelligence</h2>
+    <p className="mt-1 text-xs text-slate-600">Schema: {displayValue(intelligence.schema_version)}. Optional audit data; missing or null values are unavailable, not zero.</p>
+    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{summaryKeys.map((key) => <div key={key} className="rounded bg-violet-50 p-3 text-sm">
+      <div className="text-xs font-medium uppercase text-slate-500">{key.replaceAll("_", " ")}</div>
+      <div className="mt-1 font-semibold text-slate-900">{displayValue(intelligence[key])}</div>
+      {key === "convention_signed_gex" ? <div className="mt-1 text-xs text-amber-800">Modelled/convention-based, not observed dealer positioning.</div> : null}
+    </div>)}</div>
+    {intelligence.gamma_flip && typeof intelligence.gamma_flip === "object" ? <p className="mt-3 text-sm">Gamma flip: <strong>{displayValue((intelligence.gamma_flip as JsonObject).price)}</strong> · {displayValue((intelligence.gamma_flip as JsonObject).status)} <span className="text-xs text-amber-800">(modelled/convention-based, not observed dealer positioning)</span></p> : null}
+    {wallEntries.length ? <div className="mt-4 overflow-x-auto"><h3 className="mb-2 font-semibold">Wall qualification (joins map levels by level_id)</h3><table className="min-w-[600px] w-full text-sm"><thead><tr className="text-left text-xs uppercase text-slate-500"><th className="p-2">Map level</th><th className="p-2">Classification</th><th className="p-2">Qualification</th><th className="p-2">Price confirmation</th></tr></thead><tbody>{wallEntries.map((entry, index) => {
+      const levelId = typeof entry.level_id === "string" ? entry.level_id : "";
+      const matched = zones.find((zone) => zone.reportZone.level_id === levelId || zone.reportZone.id === levelId);
+      const confirmation = entry.price_confirmation && typeof entry.price_confirmation === "object" ? entry.price_confirmation as JsonObject : {};
+      return <tr key={`${levelId}-${index}`} className="border-t"><td className="p-2">{matched ? `${matched.side} #${matched.rank}` : (levelId || "Unmatched")}</td><td className="p-2">{displayValue(entry.classification)}</td><td className="p-2">{displayValue(entry.qualification_status)}</td><td className="p-2">{displayValue(confirmation.state)}</td></tr>;
+    })}</tbody></table></div> : null}
+    {advisoryOrders.length ? <div className="mt-4"><h3 className="font-semibold">Advisory order ideas — not executable</h3><p className="text-xs text-amber-800">These ideas must not be routed to order execution. Flow data does not establish customer/dealer identity or opening/closing activity.</p><ul className="mt-2 list-inside list-disc text-sm">{advisoryOrders.map((order, index) => <li key={index}>{displayValue(order.setup)} · {displayValue(order.level_id)} · {displayValue(order.qualification_status)} · active: {displayValue(order.active_order)} · execution enabled: {displayValue(order.execution_enabled)}</li>)}</ul></div> : null}
+    <details className="mt-4"><summary className="cursor-pointer text-sm font-medium text-violet-800">Full positioning audit object</summary><pre className="mt-2 max-h-96 overflow-auto rounded bg-slate-50 p-3 text-xs">{JSON.stringify(intelligence, null, 2)}</pre></details>
+  </section>;
 }
 
 export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobId: string }> }) {
@@ -466,6 +531,7 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
         if (!parsedMap) throw new Error("The SPX Map JSON artifact was not returned in a readable format.");
         const queryDate = new URLSearchParams(window.location.search).get("observation_date");
         const observationDate = queryDate || dailyDateFromReport(String(reportPayload.content || "")) || mapObservationDate(parsedMap);
+        const asOfEt = mapAsOfEt(parsedMap);
         if (observationDate && queryDate !== observationDate) {
           const url = new URL(window.location.href);
           url.searchParams.set("observation_date", observationDate);
@@ -473,6 +539,7 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
         }
         const pricesUrl = new URL(`${baseUrl}/api/spx-map-prices`, window.location.origin);
         if (observationDate) pricesUrl.searchParams.set("observation_date", observationDate);
+        if (asOfEt) pricesUrl.searchParams.set("as_of_et", asOfEt);
         const pricesResponse = await authenticatedFetch(pricesUrl.toString(), { cache: "no-store" });
         const pricesPayload = await pricesResponse.json().catch(() => ({}));
         if (!pricesResponse.ok) throw new Error(pricesPayload.detail || `SPX mapped prices request failed: HTTP ${pricesResponse.status}`);
@@ -648,7 +715,19 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
     }
   };
 
-  const zones = useMemo(() => (mapData ? extractZones(mapData) : []), [mapData]);
+  const effectiveSpxPrice = numberValue(mapping?.effective_prices?.SPX);
+  const zones = useMemo(() => {
+    const reportZones = mapData ? extractZones(mapData) : [];
+    if (effectiveSpxPrice === null) return reportZones;
+    const classified = reportZones.map((zone) => ({
+      ...zone,
+      side: zone.center <= effectiveSpxPrice ? "support" as const : "resistance" as const,
+    })).sort((left, right) => left.side.localeCompare(right.side) ||
+      (left.side === "support" ? right.center - left.center : left.center - right.center) ||
+      left.reportRank - right.reportRank);
+    const sideRanks: Record<LevelSide, number> = { support: 0, resistance: 0 };
+    return classified.map((zone) => ({ ...zone, rank: ++sideRanks[zone.side] }));
+  }, [mapData, effectiveSpxPrice]);
   const supports = useMemo(() => (mapData ? downsidePath(mapData) : []), [mapData]);
   const historicalCloses = {
     ...(mapping?.historical_closes || {}),
@@ -656,18 +735,37 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
   };
   // Do not cache mapped ranges: each quote update recomputes the live ratio or
   // target-minus-SPY move spread, displayed range, and order URL on render.
-  const allLivePrices = { ...livePrices, ...extraLivePrices };
-  const stockCount = ["SPY", "QQQ", "SPXL", "TQQQ"].filter((symbol) => (numberValue(livePrices[symbol]) ?? 0) > 0).length;
-  const futuresCount = ["ESMain", "NQMain"].filter((symbol) => (numberValue(livePrices[symbol]) ?? 0) > 0).length;
-  const currentStockStatus = liveStatus === "loading" ? "loading" : stockCount === 4 ? "available" : stockCount ? "partial" : "unavailable";
-  const currentFuturesStatus = futuresStatus === "loading" ? "loading" : futuresCount === 2 ? "available" : futuresCount ? "partial" : "unavailable";
-  const priceDifferences = mapping?.price_differences || {};
-  // Both price endpoints only return IB quotes (never a database close). Use
-  // the closes displayed in this report as the move baseline, even when the
-  // selected report is not the latest SPX report.
+  const reportTimePrices: Record<string, number> = { ...livePrices };
+  // Never use current IB SPY/ES quotes as a substitute for this report's as-of proxy.
+  delete reportTimePrices.SPY;
+  delete reportTimePrices.ESMain;
+  delete reportTimePrices.QQQ;
+  delete reportTimePrices.TQQQ;
+  delete reportTimePrices.SPXL;
+  delete reportTimePrices.NQMain;
+  const allLivePrices: Record<string, number> = {
+    ...reportTimePrices,
+    ...extraLivePrices,
+    ...(numberValue(mapping?.effective_prices?.SPY) !== null ? { SPY: numberValue(mapping?.effective_prices?.SPY)! } : {}),
+    ...(numberValue(mapping?.effective_prices?.ESMain) !== null ? { ESMain: numberValue(mapping?.effective_prices?.ESMain)! } : {}),
+    ...(numberValue(mapping?.effective_prices?.QQQ) !== null ? { QQQ: numberValue(mapping?.effective_prices?.QQQ)! } : {}),
+    ...(numberValue(mapping?.effective_prices?.TQQQ) !== null ? { TQQQ: numberValue(mapping?.effective_prices?.TQQQ)! } : {}),
+    ...(numberValue(mapping?.effective_prices?.SPXL) !== null ? { SPXL: numberValue(mapping?.effective_prices?.SPXL)! } : {}),
+    ...(numberValue(mapping?.effective_prices?.NQMain) !== null ? { NQMain: numberValue(mapping?.effective_prices?.NQMain)! } : {}),
+  };
+  const stockCount = ["QQQ", "SPXL", "TQQQ"].filter((symbol) => (numberValue(allLivePrices[symbol]) ?? 0) > 0).length;
+  const futuresCount = ["NQMain"].filter((symbol) => (numberValue(allLivePrices[symbol]) ?? 0) > 0).length;
+  const currentStockStatus = liveStatus === "loading" ? "loading" : stockCount === 3 ? "available" : stockCount ? "partial" : "unavailable";
+  const currentFuturesStatus = futuresStatus === "loading" ? "loading" : futuresCount === 1 ? "available" : "unavailable";
+  const esBasis = matchedEsBasis(mapping);
+  const priceDifferences = { ...(mapping?.price_differences || {}) };
+  delete priceDifferences.ESMain;
+  if (esBasis !== null) priceDifferences.ESMain = esBasis;
+  // Historical bars and current IB quotes use different fields. Compare each
+  // selected report's as-of prices against that report's own historical closes.
   const calibrationBlockReason = (target: string): string | null => {
     if ((numberValue(allLivePrices.SPY) ?? 0) <= 0 || (numberValue(allLivePrices[target]) ?? 0) <= 0) {
-      return "SPY or target IB price unavailable";
+      return "SPY or target report-time price unavailable";
     }
     if ((numberValue(historicalCloses.SPY) ?? 0) <= 0 || (numberValue(historicalCloses[target]) ?? 0) <= 0) {
       return "SPY or target close unavailable";
@@ -679,28 +777,47 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
     <div className="space-y-6">
       <PageHeader
         title="SPX Mapped Levels and Orders"
-        subtitle={`Job ${jobId}. SPX levels map to SPY first. Independently mapped targets use the live ratio only when SPY and target move in the same direction by more than 0.20% each; otherwise they use their live move difference. SPXL follows SPY ×3 and TQQQ follows QQQ ×3.`}
+        subtitle={`Job ${jobId}. SPX levels map to SPY first. QQQ targets use report-time SPY/QQQ prices when available; SPXL follows SPY ×3 and TQQQ follows the mapped QQQ move ×3.`}
       />
+      {mapping ? <section className="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm">
+        <h2 className="font-semibold text-indigo-950">Effective prices at the report as-of time</h2>
+        <div className="mt-2 flex flex-wrap gap-x-8 gap-y-2 font-mono text-indigo-950">
+          <span>SPX equivalent: <strong>{price(numberValue(mapping.effective_prices?.SPX))}</strong></span>
+          <span>SPY equivalent: <strong>{price(numberValue(mapping.effective_prices?.SPY))}</strong></span>
+          <span>QQQ: <strong>{price(numberValue(mapping.effective_prices?.QQQ))}</strong></span>
+          <span>TQQQ: <strong>{price(numberValue(mapping.effective_prices?.TQQQ))}</strong></span>
+          <span>SPXL: <strong>{price(numberValue(mapping.effective_prices?.SPXL))}</strong></span>
+          <span>ESMain: <strong>{price(numberValue(mapping.effective_prices?.ESMain))}</strong></span>
+          <span>NQMain: <strong>{price(numberValue(mapping.effective_prices?.NQMain))}</strong></span>
+        </div>
+        <p className="mt-2 text-xs text-indigo-900">Report as-of: {mapping.report_as_of_et || "unavailable"} · {mapping.effective_price_source || "As-of proxy unavailable"}{mapping.effective_price_timestamp ? ` · completed bar ${String(mapping.effective_price_timestamp)}` : ""}{mapping.effective_price_basis != null ? ` · selected-report ES−SPX basis ${mapping.effective_price_basis >= 0 ? "+" : ""}${price(mapping.effective_price_basis)}` : ""}</p>
+        <p className="mt-1 text-xs text-indigo-900">Completed QQQ bar: {mapping.effective_price_timestamps?.QQQ || "unavailable"} · Completed TQQQ bar: {mapping.effective_price_timestamps?.TQQQ || "unavailable"} · Completed SPXL bar: {mapping.effective_price_timestamps?.SPXL || "unavailable"} · Completed ESMain bar: {mapping.effective_price_timestamps?.ESMain || "unavailable"} · Completed NQMain bar: {mapping.effective_price_timestamps?.NQMain || "unavailable"}</p>
+        {effectiveSpxPrice === null ? <p className="mt-1 text-xs font-semibold text-amber-800">SPX effective price unavailable; zone sides remain as specified by the report.</p> : <p className="mt-1 text-xs text-indigo-900">Zone side is classified relative to effective SPX: centers at/below it are support; centers above it are resistance. SPX, SPY and ESMain are translated proxies, not simultaneous observed cash prices.</p>}
+      </section> : null}
       {error ? <Alert variant="danger">{error}</Alert> : null}
-      {mapping && !mapping.calibration_eligible ? <Alert variant="info">Live move ratios or differences use the displayed selected-report closes and current IB prices, even when this report is not the latest SPX close.</Alert> : null}
-      <Alert variant="info">IB quotes are requested once on page load for the six primary instruments. There is no automatic refresh: click ↻ next to a price to fetch only that symbol. QQQ and other independently mapped targets use a live move ratio only when both SPY and target move in the same direction by more than 0.20%; otherwise they use their move difference. SPXL mapped changes follow SPY ×3, and TQQQ follows the mapped QQQ move ×3; their own IB quotes are display-only for mapping. Valid mapped stock ranges remain actionable. More stocks are manual-only. ESMain and NQMain are display-only.</Alert>
+      {mapping && !mapping.calibration_eligible ? <Alert variant="info">The report-time proxy uses the selected report's timestamp and historical close anchors; it does not use current IB quotes for SPX, SPY, or ESMain.</Alert> : null}
+      {mapping ? esBasis === null
+        ? <Alert variant="warning">ES equivalents unavailable: SPXW 14:30 and ESMain 15:30 30-minute cash-close bars must both exist on the same observation date. No previous-day or live ES value is substituted.</Alert>
+        : <Alert variant="info">Cash-close basis ({mapping.historical_close_dates?.SPX}): SPXW 30M 14:30 {price(numberValue(mapping.historical_closes?.SPX))} · ESMain 30M 15:30 {price(numberValue(mapping.historical_closes?.ESMain))} · ES−SPX {esBasis >= 0 ? "+" : ""}{price(esBasis)} points. Each displayed ES level equals its SPX level plus this fixed basis; it is not a live ES forecast.</Alert> : null}
+      <Alert variant="info">SPX, SPY, QQQ, TQQQ, SPXL, ESMain and NQMain use the nearest available completed history bars at or before the report timestamp; these report-time prices are not refreshed from IB. Remaining IB quotes are requested once on page load, with no automatic polling. Valid mapped stock ranges remain actionable; ESMain and NQMain are display-only.</Alert>
       {currentStockStatus === "loading" || currentFuturesStatus === "loading" ? (
-        <Alert variant="info">Checking the initial IB stock and futures quotes. QQQ, TQQQ and NQMain ranges remain unavailable until both required quotes arrive.</Alert>
+        <Alert variant="info">Checking initial IB stock and futures quotes. Report-time QQQ/TQQQ prices are populated independently from the selected report's completed history bars.</Alert>
       ) : null}
       {currentStockStatus === "unavailable" || currentStockStatus === "partial" || currentFuturesStatus === "unavailable" ? (
         <Alert variant="warning">Stock quotes: {currentStockStatus}{stockQuoteError ? ` — ${stockQuoteError}` : ""}. Futures quotes: {currentFuturesStatus}{futuresQuoteError ? ` — ${futuresQuoteError}` : ""}. Use ↻ to retry only a missing quote.</Alert>
       ) : null}
       {currentStockStatus === "available" && currentFuturesStatus === "available" ? (
-        <Alert variant="info">Live prices come from the IB API. Observed move ratios and differences are indicative, not guaranteed future correlations.</Alert>
+        <Alert variant="info">SPX, SPY, QQQ, TQQQ and ESMain display report-time completed-bar prices where available. Other live quotes come from the IB API. Observed moves and differences are indicative, not guaranteed future correlations.</Alert>
       ) : null}
       {loading ? <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500">Loading SPX JSON and mapped prices...</div> : null}
       {!loading && !error && zones.length === 0 ? <Alert variant="warning">No major primary SPX zones were found. Weaker references or a downside support path may still exist.</Alert> : null}
+      {!loading && mapData ? <PositioningIntelligence data={mapData} zones={zones} /> : null}
 
       {!loading && !error && supports.length > 0 ? <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm">
         <h2 className="font-semibold">Downside support path (descending price)</h2>
         <p className="mt-1 text-slate-600">Includes weaker references even when no major zone qualifies.</p>
         <ol className="mt-2 list-inside list-decimal space-y-1">{supports.map((item, index) => <li key={index}>
-          {String(item.label ?? item.name ?? item.id ?? `Reference ${index + 1}`)} · {price(numberValue(item.price) ?? numberValue(item.price_level) ?? numberValue(item.reference_price) ?? numberValue(item.zone_high))}
+          {String(item.label ?? item.name ?? item.id ?? `Reference ${index + 1}`)} · {spxEsLevel(numberValue(item.price) ?? numberValue(item.price_level) ?? numberValue(item.reference_price) ?? numberValue(item.zone_high), esBasis)}
           {item.evidence || item.main_evidence ? ` · ${Array.isArray(item.main_evidence) ? item.main_evidence.join("; ") : String(item.evidence ?? "")}` : ""}
         </li>)}</ol>
       </section> : null}
@@ -750,12 +867,12 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
                   <div className={`text-xs font-semibold uppercase tracking-wide ${zone.side === "support" ? "text-emerald-700" : "text-red-700"}`}>
                     {zone.side === "support" ? "Support" : "Resistance"} #{zone.rank}
                   </div>
-                  <h2 className="mt-1 text-lg font-semibold text-slate-900">{structureLabel(zone)}</h2>
-                  <div className="text-xs text-slate-500">System zone {price(zone.low)} – {price(zone.high)} · calculated reference anchor {price(zone.center)}</div>
+                  <h2 className="mt-1 text-lg font-semibold text-slate-900">{structureLabel(zone, esBasis)}</h2>
+                  <div className="text-xs text-slate-500">System zone low {spxEsLevel(zone.low, esBasis)} · high {spxEsLevel(zone.high, esBasis)} · reference anchor {spxEsLevel(zone.center, esBasis)}</div>
                   <MappedLevelReportDetails
                     side={zone.side}
-                    detail={htmlLevelDetails[levelReportKey(zone.side, zone.rank)]}
-                    rank={zone.rank}
+                    detail={htmlLevelDetails[levelReportKey(zone.reportSide, zone.reportRank)]}
+                    rank={zone.reportRank}
                     zone={zone.reportZone}
                   />
                 </div>
@@ -771,7 +888,7 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
                     <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <th className="px-3 py-2">Instrument</th>
                       <th className="px-3 py-2">Last close</th>
-                      <th className="px-3 py-2">Live price</th>
+                      <th className="px-3 py-2">As-of / live price</th>
                       <th className="px-3 py-2">Mapped range (% vs close)</th>
                       <th className="px-3 py-2">Mapped reference anchor (vs selected close)</th>
                       <th className="px-3 py-2">Source</th>
@@ -785,6 +902,7 @@ export default function SpxMappedLevelsPage({ params }: { params: Promise<{ jobI
                         <td className="px-3 py-3 font-mono text-slate-700">{price(item.lastClose)}</td>
                         <LiveQuoteCell item={item} refreshing={Boolean(manualQuoteLoading[item.label])}
                           disabled={item.label === "ESMain" || item.label === "NQMain" ? futuresStatus === "loading" : liveStatus === "loading"}
+                          allowRefresh={!(["SPY", "ESMain", "QQQ", "TQQQ", "SPXL", "NQMain"].includes(item.label))}
                           error={manualQuoteErrors[item.label]} onRefresh={(symbol) => { void refreshQuote(symbol); }} />
                         <td className="px-3 py-3 font-mono text-slate-700">
                           {item.low === null || item.high === null ? (LIVE_CALIBRATION_REQUIRED.has(item.label) ? <strong className="text-amber-900">Unavailable — live SPY/target mapping</strong> : "n/a") : (

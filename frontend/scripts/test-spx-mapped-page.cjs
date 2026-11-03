@@ -9,9 +9,11 @@ const code = ts.transpileModule(fs.readFileSync(pageFile, 'utf8'), { compilerOpt
   module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2020,
 } }).outputText;
 const states = [
-  { primary_supports: [{ zone_low: 7700.3, zone_high: 7709.7, tradable_center: 7704.5 }] },
+  { primary_supports: [{ zone_low: 7700.3, zone_high: 7709.7, tradable_center: 7704.5 }], downside_support_path: [{ label: 'Next support', price: 7650 }] },
   { historical_closes: { SPX: 7700, SPY: 773.13, QQQ: 725.21, SPXL: 290.76, TQQQ: 72.61, ESMain: 7799.25, NQMain: 29997.5 },
-    historical_close_date: '2026-10-21', calibration_eligible: false },
+    historical_close_dates: { SPX: '2026-10-21', ESMain: '2026-10-21' }, historical_close_date: '2026-10-21', calibration_eligible: false,
+    report_as_of_et: '2026-10-21T21:20:00-04:00', effective_prices: { SPX: 7710, SPY: 774.13, ESMain: 7809.25, QQQ: 710.5, TQQQ: 65.25, SPXL: 283.2, NQMain: 30001.25 },
+    effective_price_timestamp: '2026-10-21T21:00:00', effective_price_timestamps: { QQQ: '2026-10-21T21:00:00', TQQQ: '2026-10-21T21:00:00', SPXL: '2026-10-21T21:00:00', NQMain: '2026-10-21T21:00:00', ESMain: '2026-10-21T21:00:00' }, effective_price_source: 'ESMain completed 30M bar', effective_price_basis: 99.25 },
   {}, 'loading', 'loading', {}, false, '', false, null, {}, 'loading', null, null, {}, {},
 ];
 let cursor = 0;
@@ -58,8 +60,8 @@ const originalRequire = m.require.bind(m);
 m.require = id => {
   if (id === 'react') return react;
   if (id === 'react/jsx-runtime') return { jsx: element, jsxs: element, Fragment: 'fragment' };
-  if (id === './calibration') {
-    const file = path.resolve(path.dirname(pageFile), 'calibration.ts');
+  if (id === './calibration' || id === './esBasis') {
+    const file = path.resolve(path.dirname(pageFile), `${id.slice(2)}.ts`);
     const child = new Module(file, m);
     child._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, file);
     return child.exports;
@@ -69,6 +71,11 @@ m.require = id => {
   return originalRequire(id);
 };
 m._compile(code, pageFile);
+const { matchedEsBasis, spxEsLevel } = m.require('./esBasis');
+assert.equal(matchedEsBasis({ historical_closes: { SPX: 7700, ESMain: 7687.5 }, historical_close_dates: { SPX: '2026-10-21', ESMain: '2026-10-21' } }), -12.5);
+assert.equal(spxEsLevel(7700, -12.5), 'SPX 7,700.00 · ES 7,687.50 (ES−SPX -12.50)');
+assert.equal(matchedEsBasis({ historical_closes: { SPX: 7700, ESMain: 7687.5 }, historical_close_dates: { SPX: '2026-10-21', ESMain: '2026-10-20' } }), null);
+assert.equal(matchedEsBasis({ historical_closes: { SPX: 7700 }, historical_close_dates: { SPX: '2026-10-21' } }), null);
 const render = () => { cursor = 0; effects = []; return m.exports.default({ params: Promise.resolve({ jobId: 'fixture' }) }); };
 function collect(node, type, result = []) {
   if (Array.isArray(node)) { node.forEach(n => collect(n, type, result)); return result; }
@@ -111,9 +118,47 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.doesNotThrow(() => render(), 'first render must work before data arrives');
   states[0] = data; states[1] = mapping;
   let tree = render();
+  assert.match(JSON.stringify(tree), /SPX 7,704\.50 · ES 7,803\.75 \(ES−SPX \+99\.25\)/, 'zone anchor includes matched ES and basis');
+  assert.match(JSON.stringify(tree), /SPX 7,650\.00 · ES 7,749\.25/, 'downside path shows translated ES level');
+  assert.match(JSON.stringify(tree), /SPX 7,700\.30 · ES 7,799\.55/, 'zone boundary includes translated ES');
+  const effectivePricesForClassification = states[1].effective_prices;
+  states[0].primary_resistances = [
+    { rank: 1, zone_low: 7719, zone_high: 7728, tradable_center: 7723.82 },
+    { rank: 3, zone_low: 7691, zone_high: 7700, tradable_center: 7695.82 },
+  ];
+  states[1].effective_prices = { ...effectivePricesForClassification, SPX: 7644.2 };
+  const resistanceTree = JSON.stringify(render());
+  assert.match(resistanceTree, /text-red-700/, 'levels above the effective SPX are classified as resistance');
+  const nearestResistance = resistanceTree.indexOf('7,695.82');
+  const fartherResistance = resistanceTree.indexOf('7,723.82');
+  assert.ok(nearestResistance >= 0 && nearestResistance < fartherResistance, 'nearest resistance sorts before farther resistance');
+  assert.match(resistanceTree.slice(nearestResistance - 500, nearestResistance), /Resistance.*#.*1/, 'nearest resistance is renumbered Resistance #1 regardless of report rank');
+  states[1].effective_prices = effectivePricesForClassification;
+  delete states[0].primary_resistances;
+  states[1].historical_close_dates.ESMain = '2026-10-20';
+  const effectivePrices = states[1].effective_prices;
+  states[1].effective_prices = { SPX: null, SPY: null, ESMain: null };
+  const stale = render();
+  assert.match(JSON.stringify(stale), /SPX 7,704\.50 · ES n\/a/, 'stale ES close must not generate an ES level');
+  assert.equal(mappedRangeAndOrders(stale, 'ESMain').range.includes('n/a'), true, 'stale ES close must not produce an ES mapped range');
+  states[1].historical_close_dates.ESMain = '2026-10-21';
+  states[1].effective_prices = effectivePrices;
+  tree = render();
   assert.equal(collect(tree, 'details')[0].open, undefined, 'more stocks closed by default');
-  for (const symbol of ['SPY', 'QQQ', 'SPXL', 'TQQQ', 'ESMain', 'NQMain']) refreshButton(tree, symbol);
-  for (const symbol of ['QQQ', 'TQQQ', 'NQMain']) checkUnavailable(tree, symbol);
+  assert.match(JSON.stringify(collect(rowFor(tree, 'SPXL'), 'td')[2]), /283\.20/, 'SPXL uses its report-time historical price');
+  assert.match(JSON.stringify(collect(rowFor(tree, 'NQMain'), 'td')[2]), /30,001\.25/, 'NQMain uses its report-time historical price');
+  assert.match(JSON.stringify(collect(rowFor(tree, 'SPY'), 'td')[2]), /774\.13/, 'SPY uses the report-time effective equivalent, not an IB tick');
+  assert.match(JSON.stringify(collect(rowFor(tree, 'ESMain'), 'td')[2]), /7,809\.25/, 'ESMain uses the completed report-time bar');
+  assert.match(JSON.stringify(tree), /Effective prices at the report as-of time/);
+  assert.match(JSON.stringify(tree), /SPX equivalent: .*7,710\.00/);
+  assert.match(JSON.stringify(tree), /QQQ: .*710\.50/);
+  assert.match(JSON.stringify(tree), /TQQQ: .*65\.25/);
+  assert.match(JSON.stringify(tree), /Completed QQQ bar: /);
+  assert.ok(JSON.stringify(tree).includes('"2026-10-21T21:00:00"'), 'report-time QQQ/TQQQ bar timestamps are displayed');
+  assert.match(JSON.stringify(tree), /SPXL: .*283\.20/);
+  assert.match(JSON.stringify(tree), /NQMain: .*30,001\.25/);
+  assert.match(JSON.stringify(tree), /Completed SPXL bar: /);
+  assert.match(JSON.stringify(tree), /Completed NQMain bar: /);
 
   effects[1](); // initial stock batch
   effects[2](); // independent initial futures batch
@@ -122,7 +167,9 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(requests.filter(url => url.endsWith('/spx-map-live-prices')).length, 1);
   assert.equal(requests.filter(url => url.endsWith('/spx-map-live-futures')).length, 1);
   assert.equal(intervals.length, 0, 'never poll IB automatically');
-  assert.match(JSON.stringify(collect(rowFor(tree, 'QQQ'), 'td')[5]), /observed QQQ\/SPY ratio/);
+  assert.match(JSON.stringify(collect(rowFor(tree, 'QQQ'), 'td')[2]), /710\.50/, 'QQQ uses its report-time historical price');
+  assert.match(JSON.stringify(collect(rowFor(tree, 'TQQQ'), 'td')[2]), /65\.25/, 'TQQQ uses its report-time historical price');
+  assert.match(JSON.stringify(collect(rowFor(tree, 'QQQ'), 'td')[5]), /observed QQQ-SPY move spread/);
   assert.match(mappedRangeAndOrders(tree, 'SPXL').source, /SPY mapped % move × 3/);
   assert.match(mappedRangeAndOrders(tree, 'TQQQ').source, /QQQ mapped % move × 3/);
   const mappedLow = (symbol) => Number(String(collect(collect(rowFor(tree, symbol), 'td')[3], 'div')[0].children[0]).replaceAll(',', ''));
@@ -135,62 +182,21 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   // Leveraged ranges depend on the mapped parent, not on their own IB ticks.
   const spxlBefore = mappedRangeAndOrders(tree, 'SPXL');
   const tqqqBeforeOwnQuote = mappedRangeAndOrders(tree, 'TQQQ');
-  refreshButton(tree, 'SPXL').onClick();
-  await flush();
-  tree = render();
-  assert.match(JSON.stringify(collect(rowFor(tree, 'SPXL'), 'td')[2]), /275\.00/);
+  assert.throws(() => refreshButton(tree, 'SPXL'), /row not rendered|undefined/);
+  assert.match(JSON.stringify(collect(rowFor(tree, 'SPXL'), 'td')[2]), /283\.20/);
   assert.deepEqual(mappedRangeAndOrders(tree, 'SPXL'), spxlBefore);
-  refreshButton(tree, 'TQQQ').onClick();
-  await flush();
-  tree = render();
-  assert.match(JSON.stringify(collect(rowFor(tree, 'TQQQ'), 'td')[2]), /65\.00/);
-  assert.deepEqual(mappedRangeAndOrders(tree, 'TQQQ'), tqqqBeforeOwnQuote);
-  const qqqQuote = states[2].QQQ;
-  delete states[2].QQQ;
-  tree = render();
-  checkUnavailable(tree, 'QQQ');
-  checkUnavailable(tree, 'TQQQ');
-  states[2].QQQ = qqqQuote;
-  tree = render();
+  assert.deepEqual(mappedRangeAndOrders(tree, 'TQQQ'), tqqqBeforeOwnQuote,
+    'TQQQ range is derived from the report-time QQQ mapping, not a current TQQQ quote');
+  assert.throws(() => refreshButton(tree, 'QQQ'), /row not rendered|undefined/);
+  assert.throws(() => refreshButton(tree, 'TQQQ'), /row not rendered|undefined/);
+  assert.match(JSON.stringify(collect(rowFor(tree, 'QQQ'), 'td')[2]), /710\.50/);
+  assert.match(JSON.stringify(collect(rowFor(tree, 'TQQQ'), 'td')[2]), /65\.25/);
 
-  // A different QQQ tick must update the mapped range AND executable links.
-  const qqqBefore = mappedRangeAndOrders(tree, 'QQQ');
-  const tqqqBefore = mappedRangeAndOrders(tree, 'TQQQ');
-  refreshButton(tree, 'QQQ').onClick();
-  await flush();
-  tree = render();
-  assert.ok(requests.some(url => url.endsWith('/spx-map-live-prices?symbol=QQQ')));
-  assert.match(JSON.stringify(collect(rowFor(tree, 'SPY'), 'td')[2]), /765\.49/);
-  assert.match(JSON.stringify(collect(rowFor(tree, 'QQQ'), 'td')[2]), /710\.00/);
-  const qqqAfter = mappedRangeAndOrders(tree, 'QQQ');
-  assert.notEqual(qqqAfter.range, qqqBefore.range, 'new QQQ quote must recalculate mapped levels');
-  assert.notDeepEqual(qqqAfter.orders, qqqBefore.orders, 'orders must use new QQQ range');
-  assert.match(qqqAfter.source, /observed QQQ\/SPY ratio/);
-  assert.notEqual(mappedRangeAndOrders(tree, 'TQQQ').range, tqqqBefore.range,
-    'TQQQ mapped levels must follow the refreshed QQQ range');
-  assert.notDeepEqual(mappedRangeAndOrders(tree, 'TQQQ').orders, tqqqBefore.orders,
-    'TQQQ order links must follow the refreshed QQQ range');
-
-  // TQQQ derives from QQQ even when its own IB quote is unavailable.
-  delete states[2].TQQQ;
-  tree = render();
-  assert.equal(collect(collect(rowFor(tree, 'TQQQ'), 'td')[3], 'div').length, 2);
-  assert.equal(mappedRangeAndOrders(tree, 'TQQQ').orders.length, 3);
-  states[2].TQQQ = 68.86;
-  tree = render();
-
-  // SPY is the ratio denominator: updating it should recalculate every target.
-  const qqqBeforeSpy = mappedRangeAndOrders(tree, 'QQQ');
-  const tqqqBeforeSpy = mappedRangeAndOrders(tree, 'TQQQ');
-  refreshButton(tree, 'SPY').onClick();
-  await flush();
-  tree = render();
-  assert.notEqual(mappedRangeAndOrders(tree, 'QQQ').range, qqqBeforeSpy.range);
-  assert.notEqual(mappedRangeAndOrders(tree, 'TQQQ').range, tqqqBeforeSpy.range);
-  assert.notDeepEqual(mappedRangeAndOrders(tree, 'QQQ').orders, qqqBeforeSpy.orders);
-  refreshButton(tree, 'NQMain').onClick();
-  await flush();
-  assert.ok(requests.some(url => url.endsWith('/spx-map-live-futures?symbol=NQMain')));
+  // Report-time SPY and ESMain proxies are fixed to the selected report, not current IB ticks.
+  assert.throws(() => refreshButton(tree, 'SPY'), /row not rendered|undefined/);
+  assert.throws(() => refreshButton(tree, 'ESMain'), /row not rendered|undefined/);
+  assert.throws(() => refreshButton(tree, 'NQMain'), /row not rendered|undefined/);
+  assert.equal(requests.some(url => url.endsWith('/spx-map-live-futures?symbol=NQMain')), false, 'NQMain uses its report-time bar, not an IB refresh');
 
   const pane = collect(tree, 'details')[0];
   pane.onToggle({ currentTarget: { open: true } });
@@ -218,7 +224,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   const nvdaAfter = mappedRangeAndOrders(tree, 'NVDA');
   assert.notEqual(nvdaAfter.range, nvdaBefore.range, 'extra-stock range must follow refreshed IB quote');
   assert.notDeepEqual(nvdaAfter.orders, nvdaBefore.orders, 'extra-stock order targets must follow new ratio');
-  assert.match(nvdaAfter.source, /observed NVDA\/SPY ratio/);
+  assert.match(nvdaAfter.source, /observed NVDA-SPY move spread/);
   checkUnavailable(tree, 'SQQQ'); // still unfetched despite NVDA success
   refreshButton(tree, 'SQQQ').onClick();
   await flush();
@@ -230,83 +236,16 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   checkUnavailable(tree, 'SPCX');
   assert.match(JSON.stringify(collect(rowFor(tree, 'SPCX'), 'td')[2]), /IB returned no SPCX price/);
 
-  // Reproduce the 23.41x raw ratio (SPY +0.016%, QQQ +0.368%).
-  // A near-flat SPY should use the live percentage-point difference instead.
-  states[1] = { ...states[1], historical_closes: { ...states[1].historical_closes, SPY: 764.03, QQQ: 704.56 } };
-  reproQuotes = true;
-  refreshButton(tree, 'SPY').onClick();
-  await flush();
-  tree = render();
-  refreshButton(tree, 'QQQ').onClick();
-  await flush();
-  tree = render();
-  const qqqReproCells = collect(rowFor(tree, 'QQQ'), 'td');
-  assert.match(JSON.stringify(qqqReproCells[2]), /707\.15/);
-  assert.equal(collect(qqqReproCells[3], 'div').length, 2, 'real QQQ quote must produce a live-ratio range');
-  assert.match(JSON.stringify(qqqReproCells[5]), /observed QQQ-SPY move spread/);
-  assert.match(JSON.stringify(qqqReproCells[5]), /SPY \+0\.016%, QQQ \+0\.368%/);
-  assert.doesNotMatch(JSON.stringify(qqqReproCells[5]), /23\.41×/);
-  const qqqRiskLinks = collect(qqqReproCells[6], 'a');
-  const mappedStart = Number(new URL(qqqRiskLinks[0].href, 'http://localhost').searchParams.get('start'));
-  assert.ok(Math.abs(mappedStart - 707.15) < 5, `near-flat SPY mapping should be near QQQ's live quote; got ${mappedStart}`);
+  // Report-time SPY and ESMain proxies remain fixed while other quotes refresh.
+  assert.match(JSON.stringify(collect(rowFor(tree, 'SPY'), 'td')[2]), /774\.13/);
+  assert.match(JSON.stringify(collect(rowFor(tree, 'ESMain'), 'td')[2]), /7,809\.25/);
+  assert.ok(requests.every(url => !url.includes("symbol=SPY") && !url.includes("symbol=ESMain")), 'proxy rows never request manual IB refreshes');
+  const qqqRiskLinks = collect(collect(rowFor(tree, 'QQQ'), 'td')[6], 'a');
   assert.deepEqual(qqqRiskLinks.map(link => link.children), ['Buy range', 'Sell range', 'Sell put']);
-  assert.match(qqqRiskLinks[0].href, /stock=QQQ/);
-  assert.match(qqqRiskLinks[2].href, /symbol=QQQ/);
   const extraRiskCells = collect(rowFor(tree, 'SQQQ'), 'td');
   assert.equal(collect(extraRiskCells[3], 'div').length, 2, 'extra stock can also display a high-risk range');
   assert.equal(collect(extraRiskCells[6], 'a').length, 3, 'extra-stock actions follow its displayed range');
 
-  // Same-direction +0.12% SPY remains on the difference method; only
-  // strictly above 0.20% switches to the live ratio.
-  reproSpyPrice = 764.03 * 1.0012;
-  refreshButton(tree, 'SPY').onClick();
-  await flush();
-  tree = render();
-  assert.match(mappedRangeAndOrders(tree, 'QQQ').source, /observed QQQ-SPY move spread/);
-  reproSpyPrice = 764.03 * 1.0021;
-  refreshButton(tree, 'SPY').onClick();
-  await flush();
-  tree = render();
-  assert.match(mappedRangeAndOrders(tree, 'QQQ').source, /observed QQQ\/SPY ratio/);
-  assert.equal(mappedRangeAndOrders(tree, 'QQQ').orders.length, 3);
-
-  // Even with SPY +0.21%, QQQ +0.15% is too small for the ratio method.
-  reproQqqPrice = 704.56 * 1.0015;
-  refreshButton(tree, 'QQQ').onClick();
-  await flush();
-  tree = render();
-  assert.match(mappedRangeAndOrders(tree, 'QQQ').source, /observed QQQ-SPY move spread/);
-  assert.equal(mappedRangeAndOrders(tree, 'QQQ').orders.length, 3);
-  reproQqqPrice = 707.15;
-  refreshButton(tree, 'QQQ').onClick();
-  await flush();
-  tree = render();
-  assert.match(mappedRangeAndOrders(tree, 'QQQ').source, /observed QQQ\/SPY ratio/);
-
-  // Reported case: SPY -0.170%, QQQ +0.072%. Opposite moves must use
-  // QQQ%-SPY% = +0.242 percentage points and retain mapped actions.
-  reproSpyPrice = 764.03 * (1 - 0.0017);
-  reproQqqPrice = 705.07;
-  refreshButton(tree, 'SPY').onClick();
-  await flush();
-  tree = render();
-  refreshButton(tree, 'QQQ').onClick();
-  await flush();
-  tree = render();
-  const divergentQqq = collect(rowFor(tree, 'QQQ'), 'td');
-  assert.match(JSON.stringify(divergentQqq[2]), /705\.07/);
-  assert.equal(collect(divergentQqq[3], 'div').length, 2);
-  assert.match(JSON.stringify(divergentQqq[5]), /observed QQQ-SPY move spread \(\+0\.242pp\)/);
-  assert.match(JSON.stringify(divergentQqq[5]), /SPY -0\.170%, QQQ \+0\.072%/);
-  assert.equal(collect(divergentQqq[6], 'a').length, 3);
-
-  // Authentication failure is shown on the specific row, not blamed on IB Gateway.
-  spyUnauthorized = true;
-  refreshButton(tree, 'SPY').onClick();
-  await flush();
-  tree = render();
-  assert.match(JSON.stringify(collect(rowFor(tree, 'SPY'), 'td')[2]), /Quote API authentication failed/);
-  checkUnavailable(tree, 'QQQ');
   assert.equal(intervals.length, 0);
-  console.log('Initial quotes; both same-sign >0.20% ratio, otherwise target-SPY difference; no polling or extra-stock prefetch: OK');
+  console.log('Report-time SPX/SPY/ESMain proxy prices and relative zone classification; no proxy IB refreshes or extra-stock prefetch: OK');
 })().catch(err => { console.error(err); process.exitCode = 1; });

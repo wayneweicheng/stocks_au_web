@@ -7,7 +7,7 @@ require.extensions['.ts'] = (module, filename) => {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }, fileName: filename,
   }).outputText, filename);
 };
-const { classifyMapZones, parseStockMap, mapStockCode, mapObservationDate, mapZones, mapLineColor, mapLineWidth, reportAsAtClose, reportGeneratedTime, reportMatchesStock, reportTimeCategoryPosition } =
+const { classifyMapZones, parseStockMap, mapStockCode, mapObservationDate, mapZones, mapLineColor, mapLineWidth, reportAsAtClose, reportGeneratedTime, reportMatchesStock, reportTimeCategoryPosition, mapNextSessionStraddle } =
   require(path.join(__dirname, '../src/app/support-resistance/stockMapLevels.ts'));
 const data = parseStockMap({ content: JSON.stringify({ stock_code: 'QQQ.US', as_at: '2026-04-23 14:00 Australia/Sydney',
   primary_supports: [
@@ -71,4 +71,32 @@ assert.equal(tied.resistances.length, 1);
 assert.ok(reportMatchesStock({ job_id: '2', title: 'Other', stock_code: 'QQQ.US' }, 'QQQ'));
 assert.ok(!reportMatchesStock({ job_id: '3', title: 'SPY:20260423 Australia/Sydney' }, 'QQQ'));
 assert.ok(!reportMatchesStock({ job_id: '4', title: 'QQQQ:20260423 Australia/Sydney' }, 'QQQ'));
+const formMove = mapNextSessionStraddle({
+  as_of_et: '2026-10-27T05:09:00-04:00',
+  expected_moves: [
+    { expiry: '2026-12-18', atm_strike: 100, spot_at_quote: 101, call_price: 13.1, put_price: 11.25,
+      data_timestamps: ['2026-10-26T00:00:00-04:00', '2026-10-26T00:00:00-04:00'], quote_source: 'C:bid_ask_mid; P:bid_ask_mid' },
+    { expiry: '2026-11-20', atm_strike: 100, spot_at_quote: 101, call_price: 10.3, put_price: 8.75,
+      data_timestamps: ['2026-10-26T00:00:00-04:00', '2026-10-26T00:00:00-04:00'], quote_source: 'C:bid_ask_mid; P:bid_ask_mid' },
+  ],
+});
+assert.equal(formMove.quoteDate, '2026-10-26');
+assert.equal(formMove.nextSession, '2026-10-27');
+assert.equal(formMove.expiry, '2026-11-20');
+assert.equal(formMove.tradingSessionsToExpiry, 19);
+assert.equal(formMove.premium, 19.05);
+assert.ok(Math.abs(formMove.nextSessionMove - 5.4629621628) < 0.00001);
+assert.deepEqual(formMove.expiryRange, { low: 81.95, high: 120.05 });
+assert.equal(mapNextSessionStraddle({ expected_moves: [{ expiry: '2026-10-27', atm_strike: 100, spot_at_quote: 101, call_price: 0, put_price: 1,
+  data_timestamps: ['2026-10-26', '2026-10-26'] }] }), null);
+assert.equal(mapNextSessionStraddle({ expected_moves: [{ expiry: '2026-10-27', atm_strike: 100, spot_at_quote: 101, call_price: 1, put_price: 1,
+  data_timestamps: ['2026-10-26', '2026-10-27'] }] }), null);
+assert.equal(mapNextSessionStraddle({ expected_moves: [{ expiry: '2026-10-27', atm_strike: 100, spot_at_quote: 101, call_price: 1, put_price: 1,
+  data_timestamps: ['2026-10-26', '2026-10-26'], quote_source: 'C:last; P:bid_ask_mid' }] }).quoteSource, 'C:last; P:bid_ask_mid');
+assert.equal(mapNextSessionStraddle({ as_of_et: '2026-10-28T05:00:00-04:00', expected_moves: [{
+  expiry: '2026-11-20', atm_strike: 100, spot_at_quote: 101, call_price: 10, put_price: 8,
+  data_timestamps: ['2026-10-26', '2026-10-26'] }] }), null);
+assert.equal(mapNextSessionStraddle({ as_of_et: '2026-10-27T10:00:00-04:00', expected_moves: [{
+  expiry: '2026-11-20', atm_strike: 100, spot_at_quote: 101, call_price: 10, put_price: 8,
+  data_timestamps: ['2026-10-26', '2026-10-26'] }] }), null);
 console.log('Stock Map support/resistance parsing OK');

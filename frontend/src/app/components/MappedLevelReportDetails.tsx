@@ -192,15 +192,24 @@ export default function MappedLevelReportDetails({
   const sideLabel = side === "resistance" ? "压力" : "支撑";
   const closeLabel = spxLastClose !== null && spxLastClose !== undefined && Number.isFinite(spxLastClose) && spxLastClose > 0
     ? spxLastClose.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "n/a";
-  const compactParts = [sideLabel, resolved.optionVerification,
-    spxLastClose != null ? `前收 ${closeLabel}${resolved.distanceToPreviousClose ? ` ${resolved.distanceToPreviousClose}` : ""}` :
-      resolved.distanceToPreviousClose ? `Previous completed daily close: ${resolved.distanceToPreviousClose}` : ""]
-    .filter(Boolean);
   const anchor = finiteNumber(zone?.core_anchor_price) ?? finiteNumber(zone?.reference_price);
   const midpoint = finiteNumber(zone?.zone_low) !== null && finiteNumber(zone?.zone_high) !== null && anchor !== null &&
     Math.abs(anchor - ((zone!.zone_low as number) + (zone!.zone_high as number)) / 2) < 0.000001;
   const anchorMethod = text(zone?.reference_price_method);
   const anchorInputs = text(zone?.core_anchor_inputs);
+  const derivedInstrument = typeof zone?.derived_instrument === "string" ? zone.derived_instrument : null;
+  const mappedAnchor = finiteNumber(zone?.mapped_anchor);
+  const selectedClose = finiteNumber(zone?.mapping_selected_close);
+  const mappedAnchorPct = finiteNumber(zone?.mapped_anchor_vs_selected_close_pct);
+  const selectedCloseDate = typeof zone?.mapping_selected_close_date === "string" ? zone.mapping_selected_close_date : "date n/a";
+  const derivedPriceChange = derivedInstrument && mappedAnchor !== null && selectedClose !== null && selectedClose > 0 && mappedAnchorPct !== null
+    ? `${derivedInstrument} ${formatPrice(mappedAnchor)} (${mappedAnchorPct >= 0 ? "+" : ""}${mappedAnchorPct.toFixed(2)}%) vs 30M close ${formatPrice(selectedClose)} (${selectedCloseDate})`
+    : "";
+  const compactParts = [sideLabel, resolved.optionVerification,
+    derivedInstrument ? derivedPriceChange : spxLastClose != null
+      ? `前收 ${closeLabel}${resolved.distanceToPreviousClose ? ` ${resolved.distanceToPreviousClose}` : ""}`
+      : resolved.distanceToPreviousClose ? `Previous completed daily close: ${resolved.distanceToPreviousClose}` : ""]
+    .filter(Boolean);
 
   return (
     <div className="mt-2 max-w-4xl text-sm">
@@ -213,8 +222,11 @@ export default function MappedLevelReportDetails({
         </summary>
         <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
           {field("等级", resolved.level)}
-          {field("System zone interval", zone ? interval(zone.zone_low, zone.zone_high) : resolved.areaReference)}
-          {zone ? field(midpoint ? "Core anchor (zone midpoint)" : "Core reference anchor (not zone midpoint)", anchor === null ? "" : formatPrice(anchor)) : null}
+          {derivedInstrument ? field(`${derivedInstrument} mapped zone`, interval(zone?.mapped_zone_low, zone?.mapped_zone_high)) : null}
+          {derivedInstrument && mappedAnchor !== null && selectedClose !== null && selectedClose > 0 && mappedAnchorPct !== null
+            ? field("Mapped reference anchor (vs selected close)", `${formatPrice(mappedAnchor)} (${mappedAnchorPct >= 0 ? "+" : ""}${mappedAnchorPct.toFixed(2)}%) vs selected 30M close ${formatPrice(selectedClose)} (${selectedCloseDate})`) : null}
+          {field(derivedInstrument ? "Source SPX system zone interval" : "System zone interval", zone ? interval(zone.zone_low, zone.zone_high) : resolved.areaReference)}
+          {zone ? field(derivedInstrument ? "Source SPX reference anchor" : midpoint ? "Core anchor (zone midpoint)" : "Core reference anchor (not zone midpoint)", anchor === null ? "" : formatPrice(anchor)) : null}
           {zone ? field("Anchor method / source", [anchorMethod, anchorInputs].filter(Boolean).join(" · ")) : null}
           {zone ? field("Boundary basis (raw vs system)", text(zone.boundary_basis)) : null}
           {zone ? field("Raw mathematical interval", text(zone.mathematical_interval) || interval(zone.mathematical_zone_low, zone.mathematical_zone_high)) : null}

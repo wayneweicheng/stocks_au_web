@@ -3,28 +3,20 @@ import type { ReactNode } from "react";
 export type StockMapPriceQuote = {
   last_close?: number | null;
   last_close_source?: string | null;
+  last_close_timestamp?: string | null;
+  last_close_observation_date?: string | null;
   live_price?: number | null;
   live_price_source?: string | null;
 };
 
-export function selectedClose(report: Record<string, unknown> | null, quote: StockMapPriceQuote | null) {
-  const raw = report?.execution_reference;
-  const reference = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw) : null;
-  if (reference !== null && Number.isFinite(reference) && reference > 0) {
-    const type = report?.execution_reference_type;
-    return {
-      value: reference,
-      source: `Report execution reference${typeof type === "string" && type ? ` (${type.replace(/_/g, " ")})` : ""}`,
-      isNative30m: type === "completed_30m_bar",
-      fromReport: true,
-    };
-  }
+export function selectedClose(_report: Record<string, unknown> | null, quote: StockMapPriceQuote | null) {
   const fallback = quote?.last_close;
+  const closeDate = quote?.last_close_observation_date || quote?.last_close_timestamp;
   return {
     value: typeof fallback === "number" && Number.isFinite(fallback) && fallback > 0 ? fallback : null,
-    source: quote?.last_close_source || "n/a",
-    isNative30m: quote?.last_close_source === "30m_close",
-    fromReport: false,
+    source: quote?.last_close_source
+      ? `${quote.last_close_source.replace(/_/g, " ")}${closeDate ? ` (${closeDate.slice(0, 10)})` : ""}`
+      : "n/a",
   };
 }
 
@@ -38,11 +30,11 @@ function percentLabel(value: number, basis: number | null) {
   return `(${change >= 0 ? "+" : ""}${change.toFixed(2)}%)`;
 }
 
-export function StockZonePriceHeaders({ isNative30m, fromReport }: { isNative30m: boolean; fromReport: boolean }): ReactNode {
+export function StockZonePriceHeaders(): ReactNode {
   return <>
-    <th className="px-3 py-2">Selected close ({isNative30m ? "30M; " : ""}{fromReport ? "report execution reference" : "price endpoint fallback"})</th>
+    <th className="px-3 py-2">Selected close</th>
     <th className="px-3 py-2">Live price (IB)</th>
-    <th className="px-3 py-2">System zone (vs {isNative30m ? "30M close" : "selected close"})</th>
+    <th className="px-3 py-2">System zone (vs selected close)</th>
     <th className="px-3 py-2">System zone (vs Live Price)</th>
   </>;
 }
