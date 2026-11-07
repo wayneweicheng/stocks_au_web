@@ -16,6 +16,7 @@ import { clickedLevelPanelId, levelPanelId, type LevelTab } from "./chartLevelNa
 import { sortLevelEntries, topPercentEntries, type LevelSort } from "./levelSorting";
 import { CHART_RANGE_OPTIONS, DEFAULT_CHART_DAYS, chartRangeParams, type ChartTimeframe } from "./chartRange";
 import { chartLevelColor, chartMinimumWidth, spxExpiryRangeShape, straddleZoneShape } from "./chartLayout";
+import { scoreYPosition } from "./chartScoreLabels";
 import { priceBottomForScroll, priceWindowForBars } from "./priceViewport";
 
 const LOOKBACK_DAY_OPTIONS = ["3", "5", "10", "20", "30"];
@@ -522,9 +523,9 @@ export default function SupportResistancePage() {
   const [maximumAtr, setMaximumAtr] = useState("3");
   const [observationDateTime, setObservationDateTime] = useState("");
   const [activeTab, setActiveTab] = useState<"calculated" | "stock-map" | "database">(() => {
-    if (typeof window === "undefined") return "calculated";
+    if (typeof window === "undefined") return "stock-map";
     const tab = new URLSearchParams(window.location.search).get("tab");
-    return tab === "database" || tab === "stock-map" ? tab : "calculated";
+    return tab === "database" || tab === "calculated" ? tab : "stock-map";
   });
   const [databaseData, setDatabaseData] = useState<SavedSupportResistanceResponse | null>(null);
   const [recordedHours, setRecordedHours] = useState<string[]>([]);
@@ -776,7 +777,7 @@ export default function SupportResistancePage() {
                 spxEsMainPrice = esEquivalent;
               }
             }
-            if (spxInstrument === "SPX" || spxInstrument === "ESMain") {
+            if (spxInstrument) {
               const sourceZones = [...mapZones(map, "support"), ...mapZones(map, "resistance")];
               const prices = snapshot.effective_prices || {};
               for (const [ticker, instrument] of [["SPY", "SPY_D"], ["SPXL", "SPXL_D"], ["QQQ", "QQQ_D"], ["TQQQ", "TQQQ_D"]] as const) {
@@ -926,7 +927,7 @@ export default function SupportResistancePage() {
     if (!initialLoadStarted.current) {
       initialLoadStarted.current = true;
       const params = new URLSearchParams(window.location.search);
-      const initialCode = params.get("stock") || "QQQ";
+      const initialCode = params.get("stock") || "ESMain";
       const initialDateTime = params.get("observation_datetime") || params.get("as_at") || "";
       setObservationDateTime(initialDateTime);
       setStockCode(initialCode);
@@ -1198,17 +1199,6 @@ export default function SupportResistancePage() {
         ? reportTimeCategoryPosition(bars, mapChart.asOfTime.easternWallTime) : null;
       const asOfLabel = mapChart?.asOfTime?.label;
       const markerPosition = asOfPosition !== null && asOfPosition >= 0 ? asOfPosition : null;
-      const scoreAnnotations = isMap ? [...supports, ...resistances].flatMap(({ level }) => {
-        if (!("score" in level) || level.score === null || !Number.isFinite(level.score)) return [];
-        const color = mapLineColor(level.sourceSide, level.score);
-        return [{
-          xref: "paper", x: 1, xanchor: "left", xshift: 5,
-          yref: "y", y: level.price, yanchor: "middle",
-          text: String(Math.round(level.score)),
-          showarrow: false, bgcolor: "rgba(255,255,255,0.92)", bordercolor: color,
-          borderwidth: 1, borderpad: 2, font: { color, size: 10 },
-        }];
-      }) : [];
       const layout = {
         title: isMobileViewport
           ? `${isMap ? mapChart?.stockCode : chartData.stock_code} · S/R · ${chartTimeframe}`
@@ -1217,8 +1207,12 @@ export default function SupportResistancePage() {
           title: "Time",
           type: "category",
           rangeslider: { visible: false },
+          // Plotly's category autorange can reserve a large empty region after
+          // the last candle. Bound it to the loaded bars (or one extra slot
+          // when the saved map's as-at marker lies beyond the last bar).
           ...(markerPosition !== null && markerPosition >= bars.length
-            ? { range: [-0.5, bars.length + 0.5] } : {}),
+            ? { range: [-0.5, bars.length + 0.5] }
+            : { range: [-0.5, bars.length - 0.5] }),
         },
         shapes: [
           ...(mapChart?.nextSessionStraddle ? [straddleZoneShape(mapChart.nextSessionStraddle.nextSessionRange)] : []),
@@ -1237,7 +1231,6 @@ export default function SupportResistancePage() {
             showarrow: false, bgcolor: "rgba(255,255,255,0.9)", bordercolor: "#7c3aed",
             borderpad: 4, font: { color: "#6d28d9", size: 11 },
           }]),
-          ...scoreAnnotations,
         ],
         yaxis: {
           title: "Price (USD)",
@@ -1259,7 +1252,7 @@ export default function SupportResistancePage() {
         dragmode: "zoom",
         template: "plotly_white",
         height: isMobileViewport ? 560 : 860,
-        margin: isMobileViewport ? { l: 48, r: 58, t: 62, b: 90 } : { l: 64, r: 102, t: 64, b: 120 },
+        margin: isMobileViewport ? { l: 48, r: 46, t: 62, b: 90 } : { l: 64, r: 56, t: 64, b: 120 },
       };
 
       void Plotly.newPlot(plotElement, traces, layout, {
@@ -1322,6 +1315,14 @@ export default function SupportResistancePage() {
     const visibleSide = (side: "support" | "resistance") => visibleChartLevels?.[side === "support" ? "supports" : "resistances"] || [];
     const formatChartLevelPrice = (price: number) => activeTab === "stock-map" && mapData?.stockCode === "SPX"
       ? formatSpxPriceWithEs(price, mapData.spxEsBasis) : price.toFixed(2);
+    const mappedLegendValues = (zone: MapZone | PriceRange) => {
+      if (activeTab !== "stock-map" || mapData?.reportType !== "spx-map" || !("score" in zone)) return "";
+      const sourceSpxPrice = mapData.stockCode === "SPX" ? zone.price : zone.details.source_spx_anchor;
+      const formatMapped = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value.toFixed(2) : "n/a";
+      const mappedPrice = (ticker: "SPY" | "SPXL") => mapData.spxEtfOrderLevels[ticker]
+        ?.find((candidate) => candidate.rank === zone.rank && candidate.sourceSide === zone.sourceSide)?.price;
+      return ` (SPX ${formatMapped(sourceSpxPrice)} SPY ${formatMapped(mappedPrice("SPY"))} SPXL ${formatMapped(mappedPrice("SPXL"))})`;
+    };
     return <>
       <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Candlestick timeframe">
         <span className="mr-1 text-sm font-medium text-slate-700">Candles:</span>
@@ -1373,9 +1374,25 @@ export default function SupportResistancePage() {
           {priceWindow && priceWindow.contentHeight > priceWindow.trackHeight ? <p className="mb-2 text-xs text-slate-600">Visible price: {activeTab === "stock-map" && mapData ? formatMapPrice(priceReadout?.bottom ?? priceWindow.bottom, mapData.reportType, mapData.stockCode) : formatPrice(priceReadout?.bottom ?? priceWindow.bottom)}–{activeTab === "stock-map" && mapData ? formatMapPrice(priceReadout?.top ?? priceWindow.bottom + priceWindow.span, mapData.reportType, mapData.stockCode) : formatPrice(priceReadout?.top ?? priceWindow.bottom + priceWindow.span)}. Use the right-hand vertical scrollbar to reveal older highs or lower supports.</p> : null}
           {activeTab === "stock-map" ? <p className="mb-2 text-xs text-slate-500">{mapData?.reportType === "spx-map" ? "SPX Map" : "Stock Map"}: darker, thicker green/red lines indicate higher scores.</p> : null}
           <div className="flex min-w-0 items-start gap-2">
-            <div ref={chartScrollRef} className="min-w-0 flex-1 overflow-x-auto rounded border border-slate-200" role="region" aria-label="Horizontally scrollable price chart" tabIndex={0}>
-              <div key={`${activeTab}-${chartTimeframe}`} ref={plotRef}
-                style={{ width: isMobileViewport ? "100%" : `max(100%, ${chartMinimumWidth(bars.length, chartTimeframe)}px)`, height: isMobileViewport ? "560px" : "860px" }} />
+            <div className="relative min-w-0 flex-1">
+              <div ref={chartScrollRef} className="min-w-0 overflow-x-auto rounded border border-slate-200" role="region" aria-label="Horizontally scrollable price chart" tabIndex={0}>
+                <div key={`${activeTab}-${chartTimeframe}`} ref={plotRef}
+                  style={{ width: isMobileViewport ? "100%" : `max(100%, ${chartMinimumWidth(bars.length, chartTimeframe)}px)`, height: isMobileViewport ? "560px" : "860px" }} />
+              </div>
+              <div aria-label="Visible level scores" className="pointer-events-none absolute inset-y-0 left-1 z-10 w-8">
+                {activeTab === "stock-map" && (priceReadout || priceWindow) && visibleChartLevels
+                  ? [...visibleChartLevels.supports, ...visibleChartLevels.resistances].map(({ level }) => {
+                    if (!("score" in level) || level.score === null || !Number.isFinite(level.score)) return null;
+                    const bottom = priceReadout?.bottom ?? priceWindow!.bottom;
+                    const top = priceReadout?.top ?? priceWindow!.bottom + priceWindow!.span;
+                    const y = scoreYPosition(level.price, bottom, top, isMobileViewport);
+                    if (y === null) return null;
+                    const color = mapLineColor(level.sourceSide, level.score);
+                    return <span key={`${level.sourceSide}-${level.rank}-${level.price}`} className="absolute left-0 rounded border bg-white/95 px-1 text-[10px] leading-4 shadow-sm"
+                      style={{ top: y, transform: "translateY(-50%)", borderColor: color, color }}
+                      title={`${level.sourceSide} ${level.price.toFixed(2)} · score ${Math.round(level.score)}`}>{Math.round(level.score)}</span>;
+                  }) : null}
+              </div>
             </div>
             {priceWindow && priceWindow.contentHeight > priceWindow.trackHeight ? (
               <div className={`flex w-7 shrink-0 flex-col items-center ${isMobileViewport ? "pt-12" : "pt-16"} text-xs text-slate-600`} title="Scroll up for earlier higher prices; down for lower prices">
@@ -1400,9 +1417,9 @@ export default function SupportResistancePage() {
                 title={`Jump to ${side} ${formatChartLevelPrice(zone.price)}${"score" in zone ? ` · Score ${zone.score ?? "n/a"}` : ` · Rank ${zone.strength_rank || "n/a"}`}`}
                 className="inline-flex max-w-full flex-wrap items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600">
                 <span className="w-6 shrink-0 border-t-2" style={{ borderColor: "score" in zone ? mapLineColor(side, zone.score) : chartLevelColor(side, originalIndex) }} />
-                {side === "support" ? "Support" : "Resistance"} {formatChartLevelPrice(zone.price)}
+                {side === "support" ? "Support" : "Resistance"} {activeTab === "stock-map" && mapData?.stockCode === "SPX" ? zone.price.toFixed(2) : formatChartLevelPrice(zone.price)}{mappedLegendValues(zone)}
                 <span className="font-semibold text-slate-600">{"score" in zone
-                  ? `· Score ${zone.score === null ? "n/a" : zone.score.toFixed(1)}${zone.strength ? ` · ${zone.strength}` : ""}`
+                  ? `· Score ${zone.score === null ? "n/a" : Math.round(zone.score)}`
                   : `· Rank ${zone.strength_rank || "n/a"}`}</span>
               </button>
             ))) : null}

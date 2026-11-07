@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const ts = require('typescript');
+const page = fs.readFileSync(path.join(__dirname, '../src/app/support-resistance/page.tsx'), 'utf8');
+assert.match(page, /ref=\{chartScrollRef\}[\s\S]*?<\/div>\s*<div[^>]*aria-label="Visible level scores"/, 'Scores must be in a sibling of the horizontal scroller, not inside the scrolling Plotly chart');
+assert.match(page, /pointer-events-none absolute/, 'Scores overlay must not block chart hover or zoom');
+assert.doesNotMatch(page, /const scoreAnnotations = isMap/, 'Remove Plotly scores that scroll out of view');
+require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
+const { scoreYPosition } = require('../src/app/support-resistance/chartScoreLabels.ts');
+assert.equal(scoreYPosition(110, 100, 110, false), 64);
+assert.equal(scoreYPosition(100, 100, 110, false), 64 + (860 - 64 - 120) * 0.78);
+assert.equal(scoreYPosition(105, 100, 110, true), 62 + (560 - 62 - 90) * 0.78 / 2);
+assert.equal(scoreYPosition(111, 100, 110, false), null);
+console.log('Scores remain pinned at the visible left edge and track the price axis');

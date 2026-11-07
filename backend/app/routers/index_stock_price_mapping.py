@@ -2,11 +2,13 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 import logging
 import math
+import re
 from threading import Lock
 from time import monotonic
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
 
 from app.routers.auth import verify_credentials
@@ -507,6 +509,37 @@ def get_stock_map_prices(
     except Exception as exc:
         logger.exception("Failed to load stock mapped prices for %s", stock_code)
         raise HTTPException(status_code=500, detail="Unable to load stock mapped prices") from exc
+
+
+class StockMapLivePricesRequest(BaseModel):
+    symbols: List[str] = Field(..., min_length=1, max_length=40)
+
+
+@router.post("/stock-map-live-prices")
+def get_stock_map_live_prices(
+    payload: StockMapLivePricesRequest,
+    username: str = Depends(verify_credentials),
+) -> Dict[str, Any]:
+    """Batched IB real-time stock quotes for the overview; never use delayed/close prices."""
+    symbols = list(dict.fromkeys(symbol.strip().upper() for symbol in payload.symbols))
+    if any(not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,14}", symbol) for symbol in symbols):
+        raise HTTPException(status_code=400, detail="Invalid stock symbol")
+    try:
+        quotes = get_live_stock_prices(
+            symbols, wait_seconds=2.0,
+            connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
+            allow_close_fallback=False, quote_only=True,
+        )
+    except Exception:
+        logger.warning("IB batch stock quotes unavailable", exc_info=True)
+        quotes = {}
+    prices: Dict[str, float] = {}
+    for symbol in symbols:
+        quote = quotes.get(symbol) or {}
+        value = quote.get("price")
+        if quote.get("source") == "ib_live" and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0:
+            prices[symbol] = round(float(value), 4)
+    return {"prices": prices, "fetched_at_utc": datetime.now(timezone.utc).isoformat()}
 
 
 @router.get("/stock-map-live-price")

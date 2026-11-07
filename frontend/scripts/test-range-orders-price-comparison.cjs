@@ -1,0 +1,18 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const ts = require('typescript');
+require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, filename);
+const { priceComparison } = require('../src/app/range-orders/priceComparison.ts');
+assert.deepEqual(priceComparison(244.54, 246.75), { abs: -2.21, pct: -0.90 });
+assert.deepEqual(priceComparison(244.54, 248.75), { abs: -4.21, pct: -1.69 });
+assert.deepEqual(priceComparison(244.73, 248.75), { abs: -4.02, pct: -1.62 });
+assert.deepEqual(priceComparison(249.25, 248.75), { abs: 0.50, pct: 0.20 });
+assert.equal(priceComparison(244.54, null), null);
+assert.equal(priceComparison(244.54, 0), null);
+const page = fs.readFileSync(path.join(__dirname, '../src/app/range-orders/page.tsx'), 'utf8');
+assert.match(page, /Price vs \{label\}/);
+assert.match(page, /label="Live" reference=\{liveReference\} difference=\{startVsLive\}/);
+assert.match(page, /label="Live" reference=\{liveReference\} difference=\{endVsLive\}/);
+assert.doesNotMatch(page, /Î” vs Last/);
+console.log('Range start/end show accurate last/live differences and N/A when IB quote is missing');

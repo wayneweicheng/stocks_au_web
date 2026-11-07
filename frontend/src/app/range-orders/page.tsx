@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import PageHeader from "../components/PageHeader";
+import { allocateIntegerVolumes, generateEsTriggerPrices, proxyPyramidWeights } from "./esmain-ladder";
+import { ibLivePriceFromResponse } from "./ibLivePrice";
+import { priceComparison } from "./priceComparison";
 
 type Side = "Buy" | "Sell";
 type Distribution = "Pyramid" | "Even";
@@ -63,22 +66,13 @@ function normalize(weights: number[]): number[] {
   return weights.map(w => w / sum);
 }
 
-function allocateIntegerVolumes(totalVolume: number, weights: number[]): number[] {
-  if (!Number.isInteger(totalVolume) || totalVolume < weights.length || weights.length === 0) return [];
-  const volumes = weights.map(() => 1);
-  const remaining = totalVolume - weights.length;
-  if (remaining === 0) return volumes;
-
-  const rawExtras = normalize(weights).map((weight) => weight * remaining);
-  const extraShares = rawExtras.map(Math.floor);
-  let unallocated = remaining - extraShares.reduce((sum, shares) => sum + shares, 0);
-  const remainderOrder = rawExtras
-    .map((shares, index) => ({ index, remainder: shares - Math.floor(shares) }))
-    .sort((left, right) => right.remainder - left.remainder || left.index - right.index);
-  for (let i = 0; i < remainderOrder.length && unallocated > 0; i++, unallocated--) {
-    extraShares[remainderOrder[i].index]++;
-  }
-  return volumes.map((volume, index) => volume + extraShares[index]);
+function PriceVsLine({ label, reference, difference }: { label: "Last" | "Live"; reference: number | null; difference: ReturnType<typeof priceComparison> }) {
+  return <p className="mt-1 text-xs">
+    <span className="text-slate-500">Price vs {label} ({reference === null ? "N/A" : `$${reference.toFixed(2)}`}): </span>
+    {difference ? <span className={difference.abs >= 0 ? "font-medium text-emerald-600" : "font-medium text-red-600"}>
+      {difference.abs >= 0 ? "+" : ""}{difference.abs.toFixed(2)} ({difference.pct >= 0 ? "+" : ""}{difference.pct.toFixed(2)}%)
+    </span> : <span className="text-slate-500">N/A</span>}
+  </p>;
 }
 
 export default function RangeOrdersPage() {
@@ -111,6 +105,9 @@ export default function RangeOrdersPage() {
   const [ibIndicativePriceError, setIbIndicativePriceError] = useState<string>("");
   const [quoteError, setQuoteError] = useState<string>("");
   const [quoteSource, setQuoteSource] = useState<string | null>(null);
+  const [ibLiveQuote, setIbLiveQuote] = useState<{ symbol: string; price: number } | null>(null);
+  const [ibLiveLoading, setIbLiveLoading] = useState(false);
+  const [ibLiveRefresh, setIbLiveRefresh] = useState(0);
   const [whatIfPrice, setWhatIfPrice] = useState<number | null>(null);
   const [placeDayOrders, setPlaceDayOrders] = useState<boolean>(true);
   const [placeOvernightOrders, setPlaceOvernightOrders] = useState<boolean>(false);
@@ -243,9 +240,11 @@ export default function RangeOrdersPage() {
 
   const generated = useMemo<GeneratedOrder[] | null>(() => {
     if (!canGenerate) return null;
-    const proxyLevelsAsc = useSpyProxy
-      ? generateLinearPricesInclusive(parsed.sp!, parsed.ep!, parsed.n)
+    const proxyLevels = useSpyProxy
+      ? generateEsTriggerPrices(parsed.sp!, parsed.ep!, parsed.n, side)
       : [];
+    if (useSpyProxy && (proxyLevels.length !== parsed.n
+      || new Set(proxyLevels).size !== parsed.n)) return null;
     const targetQuote = useSpyProxy
       ? (ibIndicativePrice ?? 0)
       : ([quoteLast, quoteMid, quoteClose].find((price) => typeof price === "number" && price > 0) ?? 0);
@@ -256,19 +255,19 @@ export default function RangeOrdersPage() {
     // Non-proxy ladders retain their existing display order. Proxy tiers are
     // descending for buys and ascending for sells, matching side-specific ES triggers.
     const displayPrices = side === "Buy" ? pricesAsc : [...pricesAsc].reverse();
-    const displayTriggerPrices = useSpyProxy
-      ? side === "Buy" ? [...proxyLevelsAsc].reverse() : [...proxyLevelsAsc]
-      : [];
+    const displayTriggerPrices = proxyLevels;
 
     // Build display weights:
     // - Even: equal weights
     // - Pyramid: geometric sequence so that Order1:Order2 = ratio
     let displayWeights: number[] = [];
-    if (distribution === "Even") {
+    if (useSpyProxy) {
+      displayWeights = proxyPyramidWeights(parsed.n, parsed.r, distribution);
+    } else if (distribution === "Even") {
       displayWeights = Array.from({ length: parsed.n }, () => 1 / parsed.n);
     } else {
       const raw: number[] = [];
-      // Make the first order heaviest, with consecutive ratio = parsed.r
+      // Standard range orders retain the existing first-heavy distribution.
       for (let i = 0; i < parsed.n; i++) {
         raw.push(Math.pow(parsed.r, (parsed.n - 1 - i)));
       }
@@ -427,6 +426,31 @@ export default function RangeOrdersPage() {
       cancelled = true;
     };
   }, [baseUrl]);
+
+  // Display-only IB price. Never substitute the DB close, a delayed quote or an ES-derived proxy.
+  useEffect(() => {
+    const symbol = stockCode.trim().toUpperCase();
+    setIbLiveQuote(null);
+    if (!symbol) { setIbLiveLoading(false); return; }
+    const controller = new AbortController();
+    setIbLiveLoading(true);
+    const timer = setTimeout(() => { void (async () => {
+      try {
+        const response = await authenticatedFetch(`${baseUrl}/api/stock-map-live-price?stock_code=${encodeURIComponent(symbol)}`,
+          { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        if (controller.signal.aborted) return;
+        const price = ibLivePriceFromResponse(payload, symbol);
+        setIbLiveQuote(price === null ? null : { symbol, price });
+      } catch {
+        if (!controller.signal.aborted) setIbLiveQuote(null);
+      } finally {
+        if (!controller.signal.aborted) setIbLiveLoading(false);
+      }
+    })(); }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [baseUrl, stockCode, ibLiveRefresh]);
 
   // Load quote from DB only when stock code changes
   useEffect(() => {
@@ -744,20 +768,12 @@ export default function RangeOrdersPage() {
     return pct;
   }, [quoteClose, whatIfPrice]);
 
-  // Deltas vs latest price for Start/End
-  const startVsLast = useMemo(() => {
-    if (quoteLast == null || !parsed.sp || parsed.sp <= 0 || quoteLast <= 0) return null;
-    const abs = round2(parsed.sp - quoteLast);
-    const pct = ((parsed.sp - quoteLast) / quoteLast) * 100;
-    return { abs, pct: round2(pct) };
-  }, [quoteLast, parsed.sp]);
-
-  const endVsLast = useMemo(() => {
-    if (quoteLast == null || !parsed.ep || parsed.ep <= 0 || quoteLast <= 0) return null;
-    const abs = round2(parsed.ep - quoteLast);
-    const pct = ((parsed.ep - quoteLast) / quoteLast) * 100;
-    return { abs, pct: round2(pct) };
-  }, [quoteLast, parsed.ep]);
+  // Show each entered price against the stored Last and the separate IB real-time quote.
+  const liveReference = !ibLiveLoading && ibLiveQuote?.symbol === stockCode.trim().toUpperCase() ? ibLiveQuote.price : null;
+  const startVsLast = priceComparison(parsed.sp, quoteLast);
+  const endVsLast = priceComparison(parsed.ep, quoteLast);
+  const startVsLive = priceComparison(parsed.sp, liveReference);
+  const endVsLive = priceComparison(parsed.ep, liveReference);
 
   // Estimated total value at latest price (based on generated total volume)
   const estTotalAtLast = useMemo(() => {
@@ -968,6 +984,7 @@ export default function RangeOrdersPage() {
             instrument_code: "ESMAIN.US",
             lower_price: proxyLow,
             upper_price: proxyHigh,
+            trigger_price: o.triggerPrice,
             target_price_offset_pct: o.targetPriceOffsetPct,
           },
           ...((tpRisk || slRisk) ? {
@@ -1165,6 +1182,13 @@ export default function RangeOrdersPage() {
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
+              <div className="mt-2 flex items-center gap-2 text-sm" aria-live="polite">
+                <span className="text-slate-600">IB live price:</span>
+                <strong className="text-slate-900">{ibLiveLoading ? "Loading…" : ibLiveQuote?.symbol === stockCode.trim().toUpperCase() ? `$${ibLiveQuote.price.toFixed(2)}` : "N/A"}</strong>
+                <button type="button" onClick={() => setIbLiveRefresh((value) => value + 1)} disabled={ibLiveLoading || !stockCode.trim()}
+                  className="text-xs text-indigo-700 underline disabled:opacity-50">Refresh</button>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">IB real-time quote only; delayed or unavailable prices show N/A. The quote above the form is from the database.</p>
             </div>
 
             <div className="sm:col-span-2 lg:col-span-3 rounded-md border border-indigo-200 bg-indigo-50 p-3">
@@ -1185,7 +1209,7 @@ export default function RangeOrdersPage() {
               </label>
               {useSpyProxy && (
                 <p className="mt-1 text-xs text-indigo-800">
-                  Fixed trigger: ESMain.US. Buy tranches trigger as ES falls through evenly spaced levels from the range high to low; Sell tranches trigger as ES rises from the range low to high. Target entries are market orders and do not wait for a completed target five-minute bar. A live target quote is used for notional safety and any configured exit-risk calculations. Orders activate during the target's trading window: SMART 04:00–20:00 and overnight routing 20:00–03:50 US/Eastern, with a 03:50–04:00 gap; same-target submissions are at least 20 seconds apart. {side === "Sell" ? "Sell opens a short position and requires ENABLE_SHORTING plus IB short-sale permissions." : "Buy opens a long position."}
+                  Fixed trigger: ESMain.US. Each tranche has a durable 0.25-point ES tier. Buy tranches trigger as ES falls through the range high to low, with larger Pyramid quantities at lower tiers; Sell tranches trigger as ES rises from low to high, with larger quantities at higher tiers. Target entries are market orders and do not wait for a completed target five-minute bar. A live target quote is used for notional safety and any configured exit-risk calculations. Orders activate during the target's trading window: SMART 04:00–20:00 and overnight routing 20:00–03:50 US/Eastern, with a 03:50–04:00 gap; same-target submissions are at least 20 seconds apart. {side === "Sell" ? "Sell opens a short position and requires ENABLE_SHORTING plus IB short-sale permissions." : "Buy opens a long position."}
                 </p>
               )}
             </div>
@@ -1291,14 +1315,8 @@ export default function RangeOrdersPage() {
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
-              {!useSpyProxy && quoteLast != null && startVsLast && (
-                <p className="text-xs mt-1">
-                  <span className="text-slate-500">Î” vs Last (${formatNA(quoteLast, 2)}): </span>
-                  <span className={startVsLast.abs >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
-                    {startVsLast.abs >= 0 ? "+" : ""}{startVsLast.abs.toFixed(2)} ({startVsLast.pct >= 0 ? "+" : ""}{startVsLast.pct.toFixed(2)}%)
-                  </span>
-                </p>
-              )}
+              {!useSpyProxy && quoteLast != null && startVsLast && <PriceVsLine label="Last" reference={quoteLast} difference={startVsLast} />}
+              {!useSpyProxy && <PriceVsLine label="Live" reference={liveReference} difference={startVsLive} />}
             </div>
 
             <div>
@@ -1313,14 +1331,8 @@ export default function RangeOrdersPage() {
                 required
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400/40"
               />
-              {!useSpyProxy && quoteLast != null && endVsLast && (
-                <p className="text-xs mt-1">
-                  <span className="text-slate-500">Î” vs Last (${formatNA(quoteLast, 2)}): </span>
-                  <span className={endVsLast.abs >= 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
-                    {endVsLast.abs >= 0 ? "+" : ""}{endVsLast.abs.toFixed(2)} ({endVsLast.pct >= 0 ? "+" : ""}{endVsLast.pct.toFixed(2)}%)
-                  </span>
-                </p>
-              )}
+              {!useSpyProxy && quoteLast != null && endVsLast && <PriceVsLine label="Last" reference={quoteLast} difference={endVsLast} />}
+              {!useSpyProxy && <PriceVsLine label="Live" reference={liveReference} difference={endVsLive} />}
             </div>
 
             <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
@@ -1627,7 +1639,9 @@ export default function RangeOrdersPage() {
               </p>
             </div>
             {!generated || generated.length === 0 ? (
-              <div className="p-6">No orders generated.</div>
+              <div className="p-6">{useSpyProxy && canGenerate
+                ? "ESMain range is too narrow for distinct 0.25-point trigger tiers; widen the range or reduce the order count."
+                : "No orders generated."}</div>
             ) : (
               <table className="min-w-full text-sm mt-4">
                 <thead className="sticky top-0 z-10 bg-white text-slate-600 uppercase text-[11px] tracking-wide border-b border-slate-200">
@@ -1635,7 +1649,7 @@ export default function RangeOrdersPage() {
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">#</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Side</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">{useSpyProxy ? "Target Market Ref. (est.)" : "Entry Price"}</th>
-                    {useSpyProxy && <th className="px-3 py-3 text-left font-medium whitespace-nowrap">ESMain Tier</th>}
+                    {useSpyProxy && <th className="px-3 py-3 text-left font-medium whitespace-nowrap">ESMain trigger ({side === "Buy" ? "≤" : "≥"})</th>}
                     {!useSpyProxy && <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Î” vs Close</th>}
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">Weight</th>
                     <th className="px-3 py-3 text-left font-medium whitespace-nowrap">{useSpyProxy ? "Indicative Allocation (USD)" : `Allocated ${currency}`}</th>

@@ -1,0 +1,19 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const ts = require('typescript');
+
+const source = fs.readFileSync(path.join(__dirname, '../src/app/range-orders/esmain-ladder.ts'), 'utf8');
+const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+const moduleContext = { exports: {} };
+vm.runInNewContext(compiled, moduleContext);
+const { generateEsTriggerPrices: tiers, allocateIntegerVolumes: volumes, proxyPyramidWeights: weights } = moduleContext.exports;
+const plain = (arr) => Array.from(arr);
+assert.deepEqual(plain(tiers(7400.5, 7404.25, 3, 'Buy')), [7404.25, 7402.25, 7400.5]);
+assert.deepEqual(plain(tiers(7400.5, 7404.25, 3, 'Sell')), [7400.5, 7402.5, 7404.25]);
+assert.deepEqual(plain(tiers(7400.5, 7400.75, 3, 'Buy')), []);
+assert.deepEqual(plain(volumes(10, weights(3, 1.15, 'Pyramid'))), [3, 3, 4]);
+assert.deepEqual(plain(volumes(3, weights(3, 1.15, 'Pyramid'))), [1, 1, 1]);
+assert.deepEqual(plain(volumes(10, weights(3, 1.15, 'Even'))), [4, 3, 3]);
+console.log('ESMain tick tiers and favorable-size allocation: OK');

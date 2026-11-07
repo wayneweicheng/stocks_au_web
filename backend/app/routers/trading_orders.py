@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import math
 import re
 import uuid
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 
 
 router = APIRouter(prefix="/api", tags=["trading-orders"], dependencies=[Depends(verify_credentials)])
@@ -28,6 +29,7 @@ class ProxyActivationCreate(BaseModel):
     instrument_code: str = "ESMAIN.US"
     lower_price: float
     upper_price: float
+    trigger_price: Optional[float] = None
     target_price_offset_pct: float = 0.0
     expires_at: Optional[datetime] = None
 
@@ -95,6 +97,22 @@ def _default_proxy_expiry(now_et: Optional[datetime] = None) -> datetime:
         while expiry_date.weekday() >= 5:
             expiry_date += timedelta(days=1)
     return datetime.combine(expiry_date, datetime.min.time()).replace(hour=20)
+
+
+def _es_trigger_prices(low: float, high: float, side: str, count: int) -> List[float]:
+    """Tick-aligned ES tiers, inclusive, with no duplicate target tranches."""
+    lo, hi, tick = Decimal(str(low)), Decimal(str(high)), Decimal('0.25')
+    levels = []
+    for index in range(count):
+        exact = hi - (hi - lo) * index / (count - 1) if side == 'B' and count > 1 else (
+            lo + (hi - lo) * index / (count - 1) if count > 1 else (hi if side == 'B' else lo)
+        )
+        mode = ROUND_FLOOR if side == 'B' else ROUND_CEILING
+        level = (exact / tick).to_integral_value(rounding=mode) * tick
+        if level < lo or level > hi or (levels and level == levels[-1]):
+            raise HTTPException(status_code=400, detail='ESMain range must provide distinct 0.25-point tiers for every order.')
+        levels.append(float(level))
+    return levels
 
 
 def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
@@ -173,8 +191,13 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
                 status_code=400,
                 detail="Proxy Trade Intents expire at 20:00 America/New_York on the current eligible session day only.",
             )
+        if activation.trigger_price is not None and (not math.isfinite(activation.trigger_price)
+                or activation.trigger_price < activation.lower_price
+                or activation.trigger_price > activation.upper_price):
+            raise HTTPException(status_code=400, detail='ESMain trigger price must be within its entered range.')
         activation_values = {
             "proxy_stock_code": "ESMAIN.US",
+            "trigger_price": _es_trigger_prices(activation.lower_price, activation.upper_price, side, 1)[0],
             "lower_price": activation.lower_price,
             "upper_price": activation.upper_price,
             "expires_at": expires_at,
@@ -234,7 +257,7 @@ def _load_order_proxy_activations(model: SQLServerModel, order_ids: List[Any]) -
     placeholders = ",".join(["?"] * len(clean_order_ids))
     rows = model.execute_read_query(
         f"""
-        SELECT OrderId, ProxyStockCode, LowerPrice, UpperPrice, SessionStart, SessionEnd,
+        SELECT OrderId, ProxyStockCode, LowerPrice, UpperPrice, TriggerPrice, SessionStart, SessionEnd,
                ExpiresAt, State, ObservedPrice, ObservedAt, ActivatedAt, TargetEntryPrice, BrokerOrderId,
                ErrorCode, ErrorMessage
         FROM Trading.OrderActivation
@@ -247,6 +270,7 @@ def _load_order_proxy_activations(model: SQLServerModel, order_ids: List[Any]) -
             "proxy_stock_code": row.get("ProxyStockCode"),
             "lower_price": row.get("LowerPrice"),
             "upper_price": row.get("UpperPrice"),
+            "trigger_price": row.get("TriggerPrice"),
             "session_start": str(row.get("SessionStart") or "04:00"),
             "session_end": str(row.get("SessionEnd") or "20:00"),
             "expires_at": row.get("ExpiresAt"),
@@ -591,6 +615,9 @@ def get_trading_orders(
 @router.post("/trading-orders")
 def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
     normalized = _normalize_order_inputs(order)
+    if (order.activation is not None and order.activation.trigger_price is not None
+            and abs(order.activation.trigger_price - normalized['activation']['trigger_price']) > 0.00001):
+        raise HTTPException(status_code=400, detail='Single ESMain trigger must equal the side-specific edge of its range.')
     logger.info(
         "Pegasus order create request: strategy_id=%s stock_code=%s side=%s time_frame=%s entry_type=%s entry_price=%s qty=%s tp=%s sl=%s status=%s backtest_run_id=%s",
         normalized["strategy_id"],
@@ -648,8 +675,8 @@ def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
                     DECLARE @OrderId BIGINT = SCOPE_IDENTITY();
                     INSERT INTO Trading.OrderActivation
-                        (OrderId, ProxyStockCode, LowerPrice, UpperPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
-                    VALUES (@OrderId, 'ESMAIN.US', ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());
+                        (OrderId, ProxyStockCode, LowerPrice, UpperPrice, TriggerPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
+                    VALUES (@OrderId, 'ESMAIN.US', ?, ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());
                     COMMIT TRANSACTION;
                 END TRY
                 BEGIN CATCH
@@ -657,7 +684,7 @@ def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
                     THROW;
                 END CATCH;
                 """,
-                (*params, activation_values["lower_price"], activation_values["upper_price"], activation_values["expires_at"]),
+                (*params, activation_values["lower_price"], activation_values["upper_price"], activation_values["trigger_price"], activation_values["expires_at"]),
             )
     except Exception:
         logger.exception(
@@ -677,8 +704,19 @@ def create_conditional_order_batch(batch: TradingOrderBatchCreate) -> Dict[str, 
     normalized_orders = [_normalize_order_inputs(order) for order in batch.orders]
     if any(item["activation"] is None for item in normalized_orders):
         raise HTTPException(status_code=400, detail="Every order in a conditional batch must use an ESMain activation.")
+    first = normalized_orders[0]
+    low, high = first['activation']['lower_price'], first['activation']['upper_price']
+    if any(item['side'] != first['side'] or item['stock_code'] != first['stock_code']
+           or item['strategy_id'] != first['strategy_id']
+           or item['activation']['lower_price'] != low or item['activation']['upper_price'] != high
+           for item in normalized_orders):
+        raise HTTPException(status_code=400, detail='Conditional batch must have one target, side, strategy, and ESMain range.')
+    tiers = _es_trigger_prices(low, high, first['side'], len(normalized_orders))
     batch_id = uuid.uuid4().hex
-    for item in normalized_orders:
+    for source, item, tier in zip(batch.orders, normalized_orders, tiers):
+        if source.activation.trigger_price is not None and abs(source.activation.trigger_price - tier) > 0.00001:
+            raise HTTPException(status_code=400, detail='ESMain trigger tiers differ from the server-calculated ladder.')
+        item['activation']['trigger_price'] = tier
         meta = json.loads(item["meta_json"] or "{}")
         meta["conditional_entry"]["batch_id"] = batch_id
         item["meta_json"] = json.dumps(meta)
@@ -693,15 +731,16 @@ def create_conditional_order_batch(batch: TradingOrderBatchCreate) -> Dict[str, 
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
                SET @OrderId = SCOPE_IDENTITY();
                INSERT INTO Trading.OrderActivation
-                   (OrderId, ProxyStockCode, LowerPrice, UpperPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
-               VALUES (@OrderId, 'ESMAIN.US', ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());"""
+                   (OrderId, ProxyStockCode, LowerPrice, UpperPrice, TriggerPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
+               VALUES (@OrderId, 'ESMAIN.US', ?, ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());"""
         )
         params.extend((
             item["strategy_id"], item["stock_code"], item["side"], item["order_source_type"],
             item["signal_type"], item["time_frame"], item["entry_type"], item["entry_price"],
             item["quantity"], item["profit_target_price"], item["stop_loss_price"], item["stop_loss_mode"],
             item["status"], item["backtest_run_id"], item["meta_json"],
-            item["activation"]["lower_price"], item["activation"]["upper_price"], item["activation"]["expires_at"],
+            item["activation"]["lower_price"], item["activation"]["upper_price"],
+            item["activation"]["trigger_price"], item["activation"]["expires_at"],
         ))
     statements.extend(["COMMIT TRANSACTION;", "END TRY", "BEGIN CATCH", "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;", "THROW;", "END CATCH;"])
     model = SQLServerModel(database=DB_NAME)

@@ -47,6 +47,7 @@ interface OrderActivation {
   proxy_stock_code: string;
   lower_price: number;
   upper_price: number;
+  trigger_price?: number | null;
   expires_at?: string;
   state: string;
   observed_price?: number | null;
@@ -1470,7 +1471,9 @@ export default function TradingOrdersPage() {
                         {formatEntryType(o.entry_type)} {o.entry_price != null ? `@ ${o.entry_price}` : ""}
                         {o.activation && (
                           <div className="mt-1 text-xs text-indigo-700">
-                            {o.activation.proxy_stock_code} {formatPrice(o.activation.lower_price)}–{formatPrice(o.activation.upper_price)} · {o.activation.state}
+                            {o.activation.proxy_stock_code} {o.activation.trigger_price != null
+                              ? `${o.side === "B" ? "≤" : "≥"} ${formatPrice(o.activation.trigger_price)} (range ${formatPrice(o.activation.lower_price)}–${formatPrice(o.activation.upper_price)})`
+                              : `legacy range ${formatPrice(o.activation.lower_price)}–${formatPrice(o.activation.upper_price)} (no fixed tier; cancel/recreate)`} · {o.activation.state}
                           </div>
                         )}
                       </td>
@@ -1611,7 +1614,9 @@ export default function TradingOrdersPage() {
                     <div className="sm:col-span-2 lg:col-span-4 rounded-md border border-indigo-200 bg-indigo-50 p-3">
                       <div className="text-xs uppercase tracking-wide text-indigo-700">ESMain proxy activation</div>
                       <div className="font-medium text-slate-900">
-                        {selectedOrder.activation.state}: ESMAIN.US {formatPrice(selectedOrder.activation.lower_price)}–{formatPrice(selectedOrder.activation.upper_price)}
+                        {selectedOrder.activation.state}: ESMAIN.US {selectedOrder.activation.trigger_price != null
+                          ? `${selectedOrder.side === "B" ? "≤" : "≥"} ${formatPrice(selectedOrder.activation.trigger_price)} (range ${formatPrice(selectedOrder.activation.lower_price)}–${formatPrice(selectedOrder.activation.upper_price)})`
+                          : `legacy range ${formatPrice(selectedOrder.activation.lower_price)}–${formatPrice(selectedOrder.activation.upper_price)} (no fixed tier; cancel/recreate)`}
                       </div>
                       <div className="text-sm text-slate-600">
                         Observed {selectedOrder.activation.observed_price != null ? formatPrice(selectedOrder.activation.observed_price) : "-"}
