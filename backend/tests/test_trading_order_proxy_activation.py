@@ -23,7 +23,7 @@ def _intent(**overrides):
         "stop_loss_price": None,
         "status": "PENDING",
         "activation": {
-            "instrument_code": "SPY.US",
+            "instrument_code": "ESMAIN.US",
             "lower_price": 670.0,
             "upper_price": 670.0,
             "target_price_offset_pct": -0.15,
@@ -44,12 +44,12 @@ def test_conditional_order_accepts_limit_price_resolved_from_target_bar_at_activ
     assert normalized["entry_price"] is None
 
 
-def test_conditional_order_requires_fixed_spy_proxy():
+def test_conditional_order_requires_fixed_esmain_proxy():
     order = _intent(activation={"instrument_code": "QQQ.US", "lower_price": 1, "upper_price": 1})
 
     with pytest.raises(HTTPException) as exc_info:
         router._normalize_order_inputs(order)
-    assert "SPY.US" in exc_info.value.detail
+    assert "ESMAIN.US" in exc_info.value.detail
 
 
 def test_conditional_order_accepts_fixed_share_quantity_without_notional_or_exit_rules():
@@ -97,7 +97,7 @@ def test_conditional_order_rejects_expiry_beyond_current_session(monkeypatch):
 
     monkeypatch.setattr(router, "datetime", FrozenDateTime)
     order = _intent(activation={
-        "instrument_code": "SPY.US",
+        "instrument_code": "ESMAIN.US",
         "lower_price": 670.0,
         "upper_price": 670.0,
         "target_price_offset_pct": -0.15,
@@ -112,7 +112,7 @@ def test_conditional_order_persists_target_risk_plan_and_spy_activation():
     normalized = router._normalize_order_inputs(_intent())
 
     assert normalized["stock_code"] == "NVDA.US"
-    assert normalized["activation"]["proxy_stock_code"] == "SPY.US"
+    assert normalized["activation"]["proxy_stock_code"] == "ESMAIN.US"
     assert normalized["activation"]["lower_price"] == 670.0
     assert '"unit": "PERCENT"' in normalized["meta_json"]
     assert '"quantity_mode": "FIXED"' in normalized["meta_json"]
@@ -139,7 +139,7 @@ def test_conditional_batch_is_one_atomic_database_write():
     sql, params = FakeModel.calls[0]
     assert "BEGIN TRANSACTION" in sql and "ROLLBACK TRANSACTION" in sql
     assert sql.count("INSERT INTO Trading.OrderActivation") == 2
-    assert params.count("SPY.US") == 0  # fixed proxy is a SQL literal, not caller-controlled data
+    assert params.count("ESMAIN.US") == 0  # fixed proxy is a SQL literal, not caller-controlled data
     assert len(params) == 36
     first_batch_id = json.loads(params[14])["conditional_entry"]["batch_id"]
     second_batch_id = json.loads(params[32])["conditional_entry"]["batch_id"]

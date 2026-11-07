@@ -1609,17 +1609,17 @@ export default function TradingOrdersPage() {
                   </div>
                   {selectedOrder.activation && (
                     <div className="sm:col-span-2 lg:col-span-4 rounded-md border border-indigo-200 bg-indigo-50 p-3">
-                      <div className="text-xs uppercase tracking-wide text-indigo-700">SPY proxy activation</div>
+                      <div className="text-xs uppercase tracking-wide text-indigo-700">ESMain proxy activation</div>
                       <div className="font-medium text-slate-900">
-                        {selectedOrder.activation.state}: SPY.US {formatPrice(selectedOrder.activation.lower_price)}–{formatPrice(selectedOrder.activation.upper_price)}
+                        {selectedOrder.activation.state}: ESMAIN.US {formatPrice(selectedOrder.activation.lower_price)}–{formatPrice(selectedOrder.activation.upper_price)}
                       </div>
                       <div className="text-sm text-slate-600">
                         Observed {selectedOrder.activation.observed_price != null ? formatPrice(selectedOrder.activation.observed_price) : "-"}
                         {selectedOrder.activation.observed_at ? ` at ${formatSydneyDate(selectedOrder.activation.observed_at)}` : ""}
-                        {selectedOrder.activation.target_entry_price != null ? ` · target limit ${formatPrice(selectedOrder.activation.target_entry_price)}` : ""}
+                        {selectedOrder.activation.target_entry_price != null ? ` · target reference ${formatPrice(selectedOrder.activation.target_entry_price)}` : ""}
                         {selectedOrder.activation.broker_order_id != null ? ` · IB order ${selectedOrder.activation.broker_order_id}` : ""}
                       </div>
-                      <div className="text-xs text-slate-500">Session 04:00–20:00 US/Eastern · expires {formatSydneyDate(selectedOrder.activation.expires_at, US_EASTERN_TIME_ZONE)}</div>
+                      <div className="text-xs text-slate-500">Target session: SMART 04:00–20:00, OVERNIGHT 20:00–03:50 US/Eastern · expires {formatSydneyDate(selectedOrder.activation.expires_at, US_EASTERN_TIME_ZONE)}</div>
                       {selectedOrder.activation.error_message && <div className="text-sm text-red-700">{selectedOrder.activation.error_code}: {selectedOrder.activation.error_message}</div>}
                     </div>
                   )}

@@ -25,7 +25,7 @@ ALLOWED_MODES = {"live", "backtest", "all"}
 
 
 class ProxyActivationCreate(BaseModel):
-    instrument_code: str = "SPY.US"
+    instrument_code: str = "ESMAIN.US"
     lower_price: float
     upper_price: float
     target_price_offset_pct: float = 0.0
@@ -134,17 +134,17 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
     entry_risk = order.entry_risk
     activation_values = None
     if activation is None and entry_risk is not None:
-        raise HTTPException(status_code=400, detail="Conditional entry-risk rules require a SPY activation.")
+        raise HTTPException(status_code=400, detail="Conditional entry-risk rules require an ESMain activation.")
     if activation is not None:
         proxy_code = _normalize_stock_code(activation.instrument_code)
-        if proxy_code != "SPY.US":
-            raise HTTPException(status_code=400, detail="Conditional orders must use SPY.US as the proxy.")
+        if proxy_code != "ESMAIN.US":
+            raise HTTPException(status_code=400, detail="Conditional orders must use ESMAIN.US as the proxy.")
         if not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,13}\.US", stock_code):
             raise HTTPException(status_code=400, detail="Conditional target must be a supported US stock symbol.")
         if not math.isfinite(activation.lower_price) or not math.isfinite(activation.upper_price):
-            raise HTTPException(status_code=400, detail="Proxy trigger prices must be finite.")
+            raise HTTPException(status_code=400, detail="ESMain trigger prices must be finite.")
         if activation.lower_price <= 0 or activation.upper_price < activation.lower_price:
-            raise HTTPException(status_code=400, detail="Proxy trigger range must be positive and ordered.")
+            raise HTTPException(status_code=400, detail="ESMain trigger range must be positive and ordered.")
         if order_source_type != "MANUAL" or order.backtest_run_id is not None or status != "PENDING":
             raise HTTPException(status_code=400, detail="Proxy activation requires a live, pending MANUAL Trade Intent.")
         if entry_type not in {"LIMIT", "LIMIT_MID"} or order.entry_price is not None:
@@ -174,7 +174,7 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
                 detail="Proxy Trade Intents expire at 20:00 America/New_York on the current eligible session day only.",
             )
         activation_values = {
-            "proxy_stock_code": "SPY.US",
+            "proxy_stock_code": "ESMAIN.US",
             "lower_price": activation.lower_price,
             "upper_price": activation.upper_price,
             "expires_at": expires_at,
@@ -649,7 +649,7 @@ def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
                     DECLARE @OrderId BIGINT = SCOPE_IDENTITY();
                     INSERT INTO Trading.OrderActivation
                         (OrderId, ProxyStockCode, LowerPrice, UpperPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
-                    VALUES (@OrderId, 'SPY.US', ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());
+                    VALUES (@OrderId, 'ESMAIN.US', ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());
                     COMMIT TRANSACTION;
                 END TRY
                 BEGIN CATCH
@@ -676,7 +676,7 @@ def create_conditional_order_batch(batch: TradingOrderBatchCreate) -> Dict[str, 
         raise HTTPException(status_code=400, detail="Conditional batch must contain between 1 and 100 orders.")
     normalized_orders = [_normalize_order_inputs(order) for order in batch.orders]
     if any(item["activation"] is None for item in normalized_orders):
-        raise HTTPException(status_code=400, detail="Every order in a conditional batch must use a SPY activation.")
+        raise HTTPException(status_code=400, detail="Every order in a conditional batch must use an ESMain activation.")
     batch_id = uuid.uuid4().hex
     for item in normalized_orders:
         meta = json.loads(item["meta_json"] or "{}")
@@ -694,7 +694,7 @@ def create_conditional_order_batch(batch: TradingOrderBatchCreate) -> Dict[str, 
                SET @OrderId = SCOPE_IDENTITY();
                INSERT INTO Trading.OrderActivation
                    (OrderId, ProxyStockCode, LowerPrice, UpperPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
-               VALUES (@OrderId, 'SPY.US', ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());"""
+               VALUES (@OrderId, 'ESMAIN.US', ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());"""
         )
         params.extend((
             item["strategy_id"], item["stock_code"], item["side"], item["order_source_type"],
@@ -706,7 +706,7 @@ def create_conditional_order_batch(batch: TradingOrderBatchCreate) -> Dict[str, 
     statements.extend(["COMMIT TRANSACTION;", "END TRY", "BEGIN CATCH", "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;", "THROW;", "END CATCH;"])
     model = SQLServerModel(database=DB_NAME)
     model.execute_update_usp("\n".join(statements), tuple(params))
-    return {"message": f"Created {len(normalized_orders)} SPY-triggered Trade Intents.", "count": len(normalized_orders)}
+    return {"message": f"Created {len(normalized_orders)} ESMain-triggered Trade Intents.", "count": len(normalized_orders)}
 
 
 @router.put("/trading-orders/{order_id}")

@@ -136,6 +136,10 @@ def list_reports(
     return call_skill_runner("GET", f"/api/reports?{urlencode(params)}")
 
 
+def get_job(job_id: str) -> Any:
+    return call_skill_runner("GET", f"/api/jobs/{job_id}")
+
+
 def get_job_report(job_id: str) -> Any:
     return call_skill_runner("GET", f"/api/jobs/{job_id}/report")
 

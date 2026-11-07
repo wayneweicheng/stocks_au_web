@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +9,7 @@ from app.services.skill_runner_client import (
     extract_report_content,
     extract_report_items,
     get_first_value,
+    get_job,
     get_job_report,
     list_reports,
 )
@@ -94,17 +94,15 @@ def get_us_equity_analysis_report(
     job_id: str,
     username: str = Depends(verify_credentials),
 ) -> UsEquityAnalysisReportDetail:
-    summaries = list_us_equity_analysis_reports(username=username).items
-    summary = next((item for item in summaries if item.job_id == job_id), None)
+    job = get_job(job_id)
+    summary = _normalize_report_summary(job if isinstance(job, dict) else {})
     data = get_job_report(job_id)
-
     if summary is None:
         summary = UsEquityAnalysisReportSummary(
             job_id=job_id,
             title=f"US Equity Analysis {job_id}",
-            created_at=datetime.now(timezone.utc).isoformat(),
+            status="succeeded",
         )
-
     return UsEquityAnalysisReportDetail(**summary.model_dump(), content=extract_report_content(data))
 
 

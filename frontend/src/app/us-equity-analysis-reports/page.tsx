@@ -95,7 +95,10 @@ export default function UsEquityAnalysisReportsPage() {
 
   const [activeTab, setActiveTab] = useState<TabKey>("viewer");
   const [items, setItems] = useState<ReportSummary[]>([]);
-  const [selectedJobId, setSelectedJobId] = useState("");
+  const [selectedJobId, setSelectedJobId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("job_id") || "";
+  });
   const [detail, setDetail] = useState<ReportDetail | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -127,7 +130,7 @@ export default function UsEquityAnalysisReportsPage() {
       setViewerError("");
       try {
         const res = await authenticatedFetch(
-          `${baseUrl}/api/us-equity-analysis-reports/${encodeURIComponent(jobIdToLoad)}`
+          `/us-equity-analysis-report-proxy/${encodeURIComponent(jobIdToLoad)}`
         );
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -150,7 +153,7 @@ export default function UsEquityAnalysisReportsPage() {
     setLoadingList(true);
     setViewerError("");
     try {
-      const res = await authenticatedFetch(`${baseUrl}/api/us-equity-analysis-reports`);
+      const res = await authenticatedFetch("/us-equity-analysis-reports-proxy");
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || `HTTP ${res.status}`);
@@ -382,15 +385,25 @@ export default function UsEquityAnalysisReportsPage() {
                         {detail.stock_code ? ` | ${detail.stock_code}` : ""}
                       </div>
                     </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => void loadDetail(detail.job_id)}
-                      disabled={loadingDetail}
-                    >
-                      {loadingDetail ? "Loading..." : "Reload"}
-                    </Button>
+                    <div className="flex shrink-0 gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => window.open(`/us-equity-analysis-reports?job_id=${encodeURIComponent(detail.job_id)}`, "_blank", "noopener,noreferrer")}
+                      >
+                        Open report in new tab
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void loadDetail(detail.job_id)}
+                        disabled={loadingDetail}
+                      >
+                        {loadingDetail ? "Loading..." : "Reload"}
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <h2 className="text-lg font-semibold text-slate-900">Report Preview</h2>

@@ -6,6 +6,32 @@ from app.routers import index_stock_price_mapping
 
 
 class IndexStockPriceMappingTests(unittest.TestCase):
+    def test_live_spx_price_uses_es_live_quote_minus_matched_cash_basis(self):
+        def snapshot_closes(observation_date, close_dates):
+            close_dates.update({"SPX": "2026-11-03", "ESMain": "2026-11-03"})
+            return {"SPX": 7700.0, "ESMain": 7725.0}
+
+        with patch.object(index_stock_price_mapping, "get_live_futures_prices", return_value={"ES": {"price": 7740.0, "source": "ib_live"}}), patch.object(
+            index_stock_price_mapping, "_load_latest_snapshot_date", return_value=date(2026, 11, 3)
+        ), patch.object(index_stock_price_mapping, "_load_snapshot_closes", side_effect=snapshot_closes):
+            response = index_stock_price_mapping.get_stock_map_live_price("SPX", username="test-user")
+
+        self.assertEqual(response["live_price"], 7715.0)
+        self.assertEqual(response["es_live_price"], 7740.0)
+        self.assertEqual(response["es_spx_basis"], 25.0)
+        self.assertEqual(response["basis_date"], "2026-11-03")
+
+    def test_live_derived_instrument_uses_underlying_stock_quote_without_close_fallback(self):
+        with patch.object(index_stock_price_mapping, "get_live_stock_prices", return_value={"SOXX": {"price": 210.5, "source": "ib_live"}}) as quote:
+            response = index_stock_price_mapping.get_stock_map_live_price("SOXX_D", username="test-user")
+
+        self.assertEqual(response["live_price"], 210.5)
+        quote.assert_called_once_with(
+            ["SOXX"], wait_seconds=2.0,
+            connect_timeout=index_stock_price_mapping.QUOTE_CONNECT_TIMEOUT_SECONDS,
+            allow_close_fallback=False, quote_only=True,
+        )
+
     def test_load_latest_closes_returns_prices_without_requiring_model_close(self):
         class FakeModel:
             def execute_read_query(self, query, params):

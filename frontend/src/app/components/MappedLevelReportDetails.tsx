@@ -94,10 +94,26 @@ function formatPrice(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function interval(low: unknown, high: unknown): string {
+function formatSpxPrice(value: number, basis?: number | null, includeSpxLabel = true): string {
+  const spx = includeSpxLabel ? `SPX ${formatPrice(value)}` : formatPrice(value);
+  if (basis === undefined) return spx;
+  const es = basis !== null && Number.isFinite(basis) && Number.isFinite(value + basis) && value + basis > 0
+    ? formatPrice(value + basis) : "n/a";
+  return `${spx} (ES ${es})`;
+}
+
+function annotateSpxEvidence(value: string, basis?: number | null): string {
+  if (basis === undefined) return value;
+  return value.replace(/\b((?:Daily|Weekly|Monthly) (?:CPR|PriorClose)|SPY→SPX)\s+([\d,]+(?:\.\d+)?)/gi,
+    (_match, label: string, rawPrice: string) => `${label} ${formatSpxPrice(Number(rawPrice.replace(/,/g, "")), basis, !/^SPY→SPX$/i.test(label))}`);
+}
+
+function interval(low: unknown, high: unknown, spxEsBasis?: number | null): string {
   const a = finiteNumber(low);
   const b = finiteNumber(high);
-  return a === null || b === null ? "" : `${formatPrice(Math.min(a, b))}–${formatPrice(Math.max(a, b))}`;
+  return a === null || b === null ? "" : spxEsBasis === undefined
+    ? `${formatPrice(Math.min(a, b))}–${formatPrice(Math.max(a, b))}`
+    : `${formatSpxPrice(Math.min(a, b), spxEsBasis)}–${formatSpxPrice(Math.max(a, b), spxEsBasis)}`;
 }
 
 function percent(value: unknown): string {
@@ -105,18 +121,22 @@ function percent(value: unknown): string {
   return amount === null ? "" : `${amount >= 0 ? "+" : ""}${amount.toFixed(2)}%`;
 }
 
-function optionEvidence(validation: JsonZone, instrument: "stock" | "spx"): string {
+function optionEvidence(validation: JsonZone, instrument: "stock" | "spx", spxEsBasis?: number | null, spxEsBasisDate?: string | null): string {
   const parts: string[] = [];
   const symbol = instrument === "spx" ? "SPX" : text(validation.option_underlying_symbol);
   const strike = instrument === "spx"
     ? finiteNumber(validation.spx_price_level) ?? finiteNumber(validation.strike)
     : finiteNumber(validation.option_price_level);
   const label = text(validation.label);
+  const observationDate = text(validation.observation_date).slice(0, 10);
+  const optionEsBasis = spxEsBasisDate === undefined ? spxEsBasis
+    : observationDate && observationDate === spxEsBasisDate ? spxEsBasis : null;
   const wall = text(validation.wall_type) || text(validation.option_type) ||
     (instrument === "stock" && symbol && strike !== null
       ? label.match(/\b(?:put|call) wall\b/i)?.[0]?.toLowerCase() || ""
       : label);
-  if (symbol && strike !== null) parts.push(`${symbol} ${formatPrice(strike)}${wall ? ` ${wall}` : ""}`);
+  if (symbol && strike !== null) parts.push(`${instrument === "spx" && spxEsBasisDate !== undefined ? formatSpxPrice(strike, optionEsBasis)
+      : instrument === "spx" && spxEsBasis !== undefined ? formatSpxPrice(strike, spxEsBasis) : `${symbol} ${formatPrice(strike)}`}${wall ? ` ${wall}` : ""}`);
   else if (wall && (instrument === "spx" || !/\bSPX\b/i.test(wall))) parts.push(wall);
   const expiries = text(validation.expiry_dates);
   if (expiries) parts.push(`Expiries ${expiries}`);
@@ -131,7 +151,7 @@ function optionEvidence(validation: JsonZone, instrument: "stock" | "spx"): stri
   return parts.join(" · ");
 }
 
-function levelDetailFromZone(side: LevelSide, rank: number, zone: JsonZone, instrument: "stock" | "spx"): HtmlLevelDetail {
+function levelDetailFromZone(side: LevelSide, rank: number, zone: JsonZone, instrument: "stock" | "spx", spxEsBasis?: number | null, spxEsBasisDate?: string | null): HtmlLevelDetail {
   const validation = zone.option_validation && typeof zone.option_validation === "object"
     ? zone.option_validation as JsonZone : {};
   const anchor = finiteNumber(zone.core_anchor_price) ?? finiteNumber(zone.reference_price) ?? finiteNumber(zone.tradable_center);
@@ -141,12 +161,12 @@ function levelDetailFromZone(side: LevelSide, rank: number, zone: JsonZone, inst
   return {
     key: levelReportKey(side, rank),
     level: levelReportKey(side, rank),
-    areaReference: `${interval(zone.zone_low, zone.zone_high)}${anchor !== null ? ` · Reference anchor ${formatPrice(anchor)}` : ""}`,
+    areaReference: `${interval(zone.zone_low, zone.zone_high, spxEsBasis)}${anchor !== null ? ` · Reference anchor ${instrument === "spx" && spxEsBasis !== undefined ? formatSpxPrice(anchor, spxEsBasis) : formatPrice(anchor)}` : ""}`,
     distanceToExecution: percent(zone.distance_from_execution_reference_pct) || text(zone.distance_from_execution_reference),
     distanceToPreviousClose: percent(zone.distance_from_last_close_pct),
     executionStrength: `${relevance === null ? "—" : relevance.toFixed(0)} / ${raw === null ? "—" : raw.toFixed(0)}`,
-    mainBasis: evidence.join("；"),
-    optionVerification: optionEvidence(validation, instrument),
+    mainBasis: evidence.map((item) => annotateSpxEvidence(item, instrument === "spx" ? spxEsBasis : undefined)).join("；"),
+    optionVerification: optionEvidence(validation, instrument, spxEsBasis, spxEsBasisDate),
     behavior: [zone.hold_condition, zone.failure_or_flip_condition].map(text).filter(Boolean).join("；"),
   };
 }
@@ -167,6 +187,8 @@ export default function MappedLevelReportDetails({
   rank,
   zone,
   spxLastClose,
+  spxEsBasis,
+  spxEsBasisDate,
   instrument = "spx",
 }: {
   side: LevelSide;
@@ -174,12 +196,14 @@ export default function MappedLevelReportDetails({
   rank?: number;
   zone?: JsonZone;
   spxLastClose?: number | null;
+  spxEsBasis?: number | null;
+  spxEsBasisDate?: string | null;
   instrument?: "stock" | "spx";
 }) {
   const fromJson = !detail && Boolean(zone && rank);
   // Structured JSON is authoritative for price bases and option identity; the HTML
   // table is retained only as a fallback for reports without structured zones.
-  const resolved = zone && rank ? levelDetailFromZone(side, rank, zone, instrument) : detail;
+  const resolved = zone && rank ? levelDetailFromZone(side, rank, zone, instrument, spxEsBasis, spxEsBasisDate) : detail;
   if (!resolved) return null;
   const components = zone?.score_components && typeof zone.score_components === "object"
     ? Object.entries(zone.score_components as JsonZone).filter((entry): entry is [string, number] => finiteNumber(entry[1]) !== null)
@@ -191,7 +215,8 @@ export default function MappedLevelReportDetails({
   const significance = finiteNumber(validation?.significance_score);
   const sideLabel = side === "resistance" ? "压力" : "支撑";
   const closeLabel = spxLastClose !== null && spxLastClose !== undefined && Number.isFinite(spxLastClose) && spxLastClose > 0
-    ? spxLastClose.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "n/a";
+    ? instrument === "spx" && spxEsBasis !== undefined ? formatSpxPrice(spxLastClose, spxEsBasis)
+      : spxLastClose.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "n/a";
   const anchor = finiteNumber(zone?.core_anchor_price) ?? finiteNumber(zone?.reference_price);
   const midpoint = finiteNumber(zone?.zone_low) !== null && finiteNumber(zone?.zone_high) !== null && anchor !== null &&
     Math.abs(anchor - ((zone!.zone_low as number) + (zone!.zone_high as number)) / 2) < 0.000001;
@@ -225,12 +250,12 @@ export default function MappedLevelReportDetails({
           {derivedInstrument ? field(`${derivedInstrument} mapped zone`, interval(zone?.mapped_zone_low, zone?.mapped_zone_high)) : null}
           {derivedInstrument && mappedAnchor !== null && selectedClose !== null && selectedClose > 0 && mappedAnchorPct !== null
             ? field("Mapped reference anchor (vs selected close)", `${formatPrice(mappedAnchor)} (${mappedAnchorPct >= 0 ? "+" : ""}${mappedAnchorPct.toFixed(2)}%) vs selected 30M close ${formatPrice(selectedClose)} (${selectedCloseDate})`) : null}
-          {field(derivedInstrument ? "Source SPX system zone interval" : "System zone interval", zone ? interval(zone.zone_low, zone.zone_high) : resolved.areaReference)}
-          {zone ? field(derivedInstrument ? "Source SPX reference anchor" : midpoint ? "Core anchor (zone midpoint)" : "Core reference anchor (not zone midpoint)", anchor === null ? "" : formatPrice(anchor)) : null}
+          {field(derivedInstrument ? "Source SPX system zone interval" : "System zone interval", zone ? interval(zone.zone_low, zone.zone_high, spxEsBasis) : resolved.areaReference)}
+          {zone ? field(derivedInstrument ? "Source SPX reference anchor" : midpoint ? "Core anchor (zone midpoint)" : "Core reference anchor (not zone midpoint)", anchor === null ? "" : instrument === "spx" && spxEsBasis !== undefined ? formatSpxPrice(anchor, spxEsBasis) : formatPrice(anchor)) : null}
           {zone ? field("Anchor method / source", [anchorMethod, anchorInputs].filter(Boolean).join(" · ")) : null}
           {zone ? field("Boundary basis (raw vs system)", text(zone.boundary_basis)) : null}
-          {zone ? field("Raw mathematical interval", text(zone.mathematical_interval) || interval(zone.mathematical_zone_low, zone.mathematical_zone_high)) : null}
-          {zone ? field("Raw option interval", text(zone.option_interval) || interval(zone.option_zone_low, zone.option_zone_high)) : null}
+          {zone ? field("Raw mathematical interval", interval(zone.mathematical_zone_low, zone.mathematical_zone_high, spxEsBasis) || text(zone.mathematical_interval)) : null}
+          {zone ? field("Raw option interval", interval(zone.option_zone_low, zone.option_zone_high, spxEsBasis) || text(zone.option_interval)) : null}
           {field(`Distance vs execution reference${text(zone?.distance_from_execution_reference_pct_basis ?? zone?.distance_from_execution_reference_basis) ? ` (${text(zone?.distance_from_execution_reference_pct_basis ?? zone?.distance_from_execution_reference_basis)})` : ""}`, zone ? percent(zone.distance_from_execution_reference_pct) : resolved.distanceToExecution)}
           {field(`Distance vs previous completed daily close${text(zone?.distance_from_last_close_pct_basis ?? zone?.distance_from_last_close_basis) ? ` (${text(zone?.distance_from_last_close_pct_basis ?? zone?.distance_from_last_close_basis)})` : ""}`, resolved.distanceToPreviousClose)}
           {field("Execution relevance / raw strength", resolved.executionStrength)}

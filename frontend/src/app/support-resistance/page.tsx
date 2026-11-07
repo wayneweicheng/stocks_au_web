@@ -33,6 +33,27 @@ function formatMapPrice(value: number | null | undefined, reportType: StockMapSe
     ? `${label} ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : `${label} n/a`;
 }
 
+function formatSpxPriceWithEs(value: number, basis: number | null, includeSpxLabel = true) {
+  const spx = includeSpxLabel ? formatMapPrice(value, "spx-map", "SPX")
+    : value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const es = basis !== null && Number.isFinite(basis) && Number.isFinite(value + basis) && value + basis > 0
+    ? (value + basis).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : null;
+  return `${spx} (ES ${es ?? "n/a"})`;
+}
+
+function formatSpxPriceForDate(value: number, basis: number | null, basisDate: string | null, valueDate: string) {
+  return formatSpxPriceWithEs(value, basisDate && basisDate === valueDate ? basis : null);
+}
+
+function formatSpxEvidenceWithEs(value: string, basis: number | null, basisDate: string | null, optionDate: string | null) {
+  return value.replace(/\b((?:Daily|Weekly|Monthly) (?:CPR|PriorClose)|SPXW|SPY→SPX)\s+([\d,]+(?:\.\d+)?)/gi,
+    (_match, label: string, rawPrice: string) => {
+      const optionBasis = /^SPXW$/i.test(label) && (!optionDate || optionDate.slice(0, 10) !== basisDate) ? null : basis;
+      return `${label} ${formatSpxPriceWithEs(Number(rawPrice.replace(/,/g, "")), optionBasis, !/^(?:SPXW|SPY→SPX)$/i.test(label))}`;
+    });
+}
+
 function mappedAnchorPercent(value: unknown) {
   return typeof value === "number" && Number.isFinite(value)
     ? `(${value >= 0 ? "+" : ""}${value.toFixed(2)}%)` : "(n/a)";
@@ -176,12 +197,19 @@ interface StockMapSelection {
   executionReferenceType: string | null;
   asAtClose: { price: number; barTime: string } | null;
   effectivePrice: number | null;
+  livePrice: number | null;
+  livePriceLoading: boolean;
+  livePriceSource: string | null;
+  livePriceFetchedAt: string | null;
   effectivePriceSource: string | null;
   effectivePriceTimestamp: string | null;
+  spxEsMainPrice: number | null;
+  spxEsBasis: number | null;
+  spxEsBasisDate: string | null;
   nextSessionStraddle: NextSessionStraddle | null;
   spxOptions: SpxOptionPair | null;
   spxOptionObservationDate: string | null;
-  spxEtfOrderLevels: Partial<Record<"SPY" | "SPXL" | "QQQ", MapZone[]>>;
+  spxEtfOrderLevels: Partial<Record<"SPY" | "SPXL" | "QQQ" | "TQQQ", MapZone[]>>;
   spxOptionLoading: boolean;
   spxOptionError: string | null;
   spxPreviousClose: number | null;
@@ -282,7 +310,7 @@ function SpxEtfLevelActions({ zone, tone, levels }: {
   levels: StockMapSelection["spxEtfOrderLevels"];
 }) {
   const side = tone === "support" ? "Buy" : "Sell";
-  const tickers = ["SPY", "SPXL", "QQQ"] as const;
+  const tickers = ["SPY", "SPXL", "QQQ", "TQQQ"] as const;
   return <div className="mt-2 flex flex-wrap items-center gap-1" aria-label={`${side} mapped ETF levels`}>
     {tickers.map((ticker) => {
       const mapped = levels[ticker]?.find((candidate) => candidate.rank === zone.rank && candidate.sourceSide === zone.sourceSide);
@@ -298,8 +326,8 @@ function SpxEtfLevelActions({ zone, tone, levels }: {
   </div>;
 }
 
-function ChartZoomHelp({ indexLevels = false }: { indexLevels?: boolean }) {
-  return <p className="mb-3 text-xs text-slate-500">Scroll left/right to see more candles. Zoom with the mouse wheel, drag a box over the chart, or use the + / − toolbar buttons. Double-click to reset. Click a colored level line or band to jump to its {indexLevels ? "SPX report details" : "order links"}.</p>;
+function ChartZoomHelp({ indexLevels = false, mobile = false }: { indexLevels?: boolean; mobile?: boolean }) {
+  return <p className="mb-3 text-xs text-slate-500">{mobile ? "Pinch to zoom; use the toolbar to reset. The chart starts with a shorter range for readability." : "Scroll left/right to see more candles. Zoom with the mouse wheel, drag a box over the chart, or use the + / − toolbar buttons. Double-click to reset."} Click a colored level line or band to jump to its {indexLevels ? "SPX report details" : "order links"}.</p>;
 }
 
 function focusLevelPanel(id: string) {
@@ -349,7 +377,9 @@ function StockMapPanels({ stock, percentBySide }: { stock: StockMapSelection; pe
               <div key={`${side}-${zone.rank}-${originalIndex}`} id={levelPanelId("stock-map", side, originalIndex)} tabIndex={-1} className={`scroll-mt-24 rounded border p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${side === "support" ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="font-semibold">{stock.reportType === "spx-map"
-                  ? `${formatMapPrice(zone.price, stock.reportType, stock.stockCode)} · zone ${formatMapPrice(zone.range_low, stock.reportType, stock.stockCode)}–${formatMapPrice(zone.range_high, stock.reportType, stock.stockCode)}`
+                  ? stock.stockCode === "SPX"
+                    ? `${formatSpxPriceWithEs(zone.price, stock.spxEsBasis)} · zone ${formatSpxPriceWithEs(zone.range_low, stock.spxEsBasis)}–${formatSpxPriceWithEs(zone.range_high, stock.spxEsBasis)}`
+                    : `${formatMapPrice(zone.price, stock.reportType, stock.stockCode)} · zone ${formatMapPrice(zone.range_low, stock.reportType, stock.stockCode)}–${formatMapPrice(zone.range_high, stock.reportType, stock.stockCode)}`
                   : `$${zone.price.toFixed(4)} - $${zone.range_low.toFixed(4)} to $${zone.range_high.toFixed(4)}`}</div>
                   {stock.asAtClose && stock.reportType === "stock-map" ? <LevelActions zone={zone} tone={side} stockCode={stock.stockCode} /> : null}
                 </div>
@@ -358,10 +388,15 @@ function StockMapPanels({ stock, percentBySide }: { stock: StockMapSelection; pe
                   <div className="mt-1 text-xs text-indigo-900">Mapped reference anchor (vs selected close): {formatMapPrice(zone.price, stock.reportType, stock.stockCode)} {mappedAnchorPercent(zone.details.mapped_anchor_vs_selected_close_pct)} vs selected 30M close {formatMapPrice(typeof zone.details.mapping_selected_close === "number" ? zone.details.mapping_selected_close : null, stock.reportType, stock.stockCode)} ({String(zone.details.mapping_selected_close_date || "date n/a")}).</div>
                   <div className="mt-1 text-xs text-indigo-900">Source SPX {typeof zone.details.source_spx_anchor === "number" ? zone.details.source_spx_anchor.toFixed(2) : "n/a"} · SPX zone {Array.isArray(zone.details.source_spx_range) ? zone.details.source_spx_range.map((value) => typeof value === "number" ? value.toFixed(2) : "n/a").join("–") : "n/a"}. {stock.mappingSource} Original SPX score/evidence; not target-instrument option positioning.</div>
                 </> : null}
-                {Array.isArray(zone.details.main_evidence) ? <div className="mt-1 text-xs text-slate-600">Matches: {zone.details.main_evidence.filter((item): item is string => typeof item === "string").join(" · ")}</div> : null}
+                {Array.isArray(zone.details.main_evidence) ? <div className="mt-1 text-xs text-slate-600">Matches: {zone.details.main_evidence.filter((item): item is string => typeof item === "string").map((item) => {
+                  const optionValidation = zone.details.option_validation && typeof zone.details.option_validation === "object" && !Array.isArray(zone.details.option_validation)
+                    ? zone.details.option_validation as Record<string, unknown> : null;
+                  const optionDate = typeof optionValidation?.observation_date === "string" ? optionValidation.observation_date : null;
+                  return stock.stockCode === "SPX" ? formatSpxEvidenceWithEs(item, stock.spxEsBasis, stock.spxEsBasisDate, optionDate) : item;
+                }).join(" · ")}</div> : null}
                 {zone.sourceSide !== side ? <div className="mt-1 text-xs text-slate-500">Details below retain the report&apos;s original {zone.sourceSide} terminology.</div> : null}
-                {stock.reportType === "spx-map" && stock.stockCode === "SPX" ? <SpxEtfLevelActions zone={zone} tone={side} levels={stock.spxEtfOrderLevels} /> : null}
-                <MappedLevelReportDetails side={zone.sourceSide} detail={undefined} rank={zone.rank} zone={zone.details} instrument={stock.reportType === "spx-map" ? "spx" : "stock"} spxLastClose={stock.spxPreviousClose} />
+                {stock.reportType === "spx-map" && (stock.stockCode === "SPX" || stock.stockCode === "ESMain") ? <SpxEtfLevelActions zone={zone} tone={side} levels={stock.spxEtfOrderLevels} /> : null}
+                <MappedLevelReportDetails side={zone.sourceSide} detail={undefined} rank={zone.rank} zone={zone.details} instrument={stock.reportType === "spx-map" ? "spx" : "stock"} spxLastClose={stock.spxPreviousClose} spxEsBasis={stock.stockCode === "SPX" ? stock.spxEsBasis : undefined} spxEsBasisDate={stock.stockCode === "SPX" ? stock.spxEsBasisDate : undefined} />
               </div>
             ))}
             {(side === "support" ? stock.supports : stock.resistances).length === 0
@@ -510,6 +545,22 @@ export default function SupportResistancePage() {
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState("");
   const [priceReadout, setPriceReadout] = useState<{ bottom: number; top: number } | null>(null);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const mobileChartDefaultsApplied = useRef(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const updateViewport = () => {
+      setIsMobileViewport(media.matches);
+      if (media.matches && !mobileChartDefaultsApplied.current) {
+        mobileChartDefaultsApplied.current = true;
+        setChartDays((current) => ({ ...current, "30m": 5 }));
+      }
+    };
+    updateViewport();
+    media.addEventListener("change", updateViewport);
+    return () => media.removeEventListener("change", updateViewport);
+  }, []);
 
   const loadData = useCallback(
     async (code: string, asAtDateTime = observationDateTime) => {
@@ -655,6 +706,14 @@ export default function SupportResistancePage() {
       const isSpx = spxInstrument !== null;
       const displayCode = spxInstrument || requestedCode;
       const reportType = isSpx ? "spx-map" : "stock-map";
+      const livePriceParams = new URLSearchParams({ stock_code: displayCode });
+      const livePriceRequest = authenticatedFetch(`${baseUrl}/api/stock-map-live-price?${livePriceParams}`, { cache: "no-store" })
+        .then(async (liveResponse) => {
+          const livePayload = await liveResponse.json();
+          if (!liveResponse.ok) throw new Error(livePayload?.detail || `HTTP ${liveResponse.status}`);
+          return livePayload as { live_price?: unknown; source?: unknown; fetched_at_utc?: unknown };
+        })
+        .catch(() => null);
       const response = await authenticatedFetch(`${baseUrl}/api/${reportType}-reports/${encodeURIComponent(report.job_id)}/json`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.detail || `HTTP ${response.status}`);
@@ -692,6 +751,9 @@ export default function SupportResistancePage() {
       let effectivePrice = asAtClose?.price ?? null;
       let effectivePriceSource: string | null = asAtClose ? "Latest fully completed selected-instrument 30M bar at report as-of" : null;
       let effectivePriceTimestamp: string | null = asAtClose?.barTime ?? null;
+      let spxEsMainPrice: number | null = null;
+      let spxEsBasis: number | null = null;
+      let spxEsBasisDate: string | null = null;
       if (spxInstrument) {
         // All SPX/derived instruments use the same as-of history snapshot as
         // SPX Mapped Levels; never substitute current IB quotes for D-levels.
@@ -706,10 +768,18 @@ export default function SupportResistancePage() {
             const snapshot = await mappingResponse.json();
             if (!mappingResponse.ok) throw new Error(typeof snapshot?.detail === "string" ? snapshot.detail : `HTTP ${mappingResponse.status}`);
             effectivePrice = effectivePriceForSpxInstrument(spxInstrument, snapshot.effective_prices);
-            if (spxInstrument === "SPX") {
+            if (spxInstrument === "SPX" && effectivePrice !== null && typeof snapshot.effective_price_basis === "number" && Number.isFinite(snapshot.effective_price_basis)) {
+              const esEquivalent = effectivePrice + snapshot.effective_price_basis;
+              if (Number.isFinite(esEquivalent) && esEquivalent > 0) {
+                spxEsBasis = snapshot.effective_price_basis;
+                spxEsBasisDate = typeof snapshot.historical_close_date === "string" ? snapshot.historical_close_date : null;
+                spxEsMainPrice = esEquivalent;
+              }
+            }
+            if (spxInstrument === "SPX" || spxInstrument === "ESMain") {
               const sourceZones = [...mapZones(map, "support"), ...mapZones(map, "resistance")];
               const prices = snapshot.effective_prices || {};
-              for (const [ticker, instrument] of [["SPY", "SPY_D"], ["SPXL", "SPXL_D"], ["QQQ", "QQQ_D"]] as const) {
+              for (const [ticker, instrument] of [["SPY", "SPY_D"], ["SPXL", "SPXL_D"], ["QQQ", "QQQ_D"], ["TQQQ", "TQQQ_D"]] as const) {
                 const mapped = deriveSpxZones(sourceZones, instrument, snapshot, prices);
                 if (mapped) spxEtfOrderLevels[ticker] = mapped.zones;
               }
@@ -751,6 +821,9 @@ export default function SupportResistancePage() {
             }
           } catch (exc) {
             effectivePrice = null;
+            spxEsMainPrice = null;
+            spxEsBasis = null;
+            spxEsBasisDate = null;
             mappingError = exc instanceof Error ? exc.message : String(exc);
             if (spxInstrument !== "SPX") { reportSupports = []; reportResistances = []; }
           }
@@ -767,7 +840,8 @@ export default function SupportResistancePage() {
       const fetchSpxOptions = spxInstrument === "SPX" && !!optionObservationDate && effectivePrice !== null;
       setMapData({ jobId: report.job_id, reportType, stockCode: displayCode, stock_code: displayCode, observationDate,
         asOfTime, asAtClose, nextSessionStraddle: isSpx ? null : mapNextSessionStraddle(map), bars, ...zones,
-        effectivePrice, effectivePriceSource, effectivePriceTimestamp,
+        effectivePrice, livePrice: null, livePriceLoading: true, livePriceSource: null, livePriceFetchedAt: null,
+        effectivePriceSource, effectivePriceTimestamp, spxEsMainPrice, spxEsBasis, spxEsBasisDate,
         spxOptions: null, spxOptionObservationDate: optionObservationDate, spxEtfOrderLevels, spxOptionLoading: fetchSpxOptions,
         spxOptionError: spxInstrument === "SPX" && !fetchSpxOptions ? "SPX report as-of date or effective price unavailable; cannot select SPXW options." : null,
         spxPreviousClose: isSpx ? spxPreviousCompletedClose(map) : null,
@@ -775,6 +849,24 @@ export default function SupportResistancePage() {
         generatedAtSydney: typeof map.generated_at_sydney === "string" ? map.generated_at_sydney : null,
         executionReference: isSpx ? spxInstrument === "SPX" ? spxReference : null : typeof map.execution_reference === "number" && Number.isFinite(map.execution_reference) ? map.execution_reference : null,
         executionReferenceType: typeof map.execution_reference_type === "string" ? map.execution_reference_type : null,
+      });
+      void livePriceRequest.then((livePayload) => {
+        if (mapRequest.current !== requestId) return;
+        const rawPrice = livePayload?.live_price;
+        const livePrice = typeof rawPrice === "number" && Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : null;
+        setMapData((current) => {
+          if (current?.jobId !== report.job_id) return current;
+          const reclassified = livePrice === null ? { supports: current.supports, resistances: current.resistances }
+            : classifyMapZones([...current.supports, ...current.resistances], [], livePrice);
+          return {
+            ...current,
+            ...reclassified,
+            livePrice,
+            livePriceLoading: false,
+            livePriceSource: typeof livePayload?.source === "string" ? livePayload.source : livePrice === null ? "Live quote unavailable" : null,
+            livePriceFetchedAt: typeof livePayload?.fetched_at_utc === "string" ? livePayload.fetched_at_utc : null,
+          };
+        });
       });
       // SPXW evidence is optional and can be unavailable pre-market. Do not
       // block an otherwise valid SPX chart or substitute an earlier SQL date.
@@ -874,6 +966,9 @@ export default function SupportResistancePage() {
     const spxExpiryRange = activeTab === "stock-map" ? mapData?.spxOptions?.expiryRange : null;
     if (range) zones.push({ price: (range.low + range.high) / 2, range_low: range.low, range_high: range.high });
     if (spxExpiryRange) zones.push({ price: (spxExpiryRange.low + spxExpiryRange.high) / 2, range_low: spxExpiryRange.low, range_high: spxExpiryRange.high });
+    if (activeTab === "stock-map" && typeof mapData?.livePrice === "number" && Number.isFinite(mapData.livePrice) && mapData.livePrice > 0) {
+      zones.push({ price: mapData.livePrice, range_low: mapData.livePrice, range_high: mapData.livePrice });
+    }
     return priceWindowForBars(visibleBars, zones);
   }, [visibleBars, visibleChartLevels, activeTab, mapData]);
 
@@ -943,6 +1038,8 @@ export default function SupportResistancePage() {
       if (cancelled || !plotElement) return;
       const Plotly = (plotlyModule as any).default || plotlyModule;
       const bars = visibleBars;
+      const formatLevelPrice = (price: number) => mapChart?.reportType === "spx-map" && mapChart.stockCode === "SPX"
+        ? formatSpxPriceWithEs(price, mapChart.spxEsBasis) : price.toFixed(4);
       const supports = visibleChartLevels?.supports || [];
       const resistances = visibleChartLevels?.resistances || [];
       const tab: LevelTab = isMap ? "stock-map" : activeTab === "database" ? "database" : "calculated";
@@ -978,6 +1075,21 @@ export default function SupportResistancePage() {
       ];
 
       const escapeHover = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] || char);
+      if (mapChart && typeof mapChart.livePrice === "number" && Number.isFinite(mapChart.livePrice) && mapChart.livePrice > 0) {
+        const livePriceText = `<b>Live price</b><br>${formatMapPrice(mapChart.livePrice, mapChart.reportType, mapChart.stockCode)}${mapChart.livePriceSource ? `<br>${escapeHover(mapChart.livePriceSource)}` : ""}<extra></extra>`;
+        traces.push({
+          x: bars.map((bar) => bar.time),
+          y: bars.map(() => mapChart.livePrice),
+          type: "scatter",
+          mode: "lines",
+          name: "Live price",
+          text: bars.map(() => livePriceText),
+          line: { color: "#2563eb", width: 2.5, dash: "dot" },
+          hoverinfo: "text",
+          yaxis: "y",
+        });
+      }
+
       const zoneHover = (zone: PriceRange | MapZone, side: string, index: number) => {
         const hint = `<br><b>Click to view level${mapChart?.reportType === "spx-map" || (mapChart && !mapChart.asAtClose) ? " details" : " and order links"}</b>`;
         if ("score" in zone) {
@@ -1001,7 +1113,7 @@ export default function SupportResistancePage() {
           const gex = typeof option?.absolute_gex_at_strike === "number" && Number.isFinite(option.absolute_gex_at_strike)
             ? ` · |GEX| ${Math.abs(option.absolute_gex_at_strike).toLocaleString()} (size only)` : "";
           const optionText = mapChart?.reportType === "spx-map" && option && (oi || wall) ? `<br>SPXW source${wall}${oi}${gex}${expiries}${observed}` : "";
-          return `<b>${side} Zone</b><br>${mapChart?.reportType === "spx-map" ? "SPX Map" : "Stock Map"} ${zone.sourceSide === "support" ? "S" : "R"}${zone.rank}${zone.sourceSide.toLowerCase() !== side.toLowerCase() ? ` (reclassified as ${side.toLowerCase()})` : ""}<br>Anchor: ${zone.price.toFixed(4)}<br>Range: ${zone.range_low.toFixed(4)} – ${zone.range_high.toFixed(4)}<br>Rank: ${zone.rank}<br>Score: ${zone.score === null ? "n/a" : zone.score.toFixed(1)}<br>Strength: ${escapeHover(zone.strength)}<br>${escapeHover(zone.levelConfidence)}<br>${escapeHover(Array.isArray(zone.details.main_evidence) ? zone.details.main_evidence.filter((item): item is string => typeof item === "string").join("; ") : "")}${mappedReference}${origin}${optionText}${hint}<extra></extra>`;
+          return `<b>${side} Zone</b><br>${mapChart?.reportType === "spx-map" ? "SPX Map" : "Stock Map"} ${zone.sourceSide === "support" ? "S" : "R"}${zone.rank}${zone.sourceSide.toLowerCase() !== side.toLowerCase() ? ` (reclassified as ${side.toLowerCase()})` : ""}<br>Anchor: ${formatLevelPrice(zone.price)}<br>Range: ${formatLevelPrice(zone.range_low)} – ${formatLevelPrice(zone.range_high)}<br>Rank: ${zone.rank}<br>Score: ${zone.score === null ? "n/a" : zone.score.toFixed(1)}<br>Strength: ${escapeHover(zone.strength)}<br>${escapeHover(zone.levelConfidence)}<br>${escapeHover(Array.isArray(zone.details.main_evidence) ? zone.details.main_evidence.filter((item): item is string => typeof item === "string").join("; ") : "")}${mappedReference}${origin}${optionText}${hint}<extra></extra>`;
         }
         return `<b>${side} Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>Change From Reference Price: ${zone.distance_pct > 0 ? "+" : ""}${zone.distance_pct.toFixed(2)}%<br>ATR Distance: ${zone.distance_atr.toFixed(2)}${hint}<extra></extra>`;
       };
@@ -1017,7 +1129,7 @@ export default function SupportResistancePage() {
           y: bars.map(() => zone.price),
           type: "scatter",
           mode: "lines",
-          name: `Support ${zone.price.toFixed(2)}`,
+          name: `Support ${formatLevelPrice(zone.price)}`,
           text: bars.map(() => supportHover),
           line: {
             color: lineColor,
@@ -1055,7 +1167,7 @@ export default function SupportResistancePage() {
           y: bars.map(() => zone.price),
           type: "scatter",
           mode: "lines",
-          name: `Resistance ${zone.price.toFixed(2)}`,
+          name: `Resistance ${formatLevelPrice(zone.price)}`,
           text: bars.map(() => resistanceHover),
           line: {
             color: lineColor,
@@ -1086,8 +1198,21 @@ export default function SupportResistancePage() {
         ? reportTimeCategoryPosition(bars, mapChart.asOfTime.easternWallTime) : null;
       const asOfLabel = mapChart?.asOfTime?.label;
       const markerPosition = asOfPosition !== null && asOfPosition >= 0 ? asOfPosition : null;
+      const scoreAnnotations = isMap ? [...supports, ...resistances].flatMap(({ level }) => {
+        if (!("score" in level) || level.score === null || !Number.isFinite(level.score)) return [];
+        const color = mapLineColor(level.sourceSide, level.score);
+        return [{
+          xref: "paper", x: 1, xanchor: "left", xshift: 5,
+          yref: "y", y: level.price, yanchor: "middle",
+          text: String(Math.round(level.score)),
+          showarrow: false, bgcolor: "rgba(255,255,255,0.92)", bordercolor: color,
+          borderwidth: 1, borderpad: 2, font: { color, size: 10 },
+        }];
+      }) : [];
       const layout = {
-        title: `${isMap ? mapChart?.stockCode : chartData.stock_code} - Support/Resistance (${chartTimeframe})`,
+        title: isMobileViewport
+          ? `${isMap ? mapChart?.stockCode : chartData.stock_code} · S/R · ${chartTimeframe}`
+          : `${isMap ? mapChart?.stockCode : chartData.stock_code} - Support/Resistance (${chartTimeframe})`,
         xaxis: {
           title: "Time",
           type: "category",
@@ -1104,13 +1229,16 @@ export default function SupportResistancePage() {
             line: { color: "#7c3aed", width: 2, dash: "dash" },
           }]),
         ],
-        annotations: markerPosition === null ? [] : [{
-          x: markerPosition, xref: "x", y: 1, yref: "paper", yanchor: "top",
-          xanchor: markerPosition >= bars.length - 1 ? "right" : "left",
-          text: `Map as-at<br>${asOfLabel}`,
-          showarrow: false, bgcolor: "rgba(255,255,255,0.9)", bordercolor: "#7c3aed",
-          borderpad: 4, font: { color: "#6d28d9", size: 11 },
-        }],
+        annotations: [
+          ...(markerPosition === null ? [] : [{
+            x: markerPosition, xref: "x", y: 1, yref: "paper", yanchor: "top",
+            xanchor: markerPosition >= bars.length - 1 ? "right" : "left",
+            text: `Map as-at<br>${asOfLabel}`,
+            showarrow: false, bgcolor: "rgba(255,255,255,0.9)", bordercolor: "#7c3aed",
+            borderpad: 4, font: { color: "#6d28d9", size: 11 },
+          }]),
+          ...scoreAnnotations,
+        ],
         yaxis: {
           title: "Price (USD)",
           side: "left",
@@ -1130,8 +1258,8 @@ export default function SupportResistancePage() {
         hovermode: "closest",
         dragmode: "zoom",
         template: "plotly_white",
-        height: 860,
-        margin: { l: 64, r: 90, t: 64, b: 120 },
+        height: isMobileViewport ? 560 : 860,
+        margin: isMobileViewport ? { l: 48, r: 58, t: 62, b: 90 } : { l: 64, r: 102, t: 64, b: 120 },
       };
 
       void Plotly.newPlot(plotElement, traces, layout, {
@@ -1183,7 +1311,7 @@ export default function SupportResistancePage() {
         }).catch(() => undefined);
       }
     };
-  }, [chartData, visibleBars, mapData, activeTab, chartTimeframe, visibleChartLevels, priceWindow]);
+  }, [chartData, visibleBars, mapData, activeTab, chartTimeframe, visibleChartLevels, priceWindow, isMobileViewport]);
 
   const renderChart = (source: SupportResistanceResponse | SavedSupportResistanceResponse | StockMapSelection) => {
     const bars = chartData === source ? visibleBars : null;
@@ -1192,6 +1320,8 @@ export default function SupportResistancePage() {
     const levels = activeTab === "stock-map" && "jobId" in source ? source
       : "stock" in source ? source.stock : null;
     const visibleSide = (side: "support" | "resistance") => visibleChartLevels?.[side === "support" ? "supports" : "resistances"] || [];
+    const formatChartLevelPrice = (price: number) => activeTab === "stock-map" && mapData?.stockCode === "SPX"
+      ? formatSpxPriceWithEs(price, mapData.spxEsBasis) : price.toFixed(2);
     return <>
       <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Candlestick timeframe">
         <span className="mr-1 text-sm font-medium text-slate-700">Candles:</span>
@@ -1223,7 +1353,7 @@ export default function SupportResistancePage() {
         })}
         <p className="text-xs text-slate-500 sm:col-span-2">0% hides all levels; 100% shows all. Partial percentages round up to a whole level. Candles, level calculations and map as-at remain unchanged.</p>
       </div> : null}
-      {activeTab === "stock-map" ? <p className="mb-2 text-xs text-slate-500">Candles show the latest {selectedDays} calendar days; the selected report’s as-at price and level classification remain historical.</p> : null}
+      {activeTab === "stock-map" ? <p className="mb-2 text-xs text-slate-500">Candles show the latest {selectedDays} calendar days. Once available, the dotted blue live-price line reclassifies levels below it as support and levels above it as resistance; original report-side labels remain in the details.</p> : null}
       {mapOutsideWindow ? <Alert variant="info">Map as-at is outside the chart’s recent candle window. The historical as-at close is still used for level classification; the purple marker is not drawn in this window.</Alert> : null}
       {levels ? <details className="mb-3 text-sm text-slate-700">
         <summary className="cursor-pointer text-indigo-700">Jump to a level{activeTab === "stock-map" && mapData?.reportType === "spx-map" ? " and its SPX source details" : " and its order links"} (keyboard accessible)</summary>
@@ -1231,7 +1361,7 @@ export default function SupportResistancePage() {
           {(["support", "resistance"] as const).flatMap((side) => visibleSide(side).map(({ level: zone, originalIndex }) => (
             <a key={`${side}-${originalIndex}`} href={`#${levelPanelId(activeTab as LevelTab, side, originalIndex)}`}
               className="rounded border border-slate-300 px-2 py-1 text-indigo-700 hover:bg-indigo-50">
-              {side === "support" ? "Support" : "Resistance"} {zone.price.toFixed(2)}
+              {side === "support" ? "Support" : "Resistance"} {formatChartLevelPrice(zone.price)}
             </a>
           )))}
         </div>
@@ -1239,16 +1369,16 @@ export default function SupportResistancePage() {
       {chartError ? <Alert variant="danger">Unable to load chart candles: {chartError}</Alert> : null}
       {bars === null ? (!chartError ? <div className="py-8 text-center text-slate-500">{chartLoading ? `Loading ${chartTimeframe} candles for ${selectedDays} days...` : "Waiting for chart data..."}</div> : null)
         : bars.length ? <>
-          <ChartZoomHelp indexLevels={activeTab === "stock-map" && mapData?.reportType === "spx-map"} />
+          <ChartZoomHelp indexLevels={activeTab === "stock-map" && mapData?.reportType === "spx-map"} mobile={isMobileViewport} />
           {priceWindow && priceWindow.contentHeight > priceWindow.trackHeight ? <p className="mb-2 text-xs text-slate-600">Visible price: {activeTab === "stock-map" && mapData ? formatMapPrice(priceReadout?.bottom ?? priceWindow.bottom, mapData.reportType, mapData.stockCode) : formatPrice(priceReadout?.bottom ?? priceWindow.bottom)}–{activeTab === "stock-map" && mapData ? formatMapPrice(priceReadout?.top ?? priceWindow.bottom + priceWindow.span, mapData.reportType, mapData.stockCode) : formatPrice(priceReadout?.top ?? priceWindow.bottom + priceWindow.span)}. Use the right-hand vertical scrollbar to reveal older highs or lower supports.</p> : null}
           {activeTab === "stock-map" ? <p className="mb-2 text-xs text-slate-500">{mapData?.reportType === "spx-map" ? "SPX Map" : "Stock Map"}: darker, thicker green/red lines indicate higher scores.</p> : null}
           <div className="flex min-w-0 items-start gap-2">
             <div ref={chartScrollRef} className="min-w-0 flex-1 overflow-x-auto rounded border border-slate-200" role="region" aria-label="Horizontally scrollable price chart" tabIndex={0}>
               <div key={`${activeTab}-${chartTimeframe}`} ref={plotRef}
-                style={{ width: `max(100%, ${chartMinimumWidth(bars.length, chartTimeframe)}px)`, height: "860px" }} />
+                style={{ width: isMobileViewport ? "100%" : `max(100%, ${chartMinimumWidth(bars.length, chartTimeframe)}px)`, height: isMobileViewport ? "560px" : "860px" }} />
             </div>
             {priceWindow && priceWindow.contentHeight > priceWindow.trackHeight ? (
-              <div className="flex w-7 shrink-0 flex-col items-center pt-16 text-xs text-slate-600" title="Scroll up for earlier higher prices; down for lower prices">
+              <div className={`flex w-7 shrink-0 flex-col items-center ${isMobileViewport ? "pt-12" : "pt-16"} text-xs text-slate-600`} title="Scroll up for earlier higher prices; down for lower prices">
                 <span aria-hidden="true">↑</span>
                 <div ref={priceScrollRef} role="region" aria-label="Scroll price scale: up for higher prices" tabIndex={0}
                   onScroll={handlePriceScroll} className="w-5 overflow-y-scroll rounded border border-slate-300 bg-slate-50"
@@ -1259,17 +1389,21 @@ export default function SupportResistancePage() {
               </div>
             ) : null}
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-200 pt-3 text-xs text-slate-700" aria-label="Chart legend">
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-200 pt-3 text-[11px] text-slate-700 sm:gap-x-4 sm:text-xs" aria-label="Chart legend">
             <span className="inline-flex items-center gap-1"><span className="h-3 w-3 border border-emerald-600 bg-emerald-200" />Price candles</span>
             <span className="inline-flex items-center gap-1"><span className="h-3 w-3 bg-slate-400" />Volume</span>
+            {activeTab === "stock-map" && mapData ? <span className="inline-flex items-center gap-1" title={mapData.livePriceSource || "Live quote unavailable"}><span className="w-6 border-t-2 border-dotted border-blue-600" />Live price {mapData.livePriceLoading ? "loading…" : formatMapPrice(mapData.livePrice, mapData.reportType, mapData.stockCode)}</span> : null}
             {activeTab === "stock-map" && mapData?.nextSessionStraddle ? <span className="inline-flex items-center gap-1" title={`Indicative next-session range for ${mapData.nextSessionStraddle.nextSession}, derived from ${mapData.nextSessionStraddle.quoteDate} quotes; not support or resistance`}><span className="h-3 w-3 border border-amber-500 bg-yellow-200" />ATM {mapData.nextSessionStraddle.quoteDate}: {formatPrice(mapData.nextSessionStraddle.strike)} call {formatPrice(mapData.nextSessionStraddle.callPrice)} + put {formatPrice(mapData.nextSessionStraddle.putPrice)} · next-session range {formatPrice(mapData.nextSessionStraddle.nextSessionRange.low)}–{formatPrice(mapData.nextSessionStraddle.nextSessionRange.high)}</span> : null}
-            {activeTab === "stock-map" && mapData?.spxOptions ? <span className="inline-flex items-center gap-1" title={`Illustrative SPXW observation-date call+put premium range to ${mapData.spxOptions.expiry}; quote timestamps unverified, not support/resistance`}><span className="h-3 w-3 border border-orange-700 bg-orange-200" />SPXW expiry proxy {formatMapPrice(mapData.spxOptions.expiryRange.low, "spx-map")}–{formatMapPrice(mapData.spxOptions.expiryRange.high, "spx-map")}</span> : null}
+            {activeTab === "stock-map" && mapData?.spxOptions ? <span className="inline-flex items-center gap-1" title={`Illustrative SPXW observation-date call+put premium range to ${mapData.spxOptions.expiry}; quote timestamps unverified, not support/resistance`}><span className="h-3 w-3 border border-orange-700 bg-orange-200" />SPXW expiry proxy {formatSpxPriceForDate(mapData.spxOptions.expiryRange.low, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)}–{formatSpxPriceForDate(mapData.spxOptions.expiryRange.high, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)}</span> : null}
             {levels ? (["support", "resistance"] as const).flatMap((side) => visibleSide(side).map(({ level: zone, originalIndex }) => (
               <button key={`${side}-${originalIndex}`} type="button" onClick={() => focusLevelPanel(levelPanelId(activeTab as LevelTab, side, originalIndex))}
-                title={`Jump to ${side} ${zone.price.toFixed(2)}${"score" in zone ? ` · Score ${zone.score ?? "n/a"}` : ` · Rank ${zone.strength_rank || "n/a"}`}`}
-                className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600">
-                <span className="w-6 border-t-2" style={{ borderColor: "score" in zone ? mapLineColor(side, zone.score) : chartLevelColor(side, originalIndex) }} />
-                {side === "support" ? "Support" : "Resistance"} {zone.price.toFixed(2)}
+                title={`Jump to ${side} ${formatChartLevelPrice(zone.price)}${"score" in zone ? ` · Score ${zone.score ?? "n/a"}` : ` · Rank ${zone.strength_rank || "n/a"}`}`}
+                className="inline-flex max-w-full flex-wrap items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600">
+                <span className="w-6 shrink-0 border-t-2" style={{ borderColor: "score" in zone ? mapLineColor(side, zone.score) : chartLevelColor(side, originalIndex) }} />
+                {side === "support" ? "Support" : "Resistance"} {formatChartLevelPrice(zone.price)}
+                <span className="font-semibold text-slate-600">{"score" in zone
+                  ? `· Score ${zone.score === null ? "n/a" : zone.score.toFixed(1)}${zone.strength ? ` · ${zone.strength}` : ""}`
+                  : `· Rank ${zone.strength_rank || "n/a"}`}</span>
               </button>
             ))) : null}
           </div>
@@ -1521,9 +1655,11 @@ export default function SupportResistancePage() {
               <div>Map as-at: {mapData.asOfTime?.label || "Timestamp unavailable in report"}{mapData.asOfTime ? " · Purple dashed line when inside the recent candle window (New York bar time)" : ""}</div>
               {mapData.generatedAtSydney ? <div>Report actually generated: {mapData.generatedAtSydney} (Sydney)</div> : null}
               {mapData.sourceSpxReference !== null && mapData.stockCode !== "SPX" ? <div>Source SPX report reference: {formatMapPrice(mapData.sourceSpxReference, "spx-map")} (not a {mapData.stockCode} quote).</div> : null}
-              {mapData.executionReference !== null ? <div>Report execution reference: {formatMapPrice(mapData.executionReference, mapData.reportType, mapData.stockCode)} ({mapData.executionReferenceType?.replace(/_/g, " ") || "report reference"}{mapData.executionReferenceType === "completed_30m_bar" ? "; latest completed 30M bar at map as-at" : "; not the as-at market price"})</div> : null}
+              {mapData.executionReference !== null ? <div>Report execution reference: {mapData.stockCode === "SPX" ? formatSpxPriceWithEs(mapData.executionReference, mapData.spxEsBasis) : formatMapPrice(mapData.executionReference, mapData.reportType, mapData.stockCode)} ({mapData.executionReferenceType?.replace(/_/g, " ") || "report reference"}{mapData.executionReferenceType === "completed_30m_bar" ? "; latest completed 30M bar at map as-at" : "; not the as-at market price"})</div> : null}
               {mapData.effectivePrice !== null ? (
-                <div>Effective price at report as-of: {formatMapPrice(mapData.effectivePrice, mapData.reportType, mapData.stockCode)}{mapData.effectivePriceTimestamp ? ` (completed bar ${mapData.effectivePriceTimestamp} New York)` : ""}. Levels below this price are supports; above are resistances. {mapData.effectivePriceSource || "Selected-instrument completed historical bar."}</div>
+                <div>Effective price at report as-of: {formatMapPrice(mapData.effectivePrice, mapData.reportType, mapData.stockCode)}{mapData.stockCode === "SPX" ? mapData.spxEsMainPrice !== null && mapData.spxEsBasis !== null
+                  ? <> · ESMain {mapData.spxEsMainPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (SPX + matched cash-close ES−SPX basis {mapData.spxEsBasis >= 0 ? "+" : ""}{mapData.spxEsBasis.toFixed(2)})</>
+                  : <> · ESMain n/a (matched ES−SPX basis unavailable)</> : null}{mapData.effectivePriceTimestamp ? ` (completed bar ${mapData.effectivePriceTimestamp} New York)` : ""}. Levels below this price are supports; above are resistances. {mapData.effectivePriceSource || "Selected-instrument completed historical bar."}</div>
               ) : <div className="text-amber-700">No effective price at the report as-of is available. Source report sides are retained; no current quote is substituted.</div>}
               {mapData.asAtClose && mapData.stockCode !== "SPX" ? <div className="text-xs">Direct selected-instrument 30M bar: {formatMapPrice(mapData.asAtClose.price, mapData.reportType, mapData.stockCode)} (bar starting {mapData.asAtClose.barTime} New York).</div> : null}
               {mapData.reportType === "spx-map" ? <p className="mt-2 text-xs text-amber-800">{mapData.stockCode === "SPX" ? "SPX ranges are index points, not ETF prices. SPY, SPXL and QQQ links use separately mapped ETF price ranges; support levels open Buy range orders and resistance levels open Sell range orders." : `${mapData.stockCode} ranges are derived from SPX zones, not direct ${mapData.stockCode} report levels.`} These links open prefilled order forms; they do not submit orders. The original SPX scores and option evidence do not establish target-instrument option positioning.</p> : null}
@@ -1544,9 +1680,9 @@ export default function SupportResistancePage() {
               {mapData.spxOptionLoading ? <p>Loading SPXW option evidence…</p> : mapData.spxOptionError
                 ? <Alert variant="warning">SPXW option evidence unavailable: {mapData.spxOptionError}. The SPX levels remain visible.</Alert>
                 : mapData.spxOptions ? <>
-                  <div>SPXW observation date: {mapData.spxOptions.observationDate} · Expiry: {mapData.spxOptions.expiry} · Same strike: {mapData.spxOptions.strike.toFixed(2)} (nearest to effective SPX {formatMapPrice(mapData.spxOptions.reference, "spx-map")})</div>
+                  <div>SPXW observation date: {mapData.spxOptions.observationDate} · Expiry: {mapData.spxOptions.expiry} · Same strike: {formatSpxPriceForDate(mapData.spxOptions.strike, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)} (nearest to effective SPX {formatSpxPriceForDate(mapData.spxOptions.reference, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)})</div>
                   <div>Call {formatPrice(mapData.spxOptions.callPrice)} ({mapData.spxOptions.callSource}) + put {formatPrice(mapData.spxOptions.putPrice)} ({mapData.spxOptions.putSource}) = {formatPrice(mapData.spxOptions.premium)} premium.</div>
-                  <div>Illustrative effective-SPX ± premium to expiry: {formatMapPrice(mapData.spxOptions.expiryRange.low, "spx-map")} – {formatMapPrice(mapData.spxOptions.expiryRange.high, "spx-map")}.</div>
+                  <div>Illustrative effective-SPX ± premium to expiry: {formatSpxPriceForDate(mapData.spxOptions.expiryRange.low, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)} – {formatSpxPriceForDate(mapData.spxOptions.expiryRange.high, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)}.</div>
                   <p className="text-xs text-amber-800">These SQL rows were selected by ObservationDate only. Their quote times are unverified and they may postdate the report as-at; this is not a live ATM quote, next-session range, support/resistance, or executable price.</p>
                 </> : <p className="text-amber-800">No valid same-strike, same-expiry SPXW call/put pair for option observation date {mapData.spxOptionObservationDate || "unavailable"}. No premium is inferred from another day.</p>}
             </CardContent>

@@ -509,6 +509,75 @@ def get_stock_map_prices(
         raise HTTPException(status_code=500, detail="Unable to load stock mapped prices") from exc
 
 
+@router.get("/stock-map-live-price")
+def get_stock_map_live_price(
+    stock_code: str = Query(..., min_length=1, max_length=40),
+    username: str = Depends(verify_credentials),
+) -> Dict[str, Any]:
+    """Return a quote-only live price; translate SPX from live ES using a matched cash-close basis."""
+    requested_code = stock_code.strip().upper()
+    base_code = requested_code.removesuffix(".US").removesuffix(".AX")
+    is_spx_derived = base_code.endswith("_D")
+    quote_code = base_code[:-2] if is_spx_derived else base_code
+    live_price = None
+    source = None
+    es_live_price = None
+    es_spx_basis = None
+    basis_date = None
+
+    try:
+        if quote_code in {"SPX", "ESMAIN"}:
+            futures = get_live_futures_prices(
+                ["ES"], wait_seconds=2.0,
+                connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS, quote_only=True,
+            )
+            es_quote = futures.get("ES") or {}
+            raw_es_price = es_quote.get("price")
+            if isinstance(raw_es_price, (int, float)) and math.isfinite(raw_es_price) and raw_es_price > 0:
+                es_live_price = float(raw_es_price)
+                if quote_code == "ESMAIN":
+                    live_price = es_live_price
+                    source = str(es_quote.get("source") or "ib_live")
+                else:
+                    close_dates: Dict[str, str] = {}
+                    latest_date = _load_latest_snapshot_date()
+                    closes = _load_snapshot_closes(latest_date, close_dates) if latest_date else {}
+                    spx_close = closes.get("SPX")
+                    es_close = closes.get("ESMain")
+                    if (spx_close is not None and es_close is not None
+                            and close_dates.get("SPX")
+                            and close_dates.get("SPX") == close_dates.get("ESMain")):
+                        es_spx_basis = round(es_close - spx_close, 4)
+                        basis_date = close_dates["SPX"]
+                        candidate_spx = es_live_price - es_spx_basis
+                        if math.isfinite(candidate_spx) and candidate_spx > 0:
+                            live_price = candidate_spx
+                            source = f"{es_quote.get('source') or 'IB ES quote'} less matched ES−SPX cash-close basis ({basis_date})"
+        else:
+            quotes = get_live_stock_prices(
+                [quote_code], wait_seconds=2.0,
+                connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
+                allow_close_fallback=False, quote_only=True,
+            )
+            quote = quotes.get(quote_code) or {}
+            value = quote.get("price")
+            if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
+                live_price = float(value)
+                source = str(quote.get("source") or "ib_live")
+    except Exception:
+        logger.warning("Unable to load live Stock Map price for %s", requested_code, exc_info=True)
+
+    return {
+        "stock_code": requested_code,
+        "live_price": round(live_price, 4) if live_price is not None else None,
+        "source": source,
+        "es_live_price": round(es_live_price, 4) if es_live_price is not None else None,
+        "es_spx_basis": es_spx_basis,
+        "basis_date": basis_date,
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.get("/spx-map-prices")
 def get_spx_map_prices(
     observation_date: date | None = Query(default=None),
