@@ -2,7 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { knownHrefs, normalizeSymbol, recentHrefs, symbolDestinations } from "./workspaceNavigation";
 
 import { useAuth } from "../contexts/AuthContext";
 
@@ -12,7 +13,11 @@ type NavGroup = { label: string; items: NavItem[] };
 const NAV: NavGroup[] = [
   {
     label: "Analysis",
-    items: [{ href: "/stock-level-overview", label: "Stock Levels Overview" }, { href: "/support-resistance", label: "Support / Resistance" }],
+    items: [
+      { href: "/stock-level-overview", label: "Stock Levels Overview" },
+      { href: "/support-resistance", label: "Support / Resistance" },
+      { href: "/relative-performance", label: "Relative Performance" },
+    ],
   },
   {
     label: "Trading",
@@ -130,6 +135,7 @@ function initials(username?: string | null) {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || "/";
+  const router = useRouter();
   const { username, logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -137,7 +143,56 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set([activeGroup || "Market"]));
 
   const flat = useMemo(() => NAV.flatMap((group) => group.items), []);
+  const allowedHrefs = useMemo(() => flat.map((item) => item.href), [flat]);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [recent, setRecent] = useState<string[]>([]);
+  const [navLoadedFor, setNavLoadedFor] = useState<string | null>(null);
+  const [symbolInput, setSymbolInput] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [symbolDestination, setSymbolDestination] = useState<"map" | "us-chart" | "asx-chart" | "range-order">("map");
+  const [symbolError, setSymbolError] = useState("");
   const activeLabel = flat.find((item) => isActive(pathname, item.href))?.label;
+
+  useEffect(() => {
+    if (!username) return;
+    const key = `workspace-nav:${username}`;
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) || "{}");
+      setFavorites(knownHrefs(saved.favorites, allowedHrefs));
+      setRecent(recentHrefs(knownHrefs(saved.recent, allowedHrefs), pathname, allowedHrefs));
+    } catch {
+      setFavorites([]);
+      setRecent(recentHrefs([], pathname, allowedHrefs));
+    }
+    setNavLoadedFor(username);
+  }, [username, allowedHrefs]);
+
+  useEffect(() => {
+    if (!username || navLoadedFor !== username || !allowedHrefs.includes(pathname)) return;
+    setRecent((current) => recentHrefs(current, pathname, allowedHrefs));
+  }, [pathname, username, allowedHrefs, navLoadedFor]);
+
+  useEffect(() => {
+    if (!username || navLoadedFor !== username) return;
+    try { localStorage.setItem(`workspace-nav:${username}`, JSON.stringify({ favorites, recent })); } catch { /* Storage optional. */ }
+  }, [username, navLoadedFor, favorites, recent]);
+
+  const toggleFavorite = (href: string) => {
+    const next = favorites.includes(href) ? favorites.filter((item) => item !== href) : [...favorites, href];
+    setFavorites(next);
+  };
+
+  const searchSymbol = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const symbol = normalizeSymbol(symbolInput);
+    if (!symbol) { setSymbolError("Enter a valid stock symbol"); return; }
+    const destinations = symbolDestinations(symbol, symbolDestination === "asx-chart" ? "ASX" : "US");
+    const href = symbolDestination === "map" ? destinations?.map : symbolDestination === "range-order" ? destinations?.rangeOrder : destinations?.chart;
+    if (!href) { setSymbolError("Destination unavailable"); return; }
+    setSymbolError("");
+    setSearchOpen(false);
+    router.push(href);
+  };
 
   useEffect(() => {
     setMobileOpen(false);
@@ -194,6 +249,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <nav id="primary-navigation" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-5 text-sm">
+            {(favorites.length > 0 || recent.length > 0) ? <div className={collapsed ? "mb-5 md:hidden" : "mb-5 space-y-3"}>
+              {([ ["Favorites", favorites], ["Recent", recent] ] as const).map(([heading, hrefs]) => hrefs.length ? <div key={heading}>
+                <div className="px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">{heading}</div>
+                <div className="mt-1 flex flex-wrap gap-1">{hrefs.map((href) => <Link key={href} href={href} className="rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100">{flat.find((item) => item.href === href)?.label}</Link>)}</div>
+              </div> : null)}
+            </div> : null}
             {NAV.map((group) => {
               const open = openGroups.has(group.label);
               const active = group.items.some((item) => isActive(pathname, item.href));
@@ -216,17 +277,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                       {group.items.map((item) => {
                         const itemActive = isActive(pathname, item.href);
                         return (
+                          <div key={item.href} className="flex items-center">
                           <Link
-                            key={item.href}
                             href={item.href}
                             aria-current={itemActive ? "page" : undefined}
-                            className={["group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors", collapsed ? "md:justify-center md:px-0" : "", itemActive ? "bg-indigo-50 font-semibold text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"].join(" ")}
+                            className={["group relative flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors", collapsed ? "md:justify-center md:px-0" : "", itemActive ? "bg-indigo-50 font-semibold text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"].join(" ")}
                             title={item.label}
                           >
                             <span className={["h-1.5 w-1.5 shrink-0 rounded-full transition-colors", itemActive ? "bg-indigo-600" : "bg-slate-300 group-hover:bg-slate-500", collapsed ? "md:hidden" : ""].join(" ")} />
                             <span className={collapsed ? "md:hidden" : "truncate"}>{item.label}</span>
                             {collapsed ? <span className="hidden text-[10px] font-semibold text-slate-500 md:inline">{item.label.slice(0, 2).toUpperCase()}</span> : null}
                           </Link>
+                          <button type="button" onClick={() => toggleFavorite(item.href)} aria-label={`${favorites.includes(item.href) ? "Remove" : "Add"} ${item.label} ${favorites.includes(item.href) ? "from" : "to"} favorites`}
+                            aria-pressed={favorites.includes(item.href)} title={favorites.includes(item.href) ? "Remove favorite" : "Add favorite"} className={`rounded px-1.5 py-1 text-base hover:bg-indigo-50 ${favorites.includes(item.href) ? "text-amber-500" : "text-slate-300"} ${collapsed ? "md:hidden" : ""}`}>
+                            {favorites.includes(item.href) ? "★" : "☆"}
+                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -257,16 +323,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <span className="truncate font-semibold text-slate-900">{activeLabel || "Stocks AU"}</span>
                 </div>
               </div>
+              <form role="search" onSubmit={searchSymbol} className={`${searchOpen ? "flex" : "hidden"} absolute left-3 right-3 top-16 z-50 flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-lg sm:static sm:flex sm:flex-nowrap sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none`}>
+                <input aria-label="Search stock symbol" value={symbolInput} onChange={(event) => { setSymbolInput(event.target.value.toUpperCase()); setSymbolError(""); }} placeholder="Symbol" className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm sm:w-24 sm:flex-none lg:w-32" />
+                <select aria-label="Symbol destination" value={symbolDestination} onChange={(event) => setSymbolDestination(event.target.value as typeof symbolDestination)} className="rounded-md border border-slate-300 bg-white px-1 py-1.5 text-xs">
+                  <option value="map">US Map</option><option value="us-chart">US Chart</option><option value="asx-chart">ASX Chart</option><option value="range-order">Range Order</option>
+                </select>
+                <button type="submit" className="rounded-md bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white">Go</button>
+                {symbolError && <span role="alert" className="w-full text-xs text-red-700">{symbolError}</span>}
+              </form>
               <div className="flex shrink-0 items-center gap-3">
+                <button type="button" onClick={() => setSearchOpen((open) => !open)} aria-label="Search stock symbol" aria-expanded={searchOpen} className="rounded-md border px-2 py-1 text-lg text-indigo-700 sm:hidden">⌕</button>
                 <span className="hidden items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 sm:inline-flex"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Workspace ready</span>
                 <button type="button" onClick={logout} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" title="Sign out">Logout</button>
               </div>
             </div>
           </header>
 
-          <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">{children}</main>
+          <main className="mx-auto max-w-[1600px] px-4 pb-24 pt-6 sm:px-6 sm:py-8 lg:px-8">{children}</main>
         </div>
       </div>
+      <nav aria-label="Mobile quick tools" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-lg backdrop-blur sm:hidden">
+        {[["Home", "/"], ["Levels", "/stock-level-overview"], ["Chart", "/support-resistance"], ["Orders", "/range-orders"]].map(([label, href]) => <Link key={href} href={href} className={`px-1 py-3 text-center text-xs font-medium ${isActive(pathname, href) ? "text-indigo-700" : "text-slate-600"}`}>{label}</Link>)}
+        <button type="button" onClick={() => setMobileOpen(true)} className="px-1 py-3 text-center text-xs font-medium text-slate-600" aria-label="Open all tools">More</button>
+      </nav>
     </div>
   );
 }

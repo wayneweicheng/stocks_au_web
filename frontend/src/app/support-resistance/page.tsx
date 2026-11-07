@@ -10,13 +10,15 @@ import PageHeader from "../components/PageHeader";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MappedLevelReportDetails from "../components/MappedLevelReportDetails";
 import { classifyMapZones, mapLineColor, mapLineWidth, mapAsOfTime, mapNextSessionStraddle, mapObservationDate, mapStockCode, mapZones, parseStockMap, reportAsAtClose, reportMatchesStock, reportTimeCategoryPosition, type MapZone, type NextSessionStraddle, type ReportAsOfTime, type StockMapReport } from "./stockMapLevels";
-import { parseSpxMap, spxOptionObservationDate, spxOptionPair, spxPreviousCompletedClose, spxReportReference, type SpxOptionPair } from "./spxMapLevels";
+import { parseSpxMap, spxOptionObservationDate, spxOptionPair, spxOptionRangeForInstrument, spxPreviousCompletedClose, spxReportReference, type SpxOptionPair } from "./spxMapLevels";
+import { matchedEsBasis } from "../spx-map-reports/[jobId]/mapped-levels/esBasis";
 import { deriveSpxZones, effectivePriceForSpxInstrument, spxInstrumentForCode } from "./spxDerivedLevels";
 import { clickedLevelPanelId, levelPanelId, type LevelTab } from "./chartLevelNavigation";
 import { sortLevelEntries, topPercentEntries, type LevelSort } from "./levelSorting";
 import { CHART_RANGE_OPTIONS, DEFAULT_CHART_DAYS, chartRangeParams, type ChartTimeframe } from "./chartRange";
 import { chartLevelColor, chartMinimumWidth, spxExpiryRangeShape, straddleZoneShape } from "./chartLayout";
 import { scoreYPosition } from "./chartScoreLabels";
+import { chartMobileTicks } from "./chartMobileTicks";
 import { priceBottomForScroll, priceWindowForBars } from "./priceViewport";
 
 const LOOKBACK_DAY_OPTIONS = ["3", "5", "10", "20", "30"];
@@ -712,7 +714,7 @@ export default function SupportResistancePage() {
         .then(async (liveResponse) => {
           const livePayload = await liveResponse.json();
           if (!liveResponse.ok) throw new Error(livePayload?.detail || `HTTP ${liveResponse.status}`);
-          return livePayload as { live_price?: unknown; source?: unknown; fetched_at_utc?: unknown };
+          return livePayload as { live_price?: unknown; source?: unknown; price_time?: unknown; fetched_at_utc?: unknown };
         })
         .catch(() => null);
       const response = await authenticatedFetch(`${baseUrl}/api/${reportType}-reports/${encodeURIComponent(report.job_id)}/json`, { cache: "no-store" });
@@ -755,6 +757,7 @@ export default function SupportResistancePage() {
       let spxEsMainPrice: number | null = null;
       let spxEsBasis: number | null = null;
       let spxEsBasisDate: string | null = null;
+      let spxOptionReference: number | null = null;
       if (spxInstrument) {
         // All SPX/derived instruments use the same as-of history snapshot as
         // SPX Mapped Levels; never substitute current IB quotes for D-levels.
@@ -769,14 +772,17 @@ export default function SupportResistancePage() {
             const snapshot = await mappingResponse.json();
             if (!mappingResponse.ok) throw new Error(typeof snapshot?.detail === "string" ? snapshot.detail : `HTTP ${mappingResponse.status}`);
             effectivePrice = effectivePriceForSpxInstrument(spxInstrument, snapshot.effective_prices);
-            if (spxInstrument === "SPX" && effectivePrice !== null && typeof snapshot.effective_price_basis === "number" && Number.isFinite(snapshot.effective_price_basis)) {
-              const esEquivalent = effectivePrice + snapshot.effective_price_basis;
-              if (Number.isFinite(esEquivalent) && esEquivalent > 0) {
-                spxEsBasis = snapshot.effective_price_basis;
-                spxEsBasisDate = typeof snapshot.historical_close_date === "string" ? snapshot.historical_close_date : null;
-                spxEsMainPrice = esEquivalent;
-              }
+            const reportMatchedEsBasis = matchedEsBasis(snapshot);
+            if ((spxInstrument === "SPX" || spxInstrument === "ESMain") && reportMatchedEsBasis !== null) {
+              spxEsBasis = reportMatchedEsBasis;
+              spxEsBasisDate = snapshot.historical_close_dates?.SPX || null;
+              if (spxInstrument === "ESMain") spxEsMainPrice = effectivePrice;
+              else if (effectivePrice !== null) spxEsMainPrice = effectivePrice + reportMatchedEsBasis;
             }
+            const spxEffectivePrice = snapshot.effective_prices?.SPX;
+            spxOptionReference = spxInstrument === "SPX" ? effectivePrice
+              : spxInstrument === "ESMain" && typeof spxEffectivePrice === "number" && Number.isFinite(spxEffectivePrice) && spxEffectivePrice > 0
+                ? spxEffectivePrice : null;
             if (spxInstrument) {
               const sourceZones = [...mapZones(map, "support"), ...mapZones(map, "resistance")];
               const prices = snapshot.effective_prices || {};
@@ -825,6 +831,7 @@ export default function SupportResistancePage() {
             spxEsMainPrice = null;
             spxEsBasis = null;
             spxEsBasisDate = null;
+            spxOptionReference = null;
             mappingError = exc instanceof Error ? exc.message : String(exc);
             if (spxInstrument !== "SPX") { reportSupports = []; reportResistances = []; }
           }
@@ -838,13 +845,14 @@ export default function SupportResistancePage() {
         ? classifyMapZones(reportSupports, reportResistances, classificationPrice)
         : { supports: reportSupports, resistances: reportResistances };
       const spxReference = isSpx ? spxReportReference(map) : null;
-      const fetchSpxOptions = spxInstrument === "SPX" && !!optionObservationDate && effectivePrice !== null;
+      const needsSpxAtmOptions = spxInstrument === "SPX" || spxInstrument === "ESMain";
+      const fetchSpxOptions = needsSpxAtmOptions && !!optionObservationDate && spxOptionReference !== null;
       setMapData({ jobId: report.job_id, reportType, stockCode: displayCode, stock_code: displayCode, observationDate,
         asOfTime, asAtClose, nextSessionStraddle: isSpx ? null : mapNextSessionStraddle(map), bars, ...zones,
         effectivePrice, livePrice: null, livePriceLoading: true, livePriceSource: null, livePriceFetchedAt: null,
         effectivePriceSource, effectivePriceTimestamp, spxEsMainPrice, spxEsBasis, spxEsBasisDate,
         spxOptions: null, spxOptionObservationDate: optionObservationDate, spxEtfOrderLevels, spxOptionLoading: fetchSpxOptions,
-        spxOptionError: spxInstrument === "SPX" && !fetchSpxOptions ? "SPX report as-of date or effective price unavailable; cannot select SPXW options." : null,
+        spxOptionError: needsSpxAtmOptions && !fetchSpxOptions ? "SPX report as-of date or effective SPX reference unavailable; cannot select SPXW options." : null,
         spxPreviousClose: isSpx ? spxPreviousCompletedClose(map) : null,
         sourceSpxReference: spxReference, mappingSource, mappingError,
         generatedAtSydney: typeof map.generated_at_sydney === "string" ? map.generated_at_sydney : null,
@@ -865,7 +873,7 @@ export default function SupportResistancePage() {
             livePrice,
             livePriceLoading: false,
             livePriceSource: typeof livePayload?.source === "string" ? livePayload.source : livePrice === null ? "Live quote unavailable" : null,
-            livePriceFetchedAt: typeof livePayload?.fetched_at_utc === "string" ? livePayload.fetched_at_utc : null,
+            livePriceFetchedAt: typeof livePayload?.price_time === "string" ? livePayload.price_time : typeof livePayload?.fetched_at_utc === "string" ? livePayload.fetched_at_utc : null,
           };
         });
       });
@@ -873,7 +881,7 @@ export default function SupportResistancePage() {
       // block an otherwise valid SPX chart or substitute an earlier SQL date.
       if (fetchSpxOptions) void (async () => {
         try {
-          const optionParams = new URLSearchParams({ observation_date: optionObservationDate!, reference_price: String(effectivePrice) });
+          const optionParams = new URLSearchParams({ observation_date: optionObservationDate!, reference_price: String(spxOptionReference) });
           const optionResponse = await authenticatedFetch(`${baseUrl}/api/support-resistance/spx-map-options?${optionParams}`, { cache: "no-store" });
           const optionPayload = await optionResponse.json();
           if (!optionResponse.ok) throw new Error(typeof optionPayload?.detail === "string" ? optionPayload.detail : `HTTP ${optionResponse.status}`);
@@ -959,12 +967,15 @@ export default function SupportResistancePage() {
       resistances: topPercentEntries<MapZone | PriceRange>(resistances, levelPercent.resistance, quality, Boolean(map)),
     };
   }, [chartData, activeTab, mapData, levelPercent.support, levelPercent.resistance]);
+  const mapAtmRange = useMemo(() => activeTab === "stock-map" && mapData?.spxOptions
+    ? spxOptionRangeForInstrument(mapData.spxOptions, mapData.stockCode, mapData.spxEsBasis) : null,
+  [activeTab, mapData?.spxOptions, mapData?.stockCode, mapData?.spxEsBasis]);
   const priceWindow = useMemo(() => {
     if (!visibleBars?.length || !visibleChartLevels) return null;
     const zones: Array<{ price: number; range_low: number; range_high: number }> =
       [...visibleChartLevels.supports, ...visibleChartLevels.resistances].map(({ level }) => level);
     const range = activeTab === "stock-map" ? mapData?.nextSessionStraddle?.nextSessionRange : null;
-    const spxExpiryRange = activeTab === "stock-map" ? mapData?.spxOptions?.expiryRange : null;
+    const spxExpiryRange = mapAtmRange;
     if (range) zones.push({ price: (range.low + range.high) / 2, range_low: range.low, range_high: range.high });
     if (spxExpiryRange) zones.push({ price: (spxExpiryRange.low + spxExpiryRange.high) / 2, range_low: spxExpiryRange.low, range_high: spxExpiryRange.high });
     if (activeTab === "stock-map" && typeof mapData?.livePrice === "number" && Number.isFinite(mapData.livePrice) && mapData.livePrice > 0) {
@@ -1077,7 +1088,7 @@ export default function SupportResistancePage() {
 
       const escapeHover = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] || char);
       if (mapChart && typeof mapChart.livePrice === "number" && Number.isFinite(mapChart.livePrice) && mapChart.livePrice > 0) {
-        const livePriceText = `<b>Live price</b><br>${formatMapPrice(mapChart.livePrice, mapChart.reportType, mapChart.stockCode)}${mapChart.livePriceSource ? `<br>${escapeHover(mapChart.livePriceSource)}` : ""}<extra></extra>`;
+        const livePriceText = `<b>Selected price</b><br>${formatMapPrice(mapChart.livePrice, mapChart.reportType, mapChart.stockCode)}${mapChart.livePriceSource ? `<br>${escapeHover(mapChart.livePriceSource)}` : ""}${mapChart.livePriceFetchedAt ? `<br>${escapeHover(mapChart.livePriceFetchedAt)}` : ""}<extra></extra>`;
         traces.push({
           x: bars.map((bar) => bar.time),
           y: bars.map(() => mapChart.livePrice),
@@ -1093,6 +1104,7 @@ export default function SupportResistancePage() {
 
       const zoneHover = (zone: PriceRange | MapZone, side: string, index: number) => {
         const hint = `<br><b>Click to view level${mapChart?.reportType === "spx-map" || (mapChart && !mapChart.asAtClose) ? " details" : " and order links"}</b>`;
+        if (isMobileViewport) return `<b>${escapeHover(side)} zone</b><br>Anchor ${formatLevelPrice(zone.price)} · range ${formatLevelPrice(zone.range_low)}–${formatLevelPrice(zone.range_high)}${"score" in zone && zone.score !== null ? `<br>Score ${zone.score.toFixed(1)}` : ""}${hint}<extra></extra>`;
         if ("score" in zone) {
           const sourceRange = zone.details.source_spx_range;
           const sourceAnchor = zone.details.source_spx_anchor;
@@ -1114,7 +1126,7 @@ export default function SupportResistancePage() {
           const gex = typeof option?.absolute_gex_at_strike === "number" && Number.isFinite(option.absolute_gex_at_strike)
             ? ` · |GEX| ${Math.abs(option.absolute_gex_at_strike).toLocaleString()} (size only)` : "";
           const optionText = mapChart?.reportType === "spx-map" && option && (oi || wall) ? `<br>SPXW source${wall}${oi}${gex}${expiries}${observed}` : "";
-          return `<b>${side} Zone</b><br>${mapChart?.reportType === "spx-map" ? "SPX Map" : "Stock Map"} ${zone.sourceSide === "support" ? "S" : "R"}${zone.rank}${zone.sourceSide.toLowerCase() !== side.toLowerCase() ? ` (reclassified as ${side.toLowerCase()})` : ""}<br>Anchor: ${formatLevelPrice(zone.price)}<br>Range: ${formatLevelPrice(zone.range_low)} – ${formatLevelPrice(zone.range_high)}<br>Rank: ${zone.rank}<br>Score: ${zone.score === null ? "n/a" : zone.score.toFixed(1)}<br>Strength: ${escapeHover(zone.strength)}<br>${escapeHover(zone.levelConfidence)}<br>${escapeHover(Array.isArray(zone.details.main_evidence) ? zone.details.main_evidence.filter((item): item is string => typeof item === "string").join("; ") : "")}${mappedReference}${origin}${optionText}${hint}<extra></extra>`;
+          return `<b>${side} Zone</b><br>${mapChart?.reportType === "spx-map" ? "SPX Map" : "Stock Map"} ${zone.sourceSide === "support" ? "S" : "R"}${zone.rank}${zone.sourceSide.toLowerCase() !== side.toLowerCase() ? ` (reclassified as ${side.toLowerCase()})` : ""}<br>Anchor: ${formatLevelPrice(zone.price)}<br>Range: ${formatLevelPrice(zone.range_low)} – ${formatLevelPrice(zone.range_high)}<br>Rank: ${zone.rank}<br>Score: ${zone.score === null ? "n/a" : zone.score.toFixed(1)}<br>Strength: ${escapeHover(zone.strength)}<br>${escapeHover(zone.levelConfidence)}<br>${escapeHover(Array.isArray(zone.details.main_evidence) ? zone.details.main_evidence.filter((item): item is string => typeof item === "string").slice(0, 2).join("; ").slice(0, 160) : "")}${mappedReference}${origin}${optionText}${hint}<extra></extra>`;
         }
         return `<b>${side} Zone</b><br>Mid: ${zone.price.toFixed(4)}<br>Range Start: ${zone.range_low.toFixed(4)}<br>Range End: ${zone.range_high.toFixed(4)}<br>Strength Rank: ${zone.strength_rank || index + 1}<br>Touches: ${zone.touches}<br>Change From Reference Price: ${zone.distance_pct > 0 ? "+" : ""}${zone.distance_pct.toFixed(2)}%<br>ATR Distance: ${zone.distance_atr.toFixed(2)}${hint}<extra></extra>`;
       };
@@ -1195,6 +1207,8 @@ export default function SupportResistancePage() {
         });
       }
 
+      const spxAtmRange = mapChart?.spxOptions
+        ? spxOptionRangeForInstrument(mapChart.spxOptions, mapChart.stockCode, mapChart.spxEsBasis) : null;
       const asOfPosition = mapChart?.asOfTime
         ? reportTimeCategoryPosition(bars, mapChart.asOfTime.easternWallTime) : null;
       const asOfLabel = mapChart?.asOfTime?.label;
@@ -1207,6 +1221,7 @@ export default function SupportResistancePage() {
           title: "Time",
           type: "category",
           rangeslider: { visible: false },
+          ...(isMobileViewport ? { ...chartMobileTicks(bars), tickangle: 0, tickfont: { size: 10 } } : {}),
           // Plotly's category autorange can reserve a large empty region after
           // the last candle. Bound it to the loaded bars (or one extra slot
           // when the saved map's as-at marker lies beyond the last bar).
@@ -1216,7 +1231,7 @@ export default function SupportResistancePage() {
         },
         shapes: [
           ...(mapChart?.nextSessionStraddle ? [straddleZoneShape(mapChart.nextSessionStraddle.nextSessionRange)] : []),
-          ...(mapChart?.spxOptions ? [spxExpiryRangeShape(mapChart.spxOptions.expiryRange)] : []),
+          ...(spxAtmRange ? [spxExpiryRangeShape(spxAtmRange)] : []),
           ...(markerPosition === null ? [] : [{
             type: "line", xref: "x", yref: "paper",
             x0: markerPosition, x1: markerPosition, y0: 0, y1: 1,
@@ -1354,7 +1369,7 @@ export default function SupportResistancePage() {
         })}
         <p className="text-xs text-slate-500 sm:col-span-2">0% hides all levels; 100% shows all. Partial percentages round up to a whole level. Candles, level calculations and map as-at remain unchanged.</p>
       </div> : null}
-      {activeTab === "stock-map" ? <p className="mb-2 text-xs text-slate-500">Candles show the latest {selectedDays} calendar days. Once available, the dotted blue live-price line reclassifies levels below it as support and levels above it as resistance; original report-side labels remain in the details.</p> : null}
+      {activeTab === "stock-map" ? <p className="mb-2 text-xs text-slate-500">Candles show the latest {selectedDays} calendar days. The dotted blue selected-price line uses the session-aware source (weekend 30-minute database close, overnight IB OVERNIGHT, otherwise IB SMART) and reclassifies levels below it as support and levels above it as resistance; original report-side labels remain in the details. Weekend database reads use NOLOCK and can briefly observe an in-progress update.</p> : null}
       {mapOutsideWindow ? <Alert variant="info">Map as-at is outside the chart’s recent candle window. The historical as-at close is still used for level classification; the purple marker is not drawn in this window.</Alert> : null}
       {levels ? <details className="mb-3 text-sm text-slate-700">
         <summary className="cursor-pointer text-indigo-700">Jump to a level{activeTab === "stock-map" && mapData?.reportType === "spx-map" ? " and its SPX source details" : " and its order links"} (keyboard accessible)</summary>
@@ -1409,9 +1424,9 @@ export default function SupportResistancePage() {
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-200 pt-3 text-[11px] text-slate-700 sm:gap-x-4 sm:text-xs" aria-label="Chart legend">
             <span className="inline-flex items-center gap-1"><span className="h-3 w-3 border border-emerald-600 bg-emerald-200" />Price candles</span>
             <span className="inline-flex items-center gap-1"><span className="h-3 w-3 bg-slate-400" />Volume</span>
-            {activeTab === "stock-map" && mapData ? <span className="inline-flex items-center gap-1" title={mapData.livePriceSource || "Live quote unavailable"}><span className="w-6 border-t-2 border-dotted border-blue-600" />Live price {mapData.livePriceLoading ? "loading…" : formatMapPrice(mapData.livePrice, mapData.reportType, mapData.stockCode)}</span> : null}
+            {activeTab === "stock-map" && mapData ? <span className="inline-flex items-center gap-1" title={mapData.livePriceSource || "Selected price unavailable"}><span className="w-6 border-t-2 border-dotted border-blue-600" />Selected price {mapData.livePriceLoading ? "loading…" : formatMapPrice(mapData.livePrice, mapData.reportType, mapData.stockCode)}</span> : null}
             {activeTab === "stock-map" && mapData?.nextSessionStraddle ? <span className="inline-flex items-center gap-1" title={`Indicative next-session range for ${mapData.nextSessionStraddle.nextSession}, derived from ${mapData.nextSessionStraddle.quoteDate} quotes; not support or resistance`}><span className="h-3 w-3 border border-amber-500 bg-yellow-200" />ATM {mapData.nextSessionStraddle.quoteDate}: {formatPrice(mapData.nextSessionStraddle.strike)} call {formatPrice(mapData.nextSessionStraddle.callPrice)} + put {formatPrice(mapData.nextSessionStraddle.putPrice)} · next-session range {formatPrice(mapData.nextSessionStraddle.nextSessionRange.low)}–{formatPrice(mapData.nextSessionStraddle.nextSessionRange.high)}</span> : null}
-            {activeTab === "stock-map" && mapData?.spxOptions ? <span className="inline-flex items-center gap-1" title={`Illustrative SPXW observation-date call+put premium range to ${mapData.spxOptions.expiry}; quote timestamps unverified, not support/resistance`}><span className="h-3 w-3 border border-orange-700 bg-orange-200" />SPXW expiry proxy {formatSpxPriceForDate(mapData.spxOptions.expiryRange.low, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)}–{formatSpxPriceForDate(mapData.spxOptions.expiryRange.high, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)}</span> : null}
+            {activeTab === "stock-map" && mapData?.spxOptions && mapAtmRange ? <span className="inline-flex items-center gap-1" title={`Illustrative SPXW observation-date call+put premium range to ${mapData.spxOptions.expiry}; ESMain range is translated with matched ES−SPX basis ${mapData.spxEsBasisDate || "unavailable"}; not support/resistance`}><span className="h-3 w-3 border border-orange-700 bg-orange-200" />{mapData.stockCode === "ESMain" ? "ESMain ATM range" : "SPXW expiry proxy"} {mapData.stockCode === "ESMain" ? `${formatMapPrice(mapAtmRange.low, mapData.reportType, mapData.stockCode)}–${formatMapPrice(mapAtmRange.high, mapData.reportType, mapData.stockCode)}` : `${formatSpxPriceForDate(mapData.spxOptions.expiryRange.low, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)}–${formatSpxPriceForDate(mapData.spxOptions.expiryRange.high, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)}`}</span> : null}
             {levels ? (["support", "resistance"] as const).flatMap((side) => visibleSide(side).map(({ level: zone, originalIndex }) => (
               <button key={`${side}-${originalIndex}`} type="button" onClick={() => focusLevelPanel(levelPanelId(activeTab as LevelTab, side, originalIndex))}
                 title={`Jump to ${side} ${formatChartLevelPrice(zone.price)}${"score" in zone ? ` · Score ${zone.score ?? "n/a"}` : ` · Rank ${zone.strength_rank || "n/a"}`}`}
@@ -1692,14 +1707,15 @@ export default function SupportResistancePage() {
             <CardHeader><CardTitle>SPX Source Evidence · {mapData.stockCode} Derived Ranges</CardTitle></CardHeader>
             <CardContent className="text-sm text-slate-700">Each derived level lists its source SPX anchor and SPX zone. SPXW options in the source map are SPX evidence, not a same-day ATM quote for {mapData.stockCode}. No target option premium is inferred.</CardContent>
           </Card> : mapData.reportType === "spx-map" ? <Card>
-            <CardHeader><CardTitle>SPXW ATM Proxy · Observation-Date Call + Put</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{mapData.stockCode === "ESMain" ? "ESMain ATM Range · SPXW Call + Put" : "SPXW ATM Proxy · Observation-Date Call + Put"}</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm text-slate-700">
               {mapData.spxOptionLoading ? <p>Loading SPXW option evidence…</p> : mapData.spxOptionError
                 ? <Alert variant="warning">SPXW option evidence unavailable: {mapData.spxOptionError}. The SPX levels remain visible.</Alert>
                 : mapData.spxOptions ? <>
                   <div>SPXW observation date: {mapData.spxOptions.observationDate} · Expiry: {mapData.spxOptions.expiry} · Same strike: {formatSpxPriceForDate(mapData.spxOptions.strike, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)} (nearest to effective SPX {formatSpxPriceForDate(mapData.spxOptions.reference, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)})</div>
                   <div>Call {formatPrice(mapData.spxOptions.callPrice)} ({mapData.spxOptions.callSource}) + put {formatPrice(mapData.spxOptions.putPrice)} ({mapData.spxOptions.putSource}) = {formatPrice(mapData.spxOptions.premium)} premium.</div>
-                  <div>Illustrative effective-SPX ± premium to expiry: {formatSpxPriceForDate(mapData.spxOptions.expiryRange.low, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)} – {formatSpxPriceForDate(mapData.spxOptions.expiryRange.high, mapData.spxEsBasis, mapData.spxEsBasisDate, mapData.spxOptions.observationDate)}.</div>
+                  <div>Illustrative SPX ± call/put premium to expiry: {formatMapPrice(mapData.spxOptions.expiryRange.low, "spx-map", "SPX")} – {formatMapPrice(mapData.spxOptions.expiryRange.high, "spx-map", "SPX")}.</div>
+                  {mapData.stockCode === "ESMain" ? mapAtmRange ? <div>ESMain translated range: {formatMapPrice(mapAtmRange.low, "spx-map", "ESMain")} – {formatMapPrice(mapAtmRange.high, "spx-map", "ESMain")} = SPX range + matched ES−SPX basis {mapData.spxEsBasis! >= 0 ? "+" : ""}{mapData.spxEsBasis!.toFixed(2)} ({mapData.spxEsBasisDate}).</div> : <Alert variant="warning">ESMain ATM range unavailable: matched ES−SPX basis is missing; SPX range is not plotted on the ESMain chart.</Alert> : null}
                   <p className="text-xs text-amber-800">These SQL rows were selected by ObservationDate only. Their quote times are unverified and they may postdate the report as-at; this is not a live ATM quote, next-session range, support/resistance, or executable price.</p>
                 </> : <p className="text-amber-800">No valid same-strike, same-expiry SPXW call/put pair for option observation date {mapData.spxOptionObservationDate || "unavailable"}. No premium is inferred from another day.</p>}
             </CardContent>

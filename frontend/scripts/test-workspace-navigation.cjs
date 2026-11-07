@@ -1,0 +1,14 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const ts = require('typescript');
+require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, filename);
+const { normalizeSymbol, symbolDestinations, recentHrefs, knownHrefs } = require('../src/app/components/workspaceNavigation.ts');
+assert.equal(normalizeSymbol(' spxl.us '), 'SPXL');
+assert.equal(normalizeSymbol('javascript:alert(1)'), null);
+assert.equal(normalizeSymbol(''), null);
+assert.equal(symbolDestinations('SPXL').map, '/support-resistance?stock=SPXL&tab=stock-map');
+assert.equal(symbolDestinations('BHP', 'ASX').map, null);
+assert.equal(symbolDestinations('BHP', 'ASX').chart, '/integrated-charts?symbol=BHP&market=ASX');
+assert.deepEqual(knownHrefs(['/support-resistance', '/evil', '/support-resistance'], ['/support-resistance']), ['/support-resistance']);
+assert.deepEqual(recentHrefs(['/range-orders', '/support-resistance'], '/support-resistance', ['/range-orders', '/support-resistance']), ['/support-resistance', '/range-orders']);
+console.log('Workspace favorites/recents and symbol navigation: OK');

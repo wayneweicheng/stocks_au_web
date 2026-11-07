@@ -19,6 +19,7 @@ from app.services.live_stock_price_service import (
     get_live_index_price,
     get_live_stock_prices,
 )
+from app.services.market_aware_stock_price_service import market_aware_stock_prices
 
 
 router = APIRouter(prefix="/api", tags=["index-stock-price-mapping"])
@@ -525,21 +526,10 @@ def get_stock_map_live_prices(
     if any(not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,14}", symbol) for symbol in symbols):
         raise HTTPException(status_code=400, detail="Invalid stock symbol")
     try:
-        quotes = get_live_stock_prices(
-            symbols, wait_seconds=2.0,
-            connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
-            allow_close_fallback=False, quote_only=True,
-        )
-    except Exception:
-        logger.warning("IB batch stock quotes unavailable", exc_info=True)
-        quotes = {}
-    prices: Dict[str, float] = {}
-    for symbol in symbols:
-        quote = quotes.get(symbol) or {}
-        value = quote.get("price")
-        if quote.get("source") == "ib_live" and isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0:
-            prices[symbol] = round(float(value), 4)
-    return {"prices": prices, "fetched_at_utc": datetime.now(timezone.utc).isoformat()}
+        snapshot = market_aware_stock_prices.get_prices(symbols)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return snapshot.as_dict()
 
 
 @router.get("/stock-map-live-price")
@@ -557,6 +547,10 @@ def get_stock_map_live_price(
     es_live_price = None
     es_spx_basis = None
     basis_date = None
+    price_source = None
+    price_time = None
+    market_mode = None
+    price_exchange = None
 
     try:
         if quote_code in {"SPX", "ESMAIN"}:
@@ -587,16 +581,13 @@ def get_stock_map_live_price(
                             live_price = candidate_spx
                             source = f"{es_quote.get('source') or 'IB ES quote'} less matched ES−SPX cash-close basis ({basis_date})"
         else:
-            quotes = get_live_stock_prices(
-                [quote_code], wait_seconds=2.0,
-                connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
-                allow_close_fallback=False, quote_only=True,
-            )
-            quote = quotes.get(quote_code) or {}
-            value = quote.get("price")
-            if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
-                live_price = float(value)
-                source = str(quote.get("source") or "ib_live")
+            snapshot = market_aware_stock_prices.get_prices([quote_code])
+            live_price = snapshot.prices.get(quote_code)
+            price_source = snapshot.price_sources.get(quote_code)
+            price_time = snapshot.price_times.get(quote_code)
+            market_mode = snapshot.market_mode
+            price_exchange = snapshot.exchange
+            source = f"{price_source} ({price_exchange})" if price_source and price_exchange else price_source
     except Exception:
         logger.warning("Unable to load live Stock Map price for %s", requested_code, exc_info=True)
 
@@ -604,6 +595,9 @@ def get_stock_map_live_price(
         "stock_code": requested_code,
         "live_price": round(live_price, 4) if live_price is not None else None,
         "source": source,
+        "price_time": price_time,
+        "market_mode": market_mode,
+        "exchange": price_exchange,
         "es_live_price": round(es_live_price, 4) if es_live_price is not None else None,
         "es_spx_basis": es_spx_basis,
         "basis_date": basis_date,

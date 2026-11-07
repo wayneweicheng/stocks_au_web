@@ -3,6 +3,7 @@ from threading import BoundedSemaphore
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.routers.auth import verify_credentials
@@ -18,7 +19,12 @@ from app.services.saved_price_levels_service import (
     get_saved_support_resistance,
 )
 from app.services.stock_map_chart_service import get_stock_map_chart_bars
+from app.services.relative_performance_service import get_relative_performance_bars, get_relative_performance_live_quotes
 from app.services.stock_map_option_snapshot import load_d1_option_rows
+
+
+class RelativePerformanceLiveQuoteRequest(BaseModel):
+    symbols: list[str] = Field(..., min_length=1, max_length=40)
 
 
 router = APIRouter(
@@ -85,6 +91,33 @@ def support_resistance_chart_bars(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except SavedPriceLevelsDatabaseError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/relative-performance")
+def relative_performance_bars(
+    symbols: list[str] = Query(..., description="Symbols to compare; repeat symbols query parameter"),
+    timeframe: Literal["5M", "30M"] = Query(default="5M"),
+    lookback_days: int = Query(default=5, ge=1, le=30),
+    start_date: Optional[date] = Query(default=None, description="First calendar date, inclusive"),
+    end_date: Optional[date] = Query(default=None, description="Last calendar date, inclusive"),
+) -> dict:
+    try:
+        return get_relative_performance_bars(
+            symbols, timeframe=timeframe, lookback_days=lookback_days,
+            start_date=start_date, end_date=end_date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SavedPriceLevelsDatabaseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/relative-performance/live-quotes")
+def relative_performance_live_quotes(payload: RelativePerformanceLiveQuoteRequest) -> dict:
+    try:
+        return get_relative_performance_live_quotes(payload.symbols)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/spx-map-options")

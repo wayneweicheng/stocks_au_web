@@ -39,7 +39,7 @@ assert.match(page, /ATM \{mapData\.nextSessionStraddle\.quoteDate\}: \{formatPri
 assert.match(page, /next-session range \{formatPrice\(mapData\.nextSessionStraddle\.nextSessionRange\.low\)\}/);
 assert.match(page, /api\/stock-map-live-price\?/);
 assert.match(page, /line: \{ color: "#2563eb", width: 2\.5, dash: "dot" \}/);
-assert.match(page, /Live price \{mapData\.livePriceLoading \?/);
+assert.match(page, /Selected price \{mapData\.livePriceLoading \?/);
 assert.match(page, /formatMapPrice\(mapData\.livePrice, mapData\.reportType, mapData\.stockCode\)/);
 assert.match(page, /zones\.push\(\{ price: mapData\.livePrice, range_low: mapData\.livePrice, range_high: mapData\.livePrice \}\)/);
 assert.match(page, /classifyMapZones\(\[\.\.\.current\.supports, \.\.\.current\.resistances\], \[\], livePrice\)/);

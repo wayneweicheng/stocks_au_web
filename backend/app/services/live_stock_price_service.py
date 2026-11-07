@@ -319,6 +319,7 @@ def get_live_stock_prices(
     connect_timeout: float = 3.0,
     allow_close_fallback: bool = True,
     quote_only: bool = False,
+    exchange: str = "SMART",
 ) -> Dict[str, Dict[str, Any]]:
     codes = list(dict.fromkeys(str(code).strip().upper() for code in stock_codes if str(code).strip()))
     if not codes:
@@ -327,7 +328,7 @@ def get_live_stock_prices(
     ib = _connect_ib(connect_timeout=connect_timeout, quote_only=quote_only)
     subscriptions: List[Any] = []
     try:
-        contracts = [Stock(_base_symbol(code), "SMART", "USD") for code in codes]
+        contracts = [Stock(_base_symbol(code), exchange, "USD") for code in codes]
         qualified = ib.qualifyContracts(*contracts)
         contracts_by_symbol = {
             _base_symbol(getattr(contract, "symbol", "")): contract

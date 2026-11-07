@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import SymbolQuickLinks from "../components/SymbolQuickLinks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import { mapAsOfTime, mapStockCode, parseStockMap, type StockMapReport } from "../support-resistance/stockMapLevels";
 import { reportSymbol, sortByZoneDistance, topLevels, type RankedLevel, type SortChoice, type SortSide } from "./overview";
 
 const QUOTE_BATCH_SIZE = 40;
-type Row = { symbol: string; report: StockMapReport; price: number | null; fetchedAt: string | null; asOf: string | null; olderMap: boolean; supports: RankedLevel[]; resistances: RankedLevel[]; error?: string };
-const empty = (symbol: string, report: StockMapReport): Row => ({ symbol, report, price: null, fetchedAt: null, asOf: null, olderMap: false, supports: [], resistances: [] });
+type Row = { symbol: string; report: StockMapReport; price: number | null; priceSource: string | null; fetchedAt: string | null; asOf: string | null; olderMap: boolean; supports: RankedLevel[]; resistances: RankedLevel[]; error?: string };
+const empty = (symbol: string, report: StockMapReport): Row => ({ symbol, report, price: null, priceSource: null, fetchedAt: null, asOf: null, olderMap: false, supports: [], resistances: [] });
 const formatPrice = (price: number) => price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 async function json(url: string, signal: AbortSignal, options: RequestInit = {}): Promise<Record<string, unknown>> {
@@ -18,12 +19,11 @@ async function json(url: string, signal: AbortSignal, options: RequestInit = {})
   return payload;
 }
 
-function LevelCell({ levels, side, price }: { levels: RankedLevel[]; side: SortSide; price: number | null }) {
-  if (price === null) return <span className="text-slate-400">IB live price unavailable</span>;
+function LevelCell({ levels, side }: { levels: RankedLevel[]; side: SortSide }) {
   if (!levels.length) return <span className="text-slate-400">No ranked {side} zones</span>;
   return <div className="space-y-1.5">{levels.map(({ zone, distancePct }, index) => <div key={`${zone.sourceSide}-${zone.rank}-${zone.price}-${index}`} className="flex flex-wrap items-baseline justify-between gap-x-2 rounded-md bg-slate-50 px-2 py-1.5 text-xs">
     <span className="font-semibold text-slate-800">{formatPrice(zone.range_low)}–{formatPrice(zone.range_high)}</span>
-    <span className={distancePct === 0 ? "font-semibold text-amber-700" : side === "support" ? "font-medium text-emerald-700" : "font-medium text-rose-700"}>{distancePct === 0 ? "Inside zone · 0.00% away" : `${distancePct.toFixed(2)}% away`}</span>
+    <span className={distancePct === null ? "text-slate-500" : distancePct === 0 ? "font-semibold text-amber-700" : side === "support" ? "font-medium text-emerald-700" : "font-medium text-rose-700"}>{distancePct === null ? "N/A distance" : distancePct === 0 ? "Inside zone · 0.00% away" : `${distancePct.toFixed(2)}% away`}</span>
     <span className="w-full text-[11px] text-slate-500">#{index + 1} by strength · score {zone.score === null ? "—" : zone.score} · report {zone.sourceSide} rank {zone.rank}</span>
   </div>)}</div>;
 }
@@ -59,6 +59,8 @@ export default function StockLevelOverviewPage() {
       for (let offset = 0; offset < selected.length && !abort.signal.aborted; offset += QUOTE_BATCH_SIZE) {
         const batch = selected.slice(offset, offset + QUOTE_BATCH_SIZE);
         let prices: Record<string, unknown> = {};
+        let priceSources: Record<string, unknown> = {};
+        let priceTimes: Record<string, unknown> = {};
         let fetchedAt: string | null = null;
         let quoteError: string | null = null;
         try {
@@ -67,6 +69,8 @@ export default function StockLevelOverviewPage() {
             body: JSON.stringify({ symbols: batch.map(([symbol]) => symbol) }),
           });
           if (quotePayload.prices && typeof quotePayload.prices === "object" && !Array.isArray(quotePayload.prices)) prices = quotePayload.prices as Record<string, unknown>;
+          priceSources = quotePayload.price_sources && typeof quotePayload.price_sources === "object" && !Array.isArray(quotePayload.price_sources) ? quotePayload.price_sources as Record<string, unknown> : {};
+          priceTimes = quotePayload.price_times && typeof quotePayload.price_times === "object" && !Array.isArray(quotePayload.price_times) ? quotePayload.price_times as Record<string, unknown> : {};
           fetchedAt = typeof quotePayload.fetched_at_utc === "string" ? quotePayload.fetched_at_utc : null;
         } catch (exc) {
           if (abort.signal.aborted) return;
@@ -78,8 +82,10 @@ export default function StockLevelOverviewPage() {
             const [symbol, report] = batch[cursor++];
             const candidate = prices[symbol];
             const price = typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0 ? candidate : null;
-            let row: Row = { ...empty(symbol, report), price, fetchedAt: price !== null ? fetchedAt : null,
-              error: quoteError ? `IB quotes unavailable: ${quoteError}` : undefined };
+            const priceSource = price !== null && typeof priceSources[symbol] === "string" ? priceSources[symbol] as string : null;
+            const priceTime = price !== null && typeof priceTimes[symbol] === "string" ? priceTimes[symbol] as string : null;
+            let row: Row = { ...empty(symbol, report), price, priceSource, fetchedAt: price !== null ? priceTime || fetchedAt : null,
+              error: quoteError ? `Price lookup unavailable: ${quoteError}` : undefined };
             try {
               const mapPayload = await json(`${baseUrl}/api/stock-map-reports/${encodeURIComponent(report.job_id)}/json`, abort.signal);
               const map = parseStockMap(mapPayload.data ?? mapPayload);
@@ -88,7 +94,7 @@ export default function StockLevelOverviewPage() {
               const asOf = mapAsOfTime(map, report)?.label ?? null;
               const mapTimestamp = typeof map.as_of_et === "string" ? Date.parse(map.as_of_et) : NaN;
               row = { ...row, asOf, olderMap: Number.isFinite(mapTimestamp) && Date.now() - mapTimestamp > 7 * 86_400_000,
-                ...(price !== null ? topLevels(map, price) : { supports: [], resistances: [] }) };
+                ...topLevels(map, price) };
             } catch (exc) {
               if (abort.signal.aborted) return;
               row = { ...row, error: exc instanceof Error ? exc.message : String(exc) };
@@ -116,15 +122,25 @@ export default function StockLevelOverviewPage() {
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 className="text-2xl font-bold text-slate-900">Stock levels overview</h1><p className="mt-1 text-sm text-slate-600">Compare the two strongest mapped zones on each side of the IB real-time stock price.</p></div>
+      <div><h1 className="text-2xl font-bold text-slate-900">Stock levels overview</h1><p className="mt-1 text-sm text-slate-600">Compare the two strongest mapped zones on each side of the current session price.</p></div>
       <button type="button" onClick={() => void refresh()} disabled={loading} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{loading ? "Loading…" : "Refresh"}</button>
     </div>
-    <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Saved Stock Maps are not refreshed automatically. Only IB real-time stock quotes are used: missing or delayed quotes show N/A, never a 30-minute close. Zones are classified against the IB price, ranked by report score (then original rank), and their distance is measured to the nearest zone edge as a percentage of that price. A zone spanning the price reads “Inside zone”. Quotes are snapshots taken on refresh; check map dates and current conditions before acting.</p>
+    <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Price selection uses US Eastern time: Friday 8:00 a.m. through Sunday 8:00 p.m. uses the latest available 30-minute database close; Sunday 8:00 p.m. through Friday 4:00 a.m. uses IB OVERNIGHT; all other times use IB SMART. If the selected source has no price, this page shows N/A (no stale-price fallback). Weekend DB reads use NOLOCK and may briefly observe an in-progress quote refresh. Saved Stock Maps are not refreshed automatically. Without a price, report-side zones remain visible with N/A distance and sort last. Zones with a price are classified against it, ranked by report score (then original rank), and their distance is measured to the nearest zone edge as a percentage of that price. A zone spanning the price reads “Inside zone”. Prices are snapshots taken on refresh; check map dates and current conditions before acting.</p>
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <label className="text-sm font-medium text-slate-700">Symbol <input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Search symbol" className="ml-2 rounded-md border border-slate-300 px-3 py-1.5 text-sm" /></label>
       <span className="ml-auto text-xs text-slate-500">{loading ? `Loaded ${loaded}/${total}` : `${shown.length} shown`} · {total} symbols with reports · Click a zone column heading to sort by the nearest of its top two (click again to reverse).</span>
     </div>
     {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">Could not load reports: {error}</p>}
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm"><table className="w-full min-w-[850px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-4 py-3">Stock / map</th><th className="px-4 py-3">IB live price</th>{sortHeader("support")}{sortHeader("resistance")}</tr></thead><tbody className="divide-y divide-slate-100">{shown.map((row) => <tr key={row.symbol} className="align-top"><td className="px-4 py-3"><Link className="font-bold text-indigo-700 hover:underline" href={`/support-resistance?stock=${encodeURIComponent(row.symbol)}&tab=stock-map`}>{row.symbol}</Link><div className="mt-1 text-xs text-slate-500">Map as-of: {row.asOf || "Unknown"}</div>{row.olderMap && <div className="mt-1 text-xs font-semibold text-amber-700">Map older than 7 days</div>}<Link href={`/stock-map-reports/${encodeURIComponent(row.report.job_id)}/mapped-levels?stock_code=${encodeURIComponent(row.symbol)}`} className="mt-1 inline-block text-xs text-indigo-600 hover:underline">Report details ↗</Link></td><td className="px-4 py-3"><div className="font-semibold text-slate-800">{row.price === null ? "N/A" : formatPrice(row.price)}</div><div className="mt-1 text-xs text-slate-500">{row.fetchedAt ? `IB quote fetched ${row.fetchedAt.replace("T", " ").slice(0, 19)} UTC` : "IB real-time quote unavailable"}</div>{row.error && <div className="mt-1 max-w-[220px] break-words text-xs text-red-700" title={row.error}>{row.error}</div>}</td><td className="px-4 py-3"><LevelCell levels={row.supports} side="support" price={row.price} /></td><td className="px-4 py-3"><LevelCell levels={row.resistances} side="resistance" price={row.price} /></td></tr>)}</tbody></table>{!loading && !error && !rows.length && <p className="p-8 text-center text-sm text-slate-500">No Stock Map reports found. <Link className="text-indigo-600 underline" href="/stock-map-reports">Create a Stock Map</Link> first.</p>}{!loading && rows.length > 0 && !shown.length && <p className="p-6 text-center text-sm text-slate-500">No matching symbols.</p>}</div>
+    <div className="flex gap-2 md:hidden" aria-label="Sort stock levels">
+      {(["support", "resistance"] as const).map((side) => <button key={side} type="button" onClick={() => toggleSort(side)} aria-label={`Sort by closest ${side}, ${sort?.side === side && sort.direction === "asc" ? "descending" : "ascending"}`} aria-pressed={sort?.side === side}
+        className={`flex-1 rounded-lg border px-2 py-2 text-xs font-semibold ${sort?.side === side ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700"}`}>{side === "support" ? "Supports" : "Resistances"} {sort?.side === side ? sort.direction === "asc" ? "↑" : "↓" : "↕"}</button>)}
+    </div>
+    <div className="space-y-3 md:hidden">{shown.map((row) => <article key={row.symbol} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-2"><div><Link href={`/support-resistance?stock=${encodeURIComponent(row.symbol)}&tab=stock-map`} className="text-lg font-bold text-indigo-700">{row.symbol}</Link><p className="text-xs text-slate-500">Map as-of {row.asOf || "unknown"}{row.olderMap ? " · Older than 7 days" : ""}</p></div><div className="text-right"><span className="text-xs text-slate-500">Current price</span><strong className="block text-base text-slate-900">{row.price === null ? "N/A" : formatPrice(row.price)}</strong><span className="block max-w-44 text-[11px] text-slate-500">{row.priceSource || "Price unavailable"} · {row.fetchedAt || "time unavailable"}</span></div></div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2"><div><h3 className="mb-1 text-xs font-bold uppercase text-emerald-700">Top supports</h3><LevelCell levels={row.supports} side="support" /></div><div><h3 className="mb-1 text-xs font-bold uppercase text-rose-700">Top resistances</h3><LevelCell levels={row.resistances} side="resistance" /></div></div>
+      {row.error && <p className="mt-2 text-xs text-red-700">{row.error}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-2"><SymbolQuickLinks symbol={row.symbol} /><Link href={`/stock-map-reports/${encodeURIComponent(row.report.job_id)}/mapped-levels?stock_code=${encodeURIComponent(row.symbol)}`} className="text-xs text-indigo-700 underline">Report details</Link></div>
+    </article>)}{!loading && !error && !rows.length && <p className="rounded-lg bg-white p-5 text-sm text-slate-600">No Stock Map reports found. <Link href="/stock-map-reports" className="text-indigo-700 underline">Create a map</Link>.</p>}{!loading && rows.length > 0 && !shown.length && <p className="text-sm text-slate-500">No matching symbols.</p>}</div>
+    <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm md:block"><table className="w-full min-w-[850px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-4 py-3">Stock / map</th><th className="px-4 py-3">Current price</th>{sortHeader("support")}{sortHeader("resistance")}</tr></thead><tbody className="divide-y divide-slate-100">{shown.map((row) => <tr key={row.symbol} className="align-top"><td className="px-4 py-3"><Link className="font-bold text-indigo-700 hover:underline" href={`/support-resistance?stock=${encodeURIComponent(row.symbol)}&tab=stock-map`}>{row.symbol}</Link><div className="mt-1 text-xs text-slate-500">Map as-of: {row.asOf || "Unknown"}</div>{row.olderMap && <div className="mt-1 text-xs font-semibold text-amber-700">Map older than 7 days</div>}<Link href={`/stock-map-reports/${encodeURIComponent(row.report.job_id)}/mapped-levels?stock_code=${encodeURIComponent(row.symbol)}`} className="mt-1 inline-block text-xs text-indigo-600 hover:underline">Report details ↗</Link><div className="mt-2"><SymbolQuickLinks symbol={row.symbol} /></div></td><td className="px-4 py-3"><div className="font-semibold text-slate-800">{row.price === null ? "N/A" : formatPrice(row.price)}</div><div className="mt-1 text-xs text-slate-500">{row.priceSource === "database_30m" ? `Latest 30m DB bar ${row.fetchedAt || "time unavailable"}` : row.priceSource ? `IB ${row.priceSource === "ib_live" ? "live" : row.priceSource} quote fetched ${row.fetchedAt ? `${row.fetchedAt.replace("T", " ").slice(0, 19)} UTC` : "time unavailable"}` : "Selected price unavailable"}</div>{row.error && <div className="mt-1 max-w-[220px] break-words text-xs text-red-700" title={row.error}>{row.error}</div>}</td><td className="px-4 py-3"><LevelCell levels={row.supports} side="support" /></td><td className="px-4 py-3"><LevelCell levels={row.resistances} side="resistance" /></td></tr>)}</tbody></table>{!loading && !error && !rows.length && <p className="p-8 text-center text-sm text-slate-500">No Stock Map reports found. <Link className="text-indigo-600 underline" href="/stock-map-reports">Create a Stock Map</Link> first.</p>}{!loading && rows.length > 0 && !shown.length && <p className="p-6 text-center text-sm text-slate-500">No matching symbols.</p>}</div>
   </div>;
 }

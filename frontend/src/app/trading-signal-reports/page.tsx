@@ -10,6 +10,7 @@ import PageHeader from "../components/PageHeader";
 import TradingSignalAdminTab from "./TradingSignalAdminTab";
 import TradingSignalOverviewTab from "./TradingSignalOverviewTab";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
+import { sandboxedReportDocument } from "../components/reportContentSafety";
 import { buildTradingSignalReportsQuery, TradingSignalReport, TradingSignalReportPage } from "../../lib/api/trading-signal-reports";
 
 const REPORT_TIME_ZONES = {
@@ -138,7 +139,7 @@ export default function TradingSignalReportsPage() {
       })
       .then((html) => {
         if (!active) return;
-        const objectUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+        const objectUrl = URL.createObjectURL(new Blob([sandboxedReportDocument(html)], { type: "text/html;charset=utf-8" }));
         reportUrls.current[selected.public_report_id] = objectUrl;
         setReportUrl(objectUrl);
       })

@@ -8,6 +8,7 @@ import Button from "./ui/Button";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
 import MarkdownRenderer from "./MarkdownRenderer";
+import { sandboxedReportDocument } from "./reportContentSafety";
 import PageHeader from "./PageHeader";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 
@@ -462,7 +463,7 @@ export default function SkillReportPage({
       return;
     }
 
-    const url = URL.createObjectURL(new Blob([detail.content], { type: "text/html" }));
+    const url = URL.createObjectURL(new Blob([sandboxedReportDocument(detail.content)], { type: "text/html" }));
     setHtmlPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [activeTab, detail]);
@@ -837,7 +838,16 @@ export default function SkillReportPage({
                 <label className="mb-1 block text-xs font-medium text-slate-600">Search reports</label>
                 <Input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Title, stock, status or job id" />
               </div>
-              <div className="max-h-[calc(100vh-285px)] min-h-72 overflow-y-auto p-2">
+              <div className="border-b border-slate-200 p-3 lg:hidden">
+                <label htmlFor="mobile-report-picker" className="mb-1 block text-xs font-semibold text-slate-600">Choose report</label>
+                <select id="mobile-report-picker" value={filteredItems.some((item) => item.job_id === selectedJobId) ? selectedJobId : ""}
+                  onChange={(event) => { if (event.target.value) void loadDetail(event.target.value); }}
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm" disabled={loadingList || filteredItems.length === 0}>
+                  <option value="">{filteredItems.length ? "Select a report" : emptyLabel}</option>
+                  {filteredItems.map((item) => <option key={item.job_id} value={item.job_id}>{item.title} · {formatOptionalDate(item.created_at)}</option>)}
+                </select>
+              </div>
+              <div className="hidden max-h-[calc(100vh-285px)] min-h-72 overflow-y-auto p-2 lg:block">
                 {loadingList && items.length === 0 ? (
                   <div className="px-3 py-8 text-center text-sm text-slate-500">Loading reports...</div>
                 ) : filteredItems.length === 0 ? (
@@ -954,7 +964,7 @@ export default function SkillReportPage({
                       <iframe
                         title={detail.title}
                         srcDoc={detail.content}
-                        sandbox="allow-forms allow-modals allow-popups allow-scripts"
+                        sandbox="allow-scripts"
                         className="h-[60vh] min-h-[420px] w-full rounded-md border border-slate-200 bg-white sm:h-[calc(100vh-300px)] sm:min-h-[620px]"
                       />
                     </>

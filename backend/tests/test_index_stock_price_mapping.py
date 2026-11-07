@@ -21,16 +21,21 @@ class IndexStockPriceMappingTests(unittest.TestCase):
         self.assertEqual(response["es_spx_basis"], 25.0)
         self.assertEqual(response["basis_date"], "2026-11-03")
 
-    def test_live_derived_instrument_uses_underlying_stock_quote_without_close_fallback(self):
-        with patch.object(index_stock_price_mapping, "get_live_stock_prices", return_value={"SOXX": {"price": 210.5, "source": "ib_live"}}) as quote:
+    def test_live_derived_instrument_uses_shared_market_aware_price_service(self):
+        from app.services.market_aware_stock_price_service import StockPriceSnapshot
+
+        snapshot = StockPriceSnapshot(
+            prices={"SOXX": 210.5}, price_sources={"SOXX": "database_30m"},
+            price_times={"SOXX": "2026-11-06T19:30:00"}, market_mode="weekend_30m",
+            exchange=None, fetched_at_utc="2026-11-07T12:00:00+00:00",
+        )
+        with patch.object(index_stock_price_mapping.market_aware_stock_prices, "get_prices", return_value=snapshot) as quote:
             response = index_stock_price_mapping.get_stock_map_live_price("SOXX_D", username="test-user")
 
         self.assertEqual(response["live_price"], 210.5)
-        quote.assert_called_once_with(
-            ["SOXX"], wait_seconds=2.0,
-            connect_timeout=index_stock_price_mapping.QUOTE_CONNECT_TIMEOUT_SECONDS,
-            allow_close_fallback=False, quote_only=True,
-        )
+        self.assertEqual(response["source"], "database_30m")
+        self.assertEqual(response["price_time"], "2026-11-06T19:30:00")
+        quote.assert_called_once_with(["SOXX"])
 
     def test_load_latest_closes_returns_prices_without_requiring_model_close(self):
         class FakeModel:
@@ -419,12 +424,29 @@ class IndexStockPriceMappingTests(unittest.TestCase):
         self.assertEqual(response["status"], "partial")
         self.assertEqual(response["live_prices"], {"NQMain": 25700.0})
 
+    def test_stock_map_live_prices_route_uses_shared_market_aware_price_service(self):
+        from app.services.market_aware_stock_price_service import StockPriceSnapshot
+
+        payload = index_stock_price_mapping.StockMapLivePricesRequest(symbols=["SPY"])
+        snapshot = StockPriceSnapshot(
+            prices={"SPY": 700.25}, price_sources={"SPY": "database_30m"},
+            price_times={"SPY": "2026-01-02T15:30:00"}, market_mode="weekend_30m",
+            exchange=None, fetched_at_utc="2026-01-03T12:00:00+00:00",
+        )
+        with patch.object(index_stock_price_mapping.market_aware_stock_prices, "get_prices", return_value=snapshot) as prices:
+            response = index_stock_price_mapping.get_stock_map_live_prices(payload, username="test-user")
+        self.assertEqual(response["prices"], {"SPY": 700.25})
+        self.assertEqual(response["market_mode"], "weekend_30m")
+        self.assertEqual(response["price_times"], {"SPY": "2026-01-02T15:30:00"})
+        prices.assert_called_once_with(["SPY"])
+
     def test_quote_only_stock_request_uses_price_ticks_without_optional_subscriptions(self):
         from types import SimpleNamespace
         from app.services import live_stock_price_service
 
         class FakeIB:
             def qualifyContracts(self, *contracts):
+                self.exchange = contracts[0].exchange
                 return [SimpleNamespace(symbol="SPY")]
 
             def reqMarketDataType(self, kind):
@@ -442,11 +464,12 @@ class IndexStockPriceMappingTests(unittest.TestCase):
 
         fake_ib = FakeIB()
         with patch.object(live_stock_price_service, "_connect_ib", return_value=fake_ib), patch.object(
-            live_stock_price_service, "Stock", return_value=object()
+            live_stock_price_service, "Stock", return_value=SimpleNamespace(exchange="OVERNIGHT")
         ):
             quotes = live_stock_price_service.get_live_stock_prices(
-                ["SPY"], wait_seconds=0, allow_close_fallback=False, quote_only=True,
+                ["SPY"], wait_seconds=0, allow_close_fallback=False, quote_only=True, exchange="OVERNIGHT",
             )
+        self.assertEqual(fake_ib.exchange, "OVERNIGHT")
         self.assertEqual(fake_ib.generic_ticks, "")
         self.assertEqual(quotes["SPY"]["price"], 700.0)
 

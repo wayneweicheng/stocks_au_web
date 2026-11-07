@@ -67,6 +67,20 @@ export type SpxOptionPair = {
   expiryRange: { low: number; high: number };
 };
 
+/** Use SPXW's SPX range directly for SPX, or translate both bounds to ES with the matched ES−SPX basis. */
+export function spxOptionRangeForInstrument(
+  pair: SpxOptionPair,
+  instrument: string,
+  esSpxBasis: number | null,
+): { low: number; high: number } | null {
+  const code = instrument.trim().toUpperCase();
+  if (code === "SPX") return pair.expiryRange;
+  if (code !== "ESMAIN" || esSpxBasis === null || !Number.isFinite(esSpxBasis)) return null;
+  const low = pair.expiryRange.low + esSpxBasis;
+  const high = pair.expiryRange.high + esSpxBasis;
+  return Number.isFinite(low) && Number.isFinite(high) && low > 0 && high >= low ? { low, high } : null;
+}
+
 /** Same observed day, underlying, expiry and strike; never blend two option sessions. */
 export function spxOptionPair(value: unknown, observationDate: string): SpxOptionPair | null {
   const snapshot = asObject(value);

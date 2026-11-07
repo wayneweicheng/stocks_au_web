@@ -17,13 +17,15 @@ const crossed = topLevels({ primary_supports: [zone(1, 90, 101, 103)], primary_r
 assert.equal(crossed.resistances[0].zone.sourceSide, 'support');
 assert.equal(crossed.supports[0].zone.sourceSide, 'resistance');
 assert.equal(topLevels({ primary_supports: [zone(1, 99, 99, 101)] }, 100).supports[0].distancePct, 0);
+assert.equal(topLevels(data, null).supports[0].distancePct, null);
+assert.equal(topLevels(data, null).supports[0].zone.score, 95);
 // Even a nonstandard report anchor outside its interval must not make an outside price appear inside.
 assert.equal(topLevels({ primary_supports: [zone(1, 99, 103, 105, 90)] }, 100).supports[0].distancePct, 3);
 const rows = [
   { symbol: 'FAR', supports: [{ distancePct: 10 }], resistances: [{ distancePct: 0 }] },
   { symbol: 'NEAR', supports: [{ distancePct: 4 }, { distancePct: 1 }], resistances: [{ distancePct: 5 }] },
   { symbol: 'INSIDE', supports: [{ distancePct: 0 }, { distancePct: 6 }], resistances: [] },
-  { symbol: 'MISSING', supports: [], resistances: [] },
+  { symbol: 'MISSING', supports: [{ distancePct: null }], resistances: [] },
 ];
 assert.deepEqual(sortByZoneDistance(rows, { side: 'support', direction: 'asc' }).map((row) => row.symbol), ['INSIDE', 'NEAR', 'FAR', 'MISSING']);
 assert.deepEqual(sortByZoneDistance(rows, { side: 'support', direction: 'desc' }).map((row) => row.symbol), ['FAR', 'NEAR', 'INSIDE', 'MISSING']);
@@ -31,7 +33,11 @@ assert.deepEqual(sortByZoneDistance(rows, { side: 'resistance', direction: 'asc'
 assert.deepEqual(sortByZoneDistance(rows, { side: 'resistance', direction: 'desc' }).map((row) => row.symbol), ['NEAR', 'FAR', 'INSIDE', 'MISSING']);
 const page = fs.readFileSync(path.join(__dirname, '../src/app/stock-level-overview/page.tsx'), 'utf8');
 assert.match(page, /stock-map-live-prices/);
-assert.doesNotMatch(page, /chart-bars|30M close|MAX_STOCKS/);
+assert.doesNotMatch(page, /chart-bars|MAX_STOCKS/);
+assert.match(page, /Friday 8:00 a\.m\. through Sunday 8:00 p\.m\./);
+assert.match(page, /IB OVERNIGHT/);
+assert.match(page, /IB SMART/);
+assert.match(page, /database_30m/);
 assert.match(page, /Inside zone · 0\.00% away/);
 assert.match(page, /aria-sort=/);
-console.log('Stock overview uses IB snapshot and sorts all reports by top-2 zone proximity');
+console.log('Stock overview uses session-aware prices and sorts all reports by top-2 zone proximity');

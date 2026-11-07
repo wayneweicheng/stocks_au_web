@@ -1,12 +1,14 @@
 "use client";
 
+import { sanitizeMarkdownSource, sanitizeRenderedMarkdown } from "./reportContentSafety";
+
 interface MarkdownRendererProps {
   content: string;
 }
 
 export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
   const parseMarkdown = (text: string) => {
-    let html = text;
+    let html = sanitizeMarkdownSource(text);
 
     // Numbered section headers (e.g., "1. Executive Summary", "1.1 The Investment Thesis", "10. Conclusion")
     // Match patterns like "1. Title", "1.1 Title", "10.2 Title" at the start of a line
@@ -133,7 +135,7 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
     // Clean up paragraphs that only contain whitespace
     html = html.replace(/<p class="mb-3">\s*<\/p>/g, '');
 
-    return html;
+    return sanitizeRenderedMarkdown(html);
   };
 
   return (

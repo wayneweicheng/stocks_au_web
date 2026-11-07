@@ -1,17 +1,22 @@
 import { classifyMapZones, mapZones, type MapZone } from "../support-resistance/stockMapLevels";
 
-export type RankedLevel = { zone: MapZone; distancePct: number };
+export type RankedLevel = { zone: MapZone; distancePct: number | null };
 
 /** Reclassify report zones against the IB quote, then rank by report strength. */
-export function topLevels(data: Record<string, unknown>, price: number): { supports: RankedLevel[]; resistances: RankedLevel[] } {
-  if (!Number.isFinite(price) || price <= 0) return { supports: [], resistances: [] };
-  const classified = classifyMapZones(mapZones(data, "support"), mapZones(data, "resistance"), price);
-  const select = (zones: MapZone[]) => zones.map((zone) => ({
+export function topLevels(data: Record<string, unknown>, price: number | null): { supports: RankedLevel[]; resistances: RankedLevel[] } {
+  const validPrice = price !== null && Number.isFinite(price) && price > 0 ? price : null;
+  const reportSupports = mapZones(data, "support");
+  const reportResistances = mapZones(data, "resistance");
+  // Without an IB quote, retain report-side labels but do not invent a distance.
+  const zones = validPrice === null
+    ? { supports: reportSupports, resistances: reportResistances }
+    : classifyMapZones(reportSupports, reportResistances, validPrice);
+  const select = (levels: MapZone[]) => levels.map((zone) => ({
     zone,
-    distancePct: Math.max(0, zone.range_low - price, price - zone.range_high) / price * 100,
+    distancePct: validPrice === null ? null : Math.max(0, zone.range_low - validPrice, validPrice - zone.range_high) / validPrice * 100,
   })).sort((a, b) => (b.zone.score ?? -Infinity) - (a.zone.score ?? -Infinity) ||
-    a.zone.rank - b.zone.rank || a.distancePct - b.distancePct).slice(0, 2);
-  return { supports: select(classified.supports), resistances: select(classified.resistances) };
+    a.zone.rank - b.zone.rank || (a.distancePct ?? Infinity) - (b.distancePct ?? Infinity)).slice(0, 2);
+  return { supports: select(zones.supports), resistances: select(zones.resistances) };
 }
 
 export function reportSymbol(report: { stock_code?: string | null; title?: string; file_name?: string | null; raw?: Record<string, unknown> }): string {
@@ -32,7 +37,8 @@ export function sortByZoneDistance<T extends { symbol: string; supports: RankedL
     if (!sort) return a.symbol.localeCompare(b.symbol);
     const distance = (row: T) => {
       const levels = sort.side === "support" ? row.supports : row.resistances;
-      return levels.length ? Math.min(...levels.map((level) => level.distancePct)) : null;
+      const distances = levels.map((level) => level.distancePct).filter((value): value is number => value !== null);
+      return distances.length ? Math.min(...distances) : null;
     };
     const left = distance(a);
     const right = distance(b);

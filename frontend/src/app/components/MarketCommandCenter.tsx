@@ -4,6 +4,9 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import PageHeader from "./PageHeader";
+import AttentionQueue from "./AttentionQueue";
+import SymbolQuickLinks from "./SymbolQuickLinks";
+import { symbolDestinations } from "./workspaceNavigation";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/Card";
@@ -774,6 +777,7 @@ function SummaryStat({ label, value, detail, tone = "text-slate-950" }: { label:
 function OpportunityDetails({ item }: { item: Opportunity }) {
   return (
     <div className="grid gap-5 border-t border-slate-100 bg-slate-50/70 p-5 lg:grid-cols-2">
+      <div className="lg:col-span-2"><SymbolQuickLinks symbol={item.symbol} market={item.market} /></div>
       <div>
         <h4 className="text-sm font-semibold text-slate-900">Evidence</h4>
         <div className="mt-3 space-y-3">
@@ -905,6 +909,8 @@ export default function MarketCommandCenter({ market }: { market: Market }) {
         </div>
       ) : null}
 
+      {data?.requested_date === selectedDate ? <AttentionQueue market={market} selectedDate={selectedDate} regime={data.regimes[market]} opportunities={opportunities} /> : null}
+
       {data?.regimes?.[market] ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryStat
@@ -1006,7 +1012,7 @@ export default function MarketCommandCenter({ market }: { market: Market }) {
                           <td className="px-5 py-3 text-slate-500">{index + 1}</td>
                           <td className="px-3 py-3 font-semibold text-slate-900">
                             <Link
-                              href={`/integrated-charts?symbol=${encodeURIComponent(item.symbol)}&market=${item.market}`}
+                              href={symbolDestinations(item.symbol, item.market)?.chart || "/"}
                               onClick={(event) => event.stopPropagation()}
                               className="hover:text-indigo-700 hover:underline"
                             >
