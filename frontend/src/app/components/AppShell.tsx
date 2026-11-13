@@ -30,6 +30,7 @@ const NAV: NavGroup[] = [
       { href: "/volatility-selective-options/historical", label: "Historical Dataset Backtest" },
       { href: "/volatility-selective-options/monitor", label: "Volatility Manual Monitor" },
       { href: "/range-orders", label: "Range Orders" },
+      { href: "/pegasus-conditional-entries", label: "Pegasus Conditional Entries" },
       { href: "/conditional-orders", label: "Conditional Orders" },
       { href: "/strategy-orders", label: "Strategy Orders" },
       { href: "/trading-orders", label: "Pegasus Trading Orders" },

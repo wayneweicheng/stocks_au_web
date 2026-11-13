@@ -124,7 +124,10 @@ class MarketAwareStockPriceService:
         self._history_loader = history_loader or _load_latest_30m_prices
         self._clock = clock or (lambda: datetime.now(EASTERN))
 
-    def get_prices(self, symbols: list[str]) -> StockPriceSnapshot:
+    def get_prices(
+        self, symbols: list[str], *, wait_seconds: float = 2.0,
+        connect_timeout: float = QUOTE_CONNECT_TIMEOUT_SECONDS,
+    ) -> StockPriceSnapshot:
         normalized = list(dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip()))
         if not normalized:
             raise ValueError("At least one stock symbol is required")
@@ -153,8 +156,8 @@ class MarketAwareStockPriceService:
             try:
                 quotes = self._live_quote_loader(
                     normalized,
-                    wait_seconds=2.0,
-                    connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS,
+                    wait_seconds=wait_seconds,
+                    connect_timeout=connect_timeout,
                     allow_close_fallback=False,
                     quote_only=True,
                     exchange=exchange,

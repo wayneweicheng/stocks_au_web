@@ -32,6 +32,7 @@ type QuoteStatus = "pending" | "available" | "unavailable";
 type QuoteProgress = { loading: boolean; pass: number; maxPasses: number; completed: number; total: number };
 type PlotlyInstance = {
   react: (element: HTMLDivElement, traces: unknown[], layout: Record<string, unknown>, config: Record<string, unknown>) => Promise<unknown>;
+  relayout: (element: HTMLDivElement, update: Record<string, unknown>) => Promise<unknown>;
   purge: (element: HTMLDivElement) => void;
 };
 
@@ -66,6 +67,7 @@ function delay(milliseconds: number) {
 export default function RelativePerformancePage() {
   const [symbolsInput, setSymbolsInput] = useState(DEFAULT_RELATIVE_SYMBOLS.join(", "));
   const [timeframe, setTimeframe] = useState<RelativeTimeframe>("5M");
+  const [pullbackWindowMinutes, setPullbackWindowMinutes] = useState<number | "all">("all");
   const [endDate, setEndDate] = useState(() => easternToday());
   const [startDate, setStartDate] = useState(() => defaultHistoryStart(easternToday()));
   const [barsResponse, setBarsResponse] = useState<BarsResponse | null>(null);
@@ -77,14 +79,72 @@ export default function RelativePerformancePage() {
   const [ranked, setRanked] = useState<LiveRank[] | null>(null);
   const [rankedAt, setRankedAt] = useState<string | null>(null);
   const plotRef = useRef<HTMLDivElement>(null);
+  const plotViewportRef = useRef<HTMLDivElement>(null);
   const plotlyRef = useRef<PlotlyInstance | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
   const initialLoad = useRef(false);
   const quoteRunId = useRef(0);
   const quoteAbort = useRef<AbortController | null>(null);
   const symbols = useMemo(() => parseSymbols(symbolsInput), [symbolsInput]);
   const analysis: RelativePerformanceAnalysis | null = useMemo(() => barsResponse
-    ? analyzeRelativePerformance(barsResponse.bars_by_symbol, barsResponse.timeframe) : null,
-  [barsResponse]);
+    ? analyzeRelativePerformance(barsResponse.bars_by_symbol, barsResponse.timeframe, pullbackWindowMinutes) : null,
+  [barsResponse, pullbackWindowMinutes]);
+  const chartPointCount = analysis?.series.reduce((count, item) => Math.max(count, item.points.length), 0) ?? 0;
+  const chartWidth = Math.max(1100, Math.min(18000, 720 + chartPointCount * 4));
+
+  const handleChartScroll = () => {
+    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const viewport = plotViewportRef.current;
+      const element = plotRef.current;
+      if (!viewport || !element || !analysis || !plotlyRef.current) return;
+      const plotLeft = viewport.scrollLeft + 72;
+      const plotRight = viewport.scrollLeft + viewport.clientWidth - 24;
+      const innerWidth = Math.max(1, chartWidth - 96);
+      const points = analysis.series.flatMap((item) => item.points)
+        .map((point) => ({ ...point, timestamp: Date.parse(point.time) }))
+        .filter((point) => Number.isFinite(point.timestamp));
+      if (!points.length) return;
+      let firstTimestamp = Number.POSITIVE_INFINITY;
+      let lastTimestamp = Number.NEGATIVE_INFINITY;
+      for (const point of points) {
+        firstTimestamp = Math.min(firstTimestamp, point.timestamp);
+        lastTimestamp = Math.max(lastTimestamp, point.timestamp);
+      }
+      const visibleStart = firstTimestamp + Math.max(0, Math.min(1, (plotLeft - 72) / innerWidth)) * (lastTimestamp - firstTimestamp);
+      const visibleEnd = firstTimestamp + Math.max(0, Math.min(1, (plotRight - 72) / innerWidth)) * (lastTimestamp - firstTimestamp);
+      let minimum = Number.POSITIVE_INFINITY;
+      let maximum = Number.NEGATIVE_INFINITY;
+      for (const point of points) {
+        if (point.timestamp >= visibleStart && point.timestamp <= visibleEnd) {
+          minimum = Math.min(minimum, point.changePct);
+          maximum = Math.max(maximum, point.changePct);
+        }
+      }
+      if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return;
+      const padding = Math.max((maximum - minimum) * 0.12, 0.2);
+      let spreadMinimum = Number.POSITIVE_INFINITY;
+      let spreadMaximum = Number.NEGATIVE_INFINITY;
+      for (const point of analysis.relativeSpreadSeries.points) {
+        const timestamp = Date.parse(point.time);
+        if (timestamp >= visibleStart && timestamp <= visibleEnd) {
+          spreadMinimum = Math.min(spreadMinimum, point.changePct);
+          spreadMaximum = Math.max(spreadMaximum, point.changePct);
+        }
+      }
+      const update: Record<string, unknown> = {
+        "yaxis.autorange": false,
+        "yaxis.range": [minimum - padding, maximum + padding],
+      };
+      if (Number.isFinite(spreadMinimum) && Number.isFinite(spreadMaximum)) {
+        const spreadPadding = Math.max((spreadMaximum - spreadMinimum) * 0.12, 0.1);
+        update["yaxis2.autorange"] = false;
+        update["yaxis2.range"] = [spreadMinimum - spreadPadding, spreadMaximum + spreadPadding];
+      }
+      void plotlyRef.current.relayout(element, update);
+    });
+  };
 
   const loadLiveQuotes = useCallback((requestedSymbols: string[]) => {
     quoteAbort.current?.abort();
@@ -202,6 +262,7 @@ export default function RelativePerformancePage() {
   useEffect(() => () => {
     quoteAbort.current?.abort();
     quoteRunId.current++;
+    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
     if (plotRef.current && plotlyRef.current) plotlyRef.current.purge(plotRef.current);
   }, []);
 
@@ -247,6 +308,17 @@ export default function RelativePerformancePage() {
           hovertemplate: `%{y:+.2f}%<extra>${item.symbol}</extra>`,
         };
       });
+      const spreadTrace = {
+        x: analysis.relativeSpreadSeries.points.map((point) => point.time),
+        y: analysis.relativeSpreadSeries.points.map((point) => point.changePct),
+        name: "SOXX − QQQ delta",
+        type: "scatter",
+        mode: "lines",
+        connectgaps: false,
+        yaxis: "y2",
+        line: { color: "#c026d3", width: 2.5, dash: "dash" },
+        hovertemplate: "%{y:+.2f} pp<extra>SOXX − QQQ delta</extra>",
+      };
       // Do not draw a line from a historical date range to today's price.
       const currentDay = barsResponse?.end_date === easternToday();
       const liveMarkers = currentDay ? analysis.rows.flatMap((row, index) => {
@@ -265,14 +337,20 @@ export default function RelativePerformancePage() {
         title: `Relative performance · ${barsResponse?.timeframe === "5M" ? "5-minute" : "30-minute"} bars · rebased to 0%`,
         xaxis: { title: "Time", type: "date", rangeslider: { visible: false }, showgrid: true },
         yaxis: { title: "Price change from each symbol’s first bar (%)", ticksuffix: "%", zeroline: true, zerolinecolor: "#64748b", gridcolor: "#e2e8f0" },
+        yaxis2: { title: "SOXX − QQQ (pp)", ticksuffix: " pp", overlaying: "y", side: "right", showgrid: false, zeroline: true, zerolinecolor: "#c026d3", autorange: true },
         hovermode: "x unified",
         legend: { orientation: "h", y: -0.2 },
         template: "plotly_white",
-        autosize: true,
+        autosize: false,
+        width: chartWidth,
         height: 540,
         margin: { l: 72, r: 24, t: 64, b: 100 },
+        shapes: analysis.pullbackPeriods.map((period) => ({
+          type: "rect", xref: "x", yref: "paper", x0: period.startTime, x1: period.endTime, y0: 0, y1: 1,
+          fillcolor: "rgba(245, 158, 11, 0.17)", line: { color: "rgba(217, 119, 6, 0.75)", width: 1 }, layer: "below",
+        })),
       };
-      void plotly.react(element, [...traces, ...liveMarkers], layout, { responsive: true, displayModeBar: true, displaylogo: false, scrollZoom: true });
+      void plotly.react(element, [...traces, spreadTrace, ...liveMarkers], layout, { responsive: true, displayModeBar: true, displaylogo: false, scrollZoom: true });
     }).catch((exc) => {
       if (!cancelled) setError(exc instanceof Error ? exc.message : "Unable to render the comparison chart.");
     });
@@ -281,7 +359,7 @@ export default function RelativePerformancePage() {
       if (plotRef.current && plotlyRef.current) plotlyRef.current.purge(plotRef.current);
       plotlyRef.current = null;
     };
-  }, [analysis, barsResponse?.timeframe, barsResponse?.end_date, liveQuotes]);
+  }, [analysis, barsResponse?.timeframe, barsResponse?.end_date, liveQuotes, chartWidth]);
 
   const rankedNames = ranked?.length ?? 0;
 
@@ -335,12 +413,29 @@ export default function RelativePerformancePage() {
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-slate-900">Normalized price changes</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-lg font-semibold text-slate-900">Normalized price changes</h2>
+            <label className="flex items-center gap-2 text-xs font-medium text-slate-600">Pullback scan
+              <Select value={String(pullbackWindowMinutes)} onChange={(event) => setPullbackWindowMinutes(event.target.value === "all" ? "all" : Number(event.target.value))}>
+                <option value="all">All 30–100 min</option><option value="30">30 minutes</option><option value="60">1 hour</option><option value="120">2 hours</option>
+              </Select>
+            </label>
+          </div>
           <span className="text-xs text-slate-500">Each line starts at 0% from its first available bar; last bar {timeLabel(rows.map((row) => row.latestTime).filter((value): value is string => !!value).sort().at(-1) || null)}. Current quotes appear as markers only when the selected window ends today; weekend database closes remain in the table.</span>
         </div>
+        <p className="mb-2 text-xs text-fuchsia-800">Dashed magenta line, right axis: SOXX change minus QQQ change (percentage points). A rising/positive spread means SOXX is outperforming QQQ; falling means it is losing relative strength.</p>
         {loading && !analysis ? <div className="flex h-[540px] items-center justify-center text-sm text-slate-500">Loading historical bars…</div>
           : rows.every((row) => row.bars === 0) ? <div className="flex h-72 items-center justify-center text-sm text-slate-500">No historical bars returned for these symbols.</div>
-            : <div ref={plotRef} className="min-w-0" aria-label="Relative performance line chart" />}
+            : <div ref={plotViewportRef} className="overflow-x-auto overscroll-x-contain" onScroll={handleChartScroll} aria-label="Scrollable relative performance chart"><div ref={plotRef} style={{ width: `${chartWidth}px`, height: "540px" }} aria-label="Relative performance line chart" /></div>}
+      </section>
+
+      <section className="rounded-lg border border-amber-200 bg-amber-50/60 p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">QQQ / SOXX relative-strength pullbacks</h2>
+          <span className="inline-flex items-center gap-2 text-xs text-amber-900"><span className="h-3 w-3 rounded-sm border border-amber-600 bg-amber-300/60" /> Shaded chart windows</span>
+        </div>
+        <p className="mt-1 text-xs text-slate-600">Highlights non-overlapping {pullbackWindowMinutes === "all" ? "30–100-minute" : `${pullbackWindowMinutes}-minute`} windows where both ETFs fell, QQQ fell at least 0.25%, and SOXX’s decline was at least 0.20 percentage points smaller. Times are US Eastern. This flags historical relative strength, not a forecast.</p>
+        {analysis?.pullbackPeriods.length ? <div className="mt-3 overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="text-xs uppercase tracking-wide text-slate-500"><tr><th className="py-2 pr-4">Period (ET)</th><th className="py-2 pr-4">Window</th><th className="py-2 pr-4">QQQ change</th><th className="py-2 pr-4">SOXX change</th><th className="py-2">SOXX relative edge</th></tr></thead><tbody className="divide-y divide-amber-200">{analysis.pullbackPeriods.map((period) => <tr key={`${period.startTime}-${period.endTime}`}><td className="whitespace-nowrap py-2 pr-4">{period.startTime.slice(5, 10)} {period.startTime.slice(11, 16)}–{period.endTime.slice(11, 16)}</td><td className="whitespace-nowrap py-2 pr-4">{period.windowMinutes} min</td><td className="py-2 pr-4 tabular-nums text-red-700">{percent(period.qqqChangePct)}</td><td className="py-2 pr-4 tabular-nums text-red-700">{percent(period.soxxChangePct)}</td><td className="py-2 tabular-nums font-semibold text-emerald-700">+{period.relativeEdgePct.toFixed(2)} pp</td></tr>)}</tbody></table></div> : <p className="mt-3 text-sm text-slate-600">No qualifying pullback windows found in this date range.</p>}
       </section>
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

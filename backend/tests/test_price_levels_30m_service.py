@@ -1,8 +1,10 @@
 import unittest
 from datetime import date, datetime, timedelta
+from unittest.mock import patch
 
 from app.services.price_levels_30m_service import (
     _calculate_levels,
+    _load_live_reference_prices,
     _select_reasonable_levels,
     _should_use_live_prices,
 )
@@ -44,6 +46,14 @@ def _daily_bars():
 
 
 class PriceLevels30mTests(unittest.TestCase):
+    def test_live_reference_price_fetch_uses_extended_quote_only_timeout(self):
+        with patch("app.services.price_levels_30m_service.get_live_stock_prices", return_value={"SPY": {"price": 700}}) as loader:
+            result = _load_live_reference_prices(["SPY"])
+        self.assertEqual(result["SPY"]["price"], 700)
+        loader.assert_called_once_with(
+            ["SPY"], wait_seconds=5.0, connect_timeout=3.0, quote_only=True,
+        )
+
     def test_live_price_date_policy(self):
         market_today = date(2026, 6, 12)
         recent_trading_dates = [

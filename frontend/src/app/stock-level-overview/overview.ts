@@ -2,6 +2,20 @@ import { classifyMapZones, mapZones, type MapZone } from "../support-resistance/
 
 export type RankedLevel = { zone: MapZone; distancePct: number | null };
 
+export function levelMidpoint(zone: Pick<MapZone, "range_low" | "range_high">): number {
+  return (zone.range_low + zone.range_high) / 2;
+}
+
+export function rangeOrderHref(symbol: string, side: SortSide, low: number, high: number): string {
+  const params = new URLSearchParams({
+    stock: symbol,
+    side: side === "support" ? "Buy" : "Sell",
+    start: low.toFixed(2),
+    end: high.toFixed(2),
+  });
+  return `/range-orders?${params.toString()}`;
+}
+
 /** Reclassify report zones against the IB quote, then rank by report strength. */
 export function topLevels(data: Record<string, unknown>, price: number | null): { supports: RankedLevel[]; resistances: RankedLevel[] } {
   const validPrice = price !== null && Number.isFinite(price) && price > 0 ? price : null;

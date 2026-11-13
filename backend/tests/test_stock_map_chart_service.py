@@ -23,6 +23,21 @@ def test_chart_uses_longer_bounded_timeout_and_sargable_code_timeframe_filters(m
     assert "TimeIntervalStart >= ? AND TimeIntervalStart < ?" in sql
 
 
+def test_chart_service_supports_15m_context_bars(monkeypatch):
+    calls = []
+    monkeypatch.setattr(service, "_open_saved_price_levels_model", lambda **kwargs: Mock())
+    monkeypatch.setattr(service, "_close_saved_price_levels_model", lambda _: None)
+    monkeypatch.setattr(service, "_execute_saved_price_levels_query", lambda _model, sql, params: calls.append((sql, params)) or [])
+
+    result = service.get_stock_map_chart_bars("SPX", observation_datetime=datetime(2026, 10, 30, 12), timeframe="15M")
+
+    assert result["bars"] == []
+    assert len(calls) == 1
+    assert calls[0][1][0] == "SPXW.US"
+    assert "TimeFrame IN (CONVERT(varchar(10), ?))" in calls[0][0]
+    assert calls[0][1][1] == "15M"
+
+
 def test_spx_map_uses_spxw_candles_without_changing_stock_aliases(monkeypatch):
     model = Mock()
     monkeypatch.setattr(service, "_open_saved_price_levels_model", lambda **kwargs: model)

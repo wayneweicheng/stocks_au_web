@@ -114,6 +114,14 @@ The `start-apps.ps1` script manages both services:
 - CORS is configured to allow frontend-backend communication
 - Authentication system is implemented across both frontend and backend
 
+## Connecting to StockDB_US
+
+- Backend SQL credentials/settings are loaded from `backend/.env` by `app/core/config.py`; never copy credentials into scripts, logs, or this file.
+- For ad-hoc database work, run Python from `backend/` with the repository virtual environment (`..\venv\Scripts\python.exe`). Do not use an unrelated system Python: it may not have the project dependencies or load the backend settings.
+- Preferred direct connection helper: `from app.core.db import get_db_connection`, then `get_db_connection(database="StockDB_US", connection_timeout=5)`. It uses the configured backend settings and returns a pyodbc connection; close the cursor and connection when done.
+- Existing app code may use `arkofdata_common.SQLServerHelper.SQLServerModel(database="StockDB_US")`; `app/core/config.py` populates the environment variables that helper expects. Prefer `get_db_connection` when explicit connection/query timeouts or unswallowed SQL errors are important.
+- Safe connectivity check from the repository root (PowerShell, one physical line): `Set-Location backend; ..\venv\Scripts\python.exe -c "from app.core.db import get_db_connection; c=get_db_connection(database='StockDB_US', connection_timeout=5); cur=c.cursor(); cur.execute('SELECT DB_NAME()'); print(cur.fetchone()[0]); cur.close(); c.close()"`.
+
 ## Database Schema
 Databases used by this application is located in SQL Server. The schema of the objects are located at:
 StockDB: DatabaseSchema\StockDB

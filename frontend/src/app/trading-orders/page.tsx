@@ -228,6 +228,15 @@ function formatSydneyDate(value?: string, sourceTimeZone = SYDNEY_TIME_ZONE) {
   });
 }
 
+function formatProxyIntentExpiry(createdAt?: string): string {
+  if (!createdAt) return "-";
+  const created = hasTimezoneOffset(createdAt)
+    ? new Date(createdAt)
+    : zonedDateTimeToDate(createdAt, SYDNEY_TIME_ZONE);
+  if (!created || Number.isNaN(created.getTime())) return "-";
+  return formatSydneyDate(new Date(created.getTime() + 24 * 60 * 60 * 1000).toISOString());
+}
+
 function formatPrice(value?: number | null): string {
   if (value == null) return "-";
   const numeric = Number(value);
@@ -1624,7 +1633,7 @@ export default function TradingOrdersPage() {
                         {selectedOrder.activation.target_entry_price != null ? ` · target reference ${formatPrice(selectedOrder.activation.target_entry_price)}` : ""}
                         {selectedOrder.activation.broker_order_id != null ? ` · IB order ${selectedOrder.activation.broker_order_id}` : ""}
                       </div>
-                      <div className="text-xs text-slate-500">Target session: SMART 04:00–20:00, OVERNIGHT 20:00–03:50 US/Eastern · expires {formatSydneyDate(selectedOrder.activation.expires_at, US_EASTERN_TIME_ZONE)}</div>
+                      <div className="text-xs text-slate-500">Target session: SMART 04:00–20:00, OVERNIGHT 20:00–03:50 US/Eastern · expires 24 hours after entry ({formatProxyIntentExpiry(selectedOrder.created_at)} Sydney)</div>
                       {selectedOrder.activation.error_message && <div className="text-sm text-red-700">{selectedOrder.activation.error_code}: {selectedOrder.activation.error_message}</div>}
                     </div>
                   )}

@@ -12,6 +12,8 @@ const { generateEsTriggerPrices: tiers, allocateIntegerVolumes: volumes, proxyPy
 const plain = (arr) => Array.from(arr);
 assert.deepEqual(plain(tiers(7400.5, 7404.25, 3, 'Buy')), [7404.25, 7402.25, 7400.5]);
 assert.deepEqual(plain(tiers(7400.5, 7404.25, 3, 'Sell')), [7400.5, 7402.5, 7404.25]);
+assert.deepEqual(plain(tiers(7404.25, 7400.5, 3, 'Buy')), [7404.25, 7402.25, 7400.5]);
+assert.deepEqual(plain(tiers(7404.25, 7400.5, 3, 'Sell')), [7400.5, 7402.5, 7404.25]);
 assert.deepEqual(plain(tiers(7400.5, 7400.75, 3, 'Buy')), []);
 assert.deepEqual(plain(volumes(10, weights(3, 1.15, 'Pyramid'))), [3, 3, 4]);
 assert.deepEqual(plain(volumes(3, weights(3, 1.15, 'Pyramid'))), [1, 1, 1]);

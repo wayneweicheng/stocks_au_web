@@ -6,6 +6,7 @@ import PageHeader from "../components/PageHeader";
 import { allocateIntegerVolumes, generateEsTriggerPrices, proxyPyramidWeights } from "./esmain-ladder";
 import { ibLivePriceFromResponse } from "./ibLivePrice";
 import { priceComparison } from "./priceComparison";
+import { generateLinearPricesInclusive } from "./priceLadder";
 
 type Side = "Buy" | "Sell";
 type Distribution = "Pyramid" | "Even";
@@ -48,18 +49,6 @@ function ceilInt(n: number): number {
   return Math.ceil(n);
 }
 
-function generateLinearPricesInclusive(a: number, b: number, count: number): number[] {
-  if (count <= 1) return [round2(a)];
-  const low = Math.min(a, b);
-  const high = Math.max(a, b);
-  const step = (high - low) / (count - 1);
-  const out: number[] = [];
-  for (let i = 0; i < count; i++) {
-    out.push(round2(low + step * i));
-  }
-  return out;
-}
-
 function normalize(weights: number[]): number[] {
   const sum = weights.reduce((acc, w) => acc + w, 0);
   if (sum <= 0) return weights.map(() => 0);
@@ -79,14 +68,14 @@ export default function RangeOrdersPage() {
   const [stockCode, setStockCode] = useState<string>("QQQ");
   const [useSpyProxy, setUseSpyProxy] = useState<boolean>(false);
   const [currency, setCurrency] = useState<string>("USD");
-  const [totalAmount, setTotalAmount] = useState<string>("30000");
+  const [totalAmount, setTotalAmount] = useState<string>("15000");
   const [totalVolume, setTotalVolume] = useState<string>("");
   const [startPrice, setStartPrice] = useState<string>("");
   const [endPrice, setEndPrice] = useState<string>("");
   const [side, setSide] = useState<Side>("Buy");
   const [valueAllocationForSell, setValueAllocationForSell] = useState<boolean>(false);
   const [distribution, setDistribution] = useState<Distribution>("Pyramid");
-  const [numOrders, setNumOrders] = useState<string>("8");
+  const [numOrders, setNumOrders] = useState<string>("6");
   const [ratio, setRatio] = useState<string>("1.15"); // Pyramid ratio: Order 1 to Order 2
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [placing, setPlacing] = useState<boolean>(false);
@@ -215,7 +204,7 @@ export default function RangeOrdersPage() {
     const tv = toNumber(totalVolume);
     const sp = toNumber(startPrice);
     const ep = toNumber(endPrice);
-    const n = Math.max(1, Math.min(100, Math.floor(toNumber(numOrders) ?? 0) || 8));
+    const n = Math.max(1, Math.min(100, Math.floor(toNumber(numOrders) ?? 0) || 6));
     const rRaw = toNumber(ratio);
     const r = rRaw && rRaw > 0 ? Math.max(0.75, Math.min(1.5, rRaw)) : 1; // clamp to [0.75,1.5]
     return { total, tv, sp, ep, n, r };
@@ -250,7 +239,7 @@ export default function RangeOrdersPage() {
       : ([quoteLast, quoteMid, quoteClose].find((price) => typeof price === "number" && price > 0) ?? 0);
     const pricesAsc = useSpyProxy
       ? Array.from({ length: parsed.n }, () => targetQuote)
-      : generateLinearPricesInclusive(parsed.sp!, parsed.ep!, parsed.n);
+      : generateLinearPricesInclusive(parsed.sp!, parsed.ep!, parsed.n, side);
 
     // Non-proxy ladders retain their existing display order. Proxy tiers are
     // descending for buys and ascending for sells, matching side-specific ES triggers.
@@ -1304,7 +1293,7 @@ export default function RangeOrdersPage() {
             </div>
 
             <div>
-              <label className="block text-sm mb-1 text-slate-600">{useSpyProxy ? "ESMain Trigger Start" : "Start Price"}</label>
+              <label className="block text-sm mb-1 text-slate-600">Start Price</label>
               <input
                 type="number"
                 step="0.01"
@@ -1320,7 +1309,7 @@ export default function RangeOrdersPage() {
             </div>
 
             <div>
-              <label className="block text-sm mb-1 text-slate-600">{useSpyProxy ? "ESMain Trigger End" : "End Price"}</label>
+              <label className="block text-sm mb-1 text-slate-600">End Price</label>
               <input
                 type="number"
                 step="0.01"

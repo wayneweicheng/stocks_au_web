@@ -67,6 +67,15 @@ class Settings(BaseSettings):
             "SUPPORT_RESISTANCE_MAX_CONCURRENT_REQUESTS",
         ),
     )
+    spx_effective_bar_finalization_delay_seconds: int = Field(
+        default=30,
+        ge=0,
+        le=300,
+        validation_alias=AliasChoices(
+            "spx_effective_bar_finalization_delay_seconds",
+            "SPX_EFFECTIVE_BAR_FINALIZATION_DELAY_SECONDS",
+        ),
+    )
 
     # Web
     allowed_origins: str = Field(default="http://localhost:3100", validation_alias=AliasChoices("allowed_origins"))

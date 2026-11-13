@@ -6,6 +6,7 @@ import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
+import { confirmReportDeletion } from "../components/confirmReportDeletion";
 import { comparisonApiError } from "./comparisonApiError";
 
 type DaySnapshot = {
@@ -67,6 +68,7 @@ export default function StockMapComparisonWorkspace({ mode }: { mode: "lab" | "v
   const [reports, setReports] = useState<ComparisonReport[]>([]);
   const [selectedReport, setSelectedReport] = useState("");
   const [reportContent, setReportContent] = useState("");
+  const [deletingReport, setDeletingReport] = useState(false);
   const [promptText, setPromptText] = useState("");
   const [promptFor, setPromptFor] = useState("");
   const [promptCopied, setPromptCopied] = useState(false);
@@ -180,6 +182,21 @@ export default function StockMapComparisonWorkspace({ mode }: { mode: "lab" | "v
     finally { setBusy(false); }
   };
 
+  const deleteSelectedReport = async () => {
+    const report = reports.find((item) => item.job_id === selectedReport);
+    if (!report || !confirmReportDeletion(report.title || report.job_id, report.job_id)) return;
+    setBusy(true);
+    setDeletingReport(true);
+    setError("");
+    try {
+      await api(`/api/stock-map-comparison-reports/${encodeURIComponent(report.job_id)}`, { method: "DELETE" });
+      setReports((current) => current.filter((item) => item.job_id !== report.job_id));
+      setSelectedReport("");
+      setReportContent("");
+    } catch (exc) { setError(exc instanceof Error ? exc.message : String(exc)); }
+    finally { setDeletingReport(false); setBusy(false); }
+  };
+
   return <div className="space-y-5">
     {mode === "lab" ? <>
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -213,7 +230,7 @@ export default function StockMapComparisonWorkspace({ mode }: { mode: "lab" | "v
     </> : <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">Two-Day Analysis Reports</h2><Button type="button" variant="secondary" onClick={() => void loadReports()} disabled={busy}>Refresh reports</Button></div>
       {reports.length ? <div className="mt-4 flex flex-wrap gap-2">{reports.map((report) => <Button key={report.job_id} type="button" variant="secondary" onClick={() => void openReport(report.job_id)} disabled={busy}>{report.title || report.job_id}</Button>)}</div> : <p className="mt-3 text-sm text-slate-500">No comparison reports yet. Submit from the Two-Day Lab.</p>}
-      {selectedReport ? <p className="mt-4 text-xs text-slate-500">Report job {selectedReport}</p> : null}
+      {selectedReport ? <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3"><p className="text-xs text-slate-500">Report job {selectedReport}</p><Button type="button" variant="danger" onClick={() => void deleteSelectedReport()} disabled={busy}>{deletingReport ? "Deleting…" : "Delete report"}</Button></div> : null}
       {reportContent ? <div className="mt-3"><MarkdownRenderer content={reportContent} /></div> : null}
     </section>}
     <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm shadow-sm">

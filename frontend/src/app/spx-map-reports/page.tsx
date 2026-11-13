@@ -99,6 +99,7 @@ export default function SpxMapReportsPage() {
       subtitle="View SPX support/resistance maps and submit current or historical as-at jobs through the skill-runner proxy."
       reportsEndpoint="/api/spx-map-reports"
       jobsEndpoint="/api/spx-map/jobs"
+      canDeleteReports
       storageKey="stocks_au_spx_map_jobs"
       submitLabel="Submit SPX Map Job"
       emptyLabel="No SPX Map reports found."

@@ -6,6 +6,7 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }, fileName: filename,
 }).outputText, filename);
 const { chartMinimumWidth, chartLevelColor, straddleZoneShape, spxExpiryRangeShape } = require(path.join(__dirname, '../src/app/support-resistance/chartLayout.ts'));
+const { spxMapReportDate, sortSpxMapReports } = require(path.join(__dirname, '../src/app/support-resistance/stockMapLevels.ts'));
 assert.equal(chartMinimumWidth(100, '30m'), 1160);
 assert.equal(chartMinimumWidth(100, '5m'), 760);
 assert.ok(chartMinimumWidth(1000, '5m') > chartMinimumWidth(100, '5m'));
@@ -22,6 +23,13 @@ assert.equal(band.fillcolor, 'rgba(250, 204, 21, 0.18)');
 const spxExpiryBand = spxExpiryRangeShape({ low: 7590.78, high: 7686.68 });
 assert.deepEqual([spxExpiryBand.y0, spxExpiryBand.y1], [7590.78, 7686.68]);
 assert.equal(spxExpiryBand.fillcolor, 'rgba(249, 115, 22, 0.14)');
+assert.equal(spxMapReportDate({ job_id: 'old', title: '2026-11-10 20:07 Australia/Sydney', file_name: '/reports/spx-map/spx_map_20261110_0407_ET.html' }), '2026-11-10');
+assert.equal(spxMapReportDate({ job_id: 'new', title: '2026-11-11 20:07 Australia/Sydney', file_name: '/reports/spx-map/spx_map_20261111_0407_ET.html' }), '2026-11-11');
+assert.equal(spxMapReportDate({ job_id: 'undated', title: 'SPX Map Report', file_name: 'no-date.html' }), null);
+assert.deepEqual(sortSpxMapReports([
+  { job_id: 'older', title: '2026-11-10 20:07 Australia/Sydney', file_name: '/reports/spx-map/spx_map_20261110_0407_ET.html' },
+  { job_id: 'newer', title: '2026-11-11 20:07 Australia/Sydney', file_name: '/reports/spx-map/spx_map_20261111_0407_ET.html' },
+]).map((report) => report.job_id), ['newer', 'older']);
 const page = fs.readFileSync(path.join(__dirname, '../src/app/support-resistance/page.tsx'), 'utf8');
 assert.match(page, /showlegend: false, \/\/ The responsive legend is rendered below the scrollable plot/);
 assert.match(page, /if \(typeof window === "undefined"\) return "stock-map"/);
@@ -31,6 +39,8 @@ assert.match(page, /overflow-x-auto/);
 assert.match(page, /aria-label="Chart legend"/);
 assert.match(page, /visibleSide\(side\)\.map\(\(\{ level: zone, originalIndex \}\)/);
 assert.match(page, /chartMinimumWidth\(bars\.length, chartTimeframe\)/);
+assert.match(page, /dragmode: "pan"/);
+assert.doesNotMatch(page, /dragmode: "zoom"/);
 assert.match(page, /scrollLeft = viewport\.scrollWidth/);
 assert.match(page, /straddleZoneShape\(mapChart\.nextSessionStraddle\.nextSessionRange\)/);
 assert.match(page, /spxExpiryRangeShape\(mapChart\.spxOptions\.expiryRange\)/);

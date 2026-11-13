@@ -9,7 +9,7 @@ import Input from "../components/ui/Input";
 import PageHeader from "../components/PageHeader";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
 import MappedLevelReportDetails from "../components/MappedLevelReportDetails";
-import { classifyMapZones, mapLineColor, mapLineWidth, mapAsOfTime, mapNextSessionStraddle, mapObservationDate, mapStockCode, mapZones, parseStockMap, reportAsAtClose, reportMatchesStock, reportTimeCategoryPosition, type MapZone, type NextSessionStraddle, type ReportAsOfTime, type StockMapReport } from "./stockMapLevels";
+import { classifyMapZones, mapLineColor, mapLineWidth, mapAsOfTime, mapNextSessionStraddle, mapObservationDate, mapStockCode, mapZones, parseStockMap, reportAsAtClose, reportMatchesStock, reportTimeCategoryPosition, sortSpxMapReports, type MapZone, type NextSessionStraddle, type ReportAsOfTime, type StockMapReport } from "./stockMapLevels";
 import { parseSpxMap, spxOptionObservationDate, spxOptionPair, spxOptionRangeForInstrument, spxPreviousCompletedClose, spxReportReference, type SpxOptionPair } from "./spxMapLevels";
 import { matchedEsBasis } from "../spx-map-reports/[jobId]/mapped-levels/esBasis";
 import { deriveSpxZones, effectivePriceForSpxInstrument, spxInstrumentForCode } from "./spxDerivedLevels";
@@ -535,6 +535,7 @@ export default function SupportResistancePage() {
   const [databaseLoading, setDatabaseLoading] = useState(false);
   const [databaseError, setDatabaseError] = useState("");
   const [mapReports, setMapReports] = useState<StockMapReport[]>([]);
+  const [todayReportStocks, setTodayReportStocks] = useState<string[]>([]);
   const [selectedMapJob, setSelectedMapJob] = useState("");
   const [mapData, setMapData] = useState<StockMapSelection | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
@@ -732,19 +733,19 @@ export default function SupportResistancePage() {
       const optionObservationDate = isSpx ? spxOptionObservationDate(map, observationDate) : null;
       const params = new URLSearchParams({ stock_code: displayCode });
       if (observationDate) params.set("observation_date", observationDate);
-      const barsResponse = await authenticatedFetch(`${baseUrl}/api/support-resistance/stock-map-bars?${params}`, { cache: "no-store" });
-      const barsPayload = await barsResponse.json();
+      // These reads are independent: as-at classification uses historicalBars,
+      // while the chart can include later sessions. Fetch both concurrently.
+      const chartParams = new URLSearchParams({ stock_code: displayCode, timeframe: "30M", lookback_days: String(DEFAULT_CHART_DAYS["30m"]) });
+      const [barsResponse, chartResponse] = await Promise.all([
+        authenticatedFetch(`${baseUrl}/api/support-resistance/stock-map-bars?${params}`, { cache: "no-store" }),
+        authenticatedFetch(`${baseUrl}/api/support-resistance/chart-bars?${chartParams}`, { cache: "no-store" }),
+      ]);
+      const [barsPayload, chartPayload] = await Promise.all([barsResponse.json(), chartResponse.json()]);
       if (!barsResponse.ok) throw new Error(barsPayload?.detail || `HTTP ${barsResponse.status}`);
+      if (!chartResponse.ok) throw new Error(chartPayload?.detail || `HTTP ${chartResponse.status}`);
       if (mapRequest.current !== requestId) return;
       const historicalBars: PriceBar[] = barsPayload.bars || [];
       const asAtClose = asOfTime ? reportAsAtClose(historicalBars, asOfTime.easternWallTime) : null;
-      // The historical cutoff is for as-at classification only. Fetch chart
-      // candles independently so later sessions are visible on a saved map.
-      const chartParams = new URLSearchParams({ stock_code: displayCode, timeframe: "30M", lookback_days: String(DEFAULT_CHART_DAYS["30m"]) });
-      const chartResponse = await authenticatedFetch(`${baseUrl}/api/support-resistance/chart-bars?${chartParams}`, { cache: "no-store" });
-      const chartPayload = await chartResponse.json();
-      if (!chartResponse.ok) throw new Error(chartPayload?.detail || `HTTP ${chartResponse.status}`);
-      if (mapRequest.current !== requestId) return;
       const bars: PriceBar[] = chartPayload.bars?.length ? chartPayload.bars : historicalBars;
       let reportSupports = mapZones(map, "support");
       let reportResistances = mapZones(map, "resistance");
@@ -919,10 +920,23 @@ export default function SupportResistancePage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.detail || `HTTP ${response.status}`);
       if (mapRequest.current !== requestId) return;
-      const reports = ((payload.items || []) as StockMapReport[]).filter((item) => isSpx
+      const allReports = (payload.items || []) as StockMapReport[];
+      const sydneyDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      const todaysReports = allReports.flatMap((item) => {
+        if (item.status !== "succeeded" || !item.created_at) return [];
+        const availableAt = new Date(item.created_at);
+        if (Number.isNaN(availableAt.getTime()) || new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney", year: "numeric", month: "2-digit", day: "2-digit" }).format(availableAt) !== sydneyDate) return [];
+        const raw = item.raw || {};
+        const codeFromMetadata = [item.stock_code, raw.stock_code, raw.instrument_code, raw.ticker, raw.symbol].find((value) => typeof value === "string" && value.trim());
+        const reportCode = (typeof codeFromMetadata === "string" ? codeFromMetadata : [item.title, item.file_name].find((value) => typeof value === "string")?.match(/^[A-Z0-9.^-]+(?=[:\\s_])/i)?.[0] || "").trim().toUpperCase().replace(/\\.(US|AX)$/i, "");
+        return reportCode ? [{ reportCode, availableAt: availableAt.getTime() }] : [];
+      }).sort((a, b) => a.availableAt - b.availableAt);
+      setTodayReportStocks([...new Set(todaysReports.map((item) => item.reportCode))].slice(0, 10));
+      const reports = allReports.filter((item) => isSpx
         ? item.status === "succeeded" : reportMatchesStock(item, code));
-      setMapReports(reports);
-      if (reports.length) await loadMapReport(reports[0], code, requestId);
+      const orderedReports = isSpx ? sortSpxMapReports(reports) : reports;
+      setMapReports(orderedReports);
+      if (orderedReports.length) await loadMapReport(orderedReports[0], code, requestId);
       else setMapLoading(false);
     } catch (exc) {
       if (mapRequest.current !== requestId) return;
@@ -1221,7 +1235,8 @@ export default function SupportResistancePage() {
           title: "Time",
           type: "category",
           rangeslider: { visible: false },
-          ...(isMobileViewport ? { ...chartMobileTicks(bars), tickangle: 0, tickfont: { size: 10 } } : {}),
+          ...chartMobileTicks(bars, isMobileViewport ? 5 : 8),
+          ...(isMobileViewport ? { tickangle: 0, tickfont: { size: 10 } } : {}),
           // Plotly's category autorange can reserve a large empty region after
           // the last candle. Bound it to the loaded bars (or one extra slot
           // when the saved map's as-at marker lies beyond the last bar).
@@ -1500,6 +1515,10 @@ export default function SupportResistancePage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
+            {activeTab === "stock-map" && todayReportStocks.length > 0 ? <div>
+              <p className="mb-2 text-sm font-medium text-slate-700">Today’s reports available (earliest first, up to 10)</p>
+              <div className="flex flex-wrap gap-2">{todayReportStocks.map((code) => <button key={code} type="button" onClick={() => { setStockCode(code); void loadMapReports(code); }} className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100">{code}</button>)}</div>
+            </div> : null}
             <div className="flex gap-3">
               <Input
                 placeholder="SPX, ESMain, SPY_D, QQQ_D, SPXL_D, TQQQ_D, SOXL_D, SOXX_D or a stock"

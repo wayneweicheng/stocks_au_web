@@ -74,28 +74,12 @@ def test_conditional_order_accepts_only_one_optional_exit_rule():
     assert meta["conditional_entry"]["stop_loss"] == {"unit": "PERCENT", "value": 0.5}
 
 
-def test_conditional_order_defaults_to_same_session_8pm_expiry(monkeypatch):
-    class FrozenDateTime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            current = cls(2026, 10, 16, 10, 0)
-            return current.replace(tzinfo=tz) if tz is not None else current
-
-    monkeypatch.setattr(router, "datetime", FrozenDateTime)
-
+def test_conditional_order_uses_creation_time_for_24_hour_expiry():
     normalized = router._normalize_order_inputs(_intent())
+    assert normalized["activation"]["expires_at"] is None
 
-    assert normalized["activation"]["expires_at"] == datetime(2026, 10, 16, 20, 0)
 
-
-def test_conditional_order_rejects_expiry_beyond_current_session(monkeypatch):
-    class FrozenDateTime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            current = cls(2026, 10, 16, 10, 0)
-            return current.replace(tzinfo=tz) if tz is not None else current
-
-    monkeypatch.setattr(router, "datetime", FrozenDateTime)
+def test_conditional_order_ignores_legacy_session_expiry_input():
     order = _intent(activation={
         "instrument_code": "ESMAIN.US",
         "lower_price": 670.0,
@@ -104,8 +88,7 @@ def test_conditional_order_rejects_expiry_beyond_current_session(monkeypatch):
         "expires_at": "2026-10-19T20:00:00",
     })
 
-    with pytest.raises(HTTPException, match="current eligible session day only"):
-        router._normalize_order_inputs(order)
+    assert router._normalize_order_inputs(order)["activation"]["expires_at"] is None
 
 
 def test_activation_list_returns_persisted_per_order_tier():
@@ -152,7 +135,7 @@ def test_esmain_batch_persists_fixed_tick_aligned_tiers(side, expected):
                     for tier in expected]
         ))
     assert result['count'] == 3
-    assert [FakeModel.last.params[i * 19 + 17] for i in range(3)] == expected
+    assert [FakeModel.last.params[i * 18 + 17] for i in range(3)] == expected
 
 
 def test_range_without_distinct_es_ticks_rejects_batch():
@@ -176,7 +159,7 @@ def test_single_short_intent_persists_lower_edge_as_es_trigger():
             'instrument_code': 'ESMAIN.US', 'lower_price': 7400.5,
             'upper_price': 7404.25, 'trigger_price': 7400.5,
         }))
-    assert FakeModel.last_params[-2] == 7400.5
+    assert FakeModel.last_params[-1] == 7400.5
 
 
 def test_single_intent_cannot_override_side_specific_es_tier():
@@ -224,8 +207,9 @@ def test_conditional_batch_is_one_atomic_database_write():
     assert "BEGIN TRANSACTION" in sql and "ROLLBACK TRANSACTION" in sql
     assert sql.count("INSERT INTO Trading.OrderActivation") == 2
     assert params.count("ESMAIN.US") == 0  # fixed proxy is a SQL literal, not caller-controlled data
-    assert len(params) == 38
-    assert params[17] == 670.5 and params[36] == 670.0
+    assert len(params) == 36
+    assert params[17] == 670.5 and params[35] == 670.0
+    assert "NULL, 'ARMED'" in sql
     first_batch_id = json.loads(params[14])["conditional_entry"]["batch_id"]
-    second_batch_id = json.loads(params[33])["conditional_entry"]["batch_id"]
+    second_batch_id = json.loads(params[32])["conditional_entry"]["batch_id"]
     assert first_batch_id == second_batch_id

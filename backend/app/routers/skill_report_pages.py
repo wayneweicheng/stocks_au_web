@@ -6,13 +6,16 @@ from typing import Any, Dict, List, Optional, Set
 from zoneinfo import ZoneInfo
 import json
 import logging
+import math
+import re
 import threading
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, model_validator
 
 from app.routers.auth import verify_credentials
-from app.routers.index_stock_price_mapping import get_stock_map_prices
+from app.routers.index_stock_price_mapping import get_spx_map_prices, get_stock_map_prices
 from app.services.index_bottom_state_timeline import (
     calculate_returns as calculate_index_bottom_returns,
     load_price_rows as load_index_bottom_price_rows,
@@ -310,6 +313,13 @@ def _mark_skill_report_deleted(job_type: str, job_id: str) -> None:
         ids.add(job_id)
         data[job_type] = sorted(ids)
         _save_deleted_report_data(data)
+    with _REPORT_SUMMARY_CACHE_LOCK:
+        _REPORT_SUMMARY_CACHE.pop((job_type, job_id), None)
+
+
+def _delete_skill_report(job_type: str, job_id: str) -> DeleteReportResponse:
+    _mark_skill_report_deleted(job_type, job_id)
+    return DeleteReportResponse(deleted=True, job_id=job_id)
 
 
 def _skill_config(job_type: str) -> Dict[str, str]:
@@ -805,6 +815,11 @@ def get_spx_map_report(
     return _get_skill_report("spx-map", job_id)
 
 
+@router.delete("/spx-map-reports/{job_id}", response_model=DeleteReportResponse)
+def delete_spx_map_report(job_id: str, username: str = Depends(verify_credentials)) -> DeleteReportResponse:
+    return _delete_skill_report("spx-map", job_id)
+
+
 @router.post("/spx-map/jobs", response_model=SkillJobResponse)
 def create_spx_map_job(
     payload: SpxMapJobCreate,
@@ -905,6 +920,11 @@ def get_stock_map_report(
     return _get_skill_report("stock-map", job_id)
 
 
+@router.delete("/stock-map-reports/{job_id}", response_model=DeleteReportResponse)
+def delete_stock_map_report(job_id: str, username: str = Depends(verify_credentials)) -> DeleteReportResponse:
+    return _delete_skill_report("stock-map", job_id)
+
+
 @router.post("/stock-map/jobs", response_model=SkillJobResponse)
 def create_stock_map_job(
     payload: StockMapJobCreate,
@@ -947,6 +967,11 @@ def list_stock_map_comparison_reports(username: str = Depends(verify_credentials
 @router.get("/stock-map-comparison-reports/{job_id}", response_model=SkillReportDetail)
 def get_stock_map_comparison_report(job_id: str, username: str = Depends(verify_credentials)) -> SkillReportDetail:
     return _get_skill_report("stock-map-comparison", job_id)
+
+
+@router.delete("/stock-map-comparison-reports/{job_id}", response_model=DeleteReportResponse)
+def delete_stock_map_comparison_report(job_id: str, username: str = Depends(verify_credentials)) -> DeleteReportResponse:
+    return _delete_skill_report("stock-map-comparison", job_id)
 
 
 def _comparison_payload(stock_code: str, observation_date: date, timeout_minutes: int, username: str, *, require_live_price: bool = True) -> dict:
@@ -1304,11 +1329,122 @@ def get_find_index_bottoms_job(
     return SkillJobResponse(data=data)
 
 
+def _spx_comparison_report_date(item: Dict[str, Any]) -> Optional[date]:
+    candidates = [
+        get_first_value(item, ["d1_date", "d1_trading_date", "observation_date"]),
+        get_first_value(item, ["label", "title"]),
+        get_first_value(item, ["created_at", "created", "timestamp"]),
+    ]
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        match = re.search(r"20\d{2}-\d{2}-\d{2}", str(candidate))
+        if match:
+            try:
+                return date.fromisoformat(match.group(0))
+            except ValueError:
+                continue
+    return None
+
+
 @router.get("/spx-map-comparison/reports")
 def list_spx_map_comparison_reports(
+    date_from: Optional[date] = Query(default=None),
+    date_to: Optional[date] = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=30, ge=1, le=100),
     username: str = Depends(verify_credentials),
 ) -> Any:
-    return call_skill_runner("GET", "/api/spx-map-comparison/reports")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from cannot be after date_to")
+    payload = call_skill_runner("GET", "/api/spx-map-comparison/reports")
+    deleted_ids = _deleted_report_ids("spx-map-comparison")
+    items = [item for item in extract_report_items(payload)
+             if str(get_first_value(item, ["job_id", "id", "jobId"]) or "") not in deleted_ids]
+    dated_items = [(item, _spx_comparison_report_date(item)) for item in items]
+    if date_from:
+        dated_items = [(item, report_date) for item, report_date in dated_items if report_date and report_date >= date_from]
+    if date_to:
+        dated_items = [(item, report_date) for item, report_date in dated_items if report_date and report_date <= date_to]
+    dated_items.sort(key=lambda entry: (entry[1] or date.min, str(get_first_value(entry[0], ["created_at"]) or "")), reverse=True)
+    total = len(dated_items)
+    page = [item for item, _ in dated_items[offset:offset + limit]]
+    return {"items": page, "total": total, "offset": offset, "limit": limit, "has_more": offset + len(page) < total}
+
+
+@router.delete("/spx-map-comparison/reports/{job_id}", response_model=DeleteReportResponse)
+def delete_spx_map_comparison_report(job_id: str, username: str = Depends(verify_credentials)) -> DeleteReportResponse:
+    return _delete_skill_report("spx-map-comparison", job_id)
+
+
+def _spx_comparison_input_from_payload(payload: Any) -> Dict[str, Any] | None:
+    data = payload.get("data") if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else payload
+    comparison_input = data.get("comparison_input") if isinstance(data, dict) else None
+    return comparison_input if isinstance(comparison_input, dict) else None
+
+
+def _load_spx_comparison_effective_price_context(
+    comparison_input: Dict[str, Any], username: str,
+) -> List[Dict[str, Any]]:
+    contexts = []
+    for day in ("D1", "D2"):
+        snapshot = comparison_input.get(day) if isinstance(comparison_input.get(day), dict) else {}
+        source = snapshot.get("source") if isinstance(snapshot.get("source"), dict) else {}
+        as_of_text = source.get("as_of_et")
+        row: Dict[str, Any] = {"day": day, "as_of_et": as_of_text}
+        try:
+            if not isinstance(as_of_text, str) or not as_of_text:
+                raise ValueError("source as_of_et unavailable")
+            as_of = datetime.fromisoformat(as_of_text)
+            if as_of.tzinfo is None:
+                as_of = as_of.replace(tzinfo=ZoneInfo("America/New_York"))
+            observation = source.get("trading_date") or as_of.date().isoformat()
+            result = get_spx_map_prices(
+                observation_date=date.fromisoformat(str(observation)[:10]),
+                as_of_et=as_of,
+                username=username,
+            )
+            effective_source_text = str(result.get("effective_price_source") or "")
+            selected_bar_key = "ESMain" if effective_source_text.startswith("ESMain") else "SPY" if effective_source_text.startswith("SPY") else None
+            selected_bar = (result.get("effective_price_bars") or {}).get(selected_bar_key) if selected_bar_key else None
+            row.update({
+                "effective_prices": result.get("effective_prices"),
+                "source": result.get("effective_price_source"),
+                "timestamp": result.get("effective_price_timestamp"),
+                "timestamps": result.get("effective_price_timestamps", {}),
+                "sources": result.get("effective_price_sources", {}),
+                "bar_start": result.get("effective_price_bar_start"),
+                "bars": result.get("effective_price_bars", {}),
+                "retrieved_at_utc": result.get("effective_price_retrieved_at_utc"),
+                "es_spx_basis": result.get("effective_price_basis"),
+                "basis_observation_date": result.get("basis_observation_date"),
+                "basis_component_timestamps": result.get("basis_component_timestamps", {}),
+                "basis_age_days": result.get("basis_age_days"),
+                "basis_quality": result.get("basis_quality"),
+                "spy_spx_close_ratio": result.get("spy_spx_close_ratio"),
+                "spy_spx_ratio_date": result.get("spy_spx_ratio_date"),
+                "spy_spx_ratio_quality": result.get("spy_spx_ratio_quality"),
+                "basis_dispersion_points": result.get("basis_dispersion_points"),
+                "basis_dispersion_status": result.get("basis_dispersion_status"),
+                "point_in_time_availability_validated": False,
+                "availability_status": "UNKNOWN; source has no trusted available_at timestamp",
+                "freshness_status": selected_bar.get("freshness_status") if isinstance(selected_bar, dict) else "UNAVAILABLE",
+            })
+            if not isinstance(row.get("effective_prices"), dict) or not row["effective_prices"].get("SPX"):
+                row["unavailable_reason"] = result.get("effective_price_source") or "effective SPX price unavailable"
+        except Exception as exc:
+            row.update({"effective_prices": {"SPX": None, "SPY": None, "ESMain": None},
+                        "unavailable_reason": str(exc), "point_in_time_availability_validated": False,
+                        "availability_status": "UNKNOWN"})
+        contexts.append(row)
+    return contexts
+
+
+def _spx_comparison_analysis_context(comparison_input: Dict[str, Any], username: str) -> Dict[str, Any]:
+    return {
+        "effective_price_context": _load_spx_comparison_effective_price_context(comparison_input, username),
+        "market_path_evidence": _load_spx_comparison_market_path_evidence(comparison_input),
+    }
 
 
 @router.post("/spx-map-comparison/preview")
@@ -1316,43 +1452,34 @@ def preview_spx_map_comparison(
     payload: Dict[str, Any],
     username: str = Depends(verify_credentials),
 ) -> Any:
-    return call_skill_runner("POST", "/api/spx-map-comparison/preview", payload)
+    result = call_skill_runner("POST", "/api/spx-map-comparison/preview", payload)
+    comparison_input = _spx_comparison_input_from_payload(result)
+    if comparison_input is None:
+        return result
+    try:
+        return {**result, **_spx_comparison_analysis_context(comparison_input, username)}
+    except Exception:
+        logger.exception("Unable to enrich SPX comparison preview with historical market context")
+        return {**result, "effective_price_context": [], "market_path_evidence": {}}
 
 
-SPX_COMPARISON_TRADING_PLAN_PROMPT = """\n\n## Required analysis and conditional trading plan\nUse the supplied D1 and D2 SPX Map evidence to produce a complete, actionable-for-human-review analysis and conditional trading plan—not merely a report-to-report change summary. Ground every level and conclusion in the supplied reports. Do not invent prices, indicators, confirmation, or market data. If a value or evidence source is missing, say unavailable and explain the limitation. Distinguish observed evidence from modelled/convention-based estimates.\n\n## As-of price and level classification rules (mandatory)\nTreat each report's own as_of_et as the controlling timestamp; D1 and D2 must be analyzed independently at their respective timestamps. Use the supplied D1/D2 effective-price context below. It is based on the latest fully completed ESMain 30-minute bar at or before that report timestamp, translated to SPX using that report's date-matched ES−SPX close basis; if unavailable it uses the closest completed SPY bar as proxy. Do not substitute current quotes, the other day's price, or a session close for an as-of value. If the context is missing/unavailable, state that and do not invent a reference price.\nFor EACH day's zones, classify a zone as support when its supplied center/anchor is at or below that day's effective SPX price, and resistance when its center/anchor is above it. Re-rank supports nearest-first (highest center first) and resistances nearest-first (lowest center first). Do not preserve source ranks as the display/priority order after reclassification; retain original report rank only for provenance/details. Compare D1 and D2 on their own effective-price frames, and state the as-of timestamps and prices used. Never compare or sort levels across days without labeling their separate as-of frames.\n\nOrganize the response with these sections:\n1. Executive forecast: identify market phase and the preferred price path for the coming cash session; distinguish a countertrend rebound from a larger-trend reversal; identify a likely intermediate turning point, explain confidence and invalidation, and derive the preferred conditional trade. Mention next-few-session direction/terminal objectives only when evidence supports them.\n2. D1 vs D2 changes: meaningful changes to support/resistance, anchors, scores/confidence, price/option freshness, and optional positioning intelligence. Identify newly added, removed, strengthened/weakened levels only when the input supports that conclusion.\n3. Coming-session conditional trade plan (the primary deliverable): provide a table with setup, entry SPX range/trigger, stop SPX, target(s) SPX, priority, and confirmation required. Generate conditional bullish rebound, bullish continuation, bearish rejection, and bearish breakdown scenarios where evidence supports them. Rank these by consistency with the primary market-path forecast rather than implicitly preferring a short setup. A price classified as resistance does not automatically warrant a short; include no-trade conditions. These are mutually conditional ideas, not orders to activate simultaneously. Explain each setup, invalidation, risk/reward limitations, and whether the entry requires a prior test/rejection/reclaim.\n4. ES equivalents: calculate only when a valid report-provided ES−SPX basis is supplied. State the basis and that it must be revalidated. Otherwise mark ES equivalents unavailable; never assume a basis. Keep SPX and ES values clearly labeled.\n5. Levels that matter first: order the nearest overhead resistance and downside support zones relative to the supplied reference/market price, with conditional implications. Any acceleration path is a risk scenario, not a guaranteed move.\n6. Validation before trading: list data/date alignment issues, stale or missing quotes, missing confirmation, and positioning/flow caveats. Treat positioning_intelligence as optional; signed GEX and Gamma Flip are modelled/convention-based, not observed dealer positioning; wall qualifications join by level_id; flow does not establish customer/dealer identity or opening/closing activity.\n7. Final decision: state the preferred conditional setup, alternatives, what would invalidate the bias, and explicit no-trade criteria. Keep it advisory and retrospective when appropriate.\n\nDo not claim these ideas are executable orders. Never route, submit, or enable orders. Require revalidation against live cash-session prices and applicable market conditions before a human considers any setup.\n"""
+# Compact copy-prompt rules shared by the preview/copy workflow.
+SPX_COMPARISON_TRADING_PLAN_PROMPT = """
 
-SPX_COMPARISON_FORWARD_FORECAST_PROMPT = """\n\n## Additional mandatory analysis: forward-looking market path and turning-point forecast
-Act as a market-structure and price-path forecasting analyst, not merely a support/resistance classifier. The report's primary purpose remains a useful conditional trade plan for the coming cash session. First form a time-bounded, evidence-driven, falsifiable hypothesis for that session; highlight a likely path over the next few sessions only when the supplied evidence supports it, and keep that broader view secondary. The report must make a clear best-estimate directional call (bullish, bearish, or range-bound) when the evidence offers a defensible edge, even if confidence is LOW. Lead with the favored path, expected first destination and likely reaction; do not let a menu of symmetric if/then branches substitute for a forecast. Use NOT_DETERMINED only when evidence is genuinely insufficient or balanced, and explain why. Be explicit about uncertainty. Never imitate a forecaster's claimed accuracy or invent probabilities.
+## Evidence and conditional plan
+Use only the pinned D1/D2 structured reports and attached effective-price/market-path evidence. Treat each report's own `as_of_et` independently; the latest valid timestamp drives the coming-session forecast, regardless of D1/D2 label. PriceHistoryTimeFrame timestamps are start-labelled New York wall times. A 5M/15M/30M candle is time-eligible only when its corrected ET start plus its timeframe is <= that day's as-of. Effective-price selection additionally applies the configured ESMain 5M finalization grace (30 seconds by default), so an exact-boundary bar may be skipped. ESMain has no SPXW correction; SPXW raw labels use the documented +1-hour correction. Availability/ingestion is not supplied, so historical point-in-time availability is UNKNOWN and source data may have been revised. Never claim otherwise.
+Use the eligible ESMain 5M close less a date-matched cash-close ES−SPX basis for estimated SPX when both are valid; otherwise use only the supported SPY 5M close/ratio proxy. Reconcile against report ES-implied prices and disclose material conflicts; never silently choose. Distinguish observed cash SPX, estimated ES-derived SPX, prior cash close, structure and unavailable/stale prices. The old map's prior close is not the current market price.
+Classify each day's combined zones using boundaries, not anchors: entire range above price = ABOVE_PRICE/resistance; entire range below = BELOW_PRICE/support; price within bounds = INSIDE_ZONE. Deduplicate only genuine interval overlaps and preserve member IDs/source_level_ids; nearest overhead resistance first, nearest downside support first, occupied zones separately. Keep D1 and D2 on their own prices. Explain pivot recalculation separately from source-level additions/removals.
+Options and flow are qualified context only: signed GEX/Gamma Flip are modelled conventions, not observed dealer positioning; option availability is unverified unless timestamped; a resistance touch is not automatically a short, nor support automatically a long. No executable or simultaneous orders. Setups are future conditional scenarios; never describe a trade as already entered, open, active or filled. Do not invent unsupported prices, indicators, confirmation, entries, stops, targets, R:R or probabilities.
+"""
 
-### Market phase and primary directional hypothesis
-Diagnose one phase where evidence permits: bullish/bearish trend continuation, countertrend bullish rebound/bearish pullback, selling/buying climax or potential exhaustion, failed breakout/breakdown, consolidation/range, or transition/undetermined. Use chronological price observations, confirmed swing highs/lows, gap behavior, ATR, momentum, VIX, breadth and positioning only where supplied. Explain the previous 3–5 sessions, whether price is trending/correcting/exhausting/reversing, whether the latest move appears early/mid/late in a larger move, unusual extension versus ATR, and whether a rebound/decline may be unfinished. Do not infer N/V/W patterns from level snapshots alone. If evidence is absent, say the phase is not confidently established.
-Choose ONE preferred base-case hypothesis for the coming session: BULLISH_REBOUND, BULLISH_CONTINUATION, BEARISH_PULLBACK, BEARISH_CONTINUATION, RANGE_BOUND, or—only when genuinely warranted—NOT_DETERMINED. A low-confidence directional lean is still more useful than withholding a view when evidence modestly favors one path. Distinguish a rebound inside a larger bearish trend from a trend reversal. State the favored sequence, likely first destination, horizon, evidence for/against, qualitative confidence (HIGH/MEDIUM/LOW), and invalidation. Do not default bearish after a down session or bullish because price is above a prior close. Give numerical probabilities only with documented calibration/statistical evidence. Conditional break/reclaim triggers should validate, weaken, or invalidate the base case; they must not replace stating it.
+SPX_COMPARISON_FORWARD_FORECAST_PROMPT = """
 
-### Forecast horizons and required path
-Prioritize (A) the next cash session: opening bias, first meaningful destination, intraday turning-point zones, gap response, confirmation and invalidation. Then assess (B) the next 1–2 sessions and (C) the remainder of the week only when chronological/volatility/context evidence supports a defensible extension; otherwise mark those horizons NOT_DETERMINED or unavailable and do not pad the report. Any broader context is secondary to the coming-session plan. Do not claim an intraday map predicts a monthly terminal high/low without evidence.
-Give the PRIMARY PATH for the coming session as 3–6 ordered SPX zones where supplied levels support it: Reference -> first test -> reaction/pullback -> secondary test -> session objective -> possible reversal zone. If fewer defensible zones exist, use fewer and say why. For every step state zone, expected direction, horizon, why it matters, confirmation for progression and invalidation. Distinguish first-touch targets, pauses, reversal candidates, breakout/acceleration levels and terminal objectives. Resistance need not end a rebound; support need not end a decline; a pause can precede continuation. A secondary multi-session path may follow only if evidence supports it. Do not imply the exact sequence is known or invent prices.
-
-### Turning points, scenarios and trade responses
-Evaluate N-shaped advance/decline, V rebound, W base, lower-high rejection, higher-low continuation, failed breakdown/reclaim, or breakout/retest/continuation only with chronological evidence. Identify completed legs, possible unfinished leg, next inflection zone, invalidation and momentum/cross-asset support; label unsupported patterns HYPOTHETICAL. Assess whether nearest resistance is a minor pause, partial-profit area, major reversal candidate, breakout/acceleration threshold or undetermined; examine the full resistance cluster above effective price. Similarly distinguish minor support from a major swing-low candidate. Higher-level reversal needs confirmation.
-For the coming session, present a clearly favored SCENARIO A as the base case, then a materially different SCENARIO B and SCENARIO C only when useful and evidence-grounded; rank them by evidence quality and do not give alternatives equal weight by default. For each supplied scenario include hypothesis, trigger, ordered targets, horizon, confirmation, invalidation, evidence for/against and qualitative confidence. The base case must state what you expect most, not merely what could happen. Do not manufacture a tail scenario or force a directional call when evidence is genuinely balanced; then say NOT_DETERMINED and prioritize no-trade. Multi-session scenarios are optional and secondary.
-Only after the forecast, derive supported conditional responses: buy-the-dip, rebound continuation long, rebound profit-taking/position reduction, resistance-rejection short, breakdown/retest short, or no-trade/hold-cash. Distinguish reducing a long from opening a short. For supported ideas give entry trigger/zone, stop/invalidation, first/extended targets, reward/risk only if calculable, confirmation, horizon/session, management and rationale. Do not invent trades to fill scenarios. These are human-reviewed conditional ideas, never executable or automatically submitted. Label prices SPX/ES; convert to ES only with valid supplied basis, revalidated.
-
-### Confirmation and historical safeguards
-Use the supplied market_path_evidence only within its D1/D2 as_of_et frame. SPXW 30M raw SQL labels are corrected +1 hour to ET bar time under the documented source convention; both raw and corrected timestamps are retained. Its 30M bars are filtered to fully completed bars after correction; daily aggregates may be partial and are labeled. Swing candidates use the documented two-bars-each-side convention, not an objective or universally validated pivot. Historical-bar availability timestamps are not supplied; do not claim those bars were known to a past decision-maker at the report time. State observations that increase/decrease confidence using only available completed SPX 5m/15m/30m candles, SPY, QQQ relative strength, VIX, ES, volume/flow and options-derived GEX/walls. Separate observed facts, modelled estimates, inference/hypotheses, missing confirmation and forecasts. Signed GEX is not observed dealer inventory; Gamma Flip is not a guaranteed turning point; flow does not prove customer/dealer identity or opening/closing activity. Do not present 5m/15m triggers as historically validated absent backtesting; call them operational conventions.
-Forecast D1 only from information available at D1's own as_of_et, and D2 only from its own as_of_et; do not use later realized movement or D2 evidence to justify D1. Any combined/current outlook must use whichever report has the latest valid as_of_et as the primary forecast source; never assume D1 or D2 is latest from its label. Third-party confidence is not independent validation.
-
-### Mandatory chronology, data-quality and forecast-state checks
-Determine the latest report by valid as_of_et timestamps (using selected_trading_date/trading_date only as secondary metadata), not by D1/D2 labels. The chronologically latest report is the primary coming-session forecast and supplies the final JSON as_of_et; the earlier report is comparison evidence. Earlier evidence may inform the latest forecast only if it was available by the latest as-of. Never use newer information to reconstruct the earlier report's forecast. If labels conflict with timestamps, timestamps win.
-Before forecasting, classify overall evidence VALIDATED, PARTIAL, MIXED_SNAPSHOT or INSUFFICIENT. Compare report as_of_et with actual report/source snapshot times, effective-price timestamp/source and calculation, ES quote and basis timestamps, report versus effective price values, option observation time, completed-bar status, timestamp-label convention, volume availability, revised-historical-data caveat, and cross-asset freshness. Explicitly flag inherited/fallback snapshot warnings and identify stale components. A mixed or stale snapshot must lower confidence and may make the forecast insufficient. An ES-derived SPX value is an estimated proxy, not an observed cash quote or execution-quality live price. If contemporaneous ES quotes/bases conflict, ES execution equivalents are unavailable until reconciled. Market-path bar labels are raw/unverified unless the payload documents a correction; do not use ambiguous timestamps for precise intraday timing. Zero/unavailable volume means no volume confirmation. Historical data retrieved now may have been revised; its original availability time is unknown unless supplied.
-Give a directional evidence scorecard before selecting the base case: recent multi-session trend; latest swing structure; distance from recent high/low in ATR; overnight/premarket direction and gap; daily/weekly/monthly CPR location; VIX; QQQ/SPY relative strength; options GEX regime/walls; evidence freshness/reliability. Mark each BULLISH, BEARISH, MIXED or UNAVAILABLE, identify the most decision-relevant evidence, and avoid double-counting correlated measures. Do not invent numerical weights or probabilities.
-For every path zone classify its role as FIRST_TARGET, INTERMEDIATE_PAUSE, CONTINUATION_TRIGGER, MAJOR_REVERSAL_CANDIDATE, TERMINAL_OBJECTIVE or NOT_DETERMINED. Explain why a bullish path may continue beyond first resistance, or a bearish path beyond first support; no level alone guarantees a turn. Keep FORECAST (favored path), CONFIRMATION (observations validating it), TRADE TRIGGER (event permitting human consideration of an entry), and INVALIDATION (evidence that defeats the forecast) explicitly separate.
-
-### Required executive forecast (place before the conditional order table)
-MARKET PHASE; PRIMARY DIRECTIONAL HYPOTHESIS FOR THE COMING SESSION; CONFIDENCE; NEXT SESSION FORECAST (primary); PRIMARY PRICE PATH [Start] -> [Target 1] -> [Reaction] -> [Target 2] -> [Session objective]; FIRST MAJOR TURNING POINT; POTENTIAL TERMINAL TARGET (only if defensible); KEY INVALIDATION; ALTERNATIVE PATH; NO-TRADE CONDITIONS; NEXT 1–2 SESSION PATH (only if supported, otherwise NOT_DETERMINED); WEEKLY CONTEXT (brief and only if supported).
-End the report with a machine-readable JSON forecast contract for the chronologically latest report (earlier forecast records, if any, must retain their own as_of_et): {"forecast_for_session": null, "as_of_et": null, "effective_spx_price": null, "effective_price_source": null, "data_quality": "VALIDATED|PARTIAL|MIXED_SNAPSHOT|INSUFFICIENT", "market_phase": null, "primary_direction": "BULLISH|BEARISH|RANGE_BOUND|NOT_DETERMINED", "forecast_confidence": "HIGH|MEDIUM|LOW|NOT_DETERMINED", "primary_path": [{"price_zone": [null, null], "role": "FIRST_TARGET|INTERMEDIATE_PAUSE|CONTINUATION_TRIGGER|MAJOR_REVERSAL_CANDIDATE|TERMINAL_OBJECTIVE|NOT_DETERMINED", "expected_direction": "UP|DOWN|RANGE|NOT_DETERMINED", "confirmation": null, "invalidation": null, "time_horizon": "NEXT_SESSION|NEXT_2_SESSIONS|WEEK"}], "first_major_turning_zone": null, "potential_terminal_zone": null, "primary_invalidation_condition": null, "alternative_direction": null, "preferred_conditional_strategy": null, "calibrated_probability": null}. Use null for unknowns, never invent precision, and keep primary_path levels as supplied SPX prices. calibrated_probability stays null absent validated calibration.
-
-Put the executive forecast first with the coming-session outlook clearly dominant; then provide the original D1/D2 comparison and the primary conditional trade plan for the coming cash session. Add a clearly secondary next-few-sessions outlook only if supported, followed by remaining validation/final decision sections. State which as-of frame each forecast describes; give separate D1/D2 forecasts where information sets differ. If forecast cannot be justified, say so. Final check: coherent path, why first target may not end move, rebound vs reversal, timing and price, fair scenario ranking, forecast/trade alignment, failure conditions, and no fabricated probabilities or unsupported precision.\n"""
-
+## Forecast-first report contract
+Lead with market phase and a clear, evidence-weighted next-session hypothesis. Classify evidence as VALIDATED, PARTIAL, MIXED_SNAPSHOT or INSUFFICIENT. The chronologically latest report is the primary forecast frame. The coming-session outlook should clearly dominate. A favored price path may be a pause, rejection or continuation: no zone guarantees reversal. Choose one hypothesis: BULLISH_REBOUND, BULLISH_CONTINUATION, BEARISH_PULLBACK, BEARISH_CONTINUATION, RANGE_BOUND, or NOT_DETERMINED. Use LOW confidence when a modest edge exists; abstain only if balanced/insufficient. Distinguish countertrend rebound from larger-trend reversal. Use chronological prior sessions, confirmed completed 5M/15M/30M candles, daily ATR/CPR and fresh cross-asset/options data only when supplied. Do not infer V/W/N patterns from static levels.
+Give the ordered PRIMARY PRICE PATH: START -> FIRST TEST -> REACTION -> SECOND TEST -> SESSION OBJECTIVE -> POSSIBLE REVERSAL ZONE (3–6 supported zones where available). Each stage needs SPX range, role, evidence, progression confirmation, invalidation and horizon. Explain that first resistance/support may pause, reject or continue; no level guarantees a reversal. Then rank only supported conditional setups and include trigger, entry method/range, technical invalidation/stop, targets, confirmation, cancellation, confidence, horizon and risk/reward only when calculable. Include no-trade conditions.
+Output Markdown with executive forecast first, followed by D1/D2 changes, reclassified levels, validation, ranked conditional plan and provenance. End with a machine-readable JSON forecast contract in one final fenced JSON object for the chronologically latest source frame: forecast_for_session, as_of_et, effective_spx_price, effective_price_source, data_quality, market_phase, primary_direction, forecast_confidence, primary_path (price_zone, role, expected_direction, confirmation, invalidation, time_horizon), first_major_turning_zone, potential_terminal_zone, primary_invalidation_condition, alternative_direction, preferred_conditional_strategy, calibrated_probability. Use real enum values, null when unknown, no invented probability (calibrated_probability=null absent validated calibration). Make clear report is advisory/retrospective, not an executable or current order recommendation.
+"""
 
 def _compact_spx_positioning(value: Any) -> Any:
     if not isinstance(value, dict):
@@ -1387,6 +1514,47 @@ def _compact_spx_positioning(value: Any) -> Any:
     return compact
 
 
+def _bound_spx_comparison_json(value: Any, max_bytes: int, label: str) -> Any:
+    """Keep optional comparison evidence readable while enforcing a serialized byte budget."""
+    original_bytes = len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+    if original_bytes <= max_bytes:
+        return value
+
+    def compact(item: Any, max_text: int, max_items: int, max_depth: int, depth: int = 0) -> Any:
+        if isinstance(item, str):
+            return item if len(item) <= max_text else item[:max_text] + "…[truncated]"
+        if isinstance(item, dict):
+            if depth >= max_depth:
+                return "[nested detail omitted]"
+            entries = list(item.items())
+            result = {str(key)[:256]: compact(child, max_text, max_items, max_depth, depth + 1)
+                      for key, child in entries[:max_items]}
+            omitted = len(entries) - min(len(entries), max_items)
+            if omitted:
+                result["_omitted_key_count"] = omitted
+            return result
+        if isinstance(item, list):
+            if depth >= max_depth:
+                return "[nested detail omitted]"
+            result = [compact(child, max_text, max_items, max_depth, depth + 1) for child in item[:max_items]]
+            omitted = len(item) - len(result)
+            if omitted:
+                result.append({"_omitted_item_count": omitted})
+            return result
+        return item
+
+    for max_text, max_items, max_depth in ((4096, 64, 8), (2048, 32, 7), (1024, 16, 6),
+                                           (512, 8, 5), (128, 4, 4), (32, 1, 3)):
+        result = compact(value, max_text, max_items, max_depth)
+        result_bytes = len(json.dumps(result, ensure_ascii=False, default=str).encode("utf-8"))
+        if result_bytes <= max_bytes:
+            if isinstance(result, dict):
+                result["_compaction"] = {"field": label, "original_bytes": original_bytes, "retained_bytes": result_bytes}
+            return result
+    return {"_compaction": {"field": label, "original_bytes": original_bytes, "retained_bytes": 0,
+                             "note": "evidence omitted to remain within the prompt budget"}}
+
+
 def _spx_comparison_asof_utc(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
@@ -1400,7 +1568,7 @@ def _spx_comparison_asof_utc(value: Any) -> datetime | None:
 
 
 def _load_spx_comparison_market_path_evidence(comparison_input: Dict[str, Any]) -> Dict[str, Any]:
-    """Load a bounded, as-of-filtered SPX 30M history sample for each day."""
+    """Load bounded, start-time-complete SPXW 5M/15M/30M evidence for each as-of frame."""
     from app.services.stock_map_chart_service import get_stock_map_chart_bars
 
     evidence: Dict[str, Any] = {}
@@ -1413,6 +1581,7 @@ def _load_spx_comparison_market_path_evidence(comparison_input: Dict[str, Any]) 
         report_as_of = report.get("as_of_et")
         warning_text = json.dumps(snapshot, ensure_ascii=False, default=str).lower()
         reconstruction_warning = any(term in warning_text for term in ("live database reconstruction warning", "could not be refreshed", "fallback preserves", "inherited snapshot"))
+        xnys_session_date_valid: bool | None = None
         day_evidence: Dict[str, Any] = {
             "as_of_et": as_of_value,
             "report_as_of_et": report_as_of,
@@ -1421,35 +1590,73 @@ def _load_spx_comparison_market_path_evidence(comparison_input: Dict[str, Any]) 
             "option_availability_timestamp": "not supplied; cannot independently establish when option snapshot was available",
             "report_source_timestamp_status": "MISMATCH" if report_as_of and as_of_value and _spx_comparison_asof_utc(report_as_of) != _spx_comparison_asof_utc(as_of_value) else "MATCHED_OR_NOT_SEPARATELY_SUPPLIED",
             "inherited_or_fallback_snapshot_warning_detected": reconstruction_warning,
-            "source": "StockDB_US.StockData.PriceHistoryTimeFrame; SPXW.US 30M",
+            "source": "StockDB_US.StockData.PriceHistoryTimeFrame; SPXW.US 5M/15M/30M",
             "retrieved_at_utc": retrieved_at,
-            "source_availability_timestamp": "not supplied by the historical bar source",
+            "source_availability_timestamp": "not supplied by the historical bar source; point-in-time availability is unverified",
+            "xnys_session_date_valid": xnys_session_date_valid,
             "historical_revision_status": "unknown; historical rows may have been revised since the report timestamp",
-            "timestamp_label_status": "SPXW SQL TimeIntervalStart corrected +1 hour to ET bar time using the documented source-label convention; raw label retained per bar",
+            "timestamp_label_status": "SPXW SQL TimeIntervalStart corrected +1 hour to ET bar start for each timeframe; raw label retained per bar",
             "observed_or_estimated": "observed OHLC bars; derived swings/ATR labeled by method",
         }
         try:
             if not isinstance(as_of_value, str) or not as_of_value:
                 raise ValueError("report as_of_et unavailable")
             as_of = datetime.fromisoformat(as_of_value)
-            if as_of.tzinfo is not None:
-                as_of = as_of.astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None)
-            result = get_stock_map_chart_bars(
-                "SPX", observation_datetime=as_of, timeframe="30M", lookback_days=45,
-            )
-            bars = []
-            for item in result.get("bars", []):
-                try:
-                    source_start = datetime.fromisoformat(item["time"])
-                    # SPXW 30M SQL labels are one hour behind the documented ET bar time.
-                    start = source_start + timedelta(hours=1)
-                    if start + timedelta(minutes=30) <= as_of:
-                        bars.append({**item, "source_time_raw": source_start.isoformat(), "time": start.isoformat()})
-                except (KeyError, TypeError, ValueError):
-                    continue
-            bars.sort(key=lambda item: item["time"])
+            if as_of.tzinfo is None:
+                as_of = as_of.replace(tzinfo=ZoneInfo("America/New_York"))
+            else:
+                as_of = as_of.astimezone(ZoneInfo("America/New_York"))
+            as_of_local = as_of.replace(tzinfo=None)
+            xnys_session_date_valid = USCashCalendar("America/New_York").is_session(as_of.date())
+            day_evidence["xnys_session_date_valid"] = xnys_session_date_valid
+            timeframe_minutes = {"5M": 5, "15M": 15, "30M": 30}
+            bars_by_frame: Dict[str, List[Dict[str, Any]]] = {}
+            for timeframe, duration in timeframe_minutes.items():
+                result = get_stock_map_chart_bars(
+                    "SPX", observation_datetime=as_of_local, timeframe=timeframe, lookback_days=45,
+                )
+                bars = []
+                for item in result.get("bars", []):
+                    try:
+                        source_start = datetime.fromisoformat(item["time"])
+                        ohlc = [float(item[key]) for key in ("open", "high", "low", "close")]
+                        if not all(math.isfinite(value) and value > 0 for value in ohlc):
+                            continue
+                        open_price, high, low, close = ohlc
+                        if high < max(open_price, close, low) or low > min(open_price, close):
+                            continue
+                        # The SPXW source label is one hour behind the ET bar start.
+                        corrected_wall_start = source_start + timedelta(hours=1)
+                        eastern = ZoneInfo("America/New_York")
+                        start_et = corrected_wall_start.replace(tzinfo=eastern, fold=0)
+                        alternate_fold = corrected_wall_start.replace(tzinfo=eastern, fold=1)
+                        if start_et.utcoffset() != alternate_fold.utcoffset():
+                            # SQL stores no UTC offset/fold; do not guess the repeated fall-back hour.
+                            continue
+                        bar_end_et = start_et + timedelta(minutes=duration)
+                        if bar_end_et.astimezone(timezone.utc) <= as_of.astimezone(timezone.utc):
+                            bar_age_seconds = max(0, int((as_of.astimezone(timezone.utc) - bar_end_et.astimezone(timezone.utc)).total_seconds()))
+                            bars.append({
+                                **item,
+                                "raw_time_interval_start": source_start.isoformat(),
+                                "source_time_raw": source_start.isoformat(),
+                                "corrected_bar_start_et": start_et.isoformat(),
+                                "time": start_et.isoformat(),
+                                "bar_end_et": bar_end_et.isoformat(),
+                                "source_available_at_et": None,
+                                "timestamp_correction_applied": True,
+                                "bar_completion_valid": True,
+                                "point_in_time_availability_validated": False,
+                                "bar_age_seconds": bar_age_seconds,
+                                "freshness_status": "FRESH" if bar_age_seconds <= 900 else "STALE",
+                            })
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                bars.sort(key=lambda item: item["time"])
+                bars_by_frame[timeframe] = bars
+            bars = bars_by_frame["30M"]
             if not bars:
-                raise ValueError("no completed SPX 30M bars available at this as_of_et")
+                raise ValueError("no completed SPXW 30M bars available at this as_of_et")
 
             daily: Dict[str, Dict[str, Any]] = {}
             for bar in bars:
@@ -1512,9 +1719,15 @@ def _load_spx_comparison_market_path_evidence(comparison_input: Dict[str, Any]) 
                 "status": "available",
                 "volume_status": "available" if nonzero_volume_count == len(bars) else "PARTIAL_OR_ZERO; no volume confirmation from zero-volume bars",
                 "nonzero_volume_bar_count": nonzero_volume_count,
-                "timeframe": "30M",
+                "timeframe": "5M/15M/30M",
+                "completed_5m_bars": bars_by_frame["5M"][-72:],
+                "completed_5m_bars_truncated_count": max(0, len(bars_by_frame["5M"]) - 72),
+                "completed_15m_bars": bars_by_frame["15M"][-48:],
+                "completed_15m_bars_truncated_count": max(0, len(bars_by_frame["15M"]) - 48),
                 "completed_30m_bars": bars[-40:],
                 "completed_30m_bars_truncated_count": max(0, len(bars) - 40),
+                "bar_availability_status": "UNKNOWN; no trustworthy available_at/ingestion timestamp is exposed by this source query",
+                "timeframe_completion_rules": {"5M": "start + 5m <= as_of_et", "15M": "start + 15m <= as_of_et", "30M": "start + 30m <= as_of_et"},
                 "daily_ohlc_last_10_sessions": daily_bars[-10:],
                 "confirmed_swing_candidates": swings[-20:],
                 "swing_method": "two completed bars on each side; candidate is confirmed only after the right-side bars complete",
@@ -1527,7 +1740,7 @@ def _load_spx_comparison_market_path_evidence(comparison_input: Dict[str, Any]) 
             })
         except Exception as exc:
             reason = str(exc) if isinstance(exc, ValueError) else f"historical query failed ({type(exc).__name__})"
-            day_evidence.update({"status": "unavailable", "reason": reason, "completed_30m_bars": [], "daily_ohlc_last_10_sessions": [], "confirmed_swing_candidates": [], "atr14_daily_simple_mean": None})
+            day_evidence.update({"status": "unavailable", "reason": reason, "completed_5m_bars": [], "completed_15m_bars": [], "completed_30m_bars": [], "daily_ohlc_last_10_sessions": [], "confirmed_swing_candidates": [], "atr14_daily_simple_mean": None})
         evidence[day] = day_evidence
     return evidence
 
@@ -1545,11 +1758,11 @@ def _build_spx_comparison_prompt(
     if not isinstance(comparison_input, dict):
         raise HTTPException(status_code=502, detail="Comparison preview has no canonical D1/D2 input")
 
-    compact_input: Dict[str, Any] = {
+    compact_input: Dict[str, Any] = _bound_spx_comparison_json({
         key: comparison_input[key]
         for key in ("schema_version", "selected_trading_date", "previous_xnys_session", "analysis_only", "orders_executable", "evidence_scope")
         if key in comparison_input
-    }
+    }, 4 * 1024, "comparison metadata")
     for day in ("D1", "D2"):
         snapshot = comparison_input.get(day)
         if not isinstance(snapshot, dict):
@@ -1566,7 +1779,10 @@ def _build_spx_comparison_prompt(
             key: _compact_spx_positioning(value) if key == "positioning_intelligence" else value
             for key, value in report.items()
         }
-        compact_input[day] = {"source": compact_source, "report": compact_report}
+        compact_input[day] = {
+            "source": _bound_spx_comparison_json(compact_source, 4 * 1024, f"{day} source metadata"),
+            "report": _bound_spx_comparison_json(compact_report, 28 * 1024, f"{day} report"),
+        }
 
     chronology = []
     for day in ("D1", "D2"):
@@ -1589,9 +1805,9 @@ def _build_spx_comparison_prompt(
         "selection_rule": "latest valid as_of_et; labels D1/D2 do not determine chronology; tied latest timestamps are unresolved",
     }
     if market_path_evidence is not None:
-        compact_input["market_path_evidence"] = market_path_evidence
+        compact_input["market_path_evidence"] = _bound_spx_comparison_json(market_path_evidence, 40 * 1024, "market-path evidence")
     if effective_price_context is not None:
-        compact_input["effective_price_context"] = effective_price_context
+        compact_input["effective_price_context"] = _bound_spx_comparison_json(effective_price_context, 12 * 1024, "effective-price context")
 
     data_quality = {}
     effective_by_day = {item.get("day"): item for item in effective_price_context or [] if isinstance(item, dict)}
@@ -1608,8 +1824,13 @@ def _build_spx_comparison_prompt(
             issues.append("report contains inherited/fallback reconstruction warning")
         if market.get("report_source_timestamp_status") == "MISMATCH":
             issues.append("report and source as_of_et differ")
-        if effective.get("unavailable_reason") or not effective.get("effective_prices"):
+        effective_spx_value = (effective.get("effective_prices") or {}).get("SPX") if isinstance(effective.get("effective_prices"), dict) else None
+        if effective.get("unavailable_reason") or effective_spx_value is None:
             issues.append("effective-price context unavailable")
+        if effective.get("point_in_time_availability_validated") is False:
+            issues.append("historical bar availability/ingestion time is unverified; retrieved bars may have been revised")
+        if effective.get("freshness_status") == "STALE":
+            issues.append("effective-price bar is stale relative to report as_of_et")
         report_asof = source.get("as_of_et") or report.get("as_of_et")
         effective_asof = effective.get("as_of_et")
         if report_asof and effective_asof and _spx_comparison_asof_utc(report_asof) != _spx_comparison_asof_utc(effective_asof):
@@ -1636,7 +1857,7 @@ def _build_spx_comparison_prompt(
                     next_path = f"{path}.{key}"
                     quote_context = any(term in path.lower() for term in ("price", "quote", "market", "underlying", "effective", "reference", "spot", "asof"))
                     es_quote_key = normalized in {"esprice", "esmainprice", "esquote", "esmainquote", "effectiveesprice", "espriceatasof", "esmainpriceatasof"} or (quote_context and normalized in {"es", "esmain"})
-                    spx_quote_key = normalized in {"spxprice", "spxquote", "effectivespxprice", "spxpriceatasof", "spxspot", "spxreferenceprice", "referenceprice", "effectiveprice"} or (quote_context and normalized == "spx")
+                    spx_quote_key = normalized in {"spxprice", "spxquote", "effectivespxprice", "esimpliedspx", "spxpriceatasof", "spxspot", "spxreferenceprice", "referenceprice", "effectiveprice"} or (quote_context and normalized == "spx")
                     if isinstance(child, (int, float)) and es_quote_key:
                         report_es_candidates.append({"field": next_path, "value": float(child)})
                     if isinstance(child, (int, float)) and spx_quote_key:
@@ -1675,6 +1896,12 @@ def _build_spx_comparison_prompt(
             issues.append("effective-price timestamp is later than report as_of_et")
         if market.get("volume_status", "").startswith("PARTIAL_OR_ZERO"):
             issues.append("volume unavailable or zero in some/all market-path bars")
+        market_bars = [bar for key in ("completed_5m_bars", "completed_15m_bars", "completed_30m_bars")
+                       for bar in (market.get(key) or []) if isinstance(bar, dict)]
+        if any(bar.get("freshness_status") == "STALE" for bar in market_bars):
+            issues.append("one or more completed intraday bars are stale relative to their as-of timestamp")
+        if market.get("xnys_session_date_valid") is False:
+            issues.append("report as-of date is not an XNYS cash session; cash-session context is unavailable")
         if not market.get("timestamp_label_status", "").startswith("SPXW SQL TimeIntervalStart corrected +1 hour"):
             issues.append("intraday source timestamp convention unverified")
         status = "MIXED_SNAPSHOT" if any(any(term in item for term in ("fallback", "differ", "conflict", "inconsistent")) for item in issues) else "INSUFFICIENT" if any("unavailable" in item or "later than" in item for item in issues) else "PARTIAL"
@@ -1699,7 +1926,7 @@ def _build_spx_comparison_prompt(
         + SPX_COMPARISON_FORWARD_FORECAST_PROMPT
         + "\n\n## Compact canonical D1/D2 evidence (JSON)\n"
         + canonical_json
-        + "\n\nNote: detailed contract-level positioning changes and bulky source metadata were omitted to keep this prompt compact. Positioning summaries and a bounded wall sample are retained where supplied; do not infer omitted details.\n"
+        + "\n\nNote: detailed contract-level positioning changes and bulky source metadata were omitted or truncated to keep this prompt compact. Positioning summaries and a bounded wall sample are retained where supplied; do not infer omitted details. Check each evidence object's _compaction marker for additional omissions.\n"
     )
     if len(prompt.encode("utf-8")) >= 150 * 1024:
         raise HTTPException(status_code=413, detail="D1/D2 SPX evidence remains too large after removing optional positioning data")
@@ -1732,7 +1959,20 @@ def create_spx_map_comparison_job(
     payload: Dict[str, Any],
     username: str = Depends(verify_credentials),
 ) -> Any:
-    return call_skill_runner("POST", "/api/jobs/spx-map-comparison", payload)
+    # Resolve the same pinned source input at submission time and attach server-side
+    # market evidence; do not trust a browser-provided effective price or basis.
+    preview_payload = {key: payload[key] for key in ("observation_date", "input_id") if key in payload}
+    preview = call_skill_runner("POST", "/api/spx-map-comparison/preview", preview_payload)
+    comparison_input = _spx_comparison_input_from_payload(preview)
+    if comparison_input is None:
+        raise HTTPException(status_code=502, detail="Skill runner preview returned no canonical comparison input")
+    analysis_context = _spx_comparison_analysis_context(comparison_input, username)
+    runner_payload = {
+        **payload,
+        "effective_price_context": analysis_context["effective_price_context"],
+        "market_path_evidence": analysis_context["market_path_evidence"],
+    }
+    return call_skill_runner("POST", "/api/jobs/spx-map-comparison", jsonable_encoder(runner_payload))
 
 
 @router.get("/spx-map-comparison/jobs/{job_id}")
@@ -1748,4 +1988,6 @@ def get_spx_map_comparison_report(
     job_id: str,
     username: str = Depends(verify_credentials),
 ) -> Any:
+    if _is_skill_report_deleted("spx-map-comparison", job_id):
+        raise HTTPException(status_code=404, detail="Report has been deleted")
     return call_skill_runner("GET", f"/api/jobs/{job_id}/report")

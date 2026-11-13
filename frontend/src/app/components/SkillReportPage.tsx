@@ -11,6 +11,7 @@ import MarkdownRenderer from "./MarkdownRenderer";
 import { sandboxedReportDocument } from "./reportContentSafety";
 import PageHeader from "./PageHeader";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
+import { confirmReportDeletion } from "./confirmReportDeletion";
 
 export type ReportSummary = {
   job_id: string;
@@ -552,8 +553,7 @@ export default function SkillReportPage({
   const deleteReport = useCallback(
     async (report: ReportDetail) => {
       if (!canDeleteReports) return;
-      const confirmed = window.confirm(`Delete "${report.title}"?\n\nThis will remove report job ${report.job_id}.`);
-      if (!confirmed) return;
+      if (!confirmReportDeletion(report.title, report.job_id)) return;
 
       setDeletingJobId(report.job_id);
       setViewerError("");

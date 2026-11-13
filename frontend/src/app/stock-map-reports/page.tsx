@@ -93,6 +93,7 @@ export default function StockMapReportsPage() {
       subtitle="View stock support/resistance maps and submit current or historical as-at jobs through the skill-runner proxy."
       reportsEndpoint="/api/stock-map-reports"
       jobsEndpoint="/api/stock-map/jobs"
+      canDeleteReports
       storageKey="stocks_au_stock_map_jobs"
       submitLabel="Submit Stock Map Job"
       emptyLabel="No Stock Map reports found."

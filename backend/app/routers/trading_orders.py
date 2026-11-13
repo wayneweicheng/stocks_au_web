@@ -1,16 +1,18 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Header
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
 from app.routers.auth import verify_credentials
 import logging
+import os
 import json
+import hashlib
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import math
 import re
 import uuid
-from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 
 
 router = APIRouter(prefix="/api", tags=["trading-orders"], dependencies=[Depends(verify_credentials)])
@@ -68,6 +70,45 @@ class TradingOrderBatchCreate(BaseModel):
     orders: List[TradingOrderCreate]
 
 
+class ConditionalPriceCreate(BaseModel):
+    operator: str
+    threshold: float
+    confirmation_mode: str = "IMMEDIATE"
+
+
+class ConditionalTriggerPriceCreate(ConditionalPriceCreate):
+    instrument_code: str = "ESMAIN.US"
+
+
+class ConditionalPositionCreate(BaseModel):
+    operator: str
+    shares: int
+
+
+class ConditionalTimeWindowCreate(BaseModel):
+    timezone_name: str
+    start: str
+    end: str
+    mode: str = "INCLUDE"
+
+
+class ConditionalEntryOrderCreate(BaseModel):
+    strategy_id: int
+    stock_code: str
+    side: str
+    quantity: int
+    target_price: Optional[ConditionalPriceCreate] = None
+    trigger_price: Optional[ConditionalTriggerPriceCreate] = None
+    position_condition: Optional[ConditionalPositionCreate] = None
+    maximum_margin_capacity_used: Optional[float] = None
+    account_id: Optional[str] = None
+    time_window: Optional[ConditionalTimeWindowCreate] = None
+
+
+class ConditionalEntryBatchCreate(BaseModel):
+    orders: List[ConditionalEntryOrderCreate]
+
+
 class TradingOrderUpdate(TradingOrderCreate):
     pass
 
@@ -86,17 +127,22 @@ def _normalize_stock_code(symbol: str) -> str:
     return f"{s}.US"
 
 
-def _default_proxy_expiry(now_et: Optional[datetime] = None) -> datetime:
-    """Return the 20:00 ET expiry for the current or next eligible weekday session."""
-    now_et = now_et or datetime.now(ZoneInfo("America/New_York"))
-    expiry_date = now_et.date()
-    if now_et.hour >= 20 or now_et.weekday() >= 5:
-        from datetime import timedelta
-
-        expiry_date += timedelta(days=1)
-        while expiry_date.weekday() >= 5:
-            expiry_date += timedelta(days=1)
-    return datetime.combine(expiry_date, datetime.min.time()).replace(hour=20)
+def _conditional_target_tiers(low: float, high: float, side: str, count: int) -> List[float]:
+    """Rebuild the browser ladder from its submitted range endpoints server-side."""
+    lo, hi = Decimal(str(low)), Decimal(str(high))
+    if count <= 0 or hi < lo:
+        raise HTTPException(status_code=400, detail="Target-price ladder range is invalid.")
+    if count == 1:
+        return [float(hi if side == "B" else lo)]
+    step_count = Decimal(count - 1)
+    tiers = []
+    for index in range(count):
+        fraction = Decimal(index) / step_count
+        exact = hi - (hi - lo) * fraction if side == "B" else lo + (hi - lo) * fraction
+        tiers.append(float(exact.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)))
+    if len(set(tiers)) != count:
+        raise HTTPException(status_code=400, detail="Target-price range must provide distinct tiers for every order.")
+    return tiers
 
 
 def _es_trigger_prices(low: float, high: float, side: str, count: int) -> List[float]:
@@ -177,20 +223,9 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
             for spec in (entry_risk.profit_target, entry_risk.stop_loss):
                 if spec is not None and (spec.unit.strip().upper() not in {"PERCENT", "DOLLAR"} or not math.isfinite(spec.value) or spec.value <= 0):
                     raise HTTPException(status_code=400, detail="Conditional risk values must be positive PERCENT or DOLLAR amounts.")
-        now_et = datetime.now(ZoneInfo("America/New_York"))
-        session_expiry = _default_proxy_expiry(now_et)
-        expires_at = activation.expires_at
-        if expires_at is None:
-            expires_at = session_expiry
-        elif expires_at.tzinfo is not None:
-            expires_at = expires_at.astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None)
-        if expires_at.hour != 20 or expires_at.minute != 0 or expires_at.second != 0 or expires_at.microsecond != 0:
-            raise HTTPException(status_code=400, detail="Proxy Trade Intent expiry must be 20:00 America/New_York.")
-        if expires_at != session_expiry:
-            raise HTTPException(
-                status_code=400,
-                detail="Proxy Trade Intents expire at 20:00 America/New_York on the current eligible session day only.",
-            )
+        # Expiry is derived from Trading.Orders.CreatedAt by the live runner.
+        # ExpiresAt is retained only as a nullable legacy compatibility field.
+        expires_at = None
         if activation.trigger_price is not None and (not math.isfinite(activation.trigger_price)
                 or activation.trigger_price < activation.lower_price
                 or activation.trigger_price > activation.upper_price):
@@ -247,6 +282,124 @@ def _normalize_order_inputs(order: TradingOrderCreate) -> Dict[str, Any]:
         "backtest_run_id": order.backtest_run_id,
         "meta_json": json.dumps(meta) if meta else None,
         "activation": activation_values,
+    }
+
+
+def _normalize_conditional_entry_order(order: ConditionalEntryOrderCreate) -> Dict[str, Any]:
+    """Validate one new conditional intent without touching legacy activation rules."""
+    side = (order.side or "").strip().upper()
+    if side not in ALLOWED_SIDES:
+        raise HTTPException(status_code=400, detail="Side must be 'B' or 'S'.")
+    if order.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be a positive integer.")
+    stock_code = _normalize_stock_code(order.stock_code)
+    if not re.fullmatch(r"[A-Z][A-Z0-9.-]{0,13}\.US", stock_code):
+        raise HTTPException(status_code=400, detail="Conditional target must be a supported US stock symbol.")
+    if order.target_price is not None and order.trigger_price is not None:
+        raise HTTPException(status_code=400, detail="Select either a target-stock price condition or a reference-stock trigger condition, not both.")
+    if order.target_price is None and order.trigger_price is None:
+        raise HTTPException(status_code=400, detail="At least one price activation condition is required.")
+
+    def normalized_price(spec: ConditionalPriceCreate, *, field: str, tick_size: float) -> Dict[str, Any]:
+        operator = spec.operator.strip().upper()
+        expected_operator = "AT_OR_BELOW" if side == "B" else "AT_OR_ABOVE"
+        if operator != expected_operator:
+            raise HTTPException(status_code=400, detail=f"{field} must use the side-aware {expected_operator} operator.")
+        if not math.isfinite(spec.threshold) or spec.threshold <= 0:
+            raise HTTPException(status_code=400, detail=f"{field} threshold must be finite and positive.")
+        if field == "Target price" and spec.threshold < 1:
+            raise HTTPException(status_code=400, detail="One-tick target-stock reversal requires a price of at least $1.00.")
+        tick_multiple = Decimal(str(spec.threshold)) / Decimal(str(tick_size))
+        if tick_multiple != tick_multiple.to_integral_value():
+            raise HTTPException(status_code=400, detail=f"{field} threshold must align to its {tick_size:g} price tick.")
+        return {
+            "operator": operator,
+            "threshold": float(spec.threshold),
+            "activation_mode": "TOUCH_THEN_RETRACE",
+            "tick_size": tick_size,
+        }
+
+    target = normalized_price(order.target_price, field="Target price", tick_size=0.01) if order.target_price else None
+    trigger = None
+    if order.trigger_price:
+        instrument_code = _normalize_stock_code(order.trigger_price.instrument_code)
+        if instrument_code != "ESMAIN.US":
+            raise HTTPException(status_code=400, detail="The only supported trigger stock is ESMAIN.US.")
+        trigger = normalized_price(order.trigger_price, field="ESMain trigger price", tick_size=0.25)
+
+    position = None
+    if order.position_condition:
+        operator = order.position_condition.operator.strip().upper()
+        allowed_position_operators = {
+            "LESS_THAN", "LESS_THAN_OR_EQUAL", "GREATER_THAN",
+            "GREATER_THAN_OR_EQUAL", "EQUAL", "NOT_EQUAL",
+        }
+        if operator not in allowed_position_operators or order.position_condition.shares < 0:
+            raise HTTPException(status_code=400, detail="Invalid position operator or share threshold.")
+        position = {"operator": operator, "shares": order.position_condition.shares}
+
+    margin = order.maximum_margin_capacity_used
+    if margin is not None and (not math.isfinite(margin) or margin < 0 or margin > 1):
+        raise HTTPException(status_code=400, detail="Maximum margin capacity used must be between 0 and 1.")
+    account_id = (order.account_id or "").strip() or None
+    if (position is not None or margin is not None) and account_id is None:
+        raise HTTPException(status_code=400, detail="account_id is required for position or margin conditions.")
+
+    time_window = None
+    if order.time_window:
+        window = order.time_window
+        try:
+            ZoneInfo(window.timezone_name)
+            start = datetime.strptime(window.start, "%H:%M").time()
+            end = datetime.strptime(window.end, "%H:%M").time()
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail="Time window requires a valid timezone and HH:MM bounds.") from exc
+        mode = window.mode.strip().upper()
+        if start == end or mode not in {"INCLUDE", "EXCLUDE"}:
+            raise HTTPException(status_code=400, detail="Time window bounds must differ and mode must be INCLUDE or EXCLUDE.")
+        time_window = {
+            "timezone_name": window.timezone_name,
+            "start": start.strftime("%H:%M"),
+            "end": end.strftime("%H:%M"),
+            "mode": mode,
+        }
+
+    return {
+        "order_kind": "CONDITIONAL_ENTRY",
+        "strategy_id": order.strategy_id,
+        "stock_code": stock_code,
+        "side": side,
+        "order_source_type": "MANUAL",
+        "signal_type": None,
+        "time_frame": "5M",
+        "entry_type": "LIMIT",
+        "entry_price": None,
+        "quantity": order.quantity,
+        "profit_target_price": None,
+        "stop_loss_price": None,
+        "stop_loss_mode": "BAR_CLOSE",
+        "status": "PENDING",
+        "backtest_run_id": None,
+        "condition": {
+            "target_price_operator": target["operator"] if target else None,
+            "target_price_threshold": target["threshold"] if target else None,
+            "target_price_activation_mode": target["activation_mode"] if target else None,
+            "target_price_tick_size": target["tick_size"] if target else None,
+            "trigger_stock_code": "ESMAIN.US" if trigger else None,
+            "trigger_price_operator": trigger["operator"] if trigger else None,
+            "trigger_price_threshold": trigger["threshold"] if trigger else None,
+            "trigger_price_activation_mode": trigger["activation_mode"] if trigger else None,
+            "trigger_price_tick_size": trigger["tick_size"] if trigger else None,
+            "account_id": account_id,
+            "position_stock_code": stock_code if position else None,
+            "position_operator": position["operator"] if position else None,
+            "position_shares": position["shares"] if position else None,
+            "maximum_margin_capacity_used": margin,
+            "time_zone_name": time_window["timezone_name"] if time_window else None,
+            "time_window_start": time_window["start"] if time_window else None,
+            "time_window_end": time_window["end"] if time_window else None,
+            "time_window_mode": time_window["mode"] if time_window else None,
+        },
     }
 
 
@@ -676,7 +829,7 @@ def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
                     DECLARE @OrderId BIGINT = SCOPE_IDENTITY();
                     INSERT INTO Trading.OrderActivation
                         (OrderId, ProxyStockCode, LowerPrice, UpperPrice, TriggerPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
-                    VALUES (@OrderId, 'ESMAIN.US', ?, ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());
+                    VALUES (@OrderId, 'ESMAIN.US', ?, ?, ?, '04:00', '20:00', NULL, 'ARMED', GETDATE(), GETDATE());
                     COMMIT TRANSACTION;
                 END TRY
                 BEGIN CATCH
@@ -684,7 +837,7 @@ def create_trading_order(order: TradingOrderCreate) -> Dict[str, Any]:
                     THROW;
                 END CATCH;
                 """,
-                (*params, activation_values["lower_price"], activation_values["upper_price"], activation_values["trigger_price"], activation_values["expires_at"]),
+                (*params, activation_values["lower_price"], activation_values["upper_price"], activation_values["trigger_price"]),
             )
     except Exception:
         logger.exception(
@@ -732,7 +885,7 @@ def create_conditional_order_batch(batch: TradingOrderBatchCreate) -> Dict[str, 
                SET @OrderId = SCOPE_IDENTITY();
                INSERT INTO Trading.OrderActivation
                    (OrderId, ProxyStockCode, LowerPrice, UpperPrice, TriggerPrice, SessionStart, SessionEnd, ExpiresAt, State, CreatedAt, UpdatedAt)
-               VALUES (@OrderId, 'ESMAIN.US', ?, ?, ?, '04:00', '20:00', ?, 'ARMED', GETDATE(), GETDATE());"""
+               VALUES (@OrderId, 'ESMAIN.US', ?, ?, ?, '04:00', '20:00', NULL, 'ARMED', GETDATE(), GETDATE());"""
         )
         params.extend((
             item["strategy_id"], item["stock_code"], item["side"], item["order_source_type"],
@@ -740,7 +893,7 @@ def create_conditional_order_batch(batch: TradingOrderBatchCreate) -> Dict[str, 
             item["quantity"], item["profit_target_price"], item["stop_loss_price"], item["stop_loss_mode"],
             item["status"], item["backtest_run_id"], item["meta_json"],
             item["activation"]["lower_price"], item["activation"]["upper_price"],
-            item["activation"]["trigger_price"], item["activation"]["expires_at"],
+            item["activation"]["trigger_price"],
         ))
     statements.extend(["COMMIT TRANSACTION;", "END TRY", "BEGIN CATCH", "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;", "THROW;", "END CATCH;"])
     model = SQLServerModel(database=DB_NAME)
@@ -748,10 +901,319 @@ def create_conditional_order_batch(batch: TradingOrderBatchCreate) -> Dict[str, 
     return {"message": f"Created {len(normalized_orders)} ESMain-triggered Trade Intents.", "count": len(normalized_orders)}
 
 
+def _conditional_entry_runtime_enabled() -> bool:
+    """Require schema/evaluator gates; DB-only capture does not need Pub/Sub."""
+    base_flags = (
+        "PEGASUS_CONDITIONAL_ENTRY_API_ENABLED",
+        "PEGASUS_CONDITIONAL_ENTRY_SCHEMA_READY",
+        "PEGASUS_CONDITIONAL_ENTRY_EVALUATOR_READY",
+    )
+    base_ready = all(os.getenv(name, "false").strip().lower() == "true" for name in base_flags)
+    db_only = os.getenv("PEGASUS_CONDITIONAL_ENTRY_DB_ONLY_ENABLED", "false").strip().lower() == "true"
+    publisher_ready = os.getenv("PEGASUS_CONDITIONAL_ENTRY_PUBLISHER_READY", "false").strip().lower() == "true"
+    executor_enabled = os.getenv("PEGASUS_CONDITIONAL_ENTRY_EXECUTOR_ENABLED", "false").strip().lower() == "true"
+    executor_ready = os.getenv("PEGASUS_CONDITIONAL_ENTRY_EXECUTOR_READY", "false").strip().lower() == "true"
+    execution_schema_ready = os.getenv("PEGASUS_CONDITIONAL_ENTRY_EXECUTION_SCHEMA_READY", "false").strip().lower() == "true"
+    if db_only:
+        return base_ready and not executor_enabled
+    return base_ready and publisher_ready and (
+        not executor_enabled or (executor_ready and execution_schema_ready)
+    )
+
+
+def _conditional_entry_execution_enabled() -> bool:
+    return (
+        _conditional_entry_runtime_enabled()
+        and os.getenv("PEGASUS_CONDITIONAL_ENTRY_EXECUTOR_ENABLED", "false").strip().lower() == "true"
+        and os.getenv("PEGASUS_CONDITIONAL_ENTRY_EXECUTOR_READY", "false").strip().lower() == "true"
+        and os.getenv("PEGASUS_CONDITIONAL_ENTRY_EXECUTION_SCHEMA_READY", "false").strip().lower() == "true"
+    )
+
+
+def _validate_conditional_entry_batch(orders: List[ConditionalEntryOrderCreate]) -> List[Dict[str, Any]]:
+    if not orders or len(orders) > 100:
+        raise HTTPException(status_code=400, detail="Conditional-entry batch must contain between 1 and 100 orders.")
+    normalized = [_normalize_conditional_entry_order(order) for order in orders]
+    first = normalized[0]
+    for item in normalized[1:]:
+        if any(item[key] != first[key] for key in ("strategy_id", "stock_code", "side")):
+            raise HTTPException(status_code=400, detail="Batch must use one strategy, target stock and side.")
+        if any(item["condition"][key] != first["condition"][key] for key in (
+            "position_stock_code", "position_operator", "position_shares", "account_id",
+            "maximum_margin_capacity_used", "time_zone_name", "time_window_start",
+            "time_window_end", "time_window_mode",
+        )):
+            raise HTTPException(status_code=400, detail="Optional constraints must be identical across the batch.")
+        for source_key in ("target_price_threshold", "trigger_price_threshold"):
+            if (item["condition"][source_key] is None) != (first["condition"][source_key] is None):
+                raise HTTPException(status_code=400, detail="Every tranche must select the same price activation sources.")
+        for threshold_key, metadata_keys in (
+            ("target_price_threshold", ("target_price_activation_mode", "target_price_tick_size")),
+            ("trigger_price_threshold", ("trigger_price_activation_mode", "trigger_price_tick_size")),
+        ):
+            if first["condition"][threshold_key] is not None and any(
+                item["condition"][key] != first["condition"][key] for key in metadata_keys
+            ):
+                raise HTTPException(status_code=400, detail="Price-source reversal mode and tick must be identical across the batch.")
+
+    for threshold_key in ("target_price_threshold", "trigger_price_threshold"):
+        tiers = [item["condition"][threshold_key] for item in normalized]
+        if tiers[0] is None:
+            continue
+        low, high = min(tiers), max(tiers)
+        if threshold_key == "target_price_threshold":
+            expected = _conditional_target_tiers(low, high, first["side"], len(normalized))
+        else:
+            expected = _es_trigger_prices(low, high, first["side"], len(normalized))
+        if tiers != expected:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{threshold_key} tiers differ from the server-calculated ladder.",
+            )
+        for item, tier in zip(normalized, expected):
+            item["condition"][threshold_key] = tier
+
+    return normalized
+
+
+@router.get("/trading-orders/conditional-entry/status")
+def get_conditional_entry_status() -> Dict[str, Any]:
+    enabled = _conditional_entry_runtime_enabled()
+    execution_enabled = _conditional_entry_execution_enabled()
+    db_only = os.getenv("PEGASUS_CONDITIONAL_ENTRY_DB_ONLY_ENABLED", "false").strip().lower() == "true"
+    return {
+        "enabled": enabled,
+        "execution_enabled": execution_enabled,
+        "mode": "DB_ONLY" if enabled and db_only else ("EXECUTION_ENABLED" if execution_enabled else "PUBLISH_ONLY"),
+        "dry_run": os.getenv("PEGASUS_CONDITIONAL_ENTRY_DRY_RUN", "false").strip().lower() == "true",
+        "order_kind": "CONDITIONAL_ENTRY",
+    }
+
+
+@router.post("/trading-orders/conditional-entry-batch")
+def create_conditional_entry_batch(
+    batch: ConditionalEntryBatchCreate,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+) -> Dict[str, Any]:
+    """Persist a batch once per client key and immutable version-1 conditions atomically."""
+    if not _conditional_entry_runtime_enabled():
+        raise HTTPException(status_code=503, detail="Pegasus Conditional Entries are not enabled yet.")
+    if not idempotency_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required.")
+    try:
+        request_id = str(uuid.UUID(idempotency_key))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=400, detail="Idempotency-Key must be a UUID.") from exc
+    normalized_orders = _validate_conditional_entry_batch(batch.orders)
+    request_body = json.dumps(normalized_orders, sort_keys=True, separators=(",", ":"))
+    request_hash = hashlib.sha256(request_body.encode("utf-8")).hexdigest()
+    model = SQLServerModel(database=DB_NAME)
+
+    def replay_if_present() -> Dict[str, Any] | None:
+        rows = model.execute_read_query(
+            "SELECT RequestHash, OrderCount FROM Trading.ConditionalEntryBatchRequest WHERE RequestId = ?",
+            (request_id,),
+        ) or []
+        if not rows:
+            return None
+        if str(rows[0]["RequestHash"]).strip() != request_hash:
+            raise HTTPException(status_code=409, detail="Idempotency-Key was already used with a different batch.")
+        return {
+            "message": f"Created {int(rows[0]['OrderCount'])} Pegasus Conditional Entry Trade Intents.",
+            "count": int(rows[0]["OrderCount"]),
+            "order_kind": "CONDITIONAL_ENTRY",
+            "request_id": request_id,
+            "replayed": True,
+        }
+
+    replay = replay_if_present()
+    if replay is not None:
+        return replay
+    statements = [
+        "SET XACT_ABORT ON;", "BEGIN TRY", "BEGIN TRANSACTION;",
+        "INSERT INTO Trading.ConditionalEntryBatchRequest (RequestId, RequestHash, OrderCount) VALUES (?, ?, ?);",
+        "DECLARE @OrderId BIGINT;",
+        "IF NOT EXISTS (SELECT 1 FROM Trading.Strategy WHERE StrategyId = ? AND StrategyCode = 'CONDITIONAL_ENTRY')",
+        "    THROW 51020, 'StrategyId must refer to CONDITIONAL_ENTRY.', 1;",
+    ]
+    params: list[Any] = [request_id, request_hash, len(normalized_orders), normalized_orders[0]["strategy_id"]]
+    for item in normalized_orders:
+        condition = item["condition"]
+        canonical = json.dumps(condition, sort_keys=True, separators=(",", ":"))
+        condition_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        statements.append(
+            """INSERT INTO Trading.Orders
+                (StrategyId, StockCode, Side, OrderSourceType, SignalType, TimeFrame, EntryType, EntryPrice,
+                 Quantity, ProfitTargetPrice, StopLossPrice, StopLossMode, Status, BacktestRunId, MetaJson,
+                 OrderKind, CreatedAt, UpdatedAt)
+               VALUES (?, ?, ?, 'MANUAL', NULL, '5M', 'LIMIT', NULL, ?, NULL, NULL, 'BAR_CLOSE',
+                       'PENDING', NULL, NULL, 'CONDITIONAL_ENTRY', GETDATE(), GETDATE());
+               SET @OrderId = SCOPE_IDENTITY();
+               INSERT INTO Trading.ConditionalEntryCondition
+                   (OrderId, ConditionVersion, SchemaVersion, ConditionHash,
+                    TargetPriceOperator, TargetPriceThreshold, TargetPriceActivationMode,
+                    TargetPriceTickSize, TriggerStockCode, TriggerPriceOperator,
+                    TriggerPriceThreshold, TriggerPriceActivationMode, TriggerPriceTickSize, AccountId,
+                    PositionStockCode, PositionOperator, PositionShares,
+                    MaximumMarginCapacityUsed, TimeZoneName, TimeWindowStart, TimeWindowEnd,
+                    TimeWindowMode, ExpiresAtUtc)
+               VALUES (@OrderId, 1, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL);"""
+        )
+        params.extend((
+            item["strategy_id"], item["stock_code"], item["side"], item["quantity"],
+            condition_hash,
+            condition["target_price_operator"], condition["target_price_threshold"],
+            condition["target_price_activation_mode"], condition["target_price_tick_size"],
+            condition["trigger_stock_code"], condition["trigger_price_operator"],
+            condition["trigger_price_threshold"], condition["trigger_price_activation_mode"],
+            condition["trigger_price_tick_size"], condition["account_id"],
+            condition["position_stock_code"], condition["position_operator"],
+            condition["position_shares"], condition["maximum_margin_capacity_used"],
+            condition["time_zone_name"], condition["time_window_start"],
+            condition["time_window_end"], condition["time_window_mode"],
+        ))
+    statements.extend(["COMMIT TRANSACTION;", "END TRY", "BEGIN CATCH",
+                       "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;", "THROW;", "END CATCH;"])
+    try:
+        model.execute_update_usp("\n".join(statements), tuple(params))
+    except Exception:
+        # A concurrent retry may win the unique RequestId insert, or the SQL
+        # commit may succeed while its response is lost. Reconcile by key/hash.
+        replay = replay_if_present()
+        if replay is not None:
+            return replay
+        raise
+    return {
+        "message": f"Created {len(normalized_orders)} Pegasus Conditional Entry Trade Intents.",
+        "count": len(normalized_orders),
+        "order_kind": "CONDITIONAL_ENTRY",
+        "request_id": request_id,
+        "replayed": False,
+    }
+
+
+@router.get("/trading-orders/conditional-entry")
+def list_conditional_entry_orders(
+    limit: int = Query(100, ge=1, le=500),
+    status: Optional[str] = Query(None),
+) -> List[Dict[str, Any]]:
+    """Read Conditional Entry condition, audit, outbox and submission state."""
+    if not os.getenv("PEGASUS_CONDITIONAL_ENTRY_SCHEMA_READY", "false").strip().lower() == "true":
+        raise HTTPException(status_code=503, detail="Conditional Entry schema is not ready.")
+    valid_statuses = {"PENDING", "PLACED", "OPEN", "CLOSED", "CANCELLED"}
+    normalized_status = (status or "").strip().upper() or None
+    if normalized_status and normalized_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail="Invalid Conditional Entry status.")
+    status_clause = " AND o.Status = ?" if normalized_status else ""
+    params: tuple[Any, ...] = (int(limit), normalized_status) if normalized_status else (int(limit),)
+    rows = SQLServerModel(database=DB_NAME).execute_read_query(
+        f"""
+        SELECT TOP (?) o.OrderId, o.StockCode, o.Side, o.Quantity, o.EntryType, o.Status,
+               o.CreatedAt, o.UpdatedAt, c.ConditionVersion, c.ConditionHash,
+               c.TargetPriceOperator, c.TargetPriceThreshold, c.TargetPriceActivationMode,
+               c.TargetPriceTickSize, c.TriggerStockCode, c.TriggerPriceOperator,
+               c.TriggerPriceThreshold, c.TriggerPriceActivationMode, c.TriggerPriceTickSize, c.ExpiresAtUtc,
+               target_cursor.Region AS TargetCursorRegion,
+               target_cursor.TouchPrice AS TargetTouchPrice,
+               target_cursor.TouchObservedAtUtc AS TargetTouchObservedAtUtc,
+               trigger_cursor.Region AS TriggerCursorRegion,
+               trigger_cursor.TouchPrice AS TriggerTouchPrice,
+               trigger_cursor.TouchObservedAtUtc AS TriggerTouchObservedAtUtc,
+               latest.AttemptId, latest.AttemptState, latest.EventSourceCode,
+               latest.ObservationId, latest.ObservedAtUtc, latest.ObservedPrice, latest.ClauseResultsJson,
+               submission.SubmissionState, submission.BrokerOrderId,
+               outbox.PublishedAtUtc, outbox.LastPublishError,
+               JSON_VALUE(outbox.PayloadJson, '$.evaluator_mode') AS EvaluatorMode,
+               outbox.DeploymentEpoch
+          FROM Trading.Orders AS o
+          JOIN Trading.ConditionalEntryCondition AS c
+            ON c.OrderId = o.OrderId
+           AND c.ConditionVersion = (SELECT MAX(v.ConditionVersion)
+                                       FROM Trading.ConditionalEntryCondition AS v
+                                      WHERE v.OrderId = o.OrderId)
+          LEFT JOIN Trading.ConditionalEntryCursor AS target_cursor
+            ON target_cursor.OrderId = o.OrderId
+           AND target_cursor.ConditionVersion = c.ConditionVersion
+           AND target_cursor.SourceCode = o.StockCode
+          LEFT JOIN Trading.ConditionalEntryCursor AS trigger_cursor
+            ON trigger_cursor.OrderId = o.OrderId
+           AND trigger_cursor.ConditionVersion = c.ConditionVersion
+           AND trigger_cursor.SourceCode = c.TriggerStockCode
+          OUTER APPLY (SELECT TOP 1 a.AttemptId, a.AttemptState, a.EventSourceCode,
+                              a.ObservationId, a.ObservedAtUtc, a.ObservedPrice, a.ClauseResultsJson
+                         FROM Trading.ConditionalEntryAttempt AS a
+                        WHERE a.OrderId = o.OrderId AND a.ConditionVersion = c.ConditionVersion
+                        ORDER BY a.CreatedAtUtc DESC, a.AttemptId DESC) AS latest
+          LEFT JOIN Trading.ConditionalEntrySubmission AS submission ON submission.AttemptId = latest.AttemptId
+          LEFT JOIN Trading.ExecutionOutbox AS outbox ON outbox.AttemptId = latest.AttemptId
+         WHERE o.OrderKind = 'CONDITIONAL_ENTRY' AND o.BacktestRunId IS NULL{status_clause}
+         ORDER BY o.CreatedAt DESC, o.OrderId DESC
+        """,
+        params,
+    ) or []
+    return [dict(row) for row in rows]
+
+
+@router.post("/trading-orders/conditional-entry/{order_id}/cancel")
+def cancel_conditional_entry(order_id: int) -> Dict[str, Any]:
+    """Compare-and-set cancellation; never delete the Trade Intent or audit."""
+    if not _conditional_entry_runtime_enabled():
+        raise HTTPException(status_code=503, detail="Pegasus Conditional Entries are not enabled yet.")
+    model = SQLServerModel(database=DB_NAME)
+    current = model.execute_read_query(
+        """SELECT Status, EntryPlacedAt, EntryFilledAt FROM Trading.Orders
+            WHERE OrderId = ? AND OrderKind = 'CONDITIONAL_ENTRY' AND BacktestRunId IS NULL""",
+        (order_id,),
+    ) or []
+    if not current:
+        raise HTTPException(status_code=404, detail="Conditional Entry Trade Intent not found.")
+    if str(current[0].get("Status", "")).upper() == "CANCELLED":
+        return {"order_id": order_id, "status": "CANCELLED", "already_cancelled": True}
+    if str(current[0].get("Status", "")).upper() != "PENDING" or current[0].get("EntryFilledAt"):
+        raise HTTPException(status_code=409, detail="Trade Intent is no longer safely cancellable; reconcile broker state first.")
+    try:
+        model.execute_update_usp(
+            """SET XACT_ABORT ON;
+               BEGIN TRY
+                 BEGIN TRANSACTION;
+                 IF EXISTS (SELECT 1 FROM Trading.ConditionalEntrySubmission WITH (UPDLOCK, HOLDLOCK)
+                             WHERE OrderId = ? AND SubmissionState IN ('SUBMITTING','ACCEPTED','UNCERTAIN'))
+                     THROW 51031, 'Submission requires broker reconciliation.', 1;
+                 UPDATE Trading.Orders WITH (UPDLOCK)
+                    SET Status = 'CANCELLED', UpdatedAt = GETDATE()
+                  WHERE OrderId = ? AND OrderKind = 'CONDITIONAL_ENTRY' AND Status = 'PENDING'
+                    AND EntryFilledAt IS NULL;
+                 IF @@ROWCOUNT <> 1 THROW 51032, 'Trade Intent changed before cancellation.', 1;
+                 UPDATE Trading.ConditionalEntrySubmission
+                    SET SubmissionState = 'CANCELLED', UpdatedAtUtc = SYSUTCDATETIME()
+                  WHERE OrderId = ? AND SubmissionState = 'CLAIMED';
+                 UPDATE a SET AttemptState = 'CANCELLED', UpdatedAtUtc = SYSUTCDATETIME()
+                   FROM Trading.ConditionalEntryAttempt AS a
+                   JOIN Trading.ConditionalEntrySubmission AS s ON s.AttemptId = a.AttemptId
+                  WHERE s.OrderId = ? AND a.AttemptState = 'CLAIMED';
+                 COMMIT TRANSACTION;
+               END TRY
+               BEGIN CATCH
+                 IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+                 THROW;
+               END CATCH;""",
+            (order_id, order_id, order_id, order_id),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail="Trade Intent changed or requires broker reconciliation; refresh before retrying.") from exc
+    return {"order_id": order_id, "status": "CANCELLED", "already_cancelled": False}
+
+
 @router.put("/trading-orders/{order_id}")
 def update_trading_order(order_id: int, order: TradingOrderUpdate) -> Dict[str, Any]:
     normalized = _normalize_order_inputs(order)
     model = SQLServerModel(database=DB_NAME)
+    conditional_rows = model.execute_read_query(
+        "SELECT OrderKind FROM Trading.Orders WHERE OrderId = ?",
+        (order_id,),
+    ) or []
+    if conditional_rows and str(conditional_rows[0].get("OrderKind", "")).upper() == "CONDITIONAL_ENTRY":
+        raise HTTPException(status_code=409, detail="Cancel and recreate a Conditional Entry Trade Intent to change its terms.")
     if model.execute_read_query(
         "SELECT TOP 1 ActivationId FROM Trading.OrderActivation WHERE OrderId = ?",
         (order_id,),
@@ -805,6 +1267,12 @@ def update_trading_order(order_id: int, order: TradingOrderUpdate) -> Dict[str, 
 @router.delete("/trading-orders/{order_id}")
 def cancel_trading_order(order_id: int) -> Dict[str, Any]:
     model = SQLServerModel(database=DB_NAME)
+    order_kind_rows = model.execute_read_query(
+        "SELECT OrderKind FROM Trading.Orders WHERE OrderId = ?",
+        (order_id,),
+    ) or []
+    if order_kind_rows and str(order_kind_rows[0].get("OrderKind", "LEGACY")).upper() == "CONDITIONAL_ENTRY":
+        raise HTTPException(status_code=409, detail="Use the Conditional Entry cancellation endpoint for this Trade Intent.")
     try:
         model.execute_update_usp(
         """
@@ -846,9 +1314,12 @@ def record_trading_order_exit_fill(order_id: int, fill: TradingOrderExitFill) ->
     model = SQLServerModel(database=DB_NAME)
     order_rows = model.execute_read_query(
         """
-        SELECT Status, ExitFilledAt, Quantity
-        FROM Trading.Orders
-        WHERE OrderId = ?
+        SELECT o.Status, o.ExitFilledAt, o.Quantity, o.OrderKind,
+               COALESCE(SUM(CASE WHEN UPPER(f.FillType) = 'ENTRY' THEN f.FillQty ELSE 0 END), 0) AS EntryFilledQuantity
+        FROM Trading.Orders AS o
+        LEFT JOIN Trading.OrderFills AS f ON f.OrderId = o.OrderId
+        WHERE o.OrderId = ?
+        GROUP BY o.Status, o.ExitFilledAt, o.Quantity, o.OrderKind
         """,
         (order_id,),
     ) or []
@@ -876,7 +1347,12 @@ def record_trading_order_exit_fill(order_id: int, fill: TradingOrderExitFill) ->
         raise HTTPException(status_code=409, detail="This order already has an exit fill.")
 
     fill_time = fill.fill_time.replace(tzinfo=None)
-    fill_quantity = int(order_row.get("Quantity") or 0)
+    if str(order_row.get("OrderKind") or "LEGACY").upper() == "CONDITIONAL_ENTRY":
+        fill_quantity = int(order_row.get("EntryFilledQuantity") or 0)
+        if fill_quantity <= 0:
+            raise HTTPException(status_code=409, detail="No durable entry fill is recorded for this Conditional Entry.")
+    else:
+        fill_quantity = int(order_row.get("Quantity") or 0)
     model.execute_update_usp(
         """
         SET XACT_ABORT ON;

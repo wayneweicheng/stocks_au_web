@@ -1,4 +1,4 @@
-"""30M or 5M candles for support/resistance chart display.
+"""5M, 15M or 30M candles for support/resistance chart display.
 
 Chart timeframe never changes how levels or a Stock Map's as-at 30M close are calculated.
 """
@@ -23,8 +23,8 @@ def get_stock_map_chart_bars(
     lookback_days: int = 10,
     end_inclusive: bool = False,
 ) -> dict:
-    if timeframe not in {"30M", "5M"}:
-        raise ValueError("timeframe must be 30M or 5M")
+    if timeframe not in {"5M", "15M", "30M"}:
+        raise ValueError("timeframe must be 5M, 15M or 30M")
     if observation_date is not None and observation_datetime is not None:
         raise ValueError("Use observation_date or observation_datetime, not both")
     if not 1 <= lookback_days <= 60:
@@ -45,7 +45,7 @@ def get_stock_map_chart_bars(
     # primary key instead of converting indexed columns to NVARCHAR.
     placeholders = ", ".join("CONVERT(varchar(10), ?)" for _ in aliases)
     # Most StockDB_US rows use '5M'; accept the requested '5min' spelling too.
-    frame_values = ("5M", "5min") if timeframe == "5M" else ("30M",)
+    frame_values = ("5M", "5min") if timeframe == "5M" else (timeframe,)
     frame_clause = ", ".join("CONVERT(varchar(10), ?)" for _ in frame_values)
     model = _open_saved_price_levels_model(query_timeout=settings.support_resistance_chart_db_query_timeout)
     try:

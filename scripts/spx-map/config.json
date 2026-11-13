@@ -5,6 +5,14 @@
   "token_env": "SKILL_RUNNER_API_TOKEN",
   "token_dotenv": "backend/.env",
   "http_timeout_seconds": 20,
+  "market_flow": {
+    "base_url": "http://localhost:3101",
+    "username_env": "ADMIN_USERNAME",
+    "password_env": "ADMIN_PASSWORD",
+    "credentials_dotenv": "backend/.env",
+    "timeout_seconds": 20
+  },
+  "processed_state_file": "logs/spx-map-scheduler/processed.json",
   "log_directory": "logs/spx-map-scheduler",
   "log_filename_format": "scheduler-%Y%m%d-%H%M%S-{pid}.log",
   "current_time": {

@@ -177,6 +177,25 @@ export type StockMapReport = {
   raw?: Record<string, unknown>;
 };
 
+export function spxMapReportDate(report: StockMapReport): string | null {
+  for (const name of [report.title, report.file_name]) {
+    if (!name) continue;
+    const dashedDate = name.match(/^\s*(\d{4}-\d{2}-\d{2})/);
+    const compactDate = name.match(/(?:^|[\\/_-])spx_map_(\d{4})(\d{2})(\d{2})(?=[_./-]|$)/i);
+    const date = dashedDate?.[1] ?? (compactDate ? `${compactDate[1]}-${compactDate[2]}-${compactDate[3]}` : null);
+    if (date && !Number.isNaN(Date.parse(`${date}T00:00:00Z`))) return date;
+  }
+  return null;
+}
+
+export function sortSpxMapReports(reports: StockMapReport[]): StockMapReport[] {
+  return [...reports].sort((left, right) => {
+    const leftDate = spxMapReportDate(left) || "";
+    const rightDate = spxMapReportDate(right) || "";
+    return rightDate.localeCompare(leftDate) || (right.created_at || "").localeCompare(left.created_at || "");
+  });
+}
+
 export type ReportAsOfTime = { label: string; easternWallTime: string };
 
 /** Historical report labels denote the requested as-at, not when the artifact was built. */

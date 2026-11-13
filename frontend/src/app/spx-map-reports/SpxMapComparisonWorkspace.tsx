@@ -1,14 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Alert from "../components/ui/Alert";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import { authenticatedFetch } from "../utils/authenticatedFetch";
+import { confirmReportDeletion } from "../components/confirmReportDeletion";
+import { spxComparisonReportDates, spxComparisonReportTitle } from "./comparisonReportDisplay";
 
 type AnyObject = Record<string, any>;
-type Report = { job_id?: string; title?: string; observation_date?: string; created_at?: string; [key: string]: any };
+type Report = { job_id?: string; title?: string; label?: string; observation_date?: string; created_at?: string; d1_date?: string; d2_date?: string; _d1Date?: string | null; _d2Date?: string | null; [key: string]: any };
+function localDateString(date: Date) { const year = date.getFullYear(); const month = String(date.getMonth() + 1).padStart(2, "0"); const day = String(date.getDate()).padStart(2, "0"); return `${year}-${month}-${day}`; }
+function defaultReportDateFrom() { const date = new Date(); date.setDate(date.getDate() - 30); return localDateString(date); }
 const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 const LAST_JOB_KEY = "stocks_au_spx_map_comparison_last_job";
 
@@ -42,8 +46,13 @@ export default function SpxMapComparisonWorkspace({ mode }: { mode: "lab" | "vie
   const [jobId, setJobId] = useState("");
   const [jobStatus, setJobStatus] = useState("");
   const [reports, setReports] = useState<Report[]>([]);
+  const [reportDateFrom, setReportDateFrom] = useState(defaultReportDateFrom);
+  const [reportDateTo, setReportDateTo] = useState(() => localDateString(new Date()));
+  const [reportsTotal, setReportsTotal] = useState(0);
+  const [hasMoreReports, setHasMoreReports] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [reportContent, setReportContent] = useState("");
+  const [deletingReport, setDeletingReport] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -53,15 +62,26 @@ export default function SpxMapComparisonWorkspace({ mode }: { mode: "lab" | "vie
     setJobId(window.localStorage.getItem(LAST_JOB_KEY) || "");
   }, []);
 
-  const loadReports = useCallback(async () => {
+  const loadReports = useCallback(async (offset = 0, append = false) => {
     setBusy(true); setError("");
     try {
-      const payload = await api<AnyObject>("/api/spx-map-comparison/reports");
-      setReports(Array.isArray(payload) ? payload : payload.items || payload.reports || []);
+      const params = new URLSearchParams({ date_from: reportDateFrom, date_to: reportDateTo, offset: String(offset), limit: "30" });
+      const payload = await api<AnyObject>(`/api/spx-map-comparison/reports?${params.toString()}`);
+      const listed = (Array.isArray(payload) ? payload : payload.items || payload.reports || []) as Report[];
+      const enriched = listed.map((report) => {
+        const dates = spxComparisonReportDates(report);
+        return { ...report, _d1Date: dates.d1, _d2Date: dates.d2 };
+      });
+      setReports((current) => append ? [...current, ...enriched] : enriched);
+      setReportsTotal(typeof payload.total === "number" ? payload.total : enriched.length);
+      setHasMoreReports(Boolean(payload.has_more));
+      if (!append) { setSelectedId(""); setReportContent(""); }
     } catch (exc) { setError(message(exc)); }
     finally { setBusy(false); }
-  }, []);
-  useEffect(() => { if (mode === "viewer") void loadReports(); }, [mode, loadReports]);
+  }, [reportDateFrom, reportDateTo]);
+  const loadReportsRef = useRef(loadReports);
+  useEffect(() => { loadReportsRef.current = loadReports; }, [loadReports]);
+  useEffect(() => { if (mode === "viewer") void loadReportsRef.current(); }, [mode]);
 
   const findReports = async () => {
     setBusy(true); setError(""); setPreview(null); setPrompt(""); setCopied(false);
@@ -76,7 +96,9 @@ export default function SpxMapComparisonWorkspace({ mode }: { mode: "lab" | "vie
     setBusy(true); setError(""); setPrompt(""); setCopied(false);
     try {
       const snapshots = [["D1", canonical?.D1], ["D2", canonical?.D2]] as const;
-      const effectivePriceContext = await Promise.all(snapshots.map(async ([label, day]) => {
+      const effectivePriceContext = Array.isArray(preview?.effective_price_context)
+        ? preview.effective_price_context
+        : await Promise.all(snapshots.map(async ([label, day]) => {
         const snapshot = day && typeof day === "object" ? day as AnyObject : {};
         const source = snapshot.source && typeof snapshot.source === "object" ? snapshot.source as AnyObject : {};
         const report = snapshot.report && typeof snapshot.report === "object" ? snapshot.report as AnyObject : {};
@@ -93,8 +115,8 @@ export default function SpxMapComparisonWorkspace({ mode }: { mode: "lab" | "vie
         } catch (priceError) {
           return { day: label, as_of_et: asOf, effective_prices: null, unavailable_reason: message(priceError) };
         }
-      }));
-      const result = await api<AnyObject>("/spx-map-comparison-prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preview, effective_price_context: effectivePriceContext }) });
+        }));
+      const result = await api<AnyObject>("/api/spx-map-comparison/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preview, effective_price_context: effectivePriceContext }) });
       const basePrompt = result.prompt || result.data?.prompt || "";
       if (!basePrompt) throw new Error("Prompt endpoint returned no prompt.");
       setPrompt(basePrompt.trim());
@@ -131,6 +153,18 @@ export default function SpxMapComparisonWorkspace({ mode }: { mode: "lab" | "vie
       if (!result.content && !result.report && !result.data?.content) throw new Error("Report content is not available yet.");
     } catch (exc) { setError(message(exc)); }
     finally { setBusy(false); }
+  };
+  const deleteSelectedReport = async () => {
+    const report = reports.find((item) => (item.job_id || String(item.id || "")) === selectedId);
+    if (!report || !confirmReportDeletion(report.title || "SPX comparison", selectedId)) return;
+    setBusy(true); setDeletingReport(true); setError("");
+    try {
+      await api<AnyObject>(`/api/spx-map-comparison/reports/${encodeURIComponent(selectedId)}`, { method: "DELETE" });
+      setReports((current) => current.filter((item) => (item.job_id || String(item.id || "")) !== selectedId));
+      setReportsTotal((current) => Math.max(0, current - 1));
+      setSelectedId(""); setReportContent("");
+    } catch (exc) { setError(message(exc)); }
+    finally { setDeletingReport(false); setBusy(false); }
   };
   // The runner returns report snapshots under comparison_input.D1/D2, each
   // containing separate source provenance and a normalized report summary.
@@ -169,9 +203,24 @@ export default function SpxMapComparisonWorkspace({ mode }: { mode: "lab" | "vie
         <div className="flex flex-wrap gap-2"><Button type="button" variant="secondary" onClick={() => void getPrompt()} disabled={busy || !inputId}>Generate Prompt</Button><Button type="button" onClick={() => void submit()} disabled={busy || !inputId}>Submit Comparison Job</Button></div>
         {prompt ? <div className="space-y-2"><p className="text-xs text-slate-600">Copyable prompt with the canonical D1/D2 evidence and each report's as-of effective prices. This action has not submitted a job.</p><textarea aria-label="SPX comparison prompt" readOnly value={prompt} rows={14} className="w-full rounded border border-slate-300 bg-slate-50 p-3 font-mono text-xs"/><Button type="button" variant="secondary" onClick={() => void copyPrompt()}>{copied ? "Copied" : "Copy Prompt"}</Button></div> : null}
       </section> : null}
-    </> : <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">SPX Two-Day Analysis Reports</h2><Button type="button" variant="secondary" onClick={() => void loadReports()} disabled={busy}>Refresh reports</Button></div>
-      {reports.length ? <div className="mt-4 flex flex-wrap gap-2">{reports.map((report, index) => { const id = report.job_id || String(report.id || ""); return <Button key={id || index} type="button" variant="secondary" onClick={() => void openReport(id)} disabled={busy || !id}>{report.title || `${report.observation_date || "SPX comparison"} · ${id}`}</Button>; })}</div> : <p className="mt-3 text-sm text-slate-500">No SPX comparison reports found.</p>}
-      {selectedId ? <p className="mt-4 text-xs text-slate-500">Report job {selectedId}</p> : null}{reportContent ? <div className="mt-3"><MarkdownRenderer content={reportContent}/></div> : null}</section>}
+    </> : <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-lg font-semibold">SPX Two-Day Analysis Reports</h2><p className="mt-1 text-sm text-slate-600">Select a report to open its analysis. Each entry identifies the D1 and D2 US trading dates.</p><p className="mt-1 text-xs text-slate-500">Report bodies are loaded only when selected; the list shows up to 30 reports per page.</p></div><div className="flex flex-wrap items-end gap-2"><label className="text-xs text-slate-600">D1 date from<Input type="date" value={reportDateFrom} onChange={(event) => setReportDateFrom(event.target.value)} className="mt-1" /></label><label className="text-xs text-slate-600">D1 date to<Input type="date" value={reportDateTo} onChange={(event) => setReportDateTo(event.target.value)} className="mt-1" /></label><Button type="button" variant="secondary" onClick={() => void loadReports()} disabled={busy}>Apply dates</Button></div></div>
+      <p className="mt-2 text-xs text-slate-500">Showing {reports.length} of {reportsTotal} matching reports.</p>
+      {reports.length ? <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{reports.map((report, index) => {
+        const id = report.job_id || String(report.id || "");
+        const isSelected = selectedId === id;
+        return <button key={id || index} type="button" onClick={() => void openReport(id)} disabled={busy || !id} aria-pressed={isSelected}
+          className={`rounded-lg border p-3 text-left transition-colors disabled:cursor-wait disabled:opacity-60 ${isSelected ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200" : "border-slate-200 bg-white hover:border-indigo-300 hover:bg-slate-50"}`}>
+          <span className="block text-xs font-semibold uppercase tracking-wide text-indigo-700">{spxComparisonReportTitle({ d1: report._d1Date || null, d2: report._d2Date || null })}</span>
+          <span className="mt-1 block font-medium text-slate-900">{report.title || "SPX comparison"}</span>
+          <span className="mt-2 block break-all font-mono text-[10px] text-slate-500">Job {id || "unavailable"}</span>
+          {report.created_at ? <span className="mt-1 block text-xs text-slate-500">Generated {report.created_at}</span> : null}
+        </button>;
+      })}</div> : <p className="mt-3 text-sm text-slate-500">No SPX comparison reports match the selected D1 date range.</p>}
+      {hasMoreReports ? <div className="mt-4 text-center"><Button type="button" variant="secondary" onClick={() => void loadReports(reports.length, true)} disabled={busy}>Load older reports</Button></div> : null}
+      {selectedId ? <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3"><p className="text-xs text-slate-500">Selected report job {selectedId}</p><Button type="button" variant="danger" onClick={() => void deleteSelectedReport()} disabled={busy}>{deletingReport ? "Deleting…" : "Delete report"}</Button></div> : null}
+      {reportContent ? <div className="mt-4 border-t border-slate-200 pt-4"><MarkdownRenderer content={reportContent}/></div> : selectedId && busy ? <p className="mt-4 text-sm text-slate-500">Loading selected report…</p> : null}
+    </section>}
     <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm shadow-sm"><label className="font-medium">Comparison job ID<Input value={jobId} onChange={(event) => setJobId(event.target.value)} placeholder="Job ID returned by the runner" className="mt-1"/></label><div className="mt-2 flex items-center gap-3"><Button type="button" variant="secondary" onClick={() => void checkStatus()} disabled={busy || !jobId.trim()}>Check status</Button>{jobStatus ? <span>Status: {jobStatus}</span> : null}{jobStatus.toLowerCase() === "succeeded" || jobStatus.toLowerCase() === "completed" ? <Button type="button" variant="secondary" onClick={() => void openReport(jobId)}>Open report</Button> : null}</div></section>
     {busy ? <p className="text-sm text-slate-500">Loading…</p> : null}{error ? <Alert variant="danger">{error}</Alert> : null}
   </div>;

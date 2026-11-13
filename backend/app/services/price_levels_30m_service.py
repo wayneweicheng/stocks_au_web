@@ -15,6 +15,16 @@ MIN_ZONE_DISTANCE_ATR = 0.1
 MAX_ZONE_DISTANCE_ATR = 3.0
 US_EASTERN = ZoneInfo("America/New_York")
 logger = logging.getLogger("app.price_levels_30m_service")
+LIVE_PRICE_WAIT_SECONDS = 5.0
+LIVE_PRICE_CONNECT_TIMEOUT_SECONDS = 3.0
+
+
+def _load_live_reference_prices(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Fetch only the prices used to anchor support/resistance levels."""
+    return get_live_stock_prices(
+        symbols, wait_seconds=LIVE_PRICE_WAIT_SECONDS,
+        connect_timeout=LIVE_PRICE_CONNECT_TIMEOUT_SECONDS, quote_only=True,
+    )
 
 
 class SupportResistanceDatabaseError(RuntimeError):
@@ -656,7 +666,7 @@ def _get_30m_support_resistance_with_model(
     live_prices: Dict[str, Dict[str, Any]] = {}
     if use_live_prices:
         try:
-            live_prices = get_live_stock_prices(grouped.keys())
+            live_prices = _load_live_reference_prices(list(grouped.keys()))
         except Exception as exc:
             logger.warning("Live price check failed for live-price observation date: %s", exc)
 

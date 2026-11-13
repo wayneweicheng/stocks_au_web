@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from arkofdata_common.SQLServerHelper.SQLServerHelper import SQLServerModel
 
+from app.core.config import settings
 from app.routers.auth import verify_credentials
 from app.spx_gex_strategy.calendar import USCashCalendar
 from app.services.live_stock_price_service import (
@@ -39,6 +40,10 @@ LIVE_CONNECT_TIMEOUT_SECONDS = 0.5
 # The quote-only socket can briefly contend with another request (stock vs ES).
 # It does not synchronize account/portfolio state; allow a bounded handshake.
 QUOTE_CONNECT_TIMEOUT_SECONDS = 1.5
+# The support/resistance Stock Map fetches a single quote asynchronously; allow
+# slower IB Gateway handshakes and market-data ticks without delaying report load.
+STOCK_MAP_LIVE_PRICE_WAIT_SECONDS = 5.0
+STOCK_MAP_LIVE_PRICE_CONNECT_TIMEOUT_SECONDS = 3.0
 
 _cache_lock = Lock()
 _cache_rows: List[Dict[str, Any]] = []
@@ -56,55 +61,157 @@ def _load_price_mapping() -> List[Dict[str, Any]]:
 
 
 def _load_effective_intraday_bar(as_of_et: datetime, symbol: str, timeframe: str) -> Dict[str, Any] | None:
-    """Return the latest fully completed bar at/before an ET report timestamp."""
-    local_as_of = as_of_et
-    if local_as_of.tzinfo is not None:
-        local_as_of = local_as_of.astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None)
-    duration_minutes = 30 if timeframe == "30M" else 5
+    """Return the latest valid, completed start-labelled bar at a report as-of.
+
+    PriceHistoryTimeFrame timestamps are naive America/New_York wall times. The
+    source has no verified availability timestamp, so a configurable finalization
+    grace is applied and historical point-in-time availability is reported unknown.
+    """
+    duration_by_frame = {"5M": 5, "15M": 15, "30M": 30}
+    duration_minutes = duration_by_frame.get(timeframe)
+    if duration_minutes is None:
+        raise ValueError(f"Unsupported effective-price timeframe: {timeframe}")
+    eastern = ZoneInfo("America/New_York")
+    if as_of_et.tzinfo is None:
+        as_of_aware = as_of_et.replace(tzinfo=eastern)
+    else:
+        as_of_aware = as_of_et.astimezone(eastern)
+    as_of_local = as_of_aware.replace(tzinfo=None)
+    finalization_delay = max(0, int(settings.spx_effective_bar_finalization_delay_seconds))
+
     model = SQLServerModel(database=DATABASE)
     rows = model.execute_read_query(
         """
-        SELECT TOP (1) ASXCode, TimeFrame, [Close] AS Price, ObservationDate, TimeIntervalStart,
-            DATEADD(minute, ?, TimeIntervalStart) AS BarCloseTime
-        FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame] WITH (NOLOCK)
-        WHERE ASXCode = CONVERT(varchar(10), ?)
-          AND TimeFrame = CONVERT(varchar(10), ?)
-          AND TimeIntervalStart <= DATEADD(minute, -?, CONVERT(datetime, ?))
-        ORDER BY TimeIntervalStart DESC
+        SELECT TOP (1000) p.*,
+            DATEADD(minute, ?, p.TimeIntervalStart) AS CalculatedBarEnd
+        FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame] AS p WITH (NOLOCK)
+        WHERE p.ASXCode = CONVERT(varchar(10), ?)
+          AND p.TimeFrame = CONVERT(varchar(10), ?)
+          AND p.ObservationDate <= CONVERT(date, ?)
+          AND p.TimeIntervalStart <= DATEADD(minute, -?, CONVERT(datetime, ?))
+        ORDER BY p.TimeIntervalStart DESC
         """,
-        (duration_minutes, symbol, timeframe, duration_minutes, local_as_of),
+        (duration_minutes, symbol, timeframe, as_of_local.date(), duration_minutes, as_of_local),
     ) or []
-    if not rows:
-        return None
-    try:
-        bar_price = float(rows[0]["Price"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    if not math.isfinite(bar_price) or bar_price <= 0:
-        return None
-    return {
-        "price": round(bar_price, 4),
-        "symbol": symbol,
-        "timeframe": timeframe,
-        "timestamp": rows[0].get("TimeIntervalStart"),
-        "bar_close_at": rows[0].get("BarCloseTime"),
-        "observation_date": rows[0].get("ObservationDate"),
-        "source": "price_history_timeframe",
-    }
+
+    def as_et(raw: Any) -> datetime | None:
+        if not isinstance(raw, datetime):
+            return None
+        if raw.tzinfo is not None:
+            return raw.astimezone(eastern)
+        first = raw.replace(tzinfo=eastern, fold=0)
+        second = raw.replace(tzinfo=eastern, fold=1)
+        if first.utcoffset() != second.utcoffset():
+            # The database does not store a UTC offset/fold. Refuse ambiguous
+            # fall-back wall times rather than inventing an absolute instant.
+            return None
+        return first
+
+    def trustworthy_available_at(row: Dict[str, Any]) -> tuple[datetime | None, str | None]:
+        # Accept explicit availability/ingestion fields only. Generic CreatedAt
+        # timestamps are not assumed to mean source availability.
+        trusted_names = {
+            "availableatutc", "ingestedatutc", "ingestiontimestamputc", "availabilitytimestamputc",
+            "sourceavailableatutc", "availableatet", "sourceavailableatet", "ingestedatet",
+            "availableat", "ingestedat", "ingestiontimestamp",
+        }
+        for key, value in row.items():
+            normalized = "".join(character for character in str(key).lower() if character.isalnum())
+            if normalized not in trusted_names or value is None:
+                continue
+            if isinstance(value, datetime):
+                if value.tzinfo is not None:
+                    return value.astimezone(eastern), str(key)
+                if normalized.endswith("utc"):
+                    return value.replace(tzinfo=timezone.utc).astimezone(eastern), str(key)
+                if normalized.endswith("et"):
+                    first = value.replace(tzinfo=eastern, fold=0)
+                    second = value.replace(tzinfo=eastern, fold=1)
+                    if first.utcoffset() == second.utcoffset():
+                        return first, str(key)
+                continue
+            if isinstance(value, str):
+                try:
+                    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if parsed.tzinfo is not None:
+                    return parsed.astimezone(eastern), str(key)
+                if normalized.endswith("utc"):
+                    return parsed.replace(tzinfo=timezone.utc).astimezone(eastern), str(key)
+                if normalized.endswith("et"):
+                    first = parsed.replace(tzinfo=eastern, fold=0)
+                    second = parsed.replace(tzinfo=eastern, fold=1)
+                    if first.utcoffset() == second.utcoffset():
+                        return first, str(key)
+        return None, None
+
+    xnys_session_date = USCashCalendar("America/New_York").is_session(as_of_aware.date())
+    session_calendar_status = "XNYS_SESSION_DATE" if xnys_session_date else "NON_XNYS_SESSION_DATE; futures availability not implied"
+    for row in rows:
+        raw_start = row.get("TimeIntervalStart")
+        bar_start = as_et(raw_start)
+        if bar_start is None:
+            continue
+        bar_end = bar_start + timedelta(minutes=duration_minutes)
+        source_available_at, source_available_at_field = trustworthy_available_at(row)
+        if source_available_at is not None and source_available_at.astimezone(timezone.utc) > as_of_aware.astimezone(timezone.utc):
+            continue
+        source_bar_end = row.get("CalculatedBarEnd") or row.get("BarCloseTime")
+        if source_bar_end is not None:
+            normalized_source_end = as_et(source_bar_end)
+            if normalized_source_end is None or normalized_source_end.astimezone(timezone.utc) != bar_end.astimezone(timezone.utc):
+                continue
+        completion_cutoff = as_of_aware if source_available_at is not None else as_of_aware - timedelta(seconds=finalization_delay)
+        if bar_end.astimezone(timezone.utc) > completion_cutoff.astimezone(timezone.utc):
+            continue
+        bar_age_seconds = max(0, int((as_of_aware.astimezone(timezone.utc) - bar_end.astimezone(timezone.utc)).total_seconds()))
+        try:
+            close_value = row.get("Price", row.get("Close"))
+            ohlc = [float(row[key]) for key in ("Open", "High", "Low")] + [float(close_value)]
+        except (KeyError, TypeError, ValueError):
+            continue
+        open_price, high, low, close = ohlc
+        if not all(math.isfinite(value) and value > 0 for value in ohlc):
+            continue
+        if high < max(open_price, close, low) or low > min(open_price, close):
+            continue
+        return {
+            "price": round(close, 4),
+            "open": round(open_price, 4), "high": round(high, 4), "low": round(low, 4),
+            "symbol": symbol, "timeframe": timeframe,
+            "raw_time_interval_start": raw_start.isoformat(),
+            "corrected_bar_start_et": bar_start.isoformat(),
+            "bar_end_et": bar_end.isoformat(),
+            "source_bar_end_timestamp_consistent": True,
+            "timestamp": bar_start.isoformat(), "bar_close_at": bar_end.isoformat(),
+            "source_available_at_et": source_available_at.isoformat() if source_available_at else None,
+            "source_available_at_field": source_available_at_field,
+            "as_of_et": as_of_aware.isoformat(),
+            "timestamp_correction_applied": False,
+            "bar_completion_valid": True,
+            "point_in_time_availability_validated": source_available_at is not None,
+            "availability_status": "VALIDATED_AVAILABLE_AT" if source_available_at is not None else "UNKNOWN_NO_TRUSTED_AVAILABLE_AT_SELECTED",
+            "finalization_delay_seconds": finalization_delay,
+            "bar_age_seconds": bar_age_seconds,
+            "freshness_status": "FRESH" if bar_age_seconds <= 900 else "STALE",
+            "session_calendar_status": session_calendar_status,
+            "observation_date": row.get("ObservationDate"),
+            "source": "StockDB_US.StockData.PriceHistoryTimeFrame; naive New York wall time",
+        }
+    return None
 
 
 def _load_effective_market_bar(as_of_et: datetime, symbol: str) -> Dict[str, Any] | None:
-    """Prefer a completed 30-minute bar, then use the nearest completed 5-minute bar."""
-    return (
-        _load_effective_intraday_bar(as_of_et, symbol, "30M")
-        or _load_effective_intraday_bar(as_of_et, symbol, "5M")
-    )
+    """Effective prices use only completed 5M bars; structure may use 15M/30M separately."""
+    return _load_effective_intraday_bar(as_of_et, symbol, "5M")
 
 
 def _load_effective_spx_prices(
     as_of_et: datetime,
     historical_closes: Dict[str, float],
     close_dates: Dict[str, str] | None = None,
+    close_times: Dict[str, Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     """Map report-time bars to SPX/SPY and populate same-time QQQ/TQQQ/ES prices."""
     es_bar = _load_effective_market_bar(as_of_et, "ESMain.US")
@@ -130,11 +237,20 @@ def _load_effective_spx_prices(
     spx_close = historical_closes.get("SPX")
     spy_close = historical_closes.get("SPY")
     es_close = historical_closes.get("ESMain")
-    same_date = lambda symbol: close_dates is None or (
-        close_dates.get(symbol) is not None and close_dates.get(symbol) == close_dates.get("SPX")
+    same_date = lambda symbol: (
+        close_dates is not None
+        and close_dates.get(symbol) is not None
+        and close_dates.get("SPX") is not None
+        and close_dates.get(symbol) == close_dates.get("SPX")
     )
     es_basis = es_close - spx_close if es_close is not None and spx_close is not None and same_date("ESMain") else None
+    basis_date = close_dates.get("ESMain") if close_dates and close_dates.get("ESMain") == close_dates.get("SPX") else None
+    as_of_local_date = as_of_et.astimezone(ZoneInfo("America/New_York")).date() if as_of_et.tzinfo else as_of_et.date()
+    basis_age_days = (as_of_local_date - date.fromisoformat(str(basis_date)[:10])).days if basis_date else None
+    basis_quality = "DATE_MATCHED_SINGLE_CLOSE_PAIR; HISTORICAL_AVAILABILITY_UNKNOWN" if es_basis is not None else "UNAVAILABLE_NOT_DATE_MATCHED"
     spy_spx_ratio = spy_close / spx_close if spy_close is not None and spx_close and same_date("SPY") else None
+    spy_spx_ratio_date = close_dates.get("SPY") if close_dates and same_date("SPY") else None
+    spy_spx_ratio_quality = "MATCHED_CASH_CLOSE_DATE" if spy_spx_ratio is not None else "UNAVAILABLE_NOT_DATE_MATCHED"
 
     if es_bar is not None and es_basis is not None:
         effective_spx = es_bar["price"] - es_basis
@@ -145,22 +261,41 @@ def _load_effective_spx_prices(
             "effective_price_timestamp": es_bar.get("bar_close_at"),
             "effective_price_timestamps": {**aligned_timestamps, "SPY": es_bar.get("bar_close_at")},
             "effective_price_sources": {**aligned_sources, "SPX": "ESMain as-of price translated with selected-report cash-close basis", "SPY": "SPX equivalent translated with selected-report SPY/SPX close ratio"},
-            "effective_price_bar_start": es_bar.get("timestamp"),
+            "effective_price_bar_start": es_bar.get("corrected_bar_start_et"),
             "effective_price_basis": es_basis,
+            "basis_observation_date": basis_date,
+            "basis_component_timestamps": {key: (close_times or {}).get(key) for key in ("SPX", "ESMain")},
+            "basis_age_days": basis_age_days,
+            "basis_quality": basis_quality,
+            "basis_dispersion_points": None,
+            "basis_dispersion_status": "not calculated; one matched cash-close pair",
+            "spy_spx_close_ratio": spy_spx_ratio,
+            "spy_spx_ratio_date": spy_spx_ratio_date,
+            "spy_spx_ratio_quality": spy_spx_ratio_quality,
+            "effective_price_bars": {"ESMain": es_bar, "SPY": spy_bar},
             "effective_price_fallback": False,
         }
 
     if spy_bar is not None and spy_spx_ratio is not None:
         effective_spx = spy_bar["price"] / spy_spx_ratio
-        effective_es = effective_spx + es_basis if es_basis is not None else None
         return {
-            "effective_prices": {"SPX": round(effective_spx, 4), "SPY": spy_bar["price"], "ESMain": es_bar["price"] if es_bar is not None else round(effective_es, 4) if effective_es is not None else None, **aligned_prices},
-            "effective_price_source": f"SPY completed {spy_bar['timeframe']} bar fallback; SPX translated using selected-report close ratio" + ("; ESMain shown as basis-derived equivalent" if effective_es is not None else ""),
+            "effective_prices": {"SPX": round(effective_spx, 4), "SPY": spy_bar["price"], "ESMain": es_bar["price"] if es_bar is not None else None, **aligned_prices},
+            "effective_price_source": f"SPY completed {spy_bar['timeframe']} bar fallback; SPX translated using selected-report close ratio; any unavailable ES quote remains unavailable",
             "effective_price_timestamp": spy_bar.get("bar_close_at"),
             "effective_price_timestamps": {**aligned_timestamps, "SPY": spy_bar.get("bar_close_at")},
             "effective_price_sources": {**aligned_sources, "SPX": "SPY as-of price translated with selected-report SPY/SPX close ratio", "SPY": f"SPY completed {spy_bar['timeframe']} historical bar"},
-            "effective_price_bar_start": spy_bar.get("timestamp"),
+            "effective_price_bar_start": spy_bar.get("corrected_bar_start_et"),
             "effective_price_basis": es_basis,
+            "basis_observation_date": basis_date,
+            "basis_component_timestamps": {key: (close_times or {}).get(key) for key in ("SPX", "ESMain")},
+            "basis_age_days": basis_age_days,
+            "basis_quality": basis_quality,
+            "basis_dispersion_points": None,
+            "basis_dispersion_status": "not calculated; one matched cash-close pair" if es_basis is not None else "unavailable",
+            "spy_spx_close_ratio": spy_spx_ratio,
+            "spy_spx_ratio_date": spy_spx_ratio_date,
+            "spy_spx_ratio_quality": spy_spx_ratio_quality,
+            "effective_price_bars": {"ESMain": es_bar, "SPY": spy_bar},
             "effective_price_fallback": True,
         }
 
@@ -172,39 +307,73 @@ def _load_effective_spx_prices(
         "effective_price_sources": {**aligned_sources, "SPX": None, "SPY": f"SPY completed {spy_bar['timeframe']} historical bar" if spy_bar else None},
         "effective_price_bar_start": None,
         "effective_price_basis": es_basis,
+        "basis_observation_date": basis_date,
+        "basis_component_timestamps": {key: (close_times or {}).get(key) for key in ("SPX", "ESMain")},
+        "basis_age_days": basis_age_days,
+        "basis_quality": basis_quality,
+        "basis_dispersion_points": None,
+        "basis_dispersion_status": "not calculated; one matched cash-close pair" if es_basis is not None else "unavailable",
+        "spy_spx_close_ratio": spy_spx_ratio,
+        "spy_spx_ratio_date": spy_spx_ratio_date,
+        "spy_spx_ratio_quality": spy_spx_ratio_quality,
+        "effective_price_bars": {"ESMain": es_bar, "SPY": spy_bar},
         "effective_price_fallback": True,
     }
 
 
 def _load_latest_spx_30m_price() -> Dict[str, Any] | None:
+    """Return a completed SPXW 30M cash bar; its source label is one hour behind ET."""
+    eastern = ZoneInfo("America/New_York")
+    as_of = datetime.now(eastern)
+    source_as_of = as_of.replace(tzinfo=None) - timedelta(hours=1)
+    finalization_delay = max(0, int(settings.spx_effective_bar_finalization_delay_seconds))
+    eligible_as_of = source_as_of - timedelta(seconds=finalization_delay)
     model = SQLServerModel(database=DATABASE)
     rows = model.execute_read_query(
         """
-        SELECT TOP (1)
-            [Close] AS Price,
-            TimeIntervalStart
-        FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame]
-        WHERE ASXCode = convert(varchar(10), ?)
-          AND TimeFrame = convert(varchar(10), ?)
+        SELECT TOP (1000) [Open], [High], [Low], [Close] AS Price,
+            TimeIntervalStart, DATEADD(minute, 30, TimeIntervalStart) AS RawBarEnd
+        FROM [StockDB_US].[StockData].[PriceHistoryTimeFrame] WITH (NOLOCK)
+        WHERE ASXCode = CONVERT(varchar(10), ?)
+          AND TimeFrame = CONVERT(varchar(10), ?)
+          AND TimeIntervalStart <= DATEADD(minute, -30, CONVERT(datetime, ?))
         ORDER BY TimeIntervalStart DESC
         """,
-        ("SPXW.US", "30M"),
+        ("SPXW.US", "30M", eligible_as_of),
     ) or []
-    if not rows:
-        return None
-
-    try:
-        price = float(rows[0]["Price"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    if not math.isfinite(price) or price <= 0:
-        return None
-
-    return {
-        "price": round(price, 4),
-        "source": "database_30m_close",
-        "timestamp": rows[0].get("TimeIntervalStart"),
-    }
+    for row in rows:
+        try:
+            open_price, high, low, price = [float(row[key]) for key in ("Open", "High", "Low", "Price")]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not all(math.isfinite(value) and value > 0 for value in (open_price, high, low, price)):
+            continue
+        if high < max(open_price, price, low) or low > min(open_price, price):
+            continue
+        raw_start = row.get("TimeIntervalStart")
+        if not isinstance(raw_start, datetime):
+            continue
+        raw_end = row.get("RawBarEnd")
+        if isinstance(raw_end, datetime) and raw_end != raw_start + timedelta(minutes=30):
+            continue
+        corrected_wall_start = raw_start + timedelta(hours=1)
+        corrected_start = corrected_wall_start.replace(tzinfo=eastern, fold=0)
+        alternate_fold = corrected_wall_start.replace(tzinfo=eastern, fold=1)
+        if corrected_start.utcoffset() != alternate_fold.utcoffset():
+            continue
+        corrected_end = corrected_start + timedelta(minutes=30)
+        return {
+            "price": round(price, 4),
+            "source": "database_completed_30m_close_estimate",
+            "raw_time_interval_start": raw_start.isoformat(),
+            "timestamp": corrected_start.isoformat(),
+            "bar_end_et": corrected_end.isoformat(),
+            "timestamp_correction_applied": True,
+            "bar_completion_valid": True,
+            "source_available_at_et": None,
+            "point_in_time_availability_validated": False,
+        }
+    return None
 
 
 def _stock_map_prior_close_cutoff(observation_date: date | None, as_of_et: datetime | None) -> date | None:
@@ -292,7 +461,11 @@ def _load_stock_atr_14d(
     return round(atr, 4) if math.isfinite(atr) and atr > 0 else None
 
 
-def _load_snapshot_closes(observation_date: date | None, close_dates: Dict[str, str] | None = None) -> Dict[str, float]:
+def _load_snapshot_closes(
+    observation_date: date | None,
+    close_dates: Dict[str, str] | None = None,
+    close_times: Dict[str, Dict[str, Any]] | None = None,
+) -> Dict[str, float]:
     """Load report-date cash-close anchors (30M SPX/ES, 5M stocks/NQ).
 
     The requested date is treated as an upper bound so weekends, holidays, or
@@ -344,6 +517,15 @@ def _load_snapshot_closes(observation_date: date | None, close_dates: Dict[str, 
             closes[symbol] = close
             if close_dates is not None and rows[0].get("ObservationDate") is not None:
                 close_dates[symbol] = str(rows[0]["ObservationDate"])[:10]
+            if close_times is not None and isinstance(rows[0].get("TimeIntervalStart"), datetime):
+                raw_time = rows[0]["TimeIntervalStart"]
+                correction = timedelta(hours=1) if symbol == "SPX" else timedelta(0)
+                close_times[symbol] = {
+                    "raw_time_interval_start": raw_time.isoformat(),
+                    "corrected_bar_start_et": (raw_time + correction).replace(tzinfo=ZoneInfo("America/New_York")).isoformat(),
+                    "bar_end_et": (raw_time + correction + timedelta(minutes=30)).replace(tzinfo=ZoneInfo("America/New_York")).isoformat(),
+                    "timeframe": timeframe,
+                }
     return closes
 
 
@@ -555,8 +737,8 @@ def get_stock_map_live_price(
     try:
         if quote_code in {"SPX", "ESMAIN"}:
             futures = get_live_futures_prices(
-                ["ES"], wait_seconds=2.0,
-                connect_timeout=QUOTE_CONNECT_TIMEOUT_SECONDS, quote_only=True,
+                ["ES"], wait_seconds=STOCK_MAP_LIVE_PRICE_WAIT_SECONDS,
+                connect_timeout=STOCK_MAP_LIVE_PRICE_CONNECT_TIMEOUT_SECONDS, quote_only=True,
             )
             es_quote = futures.get("ES") or {}
             raw_es_price = es_quote.get("price")
@@ -581,7 +763,10 @@ def get_stock_map_live_price(
                             live_price = candidate_spx
                             source = f"{es_quote.get('source') or 'IB ES quote'} less matched ES−SPX cash-close basis ({basis_date})"
         else:
-            snapshot = market_aware_stock_prices.get_prices([quote_code])
+            snapshot = market_aware_stock_prices.get_prices(
+                [quote_code], wait_seconds=STOCK_MAP_LIVE_PRICE_WAIT_SECONDS,
+                connect_timeout=STOCK_MAP_LIVE_PRICE_CONNECT_TIMEOUT_SECONDS,
+            )
             live_price = snapshot.prices.get(quote_code)
             price_source = snapshot.price_sources.get(quote_code)
             price_time = snapshot.price_times.get(quote_code)
@@ -616,9 +801,10 @@ def get_spx_map_prices(
             as_of_et = None
         resolved_date = observation_date or _load_latest_snapshot_date()
         close_dates: Dict[str, str] = {}
+        close_times: Dict[str, Dict[str, Any]] = {}
         anchor_date = _close_anchor_date_for_asof(resolved_date, as_of_et)
-        historical_closes = _load_snapshot_closes(anchor_date, close_dates)
-        effective = _load_effective_spx_prices(as_of_et, historical_closes, close_dates) if as_of_et is not None else {
+        historical_closes = _load_snapshot_closes(anchor_date, close_dates, close_times)
+        effective = _load_effective_spx_prices(as_of_et, historical_closes, close_dates, close_times) if as_of_et is not None else {
             "report_as_of_et": None,
             "effective_prices": {"SPX": None, "SPY": None, "ESMain": None},
             "effective_price_source": "Report as-of timestamp unavailable",
@@ -649,6 +835,8 @@ def get_spx_map_prices(
             "historical_close_date": historical_close_date,
             "report_as_of_et": as_of_et,
             "historical_close_dates": close_dates,
+            "historical_close_timestamps": close_times,
+            "effective_price_retrieved_at_utc": datetime.now(timezone.utc).isoformat(),
             "calibration_eligible": resolved_date is not None and resolved_date == latest_date,
             "price_differences": price_differences,
             # IB account synchronization and sequential quote lookups can take

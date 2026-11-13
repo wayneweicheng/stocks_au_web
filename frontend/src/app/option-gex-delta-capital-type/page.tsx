@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Alert from "../components/ui/Alert";
 import Button from "../components/ui/Button";
@@ -12,27 +12,54 @@ import { authenticatedFetch } from "../utils/authenticatedFetch";
 type Row = Record<string, any>;
 
 function isoDate(date: Date) { return date.toISOString().slice(0, 10); }
-function defaultFromDate() { const d = new Date(); d.setDate(d.getDate() - 180); return isoDate(d); }
+function defaultFromDate() { const d = new Date(); d.setFullYear(d.getFullYear() - 3); return isoDate(d); }
 function num(v: any): number | null { const n = Number(v); return Number.isFinite(n) ? n : null; }
 function fmt(v: any, digits = 2) { const n = num(v); return n === null ? "-" : n.toLocaleString(undefined, { maximumFractionDigits: digits }); }
 function fmtSignedPct(v: any) { const n = num(v); return n === null ? "-" : `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`; }
 function dateLabel(value: string) { const d = new Date(value); return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString(undefined, { month: "short", day: "numeric" }); }
 
 function StackedBarLineChart({ rows, yKey, title, threshold }: { rows: Row[]; yKey: string; title: string; threshold?: number }) {
-  const width = 1000, height = 420, pad = 36;
+  const height = 420, pad = 36;
+  const chartScrollRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [visibleDateRange, setVisibleDateRange] = useState({ start: 0, end: 0 });
   const dates = Array.from(new Set(rows.map((r) => String(r.ObservationDate))));
+  const width = Math.max(1000, dates.length * 28 + pad * 2);
+  const step = (width - pad * 2) / Math.max(1, dates.length);
   const caps = Array.from(new Set(rows.map((r) => String(r.CapitalType || "-"))));
   const closeByDate = new Map<string, number>();
   rows.forEach((r) => { const c = num(r.Close); if (c !== null) closeByDate.set(String(r.ObservationDate), c); });
   const totals = dates.map((d) => rows.filter((r) => String(r.ObservationDate) === d).reduce((s, r) => s + Math.max(0, num(r[yKey]) || 0), 0));
   const maxTotal = Math.max(...totals, 1);
-  const closes = Array.from(closeByDate.values());
-  if (!dates.length || !rows.length || !closes.length) return <div className="py-12 text-center text-sm text-slate-500">No chart data.</div>;
-  const closeMin = Math.min(...closes);
-  const closeMax = Math.max(...closes);
+  useEffect(() => {
+    const chartScroller = chartScrollRef.current;
+    if (!chartScroller) return;
+    chartScroller.scrollLeft = chartScroller.scrollWidth;
+    const updateVisibleDateRange = () => {
+      const first = Math.max(0, Math.floor((chartScroller.scrollLeft - pad) / step));
+      const last = Math.min(dates.length, Math.max(first + 1, Math.ceil((chartScroller.scrollLeft + chartScroller.clientWidth - pad) / step)));
+      setVisibleDateRange((current) => current.start === first && current.end === last ? current : { start: first, end: last });
+    };
+    chartScroller.addEventListener("scroll", updateVisibleDateRange, { passive: true });
+    const resizeObserver = new ResizeObserver(updateVisibleDateRange);
+    resizeObserver.observe(chartScroller);
+    updateVisibleDateRange();
+    return () => {
+      chartScroller.removeEventListener("scroll", updateVisibleDateRange);
+      resizeObserver.disconnect();
+    };
+  }, [rows, dates.length, step, width]);
+  if (!dates.length || !rows.length || !closeByDate.size) return <div className="py-12 text-center text-sm text-slate-500">No chart data.</div>;
+  const rangeStart = visibleDateRange.end > 0 ? visibleDateRange.start : 0;
+  const rangeEnd = visibleDateRange.end > 0 ? visibleDateRange.end : dates.length;
+  const visibleCloses = dates.slice(rangeStart, rangeEnd).map((date) => closeByDate.get(date)).filter((value): value is number => value !== undefined);
+  if (!visibleCloses.length) visibleCloses.push(...closeByDate.values());
+  const rawCloseMin = Math.min(...visibleCloses);
+  const rawCloseMax = Math.max(...visibleCloses);
+  const closePadding = Math.max((rawCloseMax - rawCloseMin) * 0.05, Math.abs(rawCloseMax) * 0.005, 0.01);
+  const closeMin = rawCloseMin - closePadding;
+  const closeMax = rawCloseMax + closePadding;
   const colors = ["#2563eb", "#dc2626", "#16a34a", "#f97316", "#9333ea", "#0891b2"];
-  const step = (width - pad * 2) / dates.length;
   const barW = Math.max(4, step * 0.72);
   const yBar = (v: number) => height - pad - (v / maxTotal) * (height - pad * 2);
   const yClose = (v: number) => pad + (height - pad * 2) - ((v - closeMin) / (closeMax - closeMin || 1)) * (height - pad * 2);
@@ -56,8 +83,9 @@ function StackedBarLineChart({ rows, yKey, title, threshold }: { rows: Row[]; yK
   };
   return (
     <div>
-      <div className="overflow-x-auto">
-        <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[900px] w-full cursor-crosshair select-none touch-pan-x" role="img" aria-label={title} onPointerMove={updateActiveIndex} onPointerLeave={() => setActiveIndex(null)}>
+      <div ref={chartScrollRef} className="overflow-x-auto" tabIndex={0} aria-label={`${title} chart; scroll left to view older dates`}>
+        <p className="mb-2 text-xs text-slate-500">Latest days are shown first. Scroll left to view older dates.</p>
+        <svg viewBox={`0 0 ${width} ${height}`} style={{ width: `${width}px`, maxWidth: "none" }} className="block cursor-crosshair select-none touch-pan-x" role="img" aria-label={title} onPointerMove={updateActiveIndex} onPointerLeave={() => setActiveIndex(null)}>
           <rect width={width} height={height} fill="white" />
           {thresholdY !== null ? <line x1={pad} x2={width - pad} y1={thresholdY} y2={thresholdY} stroke="#dc2626" strokeDasharray="7 7" /> : null}
           {dates.map((d, i) => {

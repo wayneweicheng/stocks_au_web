@@ -6,8 +6,7 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
 }).outputText, filename);
 const { analyzeRelativePerformance, rankLivePerformance, DEFAULT_RELATIVE_SYMBOLS } = require('../src/app/relative-performance/relativePerformance.ts');
 const { easternToday, defaultHistoryStart, historyRangeError } = require('../src/app/relative-performance/dateRange.ts');
-assert.ok(DEFAULT_RELATIVE_SYMBOLS.includes('BAC'));
-assert.ok(!DEFAULT_RELATIVE_SYMBOLS.includes('GS'));
+assert.deepEqual(DEFAULT_RELATIVE_SYMBOLS, ['QQQ', 'SOXX']);
 assert.equal(easternToday(new Date('2026-11-07T01:00:00Z')), '2026-11-06');
 assert.equal(defaultHistoryStart('2026-11-06'), '2026-11-02');
 assert.equal(historyRangeError('2026-11-02', '2026-11-06'), null);
@@ -41,6 +40,28 @@ assert.equal(result.rows.find((row) => row.symbol === 'QQQ').last30mPct, 1.2);
 assert.equal(result.divergence?.kind, 'ai_underperformance');
 assert.equal(result.divergence?.underperformingCount, 6);
 assert.equal(analyzeRelativePerformance({ SPY: bars(0, [100]) }, '5M').divergence, null);
+const pullbackInput = {
+  QQQ: bars(0, [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 99.7]),
+  SOXX: bars(0, [50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 49.95]),
+};
+const pullbacks = analyzeRelativePerformance(pullbackInput, '5M', 60).pullbackPeriods;
+assert.equal(pullbacks.length, 1);
+assert.equal(pullbacks[0].startTime, pullbackInput.QQQ[0].time);
+assert.equal(pullbacks[0].endTime, pullbackInput.QQQ[12].time);
+assert.equal(pullbacks[0].qqqChangePct, -0.3);
+assert.equal(pullbacks[0].soxxChangePct, -0.1);
+assert.equal(pullbacks[0].relativeEdgePct, 0.2);
+const spreadPoint = analyzeRelativePerformance(pullbackInput, '5M').relativeSpreadSeries.points.at(-1);
+assert.equal(spreadPoint.changePct, 0.2);
+assert.equal(spreadPoint.time, pullbackInput.QQQ[12].time);
+const variablePullbackInput = {
+  QQQ: bars(0, [100, 99.9, 99.9, 99.9, 99.9, 99.9, 99.9, 99.7]),
+  SOXX: bars(0, [50, 49.99, 49.99, 49.99, 49.99, 49.99, 49.99, 49.95]),
+};
+const variablePullbacks = analyzeRelativePerformance(variablePullbackInput, '5M', 'all').pullbackPeriods;
+assert.equal(variablePullbacks.length, 1);
+assert.equal(variablePullbacks[0].windowMinutes, 35);
+assert.equal(variablePullbacks[0].startTime, variablePullbackInput.QQQ[0].time);
 const ranked = rankLivePerformance(result.rows, { QQQ: { price: 103 }, SPY: { price: 101.5 } });
 assert.deepEqual(ranked.map((row) => [row.symbol, row.rank]), [["QQQ", 1], ["SPY", 2]]);
 console.log('Relative performance normalization and deterioration alert: OK');

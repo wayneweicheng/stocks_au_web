@@ -6,9 +6,16 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
 const { chartMobileTicks } = require('../src/app/support-resistance/chartMobileTicks.ts');
 const bars = Array.from({ length: 100 }, (_, i) => ({ time: `2026-11-${String(Math.floor(i / 5) + 1).padStart(2, '0')}T${String(i % 5 + 9).padStart(2, '0')}:30:00` }));
 const ticks = chartMobileTicks(bars);
-assert.ok(ticks.tickvals.length <= 6);
+assert.ok(ticks.tickvals.length <= 5);
 assert.equal(ticks.tickvals.at(-1), 99);
-assert.equal(ticks.ticktext[0], '11/01 09:30');
+assert.equal(ticks.ticktext[0], '11-01T09:30');
+for (let count = 1; count <= 300; count++) {
+  const sampleBars = Array.from({ length: count }, (_, i) => ({ time: `2026-11-09T${String(i % 24).padStart(2, '0')}:30:00` }));
+  const sample = chartMobileTicks(sampleBars, 8);
+  assert.ok(sample.tickvals.every((index) => index >= 0 && index < count), `tick index out of range for ${count} bars`);
+  assert.equal(sample.ticktext.length, sample.tickvals.length);
+  assert.equal(sample.tickvals.at(-1), count - 1);
+}
 assert.deepEqual(chartMobileTicks([]), { tickvals: [], ticktext: [] });
 const read = (name) => fs.readFileSync(path.join(__dirname, `../src/app/${name}`), 'utf8');
 const shell = read('components/AppShell.tsx');
@@ -22,6 +29,6 @@ assert.match(overview, /md:hidden/);
 assert.match(overview, /hidden overflow-x-auto[^\n]+md:block/);
 assert.match(reports, /id="mobile-report-picker"/);
 assert.match(reports, /hidden max-h-\[calc\(100vh-285px\)\]/);
-assert.match(chart, /chartMobileTicks\(bars\)/);
+assert.match(chart, /chartMobileTicks\(bars, isMobileViewport \? 5 : 8\)/);
 assert.match(chart, /if \(isMobileViewport\) return `<b>/);
 console.log('Mobile overview, report picker, chart ticks and quick navigation: OK');

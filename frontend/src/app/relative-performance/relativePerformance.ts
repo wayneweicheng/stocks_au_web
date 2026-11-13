@@ -21,18 +21,26 @@ export type DivergenceAlert = {
   cohortCount: number;
   message: string;
 };
+export type RelativePullbackPeriod = {
+  startTime: string;
+  endTime: string;
+  qqqChangePct: number;
+  soxxChangePct: number;
+  relativeEdgePct: number;
+  windowMinutes: number;
+};
 export type RelativePerformanceAnalysis = {
   rows: RelativeRow[];
   series: RelativeSeries[];
+  relativeSpreadSeries: RelativeSeries;
   divergence: DivergenceAlert | null;
+  pullbackPeriods: RelativePullbackPeriod[];
   timeframe: RelativeTimeframe;
 };
 export type LiveQuote = { price: number; source?: string; fetched_at_utc?: string; price_time?: string | null };
 export type LiveRank = { symbol: string; rank: number; livePrice: number; distancePct: number };
 
-export const DEFAULT_RELATIVE_SYMBOLS = [
-  "ESMain", "SPY", "QQQ", "DJI", "SOXX", "MSFT", "AMZN", "AMD", "NVDA", "MU", "SNDK", "MCD", "BAC",
-] as const;
+export const DEFAULT_RELATIVE_SYMBOLS = ["QQQ", "SOXX"] as const;
 export const AI_SEMICONDUCTOR_COHORT = ["MSFT", "AMZN", "AMD", "NVDA", "MU", "SNDK"] as const;
 
 const round = (value: number) => Math.round(value * 10_000) / 10_000;
@@ -57,9 +65,54 @@ export function rankLivePerformance(
     .map((item, index) => ({ ...item, rank: index + 1 }));
 }
 
+function findRelativePullbackPeriods(
+  barsBySymbol: Record<string, RelativeBar[]>,
+  timeframe: RelativeTimeframe,
+  windowMinutes: number | "all",
+): RelativePullbackPeriod[] {
+  const qqq = validBars(barsBySymbol.QQQ || []);
+  const soxxByTime = new Map(validBars(barsBySymbol.SOXX || []).map((bar) => [bar.time, bar.close]));
+  const intervalMinutes = timeframe === "5M" ? 5 : 30;
+  const minQqqDecline = -0.25;
+  const minRelativeEdge = 0.2;
+  const candidates: RelativePullbackPeriod[] = [];
+  const windowLengths = windowMinutes === "all"
+    ? Array.from({ length: Math.floor((100 - 30) / intervalMinutes) + 1 }, (_, index) => 30 + index * intervalMinutes)
+    : [windowMinutes];
+
+  for (const scanWindowMinutes of windowLengths) {
+    const intervals = Math.max(1, Math.round(scanWindowMinutes / intervalMinutes));
+    for (let endIndex = intervals; endIndex < qqq.length; endIndex++) {
+      const end = qqq[endIndex];
+      const start = qqq[endIndex - intervals];
+      const soxxStart = soxxByTime.get(start.time);
+      const soxxEnd = soxxByTime.get(end.time);
+      const elapsedMinutes = (Date.parse(end.time) - Date.parse(start.time)) / 60_000;
+      if (soxxStart === undefined || soxxEnd === undefined || Math.abs(elapsedMinutes - scanWindowMinutes) > intervalMinutes) continue;
+
+      const qqqChangePct = percentChange(start.close, end.close);
+      const soxxChangePct = percentChange(soxxStart, soxxEnd);
+      if (qqqChangePct === null || soxxChangePct === null || qqqChangePct > minQqqDecline || soxxChangePct >= 0) continue;
+      const relativeEdgePct = round(soxxChangePct - qqqChangePct);
+      if (relativeEdgePct < minRelativeEdge) continue;
+      candidates.push({ startTime: start.time, endTime: end.time, qqqChangePct, soxxChangePct, relativeEdgePct, windowMinutes: scanWindowMinutes });
+    }
+  }
+
+  const strongestFirst = candidates.sort((left, right) => right.relativeEdgePct - left.relativeEdgePct);
+  const selected: RelativePullbackPeriod[] = [];
+  for (const candidate of strongestFirst) {
+    if (selected.some((period) => candidate.startTime < period.endTime && candidate.endTime > period.startTime)) continue;
+    selected.push(candidate);
+    if (selected.length >= 8) break;
+  }
+  return selected.sort((left, right) => left.startTime.localeCompare(right.startTime));
+}
+
 export function analyzeRelativePerformance(
   barsBySymbol: Record<string, RelativeBar[]>,
   timeframe: RelativeTimeframe,
+  pullbackWindowMinutes: number | "all" = "all",
 ): RelativePerformanceAnalysis {
   const intervalCountFor30m = timeframe === "5M" ? 6 : 1;
   const rows: RelativeRow[] = [];
@@ -121,5 +174,16 @@ export function analyzeRelativePerformance(
     }
   }
 
-  return { rows, series, divergence, timeframe };
+  const qqqPoints = series.find((item) => item.symbol.toUpperCase() === "QQQ")?.points || [];
+  const soxxPoints = new Map((series.find((item) => item.symbol.toUpperCase() === "SOXX")?.points || [])
+    .map((point) => [point.time, point.changePct]));
+  const relativeSpreadSeries: RelativeSeries = {
+    symbol: "SOXX − QQQ delta",
+    points: qqqPoints.flatMap((point) => {
+      const soxxChange = soxxPoints.get(point.time);
+      return soxxChange === undefined ? [] : [{ time: point.time, changePct: round(soxxChange - point.changePct) }];
+    }),
+  };
+  const pullbackPeriods = findRelativePullbackPeriods(barsBySymbol, timeframe, pullbackWindowMinutes);
+  return { rows, series, relativeSpreadSeries, divergence, pullbackPeriods, timeframe };
 }
